@@ -3021,10 +3021,10 @@ def main():
 
     detailed = {(path, line) for path, line, _ in arm_failures}
     lines = [
-        f"{path}:{line} {label}"
+        f"{Path(path).as_posix()}:{line} {label}"
         for path, line, label in arm_failures
     ] + [
-        f"{path}:{line} {label}"
+        f"{Path(path).as_posix()}:{line} {label}"
         for path, line, label in failures
         if (path, line) not in detailed
     ]

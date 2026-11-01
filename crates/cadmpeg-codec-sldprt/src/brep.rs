@@ -37,12 +37,16 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
+mod blend_fit;
 mod blend_surface;
+mod chart_refine;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
+mod fit;
 mod index;
 mod intersection;
 mod offset;
+mod sp_curve;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -152,9 +156,12 @@ mod tag {
 const COMPACT_REF_COUNT: usize = 5;
 const DELTAS_REF_STRIDE: usize = 3;
 const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
-/// Orientation marker of a compact analytic curve whose stored edge direction
-/// runs against the curve parameter.
-const MARKER_AGAINST_EDGES: u8 = 0x2b;
+/// Orientation marker of a compact analytic record that runs against its
+/// curve parameter or natural surface normal in forward-linked topology.
+const MARKER_REVERSED: u8 = 0x2d;
+/// Orientation marker of a compact analytic record that runs against its
+/// curve parameter in topology that is not forward linked.
+const MARKER_AGAINST_UNLINKED_EDGES: u8 = 0x2b;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -228,9 +235,18 @@ pub(crate) struct CurveCarrier {
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
     parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
-    /// Whether the stored direction of an edge on this compact analytic
-    /// carrier runs against the curve parameter.
-    pub(crate) runs_against_edges: bool,
+    /// Whether the compact analytic orientation marker is `MARKER_REVERSED`,
+    /// when the record carries a marker.
+    pub(crate) marker_reversed: Option<bool>,
+}
+
+impl CurveCarrier {
+    /// Whether the stored direction of an edge on this carrier runs against
+    /// the curve parameter. `forward_linked` tells whether the edge's FIN
+    /// lies in a forward-linked loop.
+    pub(crate) fn runs_against_edges(&self, forward_linked: bool) -> bool {
+        self.marker_reversed == Some(forward_linked)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -240,6 +256,15 @@ pub(crate) struct SurfaceCarrier {
     pub(crate) end: usize,
     pub(crate) geometry: SurfaceGeometry,
     orientation_reversed: bool,
+    marker_reversed: bool,
+}
+
+impl SurfaceCarrier {
+    /// Whether the face normal runs against the natural surface normal.
+    /// `forward_linked` tells whether the face's loops are forward linked.
+    pub(crate) fn orientation_reversed(&self, forward_linked: bool) -> bool {
+        self.orientation_reversed != (self.marker_reversed && forward_linked)
+    }
 }
 
 fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
@@ -293,8 +318,12 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    let runs_against_edges = body.get(marker_at) == Some(&MARKER_AGAINST_EDGES);
-    decode_carrier_values(tt, vals, attr, (off, end), runs_against_edges)
+    let reversed = match body.get(marker_at) {
+        Some(&MARKER_REVERSED) => Some(true),
+        Some(&MARKER_AGAINST_UNLINKED_EDGES) => Some(false),
+        _ => None,
+    };
+    decode_carrier_values(tt, vals, attr, (off, end), reversed)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -327,7 +356,7 @@ fn decode_carrier_values(
     v: &[f64],
     attr: u16,
     (offset, end): (usize, usize),
-    runs_against_edges: bool,
+    reversed: Option<bool>,
 ) -> Option<Carrier> {
     let curve = |geometry| {
         Carrier::Curve(CurveCarrier {
@@ -336,7 +365,7 @@ fn decode_carrier_values(
             end,
             geometry,
             parameter_range: None,
-            runs_against_edges,
+            marker_reversed: reversed,
         })
     };
     let surface = |geometry| {
@@ -346,6 +375,7 @@ fn decode_carrier_values(
             end,
             geometry,
             orientation_reversed: tt == tag::TORUS && v[6].is_sign_negative(),
+            marker_reversed: reversed == Some(true),
         })
     };
     let g = match tt {
@@ -698,6 +728,57 @@ mod tests {
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
+    }
+
+    /// The compact marker sits after the attribute and the 14 reference bytes.
+    const COMPACT_MARKER_AT: usize = 18;
+
+    #[test]
+    fn a_reversed_surface_marker_reverses_the_face_sense() {
+        let mut bytes = compact_carrier(
+            tag::PLANE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed plane") else {
+            panic!("expected surface carrier");
+        };
+        assert!(carrier.orientation_reversed(true));
+        assert!(!carrier.orientation_reversed(false));
+    }
+
+    #[test]
+    fn a_curve_marker_reads_against_the_edge_by_the_loop_links() {
+        for (marker, forward_linked, against) in [
+            (0x2d, true, true),
+            (0x2d, false, false),
+            (0x2b, true, false),
+            (0x2b, false, true),
+        ] {
+            let mut bytes = compact_carrier(tag::LINE, 6, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+            bytes[COMPACT_MARKER_AT] = marker;
+            let Carrier::Curve(carrier) = parse_carrier(&bytes, 0).expect("line") else {
+                panic!("expected curve carrier");
+            };
+            assert_eq!(carrier.runs_against_edges(forward_linked), against);
+        }
+    }
+
+    #[test]
+    fn a_reversed_marker_and_a_negative_torus_major_radius_cancel() {
+        let mut bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed torus") else {
+            panic!("expected surface carrier");
+        };
+        assert!(!carrier.orientation_reversed(true));
     }
 
     #[test]

@@ -8,13 +8,17 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use super::index::CarrierIndex;
+use super::sp_curve::SurfaceCurveCarrier;
 use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
+/// The departure admitted between a bounded `SP_CURVE`'s stored end points
+/// and the support evaluated through its pcurve (spec §7.6).
+pub(super) const SURFACE_POINT_TOLERANCE_MM: f64 = 1.0e-5;
 
-fn point_at(
+pub(super) fn point_at(
     ctx: &DecodeContext<'_>,
     curve: &CurveGeometry,
     parameter: f64,
@@ -84,17 +88,53 @@ fn close(left: Point3, right: Point3) -> bool {
         && (left.z - right.z).abs() <= POINT_TOLERANCE_MM
 }
 
+/// One decoded `00 85` wrapper.
+pub(super) enum Wrapper {
+    /// A wrapper of an exact curve whose stored bounds agree with it.
+    Curve(CurveCarrier),
+    /// A wrapper of a surface-intersection chart: the chart between its
+    /// stored parameters, on the chart's supports (spec §7.3).
+    Intersection(super::intersection::IntersectionCarrier),
+    /// A wrapper of an intersection whose chart is absent: the curve is the
+    /// intersection of `supports` from `start` to `finish`.
+    Traced {
+        attr: u16,
+        offset: usize,
+        end: usize,
+        supports: [u16; 2],
+        start: Point3,
+        finish: Point3,
+    },
+    /// A wrapper of an `SP_CURVE` whose stored ends are its support through
+    /// its pcurve at the stored parameters (spec §7.6).
+    SurfaceCurve(Box<SurfaceCurveCarrier>),
+}
+
+/// Which wrappers a scan decodes: those of exact curves, those of
+/// intersection curves, which are indexed after the exact carriers, or those
+/// of `SP_CURVE`s, which are indexed after the supports they are read on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Pass {
+    Exact,
+    Intersections,
+    SurfaceCurves,
+}
+
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
 pub(super) fn scan(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carriers: &CarrierIndex,
-) -> Result<Vec<CurveCarrier>, CodecError> {
+    pass: Pass,
+) -> Result<Vec<Wrapper>, CodecError> {
     // A buffer shorter than the two-byte tag holds no wrapper.
     let Some(scan_end) = bytes.len().checked_sub(2) else {
         return Ok(Vec::new());
     };
     let mut out = Vec::new();
+    if pass == Pass::SurfaceCurves && !carriers.has_sp_curves() {
+        return Ok(out);
+    }
     for off in 0..scan_end {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
@@ -110,10 +150,6 @@ pub(super) fn scan(
         let Some(source_attr) = View::u16_be_at(bytes, marker_at + 1) else {
             continue;
         };
-        let Some(source) = carriers.curve(source_attr) else {
-            continue;
-        };
-        let geometry = &source.carrier().geometry;
         let mut values = [cadmpeg_ir::scalar::FiniteReal::ZERO; 8];
         let mut valid = true;
         for (index, value) in values.iter_mut().enumerate() {
@@ -140,6 +176,43 @@ pub(super) fn scan(
             values[4].get() * LEN_TO_MM,
             values[5].get() * LEN_TO_MM,
         );
+        if pass == Pass::SurfaceCurves {
+            if let Some(carrier) = surface_curve_at(ctx, carriers, off, attr, source_attr, &values)?
+            {
+                out.push(Wrapper::SurfaceCurve(Box::new(carrier)));
+            }
+            continue;
+        }
+        let record_end = marker_at + 1 + PAYLOAD_LEN;
+        let source = match (pass, carriers.curve(source_attr)) {
+            (Pass::Exact, Some(super::index::IndexedCurve::Exact(source))) => source,
+            (Pass::Intersections, Some(super::index::IndexedCurve::Derived(chart))) => {
+                if let Some(bounded) = chart.bounded(
+                    attr,
+                    off..record_end,
+                    [start, end],
+                    [values[6].get(), values[7].get()],
+                ) {
+                    out.push(Wrapper::Intersection(bounded));
+                }
+                continue;
+            }
+            (Pass::Intersections, None) => {
+                if let Some(supports) = carriers.chartless_intersection(source_attr) {
+                    out.push(Wrapper::Traced {
+                        attr,
+                        offset: off,
+                        end: record_end,
+                        supports,
+                        start,
+                        finish: end,
+                    });
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        let geometry = &source.geometry;
         let Some(evaluated_start) = point_at(ctx, geometry, values[6].get())? else {
             continue;
         };
@@ -150,18 +223,68 @@ pub(super) fn scan(
             continue;
         }
         let copied_geometry = geometry.clone();
-        out.push(CurveCarrier {
-            runs_against_edges: false,
+        out.push(Wrapper::Curve(CurveCarrier {
+            marker_reversed: None,
             attr,
             offset: off,
-            end: marker_at + 1 + PAYLOAD_LEN,
+            end: record_end,
             geometry: copied_geometry,
             parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
                 values[6], values[7],
             ])),
-        });
+        }));
     }
     Ok(out)
+}
+
+/// The `SP_CURVE` wrapper at `off` when its stored ends are on the support
+/// within [`SURFACE_POINT_TOLERANCE_MM`].
+fn surface_curve_at(
+    ctx: &DecodeContext<'_>,
+    carriers: &CarrierIndex,
+    off: usize,
+    attr: u16,
+    source_attr: u16,
+    values: &[cadmpeg_ir::scalar::FiniteReal; 8],
+) -> Result<Option<SurfaceCurveCarrier>, CodecError> {
+    let Some(source) = carriers.sp_curve(source_attr) else {
+        return Ok(None);
+    };
+    let Some(resolved) = carriers.sp_curve_support(source.surface) else {
+        return Ok(None);
+    };
+    let support = resolved.support();
+    let Some(pcurve) = support.pcurve(&source.pcurve) else {
+        return Ok(None);
+    };
+    let point = |first: usize| {
+        Point3::new(
+            values[first].get() * LEN_TO_MM,
+            values[first + 1].get() * LEN_TO_MM,
+            values[first + 2].get() * LEN_TO_MM,
+        )
+    };
+    let points = [point(0), point(3)];
+    let parameter_range = [values[6].get(), values[7].get()];
+    for (t, stored) in parameter_range.iter().zip(points) {
+        let Some(on_support) = support.point(ctx, &pcurve, *t)? else {
+            return Ok(None);
+        };
+        let departure = on_support.distance(stored);
+        if departure.is_nan() || departure > SURFACE_POINT_TOLERANCE_MM {
+            return Ok(None);
+        }
+    }
+    Ok(Some(SurfaceCurveCarrier {
+        attr,
+        offset: off,
+        surface: source.surface,
+        pcurve,
+        parameter_range,
+        points,
+        sweep: support.sweep().cloned(),
+        offset_support: support.offset().cloned(),
+    }))
 }
 
 #[cfg(test)]
@@ -198,7 +321,7 @@ mod tests {
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
         carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
@@ -225,7 +348,7 @@ mod tests {
         .expect("valid NURBS fixture");
         let mut carriers = CarrierIndex::default();
         carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
@@ -242,7 +365,12 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
+        assert_eq!(
+            scan(&ctx, &bytes, &carriers, super::Pass::Exact)
+                .unwrap()
+                .len(),
+            1
+        );
 
         // Degree 16 needs a heap basis of 17 `f64` slots; lower degrees
         // evaluate in inline storage.
@@ -268,14 +396,19 @@ mod tests {
         .expect("degree-16 version of the same line");
         let mut spline_carriers = CarrierIndex::default();
         spline_carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)),
             parameter_range: None,
         }));
-        assert_eq!(scan(&ctx, &bytes, &spline_carriers).unwrap().len(), 1);
+        assert_eq!(
+            scan(&ctx, &bytes, &spline_carriers, super::Pass::Exact)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -287,15 +420,24 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let decoded = scan(&ctx, &wrapper(0.005, false), &carriers()).expect("subset scan");
+        let decoded = scan(
+            &ctx,
+            &wrapper(0.005, false),
+            &carriers(),
+            super::Pass::Exact,
+        )
+        .expect("subset scan");
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].attr, 20);
+        let super::Wrapper::Curve(carrier) = &decoded[0] else {
+            panic!("an exact curve wrapper");
+        };
+        assert_eq!(carrier.attr, 20);
         assert!(matches!(
-            decoded[0].geometry,
+            carrier.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
         ));
         assert_eq!(
-            decoded[0]
+            carrier
                 .parameter_range
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 0.005])
@@ -312,7 +454,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            scan(&ctx, &wrapper(0.005, true), &carriers())
+            scan(&ctx, &wrapper(0.005, true), &carriers(), super::Pass::Exact)
                 .expect("subset scan")
                 .len(),
             1
@@ -330,7 +472,7 @@ mod tests {
         .unwrap();
         let mut bytes = wrapper(0.005, false);
         bytes[21 + 3 * 8..21 + 4 * 8].copy_from_slice(&0.001f64.to_be_bytes());
-        assert!(scan(&ctx, &bytes, &carriers())
+        assert!(scan(&ctx, &bytes, &carriers(), super::Pass::Exact)
             .expect("subset scan")
             .is_empty());
     }
@@ -385,5 +527,88 @@ mod tests {
             .expect("evaluate the point")
             .is_none());
         }
+    }
+
+    /// A wrapper 20 of source 10 from `start` to `end` in metres over the
+    /// source parameters `parameters`.
+    fn wrapper_of(start: [f64; 3], end: [f64; 3], parameters: [f64; 2]) -> Vec<u8> {
+        let mut bytes = vec![0x00, TAG];
+        bytes.extend_from_slice(&20u16.to_be_bytes());
+        bytes.extend_from_slice(&[0; 14]);
+        bytes.push(0x2b);
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        for value in start.into_iter().chain(end).chain(parameters) {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_wrapper_of_an_intersection_is_read_in_the_intersection_pass() {
+        // Chart 10 runs from (0, 0, 0) to (10, 0, 0) to (10, 10, 0) mm.
+        let chart = super::super::intersection::IntersectionCarrier {
+            carrier: CurveCarrier {
+                marker_reversed: None,
+                attr: 10,
+                offset: 100,
+                end: 120,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 10.0, 20.0, 20.0],
+                        vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(10.0, 0.0, 0.0),
+                            Point3::new(10.0, 10.0, 0.0),
+                        ],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                parameter_range: None,
+            },
+            support_data: super::super::intersection::IntersectionSupportData {
+                supports: [2, 3],
+                fit_tolerance_mm: 0.01,
+                support_uv: None,
+            },
+        };
+        let bytes = wrapper_of([0.005, 0.0, 0.0], [0.01, 0.005, 0.0], [5.0, 15.0]);
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut charted = CarrierIndex::default();
+        charted.insert_intersection(chart);
+        assert!(scan(&ctx, &bytes, &charted, super::Pass::Exact)
+            .unwrap()
+            .is_empty());
+        let decoded = scan(&ctx, &bytes, &charted, super::Pass::Intersections).unwrap();
+        let [super::Wrapper::Intersection(bounded)] = decoded.as_slice() else {
+            panic!("expected one bounded chart");
+        };
+        assert_eq!(
+            (bounded.carrier.attr, bounded.carrier.end),
+            (20, bytes.len())
+        );
+        assert_eq!(bounded.support_data.supports, [2, 3]);
+
+        let mut chartless = CarrierIndex::default();
+        chartless.insert_chartless(10, [2, 3]);
+        let decoded = scan(&ctx, &bytes, &chartless, super::Pass::Intersections).unwrap();
+        let [super::Wrapper::Traced {
+            attr,
+            end,
+            supports,
+            start,
+            finish,
+            ..
+        }] = decoded.as_slice()
+        else {
+            panic!("expected one traced wrapper");
+        };
+        assert_eq!((*attr, *end, *supports), (20, bytes.len(), [2, 3]));
+        assert_eq!(*start, Point3::new(5.0, 0.0, 0.0));
+        assert_eq!(*finish, Point3::new(10.0, 5.0, 0.0));
     }
 }

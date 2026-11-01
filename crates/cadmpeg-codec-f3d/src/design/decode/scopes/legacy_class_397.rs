@@ -20,13 +20,13 @@ impl Class397SymmetricFrame {
     pub(crate) fn new(
         class_tag: &str,
         paired_class_tag: &str,
-        frame_length: u64,
+        frame_length: Option<u64>,
         reference_count_offset: u64,
         reference_count: usize,
     ) -> Option<Self> {
         (class_tag == "397"
             && paired_class_tag == "262"
-            && frame_length == u64_from_index(symmetric::LEN)
+            && frame_length == Some(u64_from_index(symmetric::LEN))
             && reference_count_offset == u64_from_index(symmetric::REFERENCE_COUNT)
             && reference_count == index_from_u32(symmetric::REFERENCE_COUNT_VALUE))
         .then_some(Self(()))
@@ -59,7 +59,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
     let frame = Class397SymmetricFrame::new(
         class_tag,
         paired_class_tag,
-        u64::try_from(paired_at.checked_sub(start)?).ok()?,
+        Some(u64::try_from(paired_at.checked_sub(start)?).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     )?;

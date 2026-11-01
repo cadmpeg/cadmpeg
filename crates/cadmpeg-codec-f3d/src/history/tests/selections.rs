@@ -1586,3 +1586,5 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 }
 
 mod extrude_profile;
+
+mod face_support;

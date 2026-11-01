@@ -15,6 +15,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
+/// Longest tail of an extended selection member, in bytes.
+const EXTENDED_TAIL_MAX: u64 = 1024;
+
 /// Counted selection group owned by an Extrude or Emboss parameter scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignExtrudeSelectionGroupWire")]
@@ -591,7 +594,8 @@ impl DesignExtrudeSelectionMember {
             .ok_or("next_byte_offset precedes member")?;
         let frame_length_valid = match draft.scope_tail {
             Some(_) => frame_length == 240 && !draft.tail_slot_present,
-            None => frame_length == 190 || (frame_length == 204 && draft.tail_slot_present),
+            None if frame_length == 204 => draft.tail_slot_present,
+            None => (190..=190 + EXTENDED_TAIL_MAX).contains(&frame_length) && frame_length != 240,
         };
         if !frame_length_valid {
             return Err("selection member has an invalid frame length".into());

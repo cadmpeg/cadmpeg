@@ -6,6 +6,7 @@ use super::nurbs::{
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
+use crate::math::portable::Portable;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
@@ -23,7 +24,7 @@ mod scaling_admitted;
 
 fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
     let axis = axis.get();
-    axis.u.hypot(axis.v) > 0.0
+    axis.u.portable_hypot(axis.v) > 0.0
 }
 
 /// One rational pole in parameter space: its position and its weight.
@@ -368,7 +369,9 @@ impl PolarHarmonicPcurve {
         axial_cos: f64,
         axial_sin: f64,
     ) -> Result<Self, &'static str> {
-        if !(radial_cos.u.hypot(radial_cos.v) > 0.0 || radial_sin.u.hypot(radial_sin.v) > 0.0) {
+        if !(radial_cos.u.portable_hypot(radial_cos.v) > 0.0
+            || radial_sin.u.portable_hypot(radial_sin.v) > 0.0)
+        {
             return Err("PolarHarmonicPcurve.radial_cos/radial_sin must not both be zero");
         }
         let radial_center = FinitePoint2::new(radial_center)
@@ -599,10 +602,10 @@ impl CirclePcurve {
         y_axis: Point2,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("CirclePcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("CirclePcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
@@ -729,10 +732,10 @@ impl EllipsePcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("EllipsePcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("EllipsePcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
@@ -847,7 +850,7 @@ struct HarmonicPcurveWire {
 impl HarmonicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+        if !(cosine.u.portable_hypot(cosine.v) > 0.0 || sine.u.portable_hypot(sine.v) > 0.0) {
             return Err("HarmonicPcurve.cosine/sine must not both be zero");
         }
         let center = FinitePoint2::new(center).ok_or("HarmonicPcurve.center must be finite")?;
@@ -945,10 +948,10 @@ impl ParabolaPcurve {
         y_axis: Point2,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.y_axis must be nonzero");
         }
         let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
@@ -1062,10 +1065,10 @@ impl HyperbolaPcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
@@ -1180,7 +1183,7 @@ struct HyperbolicPcurveWire {
 impl HyperbolicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+        if !(cosine.u.portable_hypot(cosine.v) > 0.0 || sine.u.portable_hypot(sine.v) > 0.0) {
             return Err("HyperbolicPcurve.cosine/sine must not both be zero");
         }
         let center = FinitePoint2::new(center).ok_or("HyperbolicPcurve.center must be finite")?;
@@ -2335,6 +2338,11 @@ impl Pcurve {
         self.metadata.parameter_range()
     }
 
+    /// Translation in the support native chart.
+    pub fn uv_offset(&self) -> Option<FiniteVector<2>> {
+        self.metadata.uv_offset()
+    }
+
     /// Parameter-space fit tolerance following a solved UV cache.
     pub fn fit_tolerance(&self) -> Option<FitTolerance> {
         self.metadata.fit_tolerance()
@@ -2371,6 +2379,8 @@ impl PcurveMetadata {
     /// The refusal of a parameter range with a non-finite endpoint.
     pub const NON_FINITE_PARAMETER_RANGE: &'static str =
         "pcurve parameter_range endpoints must be finite";
+    /// The refusal of a native UV translation with a non-finite component.
+    pub const NON_FINITE_UV_OFFSET: &'static str = "pcurve uv_offset components must be finite";
     /// The refusal of a fit tolerance that is not finite and non-negative.
     pub const INVALID_FIT_TOLERANCE: &'static str =
         "pcurve fit_tolerance must be finite and non-negative";
@@ -2407,8 +2417,16 @@ impl PcurveMetadata {
     /// Directed native parameter interval on which this pcurve is evaluated.
     pub fn parameter_range(&self) -> Option<FiniteVector<2>> {
         match self {
-            Self::AsmInline { form: inline } => Some(inline.parameter_range),
+            Self::AsmInline { .. } => None,
             Self::General { form: general } => general.parameter_range,
+        }
+    }
+
+    /// Translation in the support native chart.
+    pub fn uv_offset(&self) -> Option<FiniteVector<2>> {
+        match self {
+            Self::AsmInline { form } => Some(form.uv_offset()),
+            Self::General { form } => form.uv_offset,
         }
     }
 
@@ -2425,6 +2443,10 @@ fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<FiniteVector<2>, &'st
     FiniteVector::new(range).ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
 }
 
+fn admit_pcurve_uv_offset(offset: [f64; 2]) -> Result<FiniteVector<2>, &'static str> {
+    FiniteVector::new(offset).ok_or(PcurveMetadata::NON_FINITE_UV_OFFSET)
+}
+
 fn admit_pcurve_fit_tolerance(value: f64) -> Result<FitTolerance, &'static str> {
     FitTolerance::try_new(value).map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
 }
@@ -2439,7 +2461,7 @@ pub struct PcurveInlineForm {
     /// Four native booleans following the inline subtype scope.
     pub native_tail_flags: [bool; 4],
     #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
-    parameter_range: FiniteVector<2>,
+    uv_offset: FiniteVector<2>,
     fit_tolerance: FitTolerance,
 }
 
@@ -2451,8 +2473,8 @@ struct PcurveInlineFormWire {
     wrapper_reversed: bool,
     /// Four native booleans following the inline subtype scope.
     native_tail_flags: [bool; 4],
-    /// Directed native parameter interval.
-    parameter_range: [f64; 2],
+    /// Translation in the support native chart.
+    uv_offset: [f64; 2],
     /// Parameter-space fit tolerance.
     fit_tolerance: f64,
 }
@@ -2463,7 +2485,7 @@ impl TryFrom<PcurveInlineFormWire> for PcurveInlineForm {
         Self::try_new(
             wire.wrapper_reversed,
             wire.native_tail_flags,
-            wire.parameter_range,
+            wire.uv_offset,
             wire.fit_tolerance,
         )
     }
@@ -2475,29 +2497,28 @@ impl PcurveInlineForm {
     pub const fn new(
         wrapper_reversed: bool,
         native_tail_flags: [bool; 4],
-        parameter_range: FiniteVector<2>,
+        uv_offset: FiniteVector<2>,
         fit_tolerance: FitTolerance,
     ) -> Self {
         Self {
             wrapper_reversed,
             native_tail_flags,
-            parameter_range,
+            uv_offset,
             fit_tolerance,
         }
     }
 
-    /// Admit inline metadata read from the wire, refusing a non-finite
-    /// endpoint and then a tolerance that is not finite and non-negative.
+    /// Admit finite native UV components and a finite non-negative tolerance.
     pub(crate) fn try_new(
         wrapper_reversed: bool,
         native_tail_flags: [bool; 4],
-        parameter_range: [f64; 2],
+        uv_offset: [f64; 2],
         fit_tolerance: f64,
     ) -> Result<Self, &'static str> {
         Ok(Self::new(
             wrapper_reversed,
             native_tail_flags,
-            admit_pcurve_parameter_range(parameter_range)?,
+            admit_pcurve_uv_offset(uv_offset)?,
             admit_pcurve_fit_tolerance(fit_tolerance)?,
         ))
     }
@@ -2513,10 +2534,10 @@ impl PcurveInlineForm {
         self.fit_tolerance = value;
     }
 
-    /// Directed native parameter interval.
+    /// Translation in the support native chart.
     #[must_use]
-    pub const fn parameter_range(&self) -> FiniteVector<2> {
-        self.parameter_range
+    pub const fn uv_offset(&self) -> FiniteVector<2> {
+        self.uv_offset
     }
 }
 
@@ -2525,6 +2546,10 @@ impl PcurveInlineForm {
 #[serde(try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
+    /// Translation in the support native chart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<[f64; 2]>"))]
+    pub uv_offset: Option<FiniteVector<2>>,
     /// Source wrapper reversal, when stored independently of an ASM tail.
     #[serde(
         default,
@@ -2547,6 +2572,9 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
+    /// Translation in the support native chart.
+    #[serde(default, deserialize_with = "deserialize_uv_offset")]
+    uv_offset: Option<[f64; 2]>,
     /// Source wrapper reversal, when stored independently of an ASM tail.
     #[serde(default, deserialize_with = "deserialize_wrapper_reversed")]
     wrapper_reversed: Option<bool>,
@@ -2564,11 +2592,13 @@ struct PcurveGeneralFormWire {
 impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
     type Error = &'static str;
     fn try_from(wire: PcurveGeneralFormWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut form = Self::try_new(
             wire.wrapper_reversed,
             wire.parameter_range,
             wire.fit_tolerance,
-        )
+        )?;
+        form.uv_offset = wire.uv_offset.map(admit_pcurve_uv_offset).transpose()?;
+        Ok(form)
     }
 }
 
@@ -2581,6 +2611,7 @@ impl PcurveGeneralForm {
         fit_tolerance: Option<FitTolerance>,
     ) -> Self {
         Self {
+            uv_offset: None,
             wrapper_reversed,
             parameter_range,
             fit_tolerance,
@@ -2622,6 +2653,7 @@ impl PcurveGeneralForm {
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_uv_offset, [f64; 2], "uv_offset");
 cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");
 cadmpeg_core::named_optional_field!(deserialize_parameter_range, [f64; 2], "parameter_range");
 cadmpeg_core::named_optional_field!(

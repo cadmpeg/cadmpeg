@@ -557,7 +557,6 @@ pub(super) fn push_carrier_transfer_notes(
     scan: &ContainerScan,
     coverage: &cadmpeg_ir::report::decode::Coverage,
     container_only: bool,
-    placed_plane_count: usize,
 ) {
     let topology_bound_plane_count =
         coverage_count(coverage, "transferred_topology_bound_plane_surface_count");
@@ -579,13 +578,17 @@ pub(super) fn push_carrier_transfer_notes(
         coverage,
         "transferred_tabulated_cylinder_spline_extrusion_count",
     );
-    if !container_only && placed_plane_count != 0 {
+    let transferred_plane_count = coverage_count(
+        coverage,
+        crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str(),
+    );
+    if !container_only && transferred_plane_count != 0 {
         push_report_loss(
             losses,
             CreoLossCode::CarrierVisibGeomPlanes,
             format_args!(
-                "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
-             VisibGeom local-system support frames."
+                "Transferred {transferred_plane_count} model-space plane carrier(s) from admitted \
+             VisibGeom plane rows."
             ),
         );
     }

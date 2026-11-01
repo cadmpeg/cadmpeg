@@ -2,6 +2,7 @@
 //! Polynomial and rational B-spline approximations of native helix paths and
 //! helix surfaces.
 
+use crate::math::portable::Portable;
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
 
@@ -222,7 +223,7 @@ fn path_helix(
 
 /// The radial vector `ρ(t)` and its derivative `τ(t)` of the path frame.
 fn path_frame(path: &HelixCurveConstruction, parameter: f64) -> (Vector3, Vector3) {
-    let (sine, cosine) = parameter.sin_cos();
+    let (sine, cosine) = parameter.portable_sin_cos();
     let (major, minor) = (path.major().get(), path.minor().get());
     (
         sum(&[(cosine, major), (sine, minor)]),
@@ -249,21 +250,21 @@ fn circle_arcs() -> Result<(Vec<ProfilePole>, Vec<f64>), HelixNurbsError> {
         let from = index * std::f64::consts::FRAC_PI_2;
         if poles.is_empty() {
             poles.push(ProfilePole {
-                cosine: from.cos(),
-                sine: from.sin(),
+                cosine: from.portable_cos(),
+                sine: from.portable_sin(),
                 weight: 1.0,
             });
         }
         let middle = from + half;
         poles.push(ProfilePole {
-            cosine: middle.cos() / half.cos(),
-            sine: middle.sin() / half.cos(),
-            weight: half.cos(),
+            cosine: middle.portable_cos() / half.portable_cos(),
+            sine: middle.portable_sin() / half.portable_cos(),
+            weight: half.portable_cos(),
         });
         let to = from + std::f64::consts::FRAC_PI_2;
         poles.push(ProfilePole {
-            cosine: to.cos(),
-            sine: to.sin(),
+            cosine: to.portable_cos(),
+            sine: to.portable_sin(),
             weight: 1.0,
         });
         knots.extend([index + 1.0; 2]);

@@ -608,7 +608,7 @@ impl DesignExtrudeFrame {
             _ if legacy_class_415::is_symmetric_distance_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -618,7 +618,7 @@ impl DesignExtrudeFrame {
             _ if legacy_class_415::is_one_sided_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -628,7 +628,7 @@ impl DesignExtrudeFrame {
             _ if layouts::is_class_296_one_sided_to_face_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -638,7 +638,7 @@ impl DesignExtrudeFrame {
             _ if layouts::is_class_296_symmetric_distance_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -648,7 +648,7 @@ impl DesignExtrudeFrame {
             _ if layouts::is_class_296_two_sided_to_faces_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -658,7 +658,7 @@ impl DesignExtrudeFrame {
             _ if layouts::is_class_296_legacy_one_sided_to_face_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -668,7 +668,7 @@ impl DesignExtrudeFrame {
             _ if layouts::is_class_296_legacy_one_sided_distance_layout(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             ) =>
@@ -678,7 +678,7 @@ impl DesignExtrudeFrame {
             _ if Class397SymmetricFrame::new(
                 class_tag,
                 paired_class_tag,
-                frame_length,
+                Some(frame_length),
                 delta,
                 count,
             )

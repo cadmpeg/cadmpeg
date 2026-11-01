@@ -54,6 +54,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
                     trailing_transforms: Vec::new(),
                     trailing_dual_transforms: Vec::new(),
                     trailing_flags: Vec::new(),
+                    closing_flag: false,
                 },
             )
             .unwrap(),

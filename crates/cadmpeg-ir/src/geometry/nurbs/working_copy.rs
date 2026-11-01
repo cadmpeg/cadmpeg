@@ -61,6 +61,7 @@ impl NurbsSurface {
             normal_reversed: self.normal_reversed,
             u_periodic: self.u_periodic,
             v_periodic: self.v_periodic,
+            cache_fit_tolerance: self.cache_fit_tolerance,
         })
     }
 }

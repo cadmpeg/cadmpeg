@@ -677,7 +677,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     .expect("annotated dimension frame");
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_companion_record_index, 391);
-    assert_eq!(frame.entity_genesis, 0x202);
+    assert_eq!(frame.entity_genesis, Some(0x202));
     assert_eq!(
         frame.annotation_byte_offset(),
         Some(u64_from_index(annotation_byte_offset))
@@ -880,3 +880,35 @@ fn dimension_annotation_interval_of_zero_bytes_has_no_frames() {
 }
 
 mod loci;
+
+#[test]
+fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 1, 2, 2] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    prefix.extend_from_slice(b"37");
+    for word in [0i32, 1, -73, 0, 0] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    let references = super::decode_recipe_references(&prefix, 0);
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].design_reference, -73);
+    let face = FaceId::mint("test:model:face#signed").unwrap();
+    let tag = PersistentSubentityTag {
+        id: "signed-key".into(),
+        target: AttributeTarget::Face(face.clone()),
+        selector: 2,
+        token: cadmpeg_core::text::NonBlankString::new("37").unwrap(),
+        design_references: vec![-73],
+        ordinal: 0,
+    };
+    let mut bound = references[0].clone();
+    super::bind_recipe_reference_candidates(&mut bound, &[tag], None);
+    assert_eq!(bound.candidate_faces, [face]);
+    for end in 0..prefix.len() {
+        assert!(super::decode_recipe_references(&prefix[..end], 0).is_empty());
+    }
+}
+
+mod metadata;

@@ -33,7 +33,9 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
     }));
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
-            && finding.message.contains("outside its carrier domain")
+            && finding
+                .message
+                .contains("coedge use-curve names no curve carrier")
     }));
 }
 

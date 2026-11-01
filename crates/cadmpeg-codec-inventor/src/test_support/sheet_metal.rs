@@ -206,6 +206,24 @@ impl Fixture {
             properties,
         }
     }
+    /// The 15-property plate with its 9-property bend: the result is the
+    /// surface body in plate slot 6 and bend slot 5, and the bend scalar has
+    /// value 0 without a state.
+    pub(crate) fn body() -> Self {
+        let mut fixture = Self::new();
+        fixture.properties.push(property(
+            47,
+            &Kind::SheetMetal {
+                definition: Sheet::BendControl {
+                    value: 0,
+                    state: None,
+                },
+            },
+        ));
+        fixture.plate = feature(100, &[1, 2, 3, 4, 5, 0, 46, 6, 7, 8, 9, 10, 11, 12, 0]);
+        fixture.bend = feature(200, &[6, 25, 4, 5, 9, 46, 7, 10, 47]);
+        fixture
+    }
     pub(crate) fn property(&self, reference: Reference) -> Option<&PmDcFeatureProperty> {
         self.properties
             .iter()
@@ -239,7 +257,7 @@ impl Fixture {
     pub(crate) fn values(&self) -> crate::feature::sheet_metal::operands::PlateOperands {
         crate::feature::sheet_metal::operands::plate(
             &self.plate,
-            &self.style,
+            Some(&self.style),
             |r| self.property(r),
             Self::length,
             Self::direction,

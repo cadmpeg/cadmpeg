@@ -1005,3 +1005,71 @@ fn a_named_closed_spline_binds_one_profile_and_rejects_other_selections() {
             .is_none());
     }
 }
+
+fn region_list(profile: Option<PlanarProfileRef>) -> Vec<SketchProfileRegion> {
+    let Some(PlanarProfileRef::SketchRegions { regions, .. }) = profile else {
+        panic!("profile regions");
+    };
+    regions.as_slice().to_vec()
+}
+
+#[test]
+fn material_covers_an_unselected_loop_with_a_face_of_its_own() {
+    let (sketch, entities) = square_with_hole();
+    let bodies = [profile_body((0.0, 0.0))];
+    let links = [kernel_link(20, 7), kernel_link(21, 8)];
+    let index = index(&bodies, &links, &entities);
+    let region =
+        |outer, holes: &[u32]| SketchProfileRegion::loops(outer, holes.to_vec()).expect("region");
+    // The square alone bounds the material, which covers the circle in it.
+    assert_eq!(
+        region_list(index.material("segment", SKETCH_ORDINAL, &sketch, &[20])),
+        [region(0, &[1]), region(1, &[])]
+    );
+    // The section reading keeps the selected rings alone.
+    assert_eq!(
+        region_list(index.regions("segment", SKETCH_ORDINAL, &sketch, &[20])),
+        [region(0, &[])]
+    );
+    // A selected circle is a hole, and no unselected loop remains.
+    assert_eq!(
+        region_list(index.material("segment", SKETCH_ORDINAL, &sketch, &[20, 21])),
+        [region(0, &[1])]
+    );
+    assert_eq!(
+        region_list(index.material("segment", SKETCH_ORDINAL, &sketch, &[21])),
+        [region(1, &[])]
+    );
+}
+
+#[test]
+fn material_lists_the_selected_rings_alone_when_a_sketch_curve_lies_outside_the_loops() {
+    let (sketch, mut entities) = square_with_hole();
+    entities.push(entity(
+        30,
+        SketchGeometryDefinition::Line {
+            start: Point2::new(2.0, 2.0),
+            end: Point2::new(6.0, 2.0),
+        },
+    ));
+    let bodies = [profile_body((0.0, 0.0))];
+    let links = [kernel_link(20, 7), kernel_link(21, 8)];
+    let index = index(&bodies, &links, &entities);
+    // The unselected circle lies in the material, and the open line can cut it.
+    assert_eq!(
+        region_list(index.material("segment", SKETCH_ORDINAL, &sketch, &[20])),
+        [SketchProfileRegion::loops(0, vec![]).expect("region")]
+    );
+    assert_eq!(
+        region_list(index.regions("segment", SKETCH_ORDINAL, &sketch, &[20])),
+        [SketchProfileRegion::loops(0, vec![]).expect("region")]
+    );
+    // With no unselected loop in the material, the open line changes nothing.
+    assert_eq!(
+        region_list(index.material("segment", SKETCH_ORDINAL, &sketch, &[20, 21])),
+        [SketchProfileRegion::loops(0, vec![1]).expect("region")]
+    );
+    assert!(index.into_added_profiles().is_empty());
+}
+
+mod native_curves;

@@ -1224,6 +1224,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     } else if matches!(
                         scope.kind(),
+                        crate::records::feature::scope::DesignFeatureKind::MoveFace
+                            | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                    ) {
+                        project_move_face(scope, construction_groups, face_operands)?
+                            .unwrap_or_else(|| {
+                                FeatureDefinition::Operation(FeatureOperation::Native {
+                                    kind: scope.kind_name().into(),
+                                    parameters: BTreeMap::new(),
+                                })
+                            })
+                    } else if matches!(
+                        scope.kind(),
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
@@ -2263,6 +2275,21 @@ fn project_fillet_arm(
         }
     }
     assignments.sort_by_key(|left| left.group_ordinal);
+    // A face group that no assignment covers selects faces whose radius set is
+    // not stored, so the feature keeps its native form.
+    if !assignments.is_empty()
+        && inputs.construction_groups.iter().any(|group| {
+            native_stream(&group.id) == Some(native_scope)
+                && group.scope_record_index == scope.record_index
+                && group.role() == DesignOperandRole::ROLE_0X10
+                && !group.members().is_empty()
+                && assignments
+                    .iter()
+                    .all(|assignment| assignment.group_record_index != group.record_index)
+        })
+    {
+        return native_scope_definition(scope, parameters);
+    }
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
             return native_scope_definition(scope, parameters);
@@ -7940,6 +7967,68 @@ fn project_split_face(
     )))
 }
 
+/// A `MoveFace` scope projects when its transform is a pure translation.
+fn project_move_face(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    use cadmpeg_ir::features::{
+        FaceMotion, FaceSelection, FeatureDefinition, FeatureDirection3, FeatureOperation,
+    };
+
+    let operation = or_none!(scope.move_operation());
+    if !operation.preserves_orientation()
+        || matrix_axis_angle(operation.transform.as_ref()).is_some()
+    {
+        return Ok(None);
+    }
+    let group = or_none!(single_operand_group(
+        construction_groups,
+        scope,
+        DesignOperandRole::ROLE_0X10
+    ));
+    let member_count = or_none!(scope.reference_members().len().checked_sub(2));
+    if group.scope_reference_ordinal != 0
+        || group.record_index != *or_none!(scope.reference_members().values().next())
+        || !group.members().iter().map(|member| member.value).eq(scope
+            .reference_members()
+            .values()
+            .skip(1)
+            .take(member_count)
+            .copied())
+    {
+        return Ok(None);
+    }
+    let translation = Vector3::new(
+        operation.transform[0][3] * 10.0,
+        operation.transform[1][3] * 10.0,
+        operation.transform[2][3] * 10.0,
+    );
+    let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(translation));
+    let distance = or_none!(cadmpeg_ir::scalar::Length::new(translation.norm()));
+    let faces = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id(),
+        group,
+        face_operands,
+    )
+    .map_or_else(
+        || resolved_face_group(group, face_operands),
+        |face| Ok(Some(face)),
+    )?
+    .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::MoveFace {
+            faces,
+            motion: FaceMotion::Translate {
+                direction: FeatureDirection3::from(direction),
+                distance: cadmpeg_ir::Dimension::Literal(distance),
+            },
+        },
+    )))
+}
+
 fn project_delete_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -8063,6 +8152,9 @@ fn project_extrude(
         PrologueReversal,
     }
 
+    if scope.extrude_native_profiles().is_some() {
+        return Ok(None);
+    }
     let supported_parameter = |source_kind: &str| {
         matches!(
             source_kind,

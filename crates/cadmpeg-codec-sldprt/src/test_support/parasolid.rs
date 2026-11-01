@@ -119,6 +119,74 @@ fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radiu
     bytes
 }
 
+/// A compact type-67 surface swept along a unit direction.
+fn swept_surface_carrier(attr: u16, profile: u16, direction: [f64; 3]) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x43];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    be16(&mut bytes, profile);
+    for value in direction {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+/// A face on a rolling-ball blend of radius 0.1 m between the floor `z = 0` and
+/// a wall `x = 0` that a line swept along `y` states, with the wall's own face
+/// when `wall_face` is set. `vertex_miss` lifts one face vertex off the blend,
+/// in metres.
+pub(crate) fn blend_on_swept_wall_body(wall_face: bool, vertex_miss: f64) -> Vec<u8> {
+    let (floor, wall, wall_profile, spine, blend) = (181, 190, 191, 183, 180);
+    let mut body = owned_triangle_on(
+        0,
+        500,
+        [[0.1, 0.0, 0.0], [0.0, 0.0, 0.1], [0.1, 1.0, -vertex_miss]],
+        blend,
+        1,
+    );
+    if wall_face {
+        body.extend(owned_triangle_on(
+            300,
+            700,
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            wall,
+            1,
+        ));
+    }
+    body.extend(blend_surface_carrier(blend, [floor, wall], spine, 0.1));
+    body.extend(plane_carrier(
+        floor,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(swept_surface_carrier(wall, wall_profile, [0.0, 1.0, 0.0]));
+    body.extend(linear_nurbs_curve_carrier_through(
+        wall_profile,
+        200,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ));
+    body.extend(line_carrier(spine, [0.1, 0.0, 0.1], [0.0, 1.0, 0.0]));
+    body
+}
+
+/// A rolling-ball blend whose first support is a support pair.
+pub(crate) fn pair_blend_surface_carrier(
+    attr: u16,
+    supports: [u16; 2],
+    spine: u16,
+    signed_radius: f64,
+) -> Vec<u8> {
+    let mut bytes = blend_surface_carrier(attr, supports, spine, signed_radius);
+    bytes[19] = b'E';
+    bytes
+}
+
 pub(crate) fn blend_triangle_body() -> Vec<u8> {
     let mut body = triangle_body();
     let bridge = body
@@ -245,7 +313,7 @@ pub(crate) fn torus_carrier(
     b
 }
 
-fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
+pub(crate) fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x35];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -261,6 +329,9 @@ fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     }
     b
 }
+
+/// Offset of the orientation marker in a compact carrier from `circle_carrier`.
+const COMPACT_MARKER_AT: usize = 18;
 
 pub(crate) fn circle_carrier(attr: u16, center: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x1f];
@@ -337,17 +408,25 @@ pub(crate) fn closed_cylinder_body() -> Vec<u8> {
 pub(crate) fn sphere_patch_body() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(sphere_carrier(100, [0.0, 0.0, 0.0], 1.0));
-    b.extend(circle_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0));
-    b.extend(circle_carrier(71, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0));
-    b.extend(circle_carrier(72, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    // Each circle runs along its edge in a loop without forward links.
+    for (attr, axis) in [
+        (70, [1.0, 0.0, 0.0]),
+        (71, [0.0, 1.0, 0.0]),
+        (72, [0.0, 0.0, 1.0]),
+    ] {
+        let mut circle = circle_carrier(attr, [0.0, 0.0, 0.0], axis, 1.0);
+        circle[COMPACT_MARKER_AT] = 0x2d;
+        b.extend(circle);
+    }
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
     b.extend(coedge(30, 20, 31, 50, 0, 40, false));
     b.extend(coedge(31, 20, 32, 51, 0, 41, false));
     b.extend(coedge(32, 20, 30, 52, 0, 42, false));
-    b.extend(edge_use(40, 70));
-    b.extend(edge_use(41, 71));
-    b.extend(edge_use(42, 72));
+    // Each edge is the great circle through its vertices.
+    b.extend(edge_use(40, 72));
+    b.extend(edge_use(41, 70));
+    b.extend(edge_use(42, 71));
     b.extend(vertex_use(50, 60));
     b.extend(vertex_use(51, 61));
     b.extend(vertex_use(52, 62));
@@ -999,6 +1078,76 @@ fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
+/// The compact common header of `tag`: `attr`, an ordinal, five references
+/// and the sense marker.
+pub(crate) fn sp_curve_header(tag: u8, attr: u16) -> Vec<u8> {
+    let mut bytes = vec![0x00, tag];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 1);
+    for reference in [0, 11, 0, 0, 0] {
+        be16(&mut bytes, reference);
+    }
+    bytes.push(0x2b);
+    bytes
+}
+
+/// A two-dimensional `00 86` B-curve (attr 60, descriptor 61, arrays 62 to
+/// 64), degree 1 from `from` to `to`; `rational` stores the poles as
+/// `u·w v·w w` with weights 1 and 2.
+pub(crate) fn planar_b_curve(from: [f64; 2], to: [f64; 2], rational: bool) -> Vec<u8> {
+    let mut bytes = sp_curve_header(0x86, 60);
+    be16(&mut bytes, 61);
+    bytes.extend_from_slice(&[0x00, 0x88]);
+    be16(&mut bytes, 61);
+    be16(&mut bytes, 1);
+    be32(&mut bytes, 2);
+    be16(&mut bytes, if rational { 3 } else { 2 });
+    be32(&mut bytes, 2);
+    bytes.extend_from_slice(&[0, 0, 0, u8::from(rational), 0]);
+    for reference in [62, 63, 64] {
+        be16(&mut bytes, reference);
+    }
+    let poles = if rational {
+        vec![from[0], from[1], 1.0, to[0] * 2.0, to[1] * 2.0, 2.0]
+    } else {
+        vec![from[0], from[1], to[0], to[1]]
+    };
+    bytes.extend(f64_array(0x2d, 62, &poles));
+    bytes.extend(u16_array(63, &[2, 2]));
+    bytes.extend(f64_array(0x80, 64, &[0.0, 1.0]));
+    bytes
+}
+
+/// An `SP_CURVE` (attr 70) on `surface` naming the B-curve 60, and a bounded
+/// curve (attr 75) over `[0, 1]` with the stored ends `ends`, in metres.
+pub(crate) fn sp_curve_records(surface: u16, ends: [[f64; 3]; 2]) -> Vec<u8> {
+    let mut bytes = sp_curve_header(0x89, 70);
+    for reference in [surface, 60, 0] {
+        be16(&mut bytes, reference);
+    }
+    bef64(&mut bytes, -3.14158e13);
+    bytes.extend(sp_curve_header(0x85, 75));
+    be16(&mut bytes, 70);
+    for value in ends.into_iter().flatten().chain([0.0, 1.0]) {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+/// `coedge` bytes with `curve` as the fin's own curve, `refs[7]` (spec §7.6).
+pub(crate) fn with_fin_curve(mut coedge: Vec<u8>, curve: u16) -> Vec<u8> {
+    coedge[18..20].copy_from_slice(&curve.to_be_bytes());
+    coedge
+}
+
+/// A tolerant `00 10` edge-use: the null `1` in its curve slot and
+/// `tolerance_m` in its tolerance slot (spec §7.6).
+pub(crate) fn tolerant_edge_use(attr: u16, tolerance_m: f64) -> Vec<u8> {
+    let mut b = edge_use(attr, 1);
+    b[10..18].copy_from_slice(&tolerance_m.to_be_bytes());
+    b
+}
+
 /// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
 pub(crate) fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     framed_topology_vertex(attr, 0, [0, 0, 0, 0, point_attr], None, 0, false, false)
@@ -1294,6 +1443,9 @@ fn typed_single_face_ownership(
         typed_ref(bytes, value);
     }
     bytes.push(0x2b);
+    for _ in 0..5 {
+        typed_ref(bytes, 1);
+    }
 }
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
@@ -1367,14 +1519,27 @@ pub(crate) fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
 }
 
 pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type: u8) -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend(plane_carrier(
+    let mut b = plane_carrier(base + 100, [x, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    b.extend(owned_triangle_on(
+        base,
+        owner,
+        [[x, 0.0, 0.0], [x + 1.0, 0.0, 0.0], [x, 1.0, 0.0]],
         base + 100,
-        [x, 0.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
+        body_type,
     ));
-    b.extend(bridge_owned(base + 10, base + 20, base + 100, owner));
+    b
+}
+
+/// One triangular face on the surface carrier `surface`, in a typed body of
+/// its own. The carrier is the caller's.
+pub(crate) fn owned_triangle_on(
+    base: u16,
+    owner: u16,
+    points: [[f64; 3]; 3],
+    surface: u16,
+    body_type: u8,
+) -> Vec<u8> {
+    let mut b = bridge_owned(base + 10, base + 20, surface, owner);
     b.extend(loop_head(base + 20, base + 30, base + 10));
     b.extend(coedge(
         base + 30,
@@ -1409,16 +1574,16 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(vertex_use(base + 50, base + 60));
     b.extend(vertex_use(base + 51, base + 61));
     b.extend(vertex_use(base + 52, base + 62));
-    b.extend(world_point(base + 60, [x, 0.0, 0.0]));
-    b.extend(world_point(base + 61, [x + 1.0, 0.0, 0.0]));
-    b.extend(world_point(base + 62, [x, 1.0, 0.0]));
+    b.extend(world_point(base + 60, points[0]));
+    b.extend(world_point(base + 61, points[1]));
+    b.extend(world_point(base + 62, points[2]));
     typed_single_face_ownership(
         &mut b,
         owner,
         base + 70,
         base + 80,
         base + 10,
-        base + 100,
+        surface,
         body_type,
     );
     b

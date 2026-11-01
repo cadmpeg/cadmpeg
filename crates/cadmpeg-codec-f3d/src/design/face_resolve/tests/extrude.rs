@@ -414,6 +414,7 @@ fn target_face_group() -> DesignConstructionOperandGroup {
                 trailing_transforms: Vec::new(),
                 trailing_dual_transforms: Vec::new(),
                 trailing_flags: Vec::new(),
+                closing_flag: false,
             },
         )
         .expect("source construction frame"),
@@ -538,6 +539,7 @@ fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGr
                     trailing_transforms: Vec::new(),
                     trailing_dual_transforms: Vec::new(),
                     trailing_flags: Vec::new(),
+                    closing_flag: false,
                 },
             )
             .expect("source construction frame"),

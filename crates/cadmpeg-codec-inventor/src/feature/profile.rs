@@ -19,6 +19,7 @@ use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
 
+mod islands;
 mod membership;
 mod selection;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -432,8 +433,14 @@ impl<'a> ProfileIndex<'a> {
                 _ => {}
             }
         }
-        let neutral_ids = entities
+        let resolved_ids = entities
             .iter()
+            .filter(|entity| {
+                !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            })
             .map(SketchEntity::id)
             .collect::<std::collections::HashSet<_>>();
         let incomplete_sketches = raw_entities
@@ -448,7 +455,7 @@ impl<'a> ProfileIndex<'a> {
                 )
             })
             .filter(|entity| {
-                crate::sketch::entity_id(entity).is_none_or(|id| !neutral_ids.contains(&id))
+                crate::sketch::entity_id(entity).is_none_or(|id| !resolved_ids.contains(&id))
             })
             .filter_map(|entity| {
                 Some((
@@ -496,6 +503,37 @@ impl<'a> ProfileIndex<'a> {
         sketch: &Sketch,
         links: &[u32],
     ) -> Option<PlanarProfileRef> {
+        self.select(token, sketch_ordinal, sketch, links, false)
+    }
+
+    /// The regions of the material that the profile selections of one
+    /// extrusion, revolve, or plate bound.
+    ///
+    /// A sketch loop that no selection selects and that lies in the selected
+    /// material is covered by it. The regions then run over the faces of the
+    /// sketch loop arrangement: the exterior face, with each loop directly in
+    /// it as a hole, and one face for each unselected loop. The regions list
+    /// the selected rings alone when those faces are not exact.
+    pub(super) fn material(
+        &self,
+        token: &str,
+        sketch_ordinal: u32,
+        sketch: &Sketch,
+        links: &[u32],
+    ) -> Option<PlanarProfileRef> {
+        self.select(token, sketch_ordinal, sketch, links, true)
+    }
+
+    fn select(
+        &self,
+        token: &str,
+        sketch_ordinal: u32,
+        sketch: &Sketch,
+        links: &[u32],
+        material: bool,
+    ) -> Option<PlanarProfileRef> {
+        // A curve that does not project is a curve outside the loops.
+        let material = material && !self.incomplete_sketches.contains(&(token, sketch_ordinal));
         let frame = SketchFrame::new(sketch)?;
         if let Some(profile) =
             self.closed_spline_region(token, sketch_ordinal, sketch, &frame, links)
@@ -528,7 +566,7 @@ impl<'a> ProfileIndex<'a> {
             .iter()
             .all(|ring| ring.iter().all(|piece| piece.whole))
         {
-            self.loop_regions(sketch, &rings)
+            self.loop_regions(sketch, &rings, material)
         } else {
             trimmed_regions(sketch, &rings)
         }
@@ -595,7 +633,12 @@ impl<'a> ProfileIndex<'a> {
     }
 
     /// Whole-curve rings as regions over loops of the sketch profile table.
-    fn loop_regions(&self, sketch: &Sketch, rings: &[Vec<Piece<'a>>]) -> Option<PlanarProfileRef> {
+    fn loop_regions(
+        &self,
+        sketch: &Sketch,
+        rings: &[Vec<Piece<'a>>],
+        material: bool,
+    ) -> Option<PlanarProfileRef> {
         let mut table = sketch.profiles.iter().cloned().collect::<Vec<_>>();
         if let Some(added) = self.added.borrow().get(sketch.id.as_str()) {
             table.extend(added.iter().cloned());
@@ -630,14 +673,23 @@ impl<'a> ProfileIndex<'a> {
             .iter()
             .map(|index| self.loop_curves(table.get(*index)?))
             .collect::<Option<Vec<_>>>()?;
+        let nested = nest(&geometry)?;
         let mut regions = Vec::new();
-        for (outer, holes) in nest(&geometry)? {
+        for (outer, holes) in &nested {
             let holes = holes
-                .into_iter()
-                .map(|hole| u32::try_from(loops[hole]).ok())
+                .iter()
+                .map(|hole| u32::try_from(loops[*hole]).ok())
                 .collect::<Option<Vec<_>>>()?;
             regions
-                .push(SketchProfileRegion::loops(u32::try_from(loops[outer]).ok()?, holes).ok()?);
+                .push(SketchProfileRegion::loops(u32::try_from(loops[*outer]).ok()?, holes).ok()?);
+        }
+        let faces = if material {
+            self.material_faces(sketch, &table, &loops, &nested)
+        } else {
+            None
+        };
+        if let Some(faces) = faces {
+            regions = faces;
         }
         let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok()?;
         if table.len() > known {
@@ -787,6 +839,27 @@ fn trimmed_regions(sketch: &Sketch, rings: &[Vec<Piece<'_>>]) -> Option<PlanarPr
 /// other selected rings is a hole of the innermost ring that contains it.
 /// Each result pairs an outer ring with its holes, in source order.
 fn nest(rings: &[Vec<LoopCurve>]) -> Option<Vec<(usize, Vec<usize>)>> {
+    let contains = containment(rings)?;
+    let depth = (0..rings.len())
+        .map(|inner| contains.iter().filter(|row| row[inner]).count())
+        .collect::<Vec<_>>();
+    let mut regions = Vec::new();
+    for (outer, outer_depth) in depth.iter().enumerate() {
+        if outer_depth % 2 != 0 {
+            continue;
+        }
+        let holes = (0..rings.len())
+            .filter(|hole| depth[*hole] == outer_depth + 1 && contains[outer][*hole])
+            .collect();
+        regions.push((outer, holes));
+    }
+    Some(regions)
+}
+
+/// Whether each ring lies inside each other ring: `result[outer][inner]`.
+/// Rings that cross have no containment, and the result is unspecified for
+/// them.
+fn containment(rings: &[Vec<LoopCurve>]) -> Option<Vec<Vec<bool>>> {
     let mut contains = vec![vec![false; rings.len()]; rings.len()];
     for (inner, inner_curves) in rings.iter().enumerate() {
         for (outer, outer_curves) in rings.iter().enumerate() {
@@ -802,20 +875,7 @@ fn nest(rings: &[Vec<LoopCurve>]) -> Option<Vec<(usize, Vec<usize>)>> {
             contains[outer][inner] = encloses(outer_curves, point)?;
         }
     }
-    let depth = (0..rings.len())
-        .map(|inner| contains.iter().filter(|row| row[inner]).count())
-        .collect::<Vec<_>>();
-    let mut regions = Vec::new();
-    for (outer, outer_depth) in depth.iter().enumerate() {
-        if outer_depth % 2 != 0 {
-            continue;
-        }
-        let holes = (0..rings.len())
-            .filter(|hole| depth[*hole] == outer_depth + 1 && contains[outer][*hole])
-            .collect();
-        regions.push((outer, holes));
-    }
-    Some(regions)
+    Some(contains)
 }
 
 /// The part of one sketch curve that one wire edge runs along.

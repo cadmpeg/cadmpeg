@@ -270,6 +270,38 @@ impl SupportChart {
         }
     }
 
+    /// Apply a record translation and convert native poles to the neutral chart.
+    pub(crate) fn normalize_with_offset(
+        self,
+        pcurve: &mut PcurveNurbs,
+        offset: [f64; 2],
+        native: bool,
+    ) -> Option<()> {
+        if offset == [0.0, 0.0] {
+            return if native {
+                self.normalize(pcurve)
+            } else {
+                Some(())
+            };
+        }
+        let origin = self.neutral_point(Point2::new(0.0, 0.0));
+        let translated = self.neutral_point(Point2::new(offset[0], offset[1]));
+        pcurve
+            .try_map_control_points(|_, point| {
+                let point = point.get();
+                let result = if native {
+                    self.neutral_point(Point2::new(point.u + offset[0], point.v + offset[1]))
+                } else {
+                    Point2::new(
+                        point.u + translated.u - origin.u,
+                        point.v + translated.v - origin.v,
+                    )
+                };
+                cadmpeg_ir::units::FinitePoint2::new(result).ok_or(())
+            })
+            .ok()
+    }
+
     /// Convert `pcurve` from this native chart to the neutral chart, absent
     /// when a converted pole is not finite. An absent conversion leaves
     /// `pcurve` unchanged.

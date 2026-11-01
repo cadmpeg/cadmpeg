@@ -714,7 +714,7 @@ fn plane_envelope_positive_dict_scalar_owns_an_e3_tail() {
 }
 
 #[test]
-fn plane_envelope_positive_dict_recovery_requires_the_final_slot() {
+fn plane_envelope_positive_dict_literals_are_not_limited_to_the_final_slot() {
     let body = [
         0x0f, 0xe4, 0x99, 1, 2, 3, 4, 5, 6, 0x0d, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x0d,
     ];
@@ -722,7 +722,9 @@ fn plane_envelope_positive_dict_recovery_requires_the_final_slot() {
     payload.extend_from_slice(&body);
     payload.push(psb::token::COMPOUND_CLOSE);
 
-    assert!(plane_envelopes(&payload).is_empty());
+    let envelopes = plane_envelopes(&payload);
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(envelopes[0].scalar_tokens[2], [0x99, 1, 2, 3, 4, 5, 6]);
 }
 
 #[test]
@@ -917,10 +919,10 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
         .expect("complete frame");
     assert_eq!(
         slots,
-        [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 6.0, -12.62, 0.0]
+        [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 6.0, 12.62, 0.0]
     );
     let frame = plane_frame(&slots.map(Some));
-    assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
+    assert_eq!(frame.origin, Some([6.0, 12.62, 0.0]));
     assert_eq!(frame.u_axis(), Some([0.0, -1.0, 0.0]));
     assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }
@@ -1000,11 +1002,61 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
 }
 
 #[test]
-fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
+fn plane_local_system_close_uses_the_complete_scalar_frame() {
+    let mut payload = Vec::new();
+    for (index, value) in [0.6_f64, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6]
+        .into_iter()
+        .enumerate()
+    {
+        if value == 0.0 {
+            payload.push(if index == 4 { 0x10 } else { 0x18 });
+        } else {
+            let bytes = value.to_be_bytes();
+            payload.push(if value > 0.0 { 0x41 } else { 0x45 });
+            payload.extend_from_slice(&bytes[1..if value > 0.0 { 8 } else { 7 }]);
+        }
+    }
+    payload.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x8b, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x46, 0x20, 0, 0, 0, 0, 0, 0]);
+    let close = payload.len();
+    payload.extend_from_slice(&[
+        psb::token::COMPOUND_CLOSE,
+        0x80,
+        0x01,
+        psb::token::COMPOUND_CLOSE,
+    ]);
+    let cache = scalar::ScalarCache::default();
+    assert_ne!(
+        first_compound_close(&payload, 0, payload.len()),
+        Some(close)
+    );
+    assert_eq!(
+        crate::decode::with_service_context(|ctx| {
+            plane_local_system_compound_close(
+                ctx,
+                &payload,
+                0,
+                payload.len(),
+                &cache,
+                &mut Vec::new(),
+            )
+        })
+        .expect("bounded frame"),
+        Some(close)
+    );
+    let slots =
+        complete_plane_local_system_slots(&payload[..close], &cache).expect("complete frame");
+    assert_eq!(&slots[9..], &[4.0, 2.0, -8.0]);
+    assert!(complete_plane_local_system_slots(&payload[..=close], &cache).is_none());
+}
+
+#[test]
+fn positional_plane_frame_decodes_compact_rotation_before_null_tail() {
     let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1];
 
     let slots = complete_plane_local_system_slots(&body, &scalar::ScalarCache::default())
-        .expect("complete rank-two frame");
+        .expect("complete compact rotation");
     assert_eq!(
         slots,
         [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
@@ -1016,7 +1068,7 @@ fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
 }
 
 #[test]
-fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
+fn positional_plane_frame_classifies_compact_rotation_before_null_tail() {
     let payload = [
         7, 0x22, 4, 0x01, 0, 0, // plane row
         0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
@@ -1708,3 +1760,25 @@ fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
 }
 
 mod named_local_systems;
+
+#[test]
+fn reference_terminated_plane_envelope_keeps_its_signed_coordinate_stream() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 1, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe4]);
+    payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0xf7, 0x0c, 0xe3]);
+    let envelopes = plane_envelopes(&payload);
+    assert_eq!(envelopes.len(), 1);
+    let planes = outline_planes(&envelopes);
+    assert_eq!(planes.len(), 1);
+    assert_eq!(planes[0].origin, [0.0, 0.0, -2.0]);
+    let parameters =
+        crate::decode::with_service_context(|ctx| crate::surface::parameter_records(ctx, &payload))
+            .expect("bounded plane parameters");
+    assert!(crate::surface::positional_frame_planes(&parameters, &rows(&payload)).is_empty());
+    payload.insert(payload.len() - 3, 0x18);
+    assert!(plane_envelopes(&payload).is_empty());
+}

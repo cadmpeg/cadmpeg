@@ -51,7 +51,7 @@ use crate::test_support::smbh_geometry_test::{
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_pcurves_test::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
-    synthetic_geometry_with_ref_pcurve_smbh,
+    synthetic_geometry_with_ref_pcurve_smbh, with_pcurve_uv_offset,
 };
 use crate::test_support::smbh_surfaces_test::{
     synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh,
@@ -157,15 +157,24 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "pcurve_inline",
-            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "pcurve_ref",
-            f3d_with_smbh(&synthetic_geometry_with_ref_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_ref_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "pcurve_rational",
-            f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_rational_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "exact_curve",

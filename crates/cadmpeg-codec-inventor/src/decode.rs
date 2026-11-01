@@ -750,6 +750,42 @@ fn decode_container<'a>(
     if !ctx.container_only() {
         document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
     }
+    let composite_links = if delivered == DecodeDepth::Full {
+        crate::feature::composite::links(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+        )?
+    } else {
+        Vec::new()
+    };
+    let composite = crate::feature::composite::project(
+        ctx,
+        &feature_inventory,
+        &composite_links,
+        &active_carrier,
+        &crate::feature::body_selection::Scope {
+            metadata: &segment_meta,
+            roots: &design_inventory.model_roots,
+        },
+        &body_keys,
+        &mut ir.model,
+    )?;
+    unresolved.features = unresolved
+        .features
+        .checked_sub(composite.transferred)
+        .ok_or_else(|| {
+            CodecError::malformed("Inventor Composite projection exceeds unresolved feature count")
+        })?;
+    let composite_losses = composite.losses;
+    if !composite_links.is_empty() {
+        ir.native.namespace_mut("inventor").set_arena(
+            ctx,
+            "composite_member_links",
+            &composite_links,
+        )?;
+    }
     if delivered == DecodeDepth::Full {
         let links = crate::feature::body_selection::links(
             ctx,
@@ -757,7 +793,7 @@ fn decode_container<'a>(
             &feature_inventory,
             &design_inventory,
         )?;
-        let joined = crate::feature::body_selection::body_map(
+        let mut joined = crate::feature::body_selection::body_map(
             &feature_inventory.properties,
             &feature_inventory.kernel_entity_links,
             &links,
@@ -769,6 +805,7 @@ fn decode_container<'a>(
                 roots: &design_inventory.model_roots,
             },
         );
+        joined.extend(composite.bodies);
         crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
         if !links.is_empty() {
             ir.native
@@ -986,9 +1023,8 @@ fn decode_container<'a>(
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));
-        losses.extend(crate::feature::derived::native_tagging_loss(
-            &feature_inventory.labels,
-        ));
+        losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
+        losses.extend(composite_losses);
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
@@ -1002,8 +1038,14 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(crate::feature::delete_face::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
+        losses.extend(unresolved.edge_treatment_losses);
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);
+        losses.extend(unresolved.plate_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
             &feature_inventory.work_planes,
@@ -1098,8 +1140,22 @@ fn decode_container<'a>(
                 unresolved.sketch_construction
             )));
         }
+        losses.extend(crate::sketch::axis_distance_loss(
+            unresolved.sketch_axis_distances,
+        ));
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
+        ));
+        losses.extend(crate::sketch::curve::native_losses(
+            &sketch_inventory.entities,
+        ));
+        losses.extend(crate::sketch::curve::relation_loss(&sketch_inventory));
+        losses.extend(crate::sketch::curve::member_losses(
+            &sketch_inventory,
+            &container.rse,
+        ));
+        losses.extend(crate::sketch::spline::point_relation_loss(
+            &sketch_inventory.constraints,
         ));
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(InventorLossCode::RseStreamUnpaired.note({
@@ -1680,10 +1736,13 @@ struct UnresolvedDesign {
     feature_states: usize,
     profile_bodies: usize,
     sketch_construction: usize,
+    sketch_axis_distances: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -1758,10 +1817,13 @@ fn project_design(
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
+        sketch_axis_distances: sketches.native_axis_distances,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
+        edge_treatment_losses: features.edge_treatment_losses,
         loft_losses: features.loft_losses,
         split_losses: features.split_losses,
+        plate_losses: features.plate_losses,
         mirror_losses: features.mirror_losses,
     })
 }

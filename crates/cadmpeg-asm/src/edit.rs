@@ -73,7 +73,7 @@ pub struct NurbsCurveEdit<'a> {
 pub enum InlinePcurveEdit<'a> {
     /// A `pcurve` wrapper, which carries the native wrapper metadata.
     PcurveWrapper {
-        /// Parameter-curve geometry in the carrier's native chart.
+        /// Stored pole geometry in the carrier's native chart.
         native_geometry: &'a PcurveNurbs,
         /// Optional native periodic flag.
         periodic: Option<bool>,
@@ -81,14 +81,14 @@ pub enum InlinePcurveEdit<'a> {
         wrapper_reversed: Option<bool>,
         /// Optional four-flag native metadata tail.
         native_tail_flags: Option<[bool; 4]>,
-        /// Optional native wrapper parameter range.
-        parameter_range: Option<[f64; 2]>,
+        /// Optional native wrapper UV offset.
+        uv_offset: Option<[f64; 2]>,
         /// Optional solved-cache fit tolerance.
         fit_tolerance: Option<f64>,
     },
     /// An `intcurve` UV cache, which has no wrapper fields.
     IntcurveCache {
-        /// Parameter-curve geometry in the carrier's native chart.
+        /// Stored pole geometry in the carrier's native chart.
         native_geometry: &'a PcurveNurbs,
         /// Optional native periodic flag.
         periodic: Option<bool>,
@@ -130,10 +130,10 @@ impl<'a> InlinePcurveEdit<'a> {
 pub enum PcurveEdit<'a> {
     /// Geometry and optional metadata of an inline cache.
     Inline(InlinePcurveEdit<'a>),
-    /// The parameter interval stored by a reference wrapper.
+    /// The UV translation stored by a reference wrapper.
     Ref {
-        /// The replacement interval, when edited.
-        parameter_range: Option<[f64; 2]>,
+        /// The replacement translation, when edited.
+        uv_offset: Option<[f64; 2]>,
     },
 }
 
@@ -1041,10 +1041,10 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         match edit {
             PcurveEdit::Inline(edit) => {
-                patch_nurbs_pcurve_record(bytes, self.ref_width, record, &edit)
+                patch_nurbs_pcurve_record(bytes, self.ref_width, &self.records, record, &edit)
             }
-            PcurveEdit::Ref { parameter_range } => {
-                patch_ref_pcurve_contract(bytes, self.ref_width, record, parameter_range)
+            PcurveEdit::Ref { uv_offset } => {
+                patch_ref_pcurve_contract(bytes, self.ref_width, record, uv_offset)
             }
         }
     }
@@ -1764,17 +1764,62 @@ fn patch_nurbs_curve_record(
 enum PcurvePatchCarrier {
     Pcurve(std::ops::Range<usize>),
     Intcurve(std::ops::Range<usize>),
+    WrappedReference(std::ops::Range<usize>),
 }
 
 impl PcurvePatchCarrier {
     fn admit(
         bytes: &[u8],
         record: &Record,
+        records: &[Record],
         stream_width: RefWidth,
         edit: &InlinePcurveEdit<'_>,
     ) -> Result<Self, CodecError> {
         match (record.head(), edit) {
             ("pcurve", _) => {
+                if let Some(reference) = crate::nurbs::toks::payload_subtype_toks(record, 5, "ref")
+                {
+                    let index = match reference.interior() {
+                        [_, sab::Token::Long(index)] => usize::try_from(*index).ok(),
+                        _ => None,
+                    }
+                    .ok_or_else(|| CodecError::malformed("pcurve subtype reference is invalid"))?;
+                    let mut definitions = records.iter().flat_map(|owner| {
+                        owner
+                            .tokens
+                            .iter()
+                            .enumerate()
+                            .filter_map(move |(position, token)| {
+                                if !matches!(token, sab::Token::SubtypeOpen) {
+                                    return None;
+                                }
+                                let Some(sab::Token::Ident(name) | sab::Token::SubIdent(name)) =
+                                    owner.tokens.get(position + 1)
+                                else {
+                                    return None;
+                                };
+                                if name == "ref" {
+                                    return None;
+                                }
+                                let chunk = owner.tokens[..position]
+                                    .iter()
+                                    .filter(|token| !token.is_payload_ident())
+                                    .count();
+                                Some((owner, chunk, name))
+                            })
+                    });
+                    let scope = definitions
+                        .nth(index)
+                        .and_then(|(owner, chunk, name)| {
+                            sab::payload_subtype_range(bytes, owner, chunk, stream_width, name)
+                        })
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "pcurve subtype reference has no writable definition",
+                            )
+                        })?;
+                    return Ok(Self::WrappedReference(scope));
+                }
                 let scope =
                     sab::payload_subtype_range(bytes, record, 5, stream_width, "exp_par_cur")
                         .ok_or_else(|| {
@@ -1802,7 +1847,7 @@ impl PcurvePatchCarrier {
 
     fn scope(&self) -> &std::ops::Range<usize> {
         match self {
-            Self::Pcurve(scope) | Self::Intcurve(scope) => scope,
+            Self::Pcurve(scope) | Self::Intcurve(scope) | Self::WrappedReference(scope) => scope,
         }
     }
 }
@@ -1810,20 +1855,21 @@ impl PcurvePatchCarrier {
 fn patch_nurbs_pcurve_record(
     bytes: &mut [u8],
     stream_width: RefWidth,
+    records: &[Record],
     record: &sab::Record,
     edit: &InlinePcurveEdit<'_>,
 ) -> Result<(), CodecError> {
-    let (wrapper_reversed, native_tail_flags, parameter_range) = match edit {
+    let (wrapper_reversed, native_tail_flags, uv_offset) = match edit {
         InlinePcurveEdit::PcurveWrapper {
             wrapper_reversed,
             native_tail_flags,
-            parameter_range,
+            uv_offset,
             ..
-        } => (*wrapper_reversed, *native_tail_flags, *parameter_range),
+        } => (*wrapper_reversed, *native_tail_flags, *uv_offset),
         InlinePcurveEdit::IntcurveCache { .. } => (None, None, None),
     };
     let nurbs = edit.native_geometry();
-    let carrier = PcurvePatchCarrier::admit(bytes, record, stream_width, edit)?;
+    let carrier = PcurvePatchCarrier::admit(bytes, record, records, stream_width, edit)?;
     let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
         bytes.get(scope.clone()).ok_or_else(|| {
@@ -1858,6 +1904,17 @@ fn patch_nurbs_pcurve_record(
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
+    }
+    if let PcurvePatchCarrier::WrappedReference(_) = &carrier {
+        if let Some(reversed) = wrapper_reversed {
+            let (offset, _) = sab::payload_token(bytes, record, stream_width, 4)
+                .ok_or_else(|| CodecError::malformed("pcurve has no wrapper reversal"))?;
+            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+                return Err(CodecError::malformed("pcurve wrapper reversal is invalid"));
+            }
+            AsmEditSet::patch_boolean_at(bytes, offset, reversed)?;
+        }
+        patch_ref_pcurve_contract(bytes, stream_width, record, uv_offset)?;
     }
     if let PcurvePatchCarrier::Pcurve(_) = &carrier {
         if let Some(reversed) = wrapper_reversed {
@@ -1921,11 +1978,11 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = parameter_range {
-            for (offset, value) in suffix_offsets[4..].iter().zip(range) {
+        if let Some(translation) = uv_offset {
+            for (offset, value) in suffix_offsets[4..].iter().zip(translation) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
-                        "pcurve record {} has an incomplete parameter range",
+                        "pcurve record {} has an incomplete UV offset",
                         record.index
                     )));
                 }
@@ -1966,22 +2023,26 @@ fn patch_ref_pcurve_contract(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    parameter_range: Option<[f64; 2]>,
+    uv_offset: Option<[f64; 2]>,
 ) -> Result<(), CodecError> {
-    let Some(range) = parameter_range else {
+    let Some(translation) = uv_offset else {
         return Ok(());
     };
-    for (index, value) in [5usize, 6].into_iter().zip(range) {
+    let start = record
+        .chunk_len()
+        .checked_sub(2)
+        .ok_or_else(|| CodecError::malformed("pcurve has no UV offset"))?;
+    for (index, value) in (start..record.chunk_len()).zip(translation) {
         let (offset, _) =
             sab::payload_token(bytes, record, stream_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "ref-form pcurve record {} lacks parameter-range field {index}",
+                    "ref-form pcurve record {} lacks UV-offset field {index}",
                     record.index
                 ))
             })?;
         if bytes.get(offset) != Some(&0x06) {
             return Err(CodecError::malformed(format_args!(
-                "ref-form pcurve record {} parameter-range field {index} is not a double",
+                "ref-form pcurve record {} UV-offset field {index} is not a double",
                 record.index
             )));
         }
@@ -2383,7 +2444,7 @@ mod tests {
                 super::PcurveEdit::Inline(base),
             )
             .unwrap();
-        for (wrapper_reversed, native_tail_flags, parameter_range) in [
+        for (wrapper_reversed, native_tail_flags, uv_offset) in [
             (Some(true), None, None),
             (None, Some([true; 4]), None),
             (None, None, Some([2.0, 3.0])),
@@ -2393,7 +2454,7 @@ mod tests {
                 periodic: None,
                 wrapper_reversed,
                 native_tail_flags,
-                parameter_range,
+                uv_offset,
                 fit_tolerance: None,
             };
             let mut bytes = original.clone();

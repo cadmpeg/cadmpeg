@@ -392,6 +392,7 @@ mod tests {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 975,
                         variant: false,
+                        closing_flag: false,
                     },
                 ).unwrap(),
                 operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(

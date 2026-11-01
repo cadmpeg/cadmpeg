@@ -87,6 +87,22 @@ shape end faces that identify the active sides.
 
 **Note.** These combinations remain native and emit `fcstd/feature.revolution-not-transferred`.
 
+## REV-02. Turn sense of Part Revolution, Groove, and a reversed Revolution
+
+**Question.** Does a positive `Part::Revolution` or PartDesign Groove angle turn right-handed about
+its resolved axis, and does a PartDesign `Revolution` or Groove with `Reversed` `true` turn right-handed
+about the reversed axis?
+
+**Known.** `freecad_fcstd.md` §10 "Part `Revolution` uses `Symmetric` and `Solid`" states the turn sense
+of a PartDesign `Revolution` with `Reversed` `false`, and states that `Reversed` reverses the resolved axis.
+
+**Need.** Saved public files of each form with a partial angle, together with stored shape end faces
+that identify the side of the travel.
+
+**Conflict.** None.
+
+**Note.** A symmetric travel sweeps the same region in either sense, so it does not answer this question.
+
 ## EX-01. Concurrent index and name constraint bindings
 
 **Question.** How do concurrent index and name paths select the expression of one constraint?

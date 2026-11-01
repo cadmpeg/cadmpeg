@@ -5,6 +5,9 @@ use super::source_frame::SourceFrame;
 
 use cadmpeg_core::decode::u64_from_index;
 
+use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
+use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
+
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
@@ -544,8 +547,10 @@ pub(crate) struct DesignDimensionAnnotationFrame {
     pub(crate) record_index: u32,
     frame_length: Option<u64>,
     operands: Vec<DesignDimensionAnnotationLocus>,
-    pub(crate) entity_genesis: u64,
+    /// `EntityGenesis` origin bitfield.
+    pub(crate) entity_genesis: Option<u64>,
     annotation_bytes: Option<SourceFrame>,
+    /// Indexed parameter-owner record selecting the governed dimension.
     pub(crate) governing_owner_record_index: u32,
     return_members: Vec<NonZeroU32>,
     paired_class_tag: DesignClassTag,
@@ -575,6 +580,17 @@ impl Clone for DesignDimensionAnnotationFrame {
         }
     }
 }
+
+
+fn annotation_metadata_length(entity_genesis: Option<u64>) -> u64 {
+    if entity_genesis.is_some() {
+        u64_from_index(annotation_genesis::LEN)
+    } else {
+        u64_from_index(annotation_metadata::LEN)
+    }
+}
+
+/// Nullable annotation geometry and its dimension role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignDimensionAnnotationLocus {
     pub(crate) geometry_record_index: Option<NonZeroU32>,
@@ -588,7 +604,7 @@ pub(crate) struct DesignDimensionAnnotationContent {
     pub(crate) class_tag: DesignClassTag,
     pub(crate) record_index: u32,
     pub(crate) operands: Vec<DesignDimensionAnnotationLocus>,
-    pub(crate) entity_genesis: u64,
+    pub(crate) entity_genesis: Option<u64>,
     pub(crate) governing_owner_record_index: u32,
     pub(crate) return_members: Vec<NonZeroU32>,
     pub(crate) paired_class_tag: DesignClassTag,
@@ -614,8 +630,8 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
     /// Ordered nullable locus operands.
     pub(crate) operands: Vec<DesignDimensionAnnotationOperand>,
     /// `EntityGenesis` origin bitfield.
-    pub(crate) entity_genesis: u64,
-    /// Opaque annotation bytes between the genesis block and governing owner.
+    pub(crate) entity_genesis: Option<u64>,
+    /// Opaque annotation bytes between the metadata block and governing owner.
     pub(crate) annotation_bytes: Vec<u8>,
     /// Byte offset of `annotation_bytes`.
     pub(crate) annotation_byte_offset: u64,
@@ -683,6 +699,15 @@ impl DesignDimensionAnnotationFrame {
         Self::try_new_inner(draft).map_err(cadmpeg_core::CodecError::malformed)
     }
     fn try_new_inner(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+        if draft.entity_genesis.is_none()
+            && !(draft.operands.len() == 3
+                && draft.operands[0].geometry_record_index.is_none()
+                && draft.operands[1..]
+                    .iter()
+                    .all(|operand| operand.geometry_record_index.is_some()))
+        {
+            return Err("empty metadata requires one null and two non-null operands".into());
+        }
         if draft.operands.is_empty() {
             return Err("operands must not be empty".into());
         }
@@ -694,7 +719,7 @@ impl DesignDimensionAnnotationFrame {
             .byte_offset
             .checked_add(24)
             .and_then(|offset| offset.checked_add(operand_bytes))
-            .and_then(|offset| offset.checked_add(57))
+            .and_then(|offset| offset.checked_add(annotation_metadata_length(draft.entity_genesis)))
             .ok_or("annotation_byte_offset overflows")?;
         let governing_owner_reference_offset = u64::try_from(draft.annotation_bytes.len())
             .ok()
@@ -781,6 +806,7 @@ impl DesignDimensionAnnotationFrame {
     pub(crate) fn operands(&self) -> &[DesignDimensionAnnotationLocus] {
         &self.operands
     }
+
     pub(crate) fn annotation_byte_offset(&self) -> Option<u64> {
         self.byte_offset?
             .checked_add(24)?
@@ -882,7 +908,8 @@ struct DesignDimensionAnnotationFrameWire {
     class_tag: String,
     record_index: u32,
     operands: Vec<DesignDimensionAnnotationOperand>,
-    entity_genesis: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_genesis: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -910,6 +937,8 @@ impl Serialize for AnnotationOperands<'_> {
         sequence.end()
     }
 }
+
+
 impl Serialize for DesignDimensionAnnotationFrame {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -921,7 +950,8 @@ impl Serialize for DesignDimensionAnnotationFrame {
             class_tag: &'a str,
             record_index: u32,
             operands: AnnotationOperands<'a>,
-            entity_genesis: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             annotation_frame: Option<&'a SourceFrame>,
             governing_owner_record_index: u32,

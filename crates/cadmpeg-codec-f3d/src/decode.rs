@@ -1824,7 +1824,7 @@ fn report_unparsed_parameter_records(
             &mut report.losses,
             F3dLossCode::ParameterRecordUnparsed,
             format_args!(
-                "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
                 records.count, records.stream
             ),
         );
@@ -3076,6 +3076,7 @@ impl<'a> F3dDecodeSession<'a> {
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
+            paths: &prereqs.design_component_paths,
             components: &local_components,
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
@@ -3203,6 +3204,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.report.losses,
                     )?;
                     crate::design::owners::attach(
+                        scan,
                         &self.native,
                         &mut self.ir.model,
                         &mut self.report.losses,
@@ -3231,6 +3233,7 @@ impl<'a> F3dDecodeSession<'a> {
                             &mut self.report.losses,
                         )?;
                         crate::design::owners::attach(
+                            scan,
                             &self.native,
                             &mut self.ir.model,
                             &mut self.report.losses,
@@ -3385,7 +3388,7 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
+    let scan = crate::f3z::observer::scan(ctx, root)?;
     match &scan.kind {
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {
@@ -3564,6 +3567,19 @@ fn decode_scanned_document<'a>(
                 };
                 continue;
             };
+            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
+            part.sketch_region_bodies_omitted = part.omit_sketch_region_bodies(
+                ctx,
+                selected_body_keys
+                    .get(blob_name)
+                    .map_or(0, std::collections::HashSet::len),
+            )?;
+            if part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty() {
+                if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+                    brep_outcome = ModelBrepOutcome::NoPhysicalModel;
+                }
+                continue;
+            }
             if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
@@ -3576,7 +3592,6 @@ fn decode_scanned_document<'a>(
             {
                 continue;
             }
-            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(ctx, keys)?;
             }
@@ -5040,6 +5055,7 @@ fn build_geometry_ir(
         persistent_design_links,
         persistent_subentity_tags,
         creation_timestamps,
+        sketch_region_bodies_omitted: _,
     } = brep;
     let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
     let mut native = F3dNative::load_inner(ctx, namespace)?;
@@ -5164,6 +5180,16 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
                 "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
              cached 3D B-spline block.",
                 s.nurbs_curves
+            ),
+        );
+    }
+    if decoded.sketch_region_bodies_omitted > 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::SketchRegionBodyOmitted,
+            format_args!(
+                "{} sketch-region body record(s) of a keyless BREP blob are not model bodies and stay in the BREP stream.",
+                decoded.sketch_region_bodies_omitted
             ),
         );
     }

@@ -1097,6 +1097,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                     depth: 7.5,
                     entity_genesis: point.entity_genesis(),
                     padded_paired_reference: true,
+                    derived_type: false,
                     companion_prefix_present_zero: true,
                     persistent_id,
                     flags: [true, false, false, true, true, false, true, false],
@@ -1150,6 +1151,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                     depth: 7.5,
                     entity_genesis: point.entity_genesis(),
                     padded_paired_reference: true,
+                    derived_type: false,
                     companion_prefix_present_zero: true,
                     persistent_id: std::num::NonZeroU64::new(point.persistent_id().unwrap())
                         .unwrap(),

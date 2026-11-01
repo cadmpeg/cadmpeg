@@ -71,6 +71,7 @@ fn split_face_case() -> (
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1052,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -273,6 +274,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_052,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

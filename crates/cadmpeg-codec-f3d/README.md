@@ -68,7 +68,17 @@ Unreachable members add no decode charges. If a changed budget alters optional
 history enrichment, a charge refuses, or derived address spaces need rebinding,
 composition runs that member through the same decoder with the current budget.
 This keeps the output and resource refusal site independent of arrival order.
-There is no progress callback; callers count completed member results.
+Install a thread-local observer with `observe_f3z_members`. Its
+`F3zMemberObserver` callbacks bracket `F3zPhase::Scan`, `Classify` and
+`SessionOpen`, then each member decode. Callers measure elapsed time between
+callbacks. The preparation callbacks have default implementations. The outer
+scan callbacks also occur for a single-document F3D input, before its kind is
+known.
+
+Classification inflates and scans each F3D member once. The same pass reads the
+dialect layers, the member references and the placement role. The session keeps
+those owned facts, charged as entities, and drops the scan. Opening the member
+list reads no member again.
 
 The session retains the compressed source archive and directory metadata.
 Member scans use temporary arenas. Reopened scans preserve their original

@@ -46,7 +46,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
     ]);
     let values = operands::plate(
         &fixture.plate,
-        &fixture.style,
+        Some(&fixture.style),
         |r| fixture.property(r),
         Fixture::length,
         Fixture::direction,

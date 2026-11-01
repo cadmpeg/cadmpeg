@@ -46,6 +46,8 @@ pub(crate) struct DecodedComponentOccurrences {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Occurrences that two or more component-path carriers name.
     pub(crate) ambiguous_current_poses: usize,
+    /// Component-path carriers whose elements are all local records.
+    pub(crate) paths: Vec<crate::records::component_path::DesignComponentPath>,
 }
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
@@ -56,6 +58,7 @@ pub(crate) fn decode_component_occurrences(
     let mut superseded = 0;
     let mut losses = Vec::new();
     let mut ambiguous_current_poses = 0;
+    let mut paths = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -63,7 +66,7 @@ pub(crate) fn decode_component_occurrences(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        let (frames, typed_frames, poses) =
+        let (frames, typed_frames, poses, path_carriers) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
                 let meta_name = format!(
                     "{}MetaStream.dat",
@@ -78,9 +81,10 @@ pub(crate) fn decode_component_occurrences(
                     crate::metastream::primary_record_frames(&meta, bytes.len())?,
                     occurrence_frames(bytes, &meta)?,
                     crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
+                    crate::xref::component_path_carriers(bytes, &meta, Some(magic))?,
                 )
             } else {
-                (Vec::new(), Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
             };
         let typed_primary = typed_frames
             .iter()
@@ -128,6 +132,7 @@ pub(crate) fn decode_component_occurrences(
         }
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
+        paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
         occurrences.extend(stream_occurrences);
     }
     occurrences.sort_by(|a, b| a.id.cmp(&b.id));
@@ -137,7 +142,64 @@ pub(crate) fn decode_component_occurrences(
         superseded,
         losses,
         ambiguous_current_poses,
+        paths,
     })
+}
+
+/// The native component paths of one Design stream. An element is an
+/// occurrence when a decoded carrier has its record index, a component when a
+/// decoded carrier names it as its definition, and otherwise unclassified.
+fn component_paths(
+    scope: &str,
+    occurrences: &[DesignComponentOccurrence],
+    carriers: Vec<crate::xref::ComponentPathCarrier>,
+) -> Vec<crate::records::component_path::DesignComponentPath> {
+    use crate::records::component_path::{
+        ComponentPathTransform, DesignComponentPath, DesignComponentPathElement,
+        DesignComponentPathElementKind as Kind,
+    };
+    let occurrence_records = occurrences
+        .iter()
+        .map(|occurrence| u64::from(occurrence.record_index))
+        .collect::<std::collections::BTreeSet<_>>();
+    let component_records = occurrences
+        .iter()
+        .map(|occurrence| occurrence.component_record_index)
+        .collect::<std::collections::BTreeSet<_>>();
+    carriers
+        .into_iter()
+        .filter_map(|carrier| {
+            let transform = carrier
+                .transform
+                .map(ComponentPathTransform::try_from)
+                .transpose()
+                .ok()?;
+            Some(DesignComponentPath {
+                id: format!(
+                    "{scope}:design-component-path#{}",
+                    carrier.carrier_record_index
+                ),
+                carrier_record_index: carrier.carrier_record_index,
+                elements: carrier
+                    .elements
+                    .into_iter()
+                    .map(|(record_index, discriminator)| DesignComponentPathElement {
+                        record_index,
+                        kind: if occurrence_records.contains(&record_index) {
+                            Kind::Occurrence
+                        } else if component_records.contains(&record_index) {
+                            Kind::Component
+                        } else {
+                            Kind::Other
+                        },
+                        discriminator,
+                    })
+                    .collect(),
+                transform,
+                frame_bytes: carrier.frame_bytes.into(),
+            })
+        })
+        .collect()
 }
 
 fn unproven_identity_loss(
@@ -194,7 +256,7 @@ pub(crate) fn ambiguous_current_poses_loss(
     count: usize,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (count != 0).then(|| crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseAmbiguous.note(format!(
-        "{count} local component occurrence(s) are named by two or more component-path carriers; they keep their stored placement"
+        "{count} local component occurrence(s) are named by two or more component-path carriers; they keep their stored placement unless a component-path pose resolves them to one expanded occurrence"
     )))
 }
 
@@ -992,6 +1054,7 @@ fn root_instance_component(bytes: &[u8], start: usize, end: usize) -> Option<u64
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
+    mod component_path;
     mod current_pose;
     mod original;
 

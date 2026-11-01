@@ -41,24 +41,28 @@ impl ParsingState<'_> {
 }
 
 fn source_meta(
-    global: &global::ResolvedGlobal,
+    global: &global::GlobalRecord,
     representation: Representation,
     primary: cadmpeg_core::dialect::DialectMatch,
 ) -> SourceMeta {
-    let mut attributes = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_const!("representation"),
-            representation.as_str().to_owned(),
-        ),
-        (
-            cadmpeg_core::nonblank_const!("parameter_delimiter"),
-            char::from(global.parameter_delimiter).to_string(),
-        ),
-        (
-            cadmpeg_core::nonblank_const!("record_delimiter"),
-            char::from(global.record_delimiter).to_string(),
-        ),
-    ]);
+    let mut attributes = BTreeMap::from([(
+        cadmpeg_core::nonblank_const!("representation"),
+        representation.as_str().to_owned(),
+    )]);
+    let global::GlobalRecord::Resolved(global) = global else {
+        return SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            attributes,
+        );
+    };
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("parameter_delimiter"),
+        char::from(global.parameter_delimiter).to_string(),
+    );
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("record_delimiter"),
+        char::from(global.record_delimiter).to_string(),
+    );
     if let Some(value) = global.units_name() {
         attributes.insert(
             cadmpeg_core::nonblank_const!("native_units"),
@@ -257,7 +261,7 @@ fn mark_quarantined_placements(
 
 struct PhysicalParse<'a> {
     scan: card::CardScan<'a>,
-    global: global::ResolvedGlobal,
+    global: global::GlobalRecord,
     global_losses: Vec<LossNote>,
     directory: Vec<directory::DirectoryEntry>,
     quarantined_directory: Vec<directory::QuarantinedDirectoryRecord>,
@@ -287,6 +291,16 @@ impl<'a> PhysicalParse<'a> {
             Some(source) => card::scan_source(source)?,
             None => card::scan(bytes)?,
         };
+        if scan.source_end.ends_before_directory() {
+            if let global::GlobalParse::Unfinished(error) = global::parse_if_complete(&scan)? {
+                let mut unfinished = Self::unfinished(scan);
+                unfinished.global_losses.push(
+                    IgesLossCode::GlobalNoncanonicalFraming
+                        .note(format!("IGES Global is unfinished: {error}")),
+                );
+                return Ok(unfinished);
+            }
+        }
         let (prepared_global, prepared_directory, prepared_parameters) = match compressed {
             Some(admission) => (
                 Some((admission.global, admission.losses)),
@@ -328,6 +342,7 @@ impl<'a> PhysicalParse<'a> {
             let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
             (directory, quarantined, Vec::new())
         };
+
         global_losses.extend(directory::metadata_losses(&directory));
         let parameter::ParameterAssembly {
             records: parameters,
@@ -362,7 +377,7 @@ impl<'a> PhysicalParse<'a> {
         framing_recoveries.merge(parameter_recoveries)?;
         Ok(Self {
             scan,
-            global,
+            global: global::GlobalRecord::Resolved(Box::new(global)),
             global_losses,
             directory,
             quarantined_directory,
@@ -376,6 +391,25 @@ impl<'a> PhysicalParse<'a> {
         })
     }
 
+    fn unfinished(scan: card::CardScan<'a>) -> Self {
+        let mut scan = scan;
+        let framing_recoveries = std::mem::take(&mut scan.recoveries);
+        Self {
+            scan,
+            global: global::GlobalRecord::Unfinished,
+            global_losses: Vec::new(),
+            directory: Vec::new(),
+            quarantined_directory: Vec::new(),
+            parameters: Vec::new(),
+            trailing_pointer_analysis: BTreeMap::new(),
+            quarantined_parameters: Vec::new(),
+            given_up_parameters: BTreeSet::new(),
+            framing_recoveries,
+            references: BTreeMap::new(),
+            parts: PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+        }
+    }
+
     fn admission_losses(&mut self) -> Vec<LossNote> {
         let mut losses = Vec::new();
         if let Some(loss) = crate::dialect::dialect_loss(&self.global) {
@@ -383,16 +417,18 @@ impl<'a> PhysicalParse<'a> {
         }
 
         losses.extend(std::mem::take(&mut self.global_losses));
-        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
-            let post_terminate_count = self.scan.post_terminate_count();
-            if post_terminate_count > 0 {
-                let message = format!(
-                    "IGES 4.0 requires the Terminate Section to be the last physical line; \
-                     retained {post_terminate_count} trailing record(s) as source data"
-                );
-                let code = IgesLossCode::GlobalNoncanonicalFraming;
+        if let global::GlobalRecord::Resolved(global) = &self.global {
+            if matches!(global.global_table(), global::GlobalTable::V4_0) {
+                let post_terminate_count = self.scan.post_terminate_count();
+                if post_terminate_count > 0 {
+                    let message = format!(
+                        "IGES 4.0 requires the Terminate Section to be the last physical line; \
+                         retained {post_terminate_count} trailing record(s) as source data"
+                    );
+                    let code = IgesLossCode::GlobalNoncanonicalFraming;
 
-                losses.push(code.note(message));
+                    losses.push(code.note(message));
+                }
             }
         }
         losses
@@ -642,29 +678,34 @@ fn decode_with_occurrence_limits(
         ambiguous_parameter_boundaries,
         overdeclared_counts,
         unstatable_attribute_tables,
-    } = native::store(
-        &mut ir,
-        native::NativeStoreInputs {
-            scan: &parse.scan,
-            directory: &parse.directory,
-            parameters: &parse.parameters,
-            trailing_pointer_analysis: &parse.trailing_pointer_analysis,
-            quarantine: native::QuarantinedRecords {
-                directory: &parse.quarantined_directory,
-                parameters: &parse.quarantined_parameters,
+    } = match &parse.global {
+        global::GlobalRecord::Resolved(global) => native::store(
+            &mut ir,
+            native::NativeStoreInputs {
+                scan: &parse.scan,
+                directory: &parse.directory,
+                parameters: &parse.parameters,
+                trailing_pointer_analysis: &parse.trailing_pointer_analysis,
+                quarantine: native::QuarantinedRecords {
+                    directory: &parse.quarantined_directory,
+                    parameters: &parse.quarantined_parameters,
+                },
+                structure_admitted: semantic_structure_admitted,
+                sequences: &projection.sequences,
+                boundary_vertex_derivations: &projection.boundary_vertex_derivations,
             },
-            structure_admitted: semantic_structure_admitted,
-            sequences: &projection.sequences,
-            boundary_vertex_derivations: &projection.boundary_vertex_derivations,
-        },
-        &mut parse.references,
-        &parse.global,
-        native::ProductOccurrenceLimits::new(
+            &mut parse.references,
+            global.as_ref(),
+            native::ProductOccurrenceLimits::new(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
         ),
         ctx,
-    )?;
+    )?,
+        global::GlobalRecord::Unfinished => {
+            native::store_physical_cards(&mut ir, &parse.scan, ctx)?
+        }
+    };
     source_fidelity.append(part_fidelity)?;
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
@@ -789,7 +830,10 @@ fn decode_with_occurrence_limits(
     if !untyped_records.is_empty() {
         source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
     }
-    let global_table = parse.global.global_table();
+    let global_table = match &parse.global {
+        global::GlobalRecord::Resolved(global) => Some(global.global_table()),
+        global::GlobalRecord::Unfinished => None,
+    };
     if !ctx.container_only() {
         let mut attributed_before_generic = attributed_sequences(&losses);
         attributed_before_generic.extend(&parse.given_up_parameters);
@@ -800,13 +844,15 @@ fn decode_with_occurrence_limits(
                 .filter(|record| record.has_absent_fields())
                 .map(|record| record.directory_sequence),
         );
-        append_generic_losses(
-            &mut losses,
-            &parse.directory,
-            &projection,
-            &attributed_before_generic,
-            global_table,
-        );
+        if let Some(table) = global_table {
+            append_generic_losses(
+                &mut losses,
+                &parse.directory,
+                &projection,
+                &attributed_before_generic,
+                table,
+            );
+        }
         reject_invalid_semantic_ir(ctx, &ir)?;
     }
     let mut notes = directory::summary_notes(&parse.directory);

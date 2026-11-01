@@ -394,6 +394,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
                 unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
             },
         ],
+        sketch_region_bodies_omitted: 0,
     };
 
     with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([10])))
@@ -565,4 +566,246 @@ fn source_curve_keys_retain_distinct_qualifiers_in_every_payload_form() {
             assert_eq!((payload.sketch_curve_id, payload.ref_b), (149, qualifier));
         }
     }
+}
+
+/// Topology of one body in a sketch-region fixture.
+#[derive(Clone, Copy)]
+struct RegionBody {
+    edges: u32,
+    linked_edges: u32,
+    coedge_links: bool,
+    face_attribute: bool,
+    wire_edge: bool,
+}
+
+const SKETCH_REGION: RegionBody = RegionBody {
+    edges: 4,
+    linked_edges: 4,
+    coedge_links: false,
+    face_attribute: false,
+    wire_edge: false,
+};
+
+const SOLID: RegionBody = RegionBody {
+    edges: 4,
+    linked_edges: 0,
+    coedge_links: true,
+    face_attribute: true,
+    wire_edge: false,
+};
+
+fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
+    let mut asm = AsmBrep::default();
+    let mut links = Vec::new();
+    for (ordinal, spec) in (0_u32..).zip(bodies) {
+        let entity = |slot: u32, index: u32| {
+            format!(
+                "f3d:brep:entity#{}",
+                1000 * (ordinal + 1) + 100 * slot + index
+            )
+        };
+        let body = entity(0, 1);
+        let region = entity(1, 1);
+        let shell = entity(2, 1);
+        let face = entity(3, 1);
+        let ring = entity(4, 1);
+        asm.bodies.push(
+            serde_json::from_value(serde_json::json!({"id": body, "regions": [region]})).unwrap(),
+        );
+        asm.regions.push(Region {
+            native_ref: None,
+            id: RegionId::mint(region.clone()).unwrap(),
+            body: BodyId::mint(body.clone()).unwrap(),
+            shells: vec![cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap()],
+        });
+        asm.shells.push(
+            cadmpeg_ir::topology::Shell::new(
+                cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap(),
+                RegionId::mint(region).unwrap(),
+                vec![FaceId::mint(face.clone()).unwrap()],
+                if spec.wire_edge {
+                    vec![cadmpeg_ir::ids::EdgeId::mint(entity(5, 90)).unwrap()]
+                } else {
+                    Vec::new()
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        asm.faces.push(
+            serde_json::from_value(serde_json::json!({
+                "id": face, "shell": shell, "surface": entity(6, 1), "sense": "forward",
+                "loops": {"classification": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
+            }))
+            .unwrap(),
+        );
+        let coedges = (0..spec.edges)
+            .map(|index| entity(7, index))
+            .collect::<Vec<_>>();
+        if spec.edges != 0 {
+            asm.loops.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges},
+                }))
+                .unwrap(),
+            );
+        }
+        for index in 0..spec.edges {
+            let edge = entity(5, index);
+            asm.coedges.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": coedges[usize::try_from(index).unwrap()], "owner_loop": ring, "edge": edge,
+                    "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward",
+                }))
+                .unwrap(),
+            );
+            let link_target = if index < spec.linked_edges {
+                Some(AttributeTarget::Edge(
+                    cadmpeg_ir::ids::EdgeId::mint(edge).unwrap(),
+                ))
+            } else if spec.coedge_links {
+                Some(AttributeTarget::Coedge(
+                    cadmpeg_ir::ids::CoedgeId::mint(
+                        coedges[usize::try_from(index).unwrap()].clone(),
+                    )
+                    .unwrap(),
+                ))
+            } else {
+                None
+            };
+            if let Some(target) = link_target {
+                links.push(SketchCurveLink {
+                    id: format!("link-{ordinal}-{index}"),
+                    target,
+                    sketch_curve_id: 1,
+                    ref_b: 0,
+                    sense: None,
+                    role: 0,
+                    closure: 0,
+                });
+            }
+        }
+        if spec.face_attribute {
+            asm.attributes.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": entity(8, 1), "target": {"kind": "face", "id": face},
+                    "name": "generic_tag_attrib_def", "values": [],
+                }))
+                .unwrap(),
+            );
+        }
+        asm.body_native_keys.push(BodyNativeKey {
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            body: BodyId::mint(body).unwrap(),
+            record_index: ordinal + 1,
+            body_ordinal: ordinal,
+            source_brep: Some("BREP.source.smb".into()),
+            asm_body_key: key,
+        });
+    }
+    Brep {
+        asm,
+        sketch_curve_links: links,
+        ..Brep::default()
+    }
+}
+
+#[test]
+fn sketch_regions_leave_a_keyless_blob_and_selectors_count_the_remaining_bodies() {
+    let mut brep = sketch_region_brep(&[SKETCH_REGION, SOLID, SKETCH_REGION, SOLID], None);
+    assert_eq!(
+        with_context(|ctx| brep.omit_sketch_region_bodies(ctx, 2)).unwrap(),
+        2
+    );
+    let ordinals = brep
+        .asm
+        .body_native_keys
+        .iter()
+        .map(|key| (key.record_index, key.body_ordinal))
+        .collect::<Vec<_>>();
+    assert_eq!(ordinals, [(2, 0), (4, 1)]);
+    assert_eq!(brep.asm.bodies.len(), 2);
+    assert_eq!(brep.asm.faces.len(), 2);
+    let selected = brep.body_selectors_for(&HashSet::from([0])).unwrap();
+    assert_eq!(
+        selected.keys().map(BodyId::as_str).collect::<Vec<_>>(),
+        ["f3d:brep:entity#2001"]
+    );
+    assert!(brep
+        .sketch_curve_links
+        .iter()
+        .all(|link| matches!(link.target, AttributeTarget::Coedge(_))));
+}
+
+#[test]
+fn only_a_keyless_body_with_fully_linked_edges_and_unattributed_faces_is_a_sketch_region() {
+    let near_misses = [
+        // A planar surface made from a Sketch: linked edges and a face attribute.
+        RegionBody {
+            face_attribute: true,
+            ..SKETCH_REGION
+        },
+        // One edge stores no link.
+        RegionBody {
+            linked_edges: 3,
+            ..SKETCH_REGION
+        },
+        // Links on coedges only, the form a solid made from a Sketch stores.
+        RegionBody {
+            linked_edges: 0,
+            coedge_links: true,
+            ..SKETCH_REGION
+        },
+        // No edges to prove the form.
+        RegionBody {
+            edges: 0,
+            linked_edges: 0,
+            ..SKETCH_REGION
+        },
+        // A wire member is outside the region form.
+        RegionBody {
+            wire_edge: true,
+            ..SKETCH_REGION
+        },
+    ];
+    for (case, spec) in near_misses.into_iter().enumerate() {
+        let mut brep = sketch_region_brep(&[spec, SOLID], None);
+        assert_eq!(
+            with_context(|ctx| brep.omit_sketch_region_bodies(ctx, 1)).unwrap(),
+            0,
+            "{case}"
+        );
+        assert_eq!(brep.asm.bodies.len(), 2, "{case}");
+        assert_eq!(brep.asm.body_native_keys[1].body_ordinal, 1, "{case}");
+    }
+    // A stored body key selects by key, so the form has no effect.
+    let mut keyed = sketch_region_brep(&[SKETCH_REGION, SOLID], Some(7));
+    assert_eq!(
+        with_context(|ctx| keyed.omit_sketch_region_bodies(ctx, 1)).unwrap(),
+        0
+    );
+    assert_eq!(keyed.asm.bodies.len(), 2);
+    // The body map must hold one selector per remaining body.
+    for selector_count in [0, 2] {
+        let mut unmatched = sketch_region_brep(&[SKETCH_REGION, SOLID], None);
+        assert_eq!(
+            with_context(|ctx| unmatched.omit_sketch_region_bodies(ctx, selector_count)).unwrap(),
+            0,
+            "{selector_count}"
+        );
+        assert_eq!(unmatched.asm.bodies.len(), 2, "{selector_count}");
+    }
+}
+
+#[test]
+fn a_blob_of_only_sketch_regions_keeps_no_model_body() {
+    let mut brep = sketch_region_brep(&[SKETCH_REGION], None);
+    assert_eq!(
+        with_context(|ctx| brep.omit_sketch_region_bodies(ctx, 0)).unwrap(),
+        1
+    );
+    assert!(brep.asm.bodies.is_empty());
+    assert!(brep.asm.body_native_keys.is_empty());
 }

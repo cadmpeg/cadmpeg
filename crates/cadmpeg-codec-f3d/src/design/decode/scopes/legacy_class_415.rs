@@ -21,20 +21,20 @@ enum OneSidedVariant {
 pub(crate) fn is_symmetric_distance_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
     class_tag == "415"
         && paired_class_tag == "265"
         && reference_count_delta == u64_from_index(symmetric::REFERENCE_COUNT)
-        && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
+        && matches!((frame_length, reference_member_count), (Some(447), 5) | (Some(469), 7))
 }
 
 fn variant(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> Option<OneSidedVariant> {
@@ -42,8 +42,8 @@ fn variant(
         return None;
     }
     match (frame_length, reference_count_delta, reference_member_count) {
-        (481, 278, 9) => Some(OneSidedVariant::ToFace),
-        (449, 268, 7) => Some(OneSidedVariant::Distance),
+        (Some(481), 278, 9) => Some(OneSidedVariant::ToFace),
+        (Some(449), 268, 7) => Some(OneSidedVariant::Distance),
         _ => None,
     }
 }
@@ -51,7 +51,7 @@ fn variant(
 pub(crate) fn is_one_sided_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
@@ -80,7 +80,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
     let variant = variant(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_delta).ok()?,
         reference_members.len(),
     )?;

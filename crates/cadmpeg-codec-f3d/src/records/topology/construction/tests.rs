@@ -212,6 +212,7 @@ fn construction_group_owns_actual_member_stride_and_derives_source_role_offset()
             opaque_scalar: 0.0,
             opaque_scalar_offset: 122,
             variant: false,
+            closing_flag: false,
         },
     )
     .unwrap();

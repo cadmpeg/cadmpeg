@@ -15,17 +15,17 @@ impl TryFrom<DesignParameterOwner> for DesignParameterOwnerWire {
             class_tag: owner.class_tag().clone(),
             byte_offset: owner
                 .byte_offset()
-                .ok_or("source owner offset is unavailable")?,
+                .ok_or_else(|| "source owner offset is unavailable".to_owned())?,
             frame_length: owner
                 .frame_length()
-                .ok_or("source owner frame is unavailable")?,
+                .ok_or_else(|| "source owner frame is unavailable".to_owned())?,
             record_index: owner.record_index(),
             scope_record_index: owner.scope_record_index().unwrap_or(0),
             local_ordinal: owner.local_ordinal().unwrap_or(0),
             evaluated_value: owner.evaluated_value().get(),
             evaluated_value_offset: owner
                 .evaluated_value_offset()
-                .ok_or("source owner value offset is unavailable")?,
+                .ok_or_else(|| "source owner value offset is unavailable".to_owned())?,
             parameter_record_index: owner.parameter_record_index(),
             owned_ordinal: owner.owned_ordinal(),
             variant: owner.variant(),

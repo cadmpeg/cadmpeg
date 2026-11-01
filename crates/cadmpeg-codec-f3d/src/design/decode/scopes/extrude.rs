@@ -76,7 +76,7 @@ pub(super) fn exact_extrude_prologue(
             Some(legacy_class_415::is_symmetric_distance_layout(
                 class_tag,
                 paired_class_tag,
-                u64::try_from(frame_length).ok()?,
+                Some(u64::try_from(frame_length).ok()?),
                 u64::try_from(reference_count_delta).ok()?,
                 reference_members.len(),
             ))
@@ -201,7 +201,7 @@ pub(super) fn exact_extrude_prologue(
 pub(crate) fn is_class_296_one_sided_to_face_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
@@ -210,34 +210,34 @@ pub(crate) fn is_class_296_one_sided_to_face_layout(
         && reference_count_delta == u64_from_index(class_296_to_face::REFERENCE_COUNT)
         && matches!(
             (frame_length, reference_member_count),
-            (440, 7) | (462, 9) | (473, 10)
+            (Some(440), 7) | (Some(462), 9) | (Some(473), 10)
         )
 }
 
 pub(crate) fn is_class_296_symmetric_distance_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
         && reference_count_delta == u64_from_index(class_296_symmetric::REFERENCE_COUNT)
-        && (frame_length, reference_member_count) == (450, 7)
+        && (frame_length, reference_member_count) == (Some(450), 7)
 }
 
 pub(crate) fn is_class_296_two_sided_to_faces_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
         && reference_count_delta == u64_from_index(class_296_two_faces::REFERENCE_COUNT)
-        && (frame_length, reference_member_count) == (536, 13)
+        && (frame_length, reference_member_count) == (Some(536), 13)
 }
 
 /// Whether `scope` is the class-296/261 two-sided to-faces `Extrude` frame.
@@ -255,27 +255,27 @@ pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope
 pub(crate) fn is_class_296_legacy_one_sided_to_face_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
         && reference_count_delta == u64_from_index(class_296_legacy_to_face::REFERENCE_COUNT)
-        && (frame_length, reference_member_count) == (515, 12)
+        && (frame_length, reference_member_count) == (Some(515), 12)
 }
 
 pub(crate) fn is_class_296_legacy_one_sided_distance_layout(
     class_tag: &str,
     paired_class_tag: &str,
-    frame_length: u64,
+    frame_length: Option<u64>,
     reference_count_delta: u64,
     reference_member_count: usize,
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
         && reference_count_delta == u64_from_index(class_296_legacy_distance::REFERENCE_COUNT)
-        && (frame_length, reference_member_count) == (483, 10)
+        && (frame_length, reference_member_count) == (Some(483), 10)
 }
 
 fn exact_compact_shifted_extrude_prologue(
@@ -430,7 +430,7 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
     if !is_class_296_one_sided_to_face_layout(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
@@ -516,7 +516,7 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
     if !is_class_296_symmetric_distance_layout(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
@@ -604,7 +604,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     if !is_class_296_two_sided_to_faces_layout(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
@@ -733,7 +733,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     let (is_to_face, face_extend, first_extent) = if is_class_296_legacy_one_sided_to_face_layout(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
@@ -741,7 +741,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     } else if is_class_296_legacy_one_sided_distance_layout(
         class_tag,
         paired_class_tag,
-        u64::try_from(frame_length).ok()?,
+        Some(u64::try_from(frame_length).ok()?),
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     ) {
@@ -1810,7 +1810,7 @@ fn exact_legacy_shifted_extrude_prologue(
                     )
                 }
                 252 | 262 | 263 | 692 => (106, 110),
-                272 | 283 => (
+                272 | 276 | 283 => (
                     offset_lane::FIRST_SIDE_EXTENT,
                     offset_lane::SECOND_SIDE_EXTENT,
                 ),

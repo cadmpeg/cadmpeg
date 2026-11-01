@@ -60,6 +60,7 @@ fn group() -> DesignConstructionOperandGroup {
                 opaque_scalar: 0.5,
                 opaque_scalar_offset: 1132,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),

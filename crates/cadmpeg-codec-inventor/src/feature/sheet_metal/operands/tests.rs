@@ -2,10 +2,12 @@
 use super::*;
 use crate::test_support::sheet_metal::Fixture;
 
-fn projected(fixture: &Fixture) -> Option<PlateOperands> {
+type Edit = (u32, fn(&mut PmDcFeaturePropertyKind), PlateRefusal);
+
+fn projected(fixture: &Fixture) -> Result<PlateOperands, PlateRefusal> {
     plate(
         &fixture.plate,
-        &fixture.style,
+        Some(&fixture.style),
         |reference| fixture.property(reference),
         Fixture::length,
         Fixture::direction,
@@ -57,7 +59,7 @@ fn native_control_values_outside_the_admitted_branch_block_projection() {
                 }
             });
         }
-        assert!(projected(&fixture).is_none());
+        assert!(projected(&fixture).is_err());
     }
     let mut fixture = Fixture::new();
     fixture.edit(5, |kind| {
@@ -68,7 +70,7 @@ fn native_control_values_outside_the_admitted_branch_block_projection() {
             *states = cadmpeg_ir::native::bytes::NativeBytes::new([1, 0, 1]);
         }
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
 }
 
 #[test]
@@ -82,7 +84,7 @@ fn equal_numeric_forms_in_different_domains_do_not_select_style_default() {
             *type_value = 304;
         }
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
     let mut fixture = Fixture::new();
     fixture.edit(31, |kind| {
         if let PmDcFeaturePropertyKind::SheetMetal {
@@ -92,12 +94,12 @@ fn equal_numeric_forms_in_different_domains_do_not_select_style_default() {
             *value = 0;
         }
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
 }
 
 #[test]
 fn relief_and_transition_booleans_require_the_pinned_true_value() {
-    assert!(projected(&Fixture::new()).is_some());
+    assert!(projected(&Fixture::new()).is_ok());
     for index in [29, 35] {
         let mut fixture = Fixture::new();
         fixture.edit(index, |kind| {
@@ -105,7 +107,7 @@ fn relief_and_transition_booleans_require_the_pinned_true_value() {
                 *value = false;
             }
         });
-        assert!(projected(&fixture).is_none());
+        assert!(projected(&fixture).is_err());
     }
 }
 
@@ -154,7 +156,7 @@ fn attachment_extension_requires_the_repeated_operands_and_pinned_state() {
             },
         },
     ));
-    assert!(projected(&fixture).is_some());
+    assert!(projected(&fixture).is_ok());
     fixture.edit(47, |kind| {
         if let PmDcFeaturePropertyKind::SheetMetal {
             definition: SheetMetalProperty::AttachmentState { state, .. },
@@ -163,7 +165,7 @@ fn attachment_extension_requires_the_repeated_operands_and_pinned_state() {
             *state = 11;
         }
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
     fixture.edit(47, |kind| {
         if let PmDcFeaturePropertyKind::SheetMetal {
             definition: SheetMetalProperty::AttachmentState { state, radius, .. },
@@ -173,7 +175,7 @@ fn attachment_extension_requires_the_repeated_operands_and_pinned_state() {
             *radius = reference(26);
         }
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
 }
 
 #[test]
@@ -182,7 +184,7 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
     for index in [4, 25, 26, 27] {
         assert!(plate(
             &fixture.plate,
-            &fixture.style,
+            Some(&fixture.style),
             |r| fixture.property(r),
             |r| if r.index() == index {
                 Length::new(0.0)
@@ -193,12 +195,12 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
-        .is_none());
+        .is_err());
     }
     for index in [4, 25, 26, 27, 28, 30, 36] {
         assert!(plate(
             &fixture.plate,
-            &fixture.style,
+            Some(&fixture.style),
             |r| fixture.property(r),
             |r| if r.index() == index {
                 None
@@ -209,10 +211,10 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
-        .is_none());
+        .is_err());
         assert!(plate(
             &fixture.plate,
-            &fixture.style,
+            Some(&fixture.style),
             |r| fixture.property(r),
             |r| if r.index() == index {
                 Length::new(-1.0)
@@ -223,7 +225,7 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
-        .is_none());
+        .is_err());
     }
 }
 
@@ -258,11 +260,11 @@ fn bend_state_and_repeated_operand_mismatches_stay_native() {
 fn slot_one_is_antiparallel_to_the_first_attachment_direction() {
     use cadmpeg_ir::units::UnitVector3;
     let fixture = Fixture::new();
-    assert!(projected(&fixture).is_some());
+    assert!(projected(&fixture).is_ok());
     for stored in [UnitVector3::Z_AXIS, UnitVector3::X_AXIS] {
         assert!(plate(
             &fixture.plate,
-            &fixture.style,
+            Some(&fixture.style),
             |r| fixture.property(r),
             Fixture::length,
             |r| if r.index() == 2 {
@@ -273,7 +275,7 @@ fn slot_one_is_antiparallel_to_the_first_attachment_direction() {
             UnitVector3::Z_AXIS,
             UnitVector3::X_AXIS,
         )
-        .is_none());
+        .is_err());
     }
 }
 
@@ -281,10 +283,10 @@ fn slot_one_is_antiparallel_to_the_first_attachment_direction() {
 fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
     use cadmpeg_ir::units::UnitVector3;
     let fixture = Fixture::new();
-    assert!(projected(&fixture).is_some());
+    assert!(projected(&fixture).is_ok());
     let values = plate(
         &fixture.plate,
-        &fixture.style,
+        Some(&fixture.style),
         |r| fixture.property(r),
         Fixture::length,
         |r| match r.index() {
@@ -304,7 +306,7 @@ fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
     ] {
         assert!(plate(
             &fixture.plate,
-            &fixture.style,
+            Some(&fixture.style),
             |r| fixture.property(r),
             Fixture::length,
             |r| if r.index() == index {
@@ -315,14 +317,14 @@ fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
             UnitVector3::Z_AXIS,
             UnitVector3::X_AXIS,
         )
-        .is_none());
+        .is_err());
     }
 }
 
 #[test]
 fn construction_wire_edge_collection_and_corner_controls_are_gated() {
     use crate::test_support::sheet_metal::list;
-    assert!(projected(&Fixture::new()).is_some());
+    assert!(projected(&Fixture::new()).is_ok());
     for index in [1, 6, 8] {
         let mut fixture = Fixture::new();
         fixture.edit(index, |kind| match kind {
@@ -341,7 +343,7 @@ fn construction_wire_edge_collection_and_corner_controls_are_gated() {
             } => *value = 0,
             _ => panic!("control"),
         });
-        assert!(projected(&fixture).is_none());
+        assert!(projected(&fixture).is_err());
     }
 }
 
@@ -356,14 +358,14 @@ fn corner_values_belong_to_the_corner_feature_and_only_their_types_are_gated() {
             } => *value = 0,
             _ => panic!("corner value"),
         });
-        assert!(projected(&fixture).is_some());
+        assert!(projected(&fixture).is_ok());
         fixture.edit(index, |kind| {
             *kind = PmDcFeaturePropertyKind::ProfileSelection {
                 entity_link: crate::test_support::sheet_metal::reference(0),
                 value: 0,
             }
         });
-        assert!(projected(&fixture).is_none());
+        assert!(projected(&fixture).is_err());
     }
 }
 
@@ -392,5 +394,259 @@ fn flange_thickness_uses_the_positive_normal_for_zero_and_false_sides() {
             value: true,
         };
     });
-    assert!(projected(&fixture).is_none());
+    assert!(projected(&fixture).is_err());
+}
+
+fn first_refusal(fixture: &Fixture) -> PlateRefusal {
+    projected(fixture).expect_err("refused")
+}
+
+#[test]
+fn body_form_reads_the_same_dimensions_as_the_collection_form() {
+    let body = Fixture::body();
+    let collection = Fixture::new();
+    assert_eq!(PlateForm::of(&body.plate), Some(PlateForm::Body));
+    assert_eq!(
+        PlateForm::of(&collection.plate),
+        Some(PlateForm::Collection)
+    );
+    assert_eq!(
+        projected(&body).expect("body form"),
+        projected(&collection).expect("collection form")
+    );
+    assert!(bend(&body.plate, &body.bend, |r| body.property(r)));
+    assert!(bend(&collection.plate, &collection.bend, |r| collection
+        .property(r)));
+    assert_eq!(PlateForm::Body.result_slot(), 6);
+    assert_eq!(PlateForm::Body.bend_result_slot(), 5);
+    assert_eq!(PlateForm::Collection.result_slot(), 15);
+    assert_eq!(PlateForm::Collection.bend_result_slot(), 9);
+}
+
+#[test]
+fn body_form_requires_a_surface_body_and_null_reserved_slots() {
+    let fixture = Fixture::body();
+    for (slots, refusal) in [
+        // Slot 6 null.
+        (
+            [1, 2, 3, 4, 5, 0, 0, 6, 7, 8, 9, 10, 11, 12, 0],
+            PlateRefusal::ResultBody,
+        ),
+        // Slot 6 names a Boolean instead of a surface body.
+        (
+            [1, 2, 3, 4, 5, 0, 20, 6, 7, 8, 9, 10, 11, 12, 0],
+            PlateRefusal::ResultBody,
+        ),
+        // Slot 5 and slot 14 are reserved.
+        (
+            [1, 2, 3, 4, 5, 20, 46, 6, 7, 8, 9, 10, 11, 12, 0],
+            PlateRefusal::ReservedSlot,
+        ),
+        (
+            [1, 2, 3, 4, 5, 0, 46, 6, 7, 8, 9, 10, 11, 12, 20],
+            PlateRefusal::ReservedSlot,
+        ),
+    ] {
+        let mut changed = Fixture::body();
+        changed.plate = crate::test_support::sheet_metal::feature(100, &slots);
+        assert_eq!(first_refusal(&changed), refusal, "{slots:?}");
+    }
+    assert!(projected(&fixture).is_ok());
+}
+
+#[test]
+fn each_other_property_count_is_refused() {
+    for count in [14_usize, 16, 18] {
+        let mut slots = vec![0_u32; count];
+        slots[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
+        let mut fixture = Fixture::new();
+        fixture.plate = crate::test_support::sheet_metal::feature(100, &slots);
+        assert_eq!(first_refusal(&fixture), PlateRefusal::PropertyCount);
+        assert!(PlateForm::of_count(count).is_none());
+    }
+}
+
+#[test]
+fn the_nine_property_bend_pins_the_shared_body_and_scalar() {
+    let fixture = Fixture::body();
+    let with = |slots: &[u32]| {
+        let source = crate::test_support::sheet_metal::feature(200, slots);
+        bend(&fixture.plate, &source, |r| fixture.property(r))
+    };
+    assert!(with(&[6, 25, 4, 5, 9, 46, 7, 10, 47]));
+    // The result body differs from the plate slot 6.
+    assert!(!with(&[6, 25, 4, 5, 9, 0, 7, 10, 47]));
+    assert!(!with(&[6, 25, 4, 5, 9, 20, 7, 10, 47]));
+    // The scalar is the 17-property form's value, or a missing property.
+    assert!(!with(&[6, 25, 4, 5, 9, 46, 7, 10, 44]));
+    assert!(!with(&[6, 25, 4, 5, 9, 46, 7, 10, 0]));
+    // Another property count belongs to the other form.
+    assert!(!with(&[6, 25, 4, 5, 9, 0, 7, 10, 44, 13, 45]));
+    for slot in [0, 2, 3, 4, 7] {
+        let mut slots = [6, 25, 4, 5, 9, 46, 7, 10, 47];
+        slots[slot] = 999;
+        assert!(!with(&slots), "slot {slot}");
+    }
+    // The 17-property plate takes only the 11-property bend.
+    let collection = Fixture::new();
+    let nine = crate::test_support::sheet_metal::feature(200, &[6, 25, 4, 5, 9, 46, 7, 10, 47]);
+    assert!(!bend(&collection.plate, &nine, |r| collection.property(r)));
+    let mut changed = Fixture::body();
+    changed.edit(47, |kind| {
+        if let PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::BendControl { value, .. },
+        } = kind
+        {
+            *value = 6;
+        }
+    });
+    assert!(!bend(&changed.plate, &changed.bend, |r| changed.property(r)));
+}
+
+#[test]
+fn the_first_refused_check_follows_the_evaluation_order() {
+    let fixture = Fixture::new();
+    let run = |fixture: &Fixture, style: Option<&Style>| {
+        plate(
+            &fixture.plate,
+            style,
+            |r| fixture.property(r),
+            Fixture::length,
+            Fixture::direction,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        )
+        .expect_err("refused")
+    };
+    assert_eq!(run(&fixture, None), PlateRefusal::Style);
+    let mut other_version = Fixture::new();
+    other_version.plate = {
+        let mut payload = (*fixture.plate).clone();
+        payload.save_version_major = 19;
+        crate::record_identity::Located::new(
+            payload,
+            fixture.plate.identity.type_id.clone(),
+            fixture.plate.identity.segment_token.clone(),
+            fixture.plate.identity.record_ordinal,
+        )
+    };
+    assert_eq!(
+        run(&other_version, Some(&fixture.style)),
+        PlateRefusal::StyleVersion
+    );
+    let edits: [Edit; 6] = [
+        (
+            14,
+            |kind| {
+                if let PmDcFeaturePropertyKind::Enumeration { value, .. } = kind {
+                    *value = 1;
+                }
+            },
+            PlateRefusal::PartOperation,
+        ),
+        (
+            20,
+            |kind| {
+                if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+                    *value = true;
+                }
+            },
+            PlateRefusal::AttachmentBoolean,
+        ),
+        (
+            21,
+            |kind| {
+                if let PmDcFeaturePropertyKind::SheetMetal {
+                    definition: SheetMetalProperty::Enumeration { value, .. },
+                } = kind
+                {
+                    *value = 0;
+                }
+            },
+            PlateRefusal::AttachmentMode,
+        ),
+        (
+            29,
+            |kind| {
+                if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+                    *value = false;
+                }
+            },
+            PlateRefusal::Relief,
+        ),
+        (
+            35,
+            |kind| {
+                if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+                    *value = false;
+                }
+            },
+            PlateRefusal::Transition,
+        ),
+        (
+            12,
+            |kind| {
+                if let PmDcFeaturePropertyKind::SheetMetal {
+                    definition: SheetMetalProperty::PlateControl { value },
+                } = kind
+                {
+                    *value = 1;
+                }
+            },
+            PlateRefusal::PlateControl,
+        ),
+    ];
+    for (index, edit, refusal) in edits {
+        let mut changed = Fixture::new();
+        changed.edit(index, edit);
+        assert_eq!(first_refusal(&changed), refusal, "property {index}");
+    }
+}
+
+#[test]
+fn every_refusal_has_a_distinct_kebab_detail() {
+    let all = [
+        PlateRefusal::Style,
+        PlateRefusal::PropertyCount,
+        PlateRefusal::StyleVersion,
+        PlateRefusal::ReservedSlot,
+        PlateRefusal::PartOperation,
+        PlateRefusal::ResultBody,
+        PlateRefusal::ProfileSelection,
+        PlateRefusal::EdgeCollection,
+        PlateRefusal::CornerControl,
+        PlateRefusal::FeatureDimensions,
+        PlateRefusal::PlateControl,
+        PlateRefusal::AttachmentControl,
+        PlateRefusal::Direction,
+        PlateRefusal::PlateDirection,
+        PlateRefusal::FirstDirection,
+        PlateRefusal::SecondDirection,
+        PlateRefusal::ThicknessReference,
+        PlateRefusal::AttachmentBoolean,
+        PlateRefusal::AttachmentMode,
+        PlateRefusal::AttachmentStates,
+        PlateRefusal::AttachmentExtension,
+        PlateRefusal::Relief,
+        PlateRefusal::Transition,
+        PlateRefusal::Length,
+        PlateRefusal::Side,
+        PlateRefusal::SelectionList,
+        PlateRefusal::EdgeName,
+        PlateRefusal::InputGeometry,
+        PlateRefusal::ProfileSketch,
+        PlateRefusal::Profile,
+        PlateRefusal::Result,
+        PlateRefusal::InputProducer,
+        PlateRefusal::BendPair,
+    ];
+    let details: std::collections::BTreeSet<_> =
+        all.iter().map(|refusal| refusal.detail()).collect();
+    assert_eq!(details.len(), all.len());
+    assert!(details.iter().all(|detail| {
+        !detail.is_empty()
+            && detail.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+            && !detail.starts_with('-')
+            && !detail.ends_with('-')
+    }));
 }

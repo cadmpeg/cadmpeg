@@ -564,12 +564,12 @@ pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
-pub(super) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
+pub(super) fn pcurve_uv_offset(rec: &Record) -> Option<[f64; 2]> {
     // The final two value tokens; a record may end with payload identifiers
     // (e.g. `null_curve` placeholders), which are not fields.
     let mut values = rec.chunks().rev();
     match (values.next(), values.next()) {
-        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
+        (Some(Token::Double(dv)), Some(Token::Double(du))) => Some([*du, *dv]),
         _ => None,
     }
 }

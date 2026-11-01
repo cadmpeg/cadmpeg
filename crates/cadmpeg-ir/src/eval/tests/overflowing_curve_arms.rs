@@ -21,6 +21,7 @@ use crate::geometry::{
     SolvedCurveGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+use crate::math::portable::Portable;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -907,7 +908,7 @@ fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_deri
     ));
     let t = 1.0e-7_f64;
     let lanes = |value: Vector3| {
-        assert_eq!(value.x, t.cosh());
+        assert_eq!(value.x, t.portable_cosh());
         assert!((value.y / (f64::MAX * t.sinh()) - 1.0).abs() <= 4.0 * f64::EPSILON);
         assert_eq!(value.z, 0.0);
     };

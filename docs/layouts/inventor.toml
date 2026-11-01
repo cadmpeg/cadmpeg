@@ -2715,6 +2715,113 @@ source = "spec"
 anchor = "transition_radius u32"
 
 [[record]]
+name = "pm_dc_sheet_metal_style_operand_prefix_v19"
+kind = "byte"
+section = "13.5"
+anchor = "For PmDc segment major version 19"
+size = 106
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs"
+note = "Prefix of the segment-major-19 sheet-metal style record; the record continues after this prefix."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[26]"
+source = "spec"
+anchor = "prefix bytes[26]"
+
+[[record.field]]
+name = "thickness"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "thickness u32"
+
+[[record.field]]
+name = "bend_radius"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "bend_radius u32"
+
+[[record.field]]
+name = "bend_relief_form"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "bend_relief_form u32"
+
+[[record.field]]
+name = "bend_relief_width"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "bend_relief_width u32"
+
+[[record.field]]
+name = "bend_relief_depth"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "bend_relief_depth u32"
+
+[[record.field]]
+name = "corner_relief_form"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "corner_relief_form u32"
+
+[[record.field]]
+name = "corner_relief_size"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "corner_relief_size u32"
+
+[[record.field]]
+name = "seam_gap"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "seam_gap u32"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "minimum_remnant u32"
+
+[[record.field]]
+name = "option"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "option u32"
+
+[[record.field]]
+name = "values"
+offset = 66
+type = "u32[8]"
+source = "spec"
+anchor = "values u32[8]"
+
+[[record.field]]
+name = "transition_form"
+offset = 98
+type = "u32"
+source = "spec"
+anchor = "transition_form u32"
+
+[[record.field]]
+name = "transition_radius"
+offset = 102
+type = "u32"
+source = "spec"
+anchor = "transition_radius u32"
+
+[[record]]
 name = "pm_dc_loft_property_slots"
 kind = "slot"
 section = "13.2"
@@ -4243,4 +4350,151 @@ offset = 28
 type = "u32"
 source = "spec"
 anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 0
+
+[[record]]
+name = "pm_dc_work_point_fields"
+kind = "byte"
+section = "13"
+anchor = "In segment major version 19, the work-point body before its two reference lists occupies 36 bytes"
+size = 36
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "entity_flags"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`entity_flags:u32` and two u32 values"
+
+[[record.field]]
+name = "values"
+offset = 4
+type = "u32[2]"
+source = "spec"
+anchor = "segment major versions above 21 add one u32 value"
+
+[[record.field]]
+name = "origin"
+offset = 12
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values follow: the point in internal centimetres"
+
+[[record]]
+name = "pm_dc_open_cubic_curve_prefix"
+kind = "byte"
+section = "12"
+anchor = "This open form has equal primary and secondary arrays."
+size = 28
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to each curve array of the endpoint-bound open cubic form. The scalar lanes and fixed tail share the spline curve layout."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| Array form and degree | `0`, `3` |"
+value = 0
+
+[[record.field]]
+name = "degree"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| Array form and degree | `0`, `3` |"
+value = 3
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| Array tolerance | `1e-9` |"
+
+[[record.field]]
+name = "knot_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The open cubic knot vector has `knot_count = pole_count + 4`."
+
+[[record.field]]
+name = "knot_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| Knot value | `knot_count` |"
+
+[[record.field]]
+name = "scalar_width"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32 = 8"
+value = 8
+
+[[record]]
+name = "pm_dc_open_cubic_pole_prefix"
+kind = "byte"
+section = "12"
+anchor = "This open form has equal primary and secondary arrays."
+size = 24
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to the byte after the counted knot lane of the endpoint-bound open cubic form."
+
+[[record.field]]
+name = "knot_values"
+offset = 0
+type = "u32[2]"
+source = "spec"
+anchor = "| Knot values | `0, 0` |"
+
+[[record.field]]
+name = "knot_scalar_width"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "`scalar_width:u32 = 8`"
+value = 8
+
+[[record.field]]
+name = "pole_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`pole_count:u32`"
+
+[[record.field]]
+name = "pole_value"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| Pole value | `8` |"
+value = 8
+
+[[record.field]]
+name = "pole_scalar_width"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "`scalar_width:u32 = 8`"
+value = 8
+
+[[record]]
+name = "pm_dc_composite_body_set_prefix"
+kind = "byte"
+section = "13.9"
+anchor = "body-set prefix"
+size = 4
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "value u32 = 0"
 value = 0

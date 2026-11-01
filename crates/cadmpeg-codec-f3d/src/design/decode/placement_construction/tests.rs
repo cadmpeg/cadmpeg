@@ -150,3 +150,113 @@ fn placement_reader_refuses_invalid_identity_and_unbounded_reference_counts() {
         }
     });
 }
+
+#[test]
+fn placement_modern_versions_decode_explicit_and_identity_frames() {
+    use crate::test_support::placement_construction::modern_frame;
+    crate::test_support::with_decode_context(|ctx| {
+        for version in [15, 16] {
+            for identity in [false, true] {
+                let bytes = modern_frame(version, identity);
+                let view = View::over_retained(&bytes);
+                let record = super::decode_frame(ctx, "f3d:test:placement".into(), view, version)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(record.fields.identity.as_ref().unwrap().value, identity);
+                assert_eq!(record.fields.matrix.is_some(), !identity);
+                assert_eq!(record.fields.periodic_face_mode.is_some(), version == 16);
+                assert_eq!(
+                    record.fields.arc_length_for_periodic_face.is_some(),
+                    version == 15
+                );
+                assert_eq!(
+                    record.fields.extra_offset.as_ref().unwrap().local_target(),
+                    Some(100)
+                );
+                assert_eq!(record.fields.values.members[0].local_target(), Some(200));
+                assert_eq!(record.fields.ref_type.value, 3);
+                if let Some(matrix) = record.fields.matrix {
+                    assert_eq!(matrix.value.rows()[0][3], 2.0);
+                    assert_eq!(matrix.value.rows()[1][3], 3.0);
+                    assert_eq!(matrix.value.rows()[2][3], 4.0);
+                }
+                let wire = serde_json::to_value(&record).unwrap();
+                let restored: DesignPlacementConstruction =
+                    serde_json::from_value(wire.clone()).unwrap();
+                assert_eq!(restored, record);
+                for field in ["periodic_face_mode", "arc_length_for_periodic_face"] {
+                    let mut invalid = wire.clone();
+                    invalid["fields"][field] = serde_json::Value::Null;
+                    if (field == "periodic_face_mode") == (version == 16) {
+                        assert!(
+                            serde_json::from_value::<DesignPlacementConstruction>(invalid).is_err()
+                        );
+                    }
+                }
+                let mut wrong_version = wire.clone();
+                wrong_version["type_version"] =
+                    serde_json::json!(if version == 16 { 15 } else { 16 });
+                assert!(
+                    serde_json::from_value::<DesignPlacementConstruction>(wrong_version).is_err()
+                );
+                if version == 16 {
+                    let mut wrong_offset = wire.clone();
+                    wrong_offset["fields"]["periodic_face_mode"]["offset"] = serde_json::json!(47);
+                    assert!(
+                        serde_json::from_value::<DesignPlacementConstruction>(wrong_offset)
+                            .is_err()
+                    );
+                }
+                let mut invalid = wire.clone();
+                invalid["type_version"] = serde_json::json!(17);
+                assert!(serde_json::from_value::<DesignPlacementConstruction>(invalid).is_err());
+                let mut invalid = bytes.clone();
+                let identity_offset =
+                    usize::try_from(record.fields.identity.unwrap().offset).unwrap();
+                invalid[identity_offset] = 2;
+                assert!(super::decode_frame(
+                    ctx,
+                    record.id.clone(),
+                    View::over_retained(&invalid),
+                    version
+                )
+                .unwrap()
+                .is_none());
+                assert!(super::decode_frame(ctx, record.id, view, 17)
+                    .unwrap()
+                    .is_none());
+            }
+        }
+    });
+}
+
+#[test]
+fn placement_modern_registration_uses_the_same_version_gate_as_native_validation() {
+    use crate::test_support::placement_construction::{metadata, modern_frame};
+    for version in [15, 16] {
+        for identity in [false, true] {
+            let mut bytes = modern_frame(version, identity);
+            bytes[4..7].copy_from_slice(b"256");
+            let member_end = bytes.len();
+            crate::test_support::indexed_header(&mut bytes, *b"257", 10);
+            let frame = crate::metastream::PrimaryRecordFrame {
+                entity_id: 10,
+                start: 0,
+                member_end,
+                end: bytes.len(),
+            };
+            let meta = metadata(frame, version, super::TYPE_GUID, super::BASE_GUID, true);
+            let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
+            crate::test_support::with_decode_context(|ctx| {
+                crate::test_support::zip_test::with_scan(&archive, |scan| {
+                    let decoded = super::decode(ctx, scan).unwrap();
+                    assert_eq!(decoded.records.len(), 1);
+                    assert_eq!(decoded.unparsed, 0);
+                    let record = &decoded.records[0];
+                    assert_eq!(record.type_version, version);
+                    assert_eq!(record.fields.identity.as_ref().unwrap().value, identity);
+                });
+            });
+        }
+    }
+}

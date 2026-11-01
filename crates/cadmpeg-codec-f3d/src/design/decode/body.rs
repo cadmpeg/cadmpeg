@@ -11,6 +11,8 @@ use crate::design::decode::text::design_record_id;
 use crate::design::RECIPES;
 use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header;
+use crate::layout::snapshot_body_map_plain_prefix as snapshot_prefix;
+use crate::layout::snapshot_body_map_plain_tail as snapshot_tail;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
     entity_header::{DesignEntityHeader, DESIGN_MODULE_BODY},
@@ -596,10 +598,16 @@ fn snapshot_body_map_records(
                 )));
             };
             let frame = frames[frame_ordinal];
-            if View::u32_le_at(bytes, frame.start) != Some(3)
-                || bytes.get(frame.start + 4..frame.start + 7) != Some(class_tag.as_bytes())
-                || View::u64_le_at(bytes, frame.start + 7) != Some(entity)
-                || bytes.get(frame.start + 15..frame.start + 21) != Some(&[0; 6])
+            if View::u32_le_at(bytes, frame.start) != Some(snapshot_prefix::TAG_LENGTH_VALUE)
+                || bytes.get(
+                    frame.start + snapshot_prefix::CLASS_TAG
+                        ..frame.start + snapshot_prefix::ENTITY_ID,
+                ) != Some(class_tag.as_bytes())
+                || View::u64_le_at(bytes, frame.start + snapshot_prefix::ENTITY_ID) != Some(entity)
+                || bytes.get(
+                    frame.start + snapshot_prefix::RESERVED_ZERO_RUN
+                        ..frame.start + snapshot_prefix::COMPANION_REFERENCE,
+                ) != Some(snapshot_prefix::RESERVED_ZERO_RUN_VALUE.as_slice())
             {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design snapshot body-map entity {entity} has an invalid entity header"
@@ -625,9 +633,10 @@ fn parse_snapshot_body_map_frame(
     let Some(companion_entity) = entity.checked_add(1) else {
         return Ok(None);
     };
-    let Some(companion_at) = start.checked_add(21) else {
+    let Some(companion_at) = start.checked_add(snapshot_prefix::COMPANION_REFERENCE) else {
         return Ok(None);
     };
+    let mut invalid_name = false;
     for companion in local_reference_candidates(bytes, companion_at, true) {
         let reserved_count = 2 - companion.padding.trailing_zeros();
         let Some(reserved_end) = companion.end.checked_add(reserved_count) else {
@@ -685,7 +694,11 @@ fn parse_snapshot_body_map_frame(
                 crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             ) || !bytes
                 .get(container.end..reserved_end)
-                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
+                .is_some_and(|reserved| {
+                    reserved
+                        .iter()
+                        .all(|byte| *byte == snapshot_tail::RESERVED_ZERO_VALUE)
+                })
             {
                 continue;
             }
@@ -695,10 +708,12 @@ fn parse_snapshot_body_map_frame(
                 .and_then(|payload| end.checked_sub(payload))
                 .map(|remaining| remaining / 2)
             else {
+                invalid_name = true;
                 continue;
             };
             let Some((blob_name, name_end)) = lp_utf16_bounded(bytes, name_at, 0..=max_chars)
             else {
+                invalid_name = true;
                 continue;
             };
             if name_end != end
@@ -726,6 +741,11 @@ fn parse_snapshot_body_map_frame(
                 bindings,
             }));
         }
+    }
+    if invalid_name {
+        return Err(CodecError::malformed(
+            "F3D snapshot body-map basename has invalid framing",
+        ));
     }
     Ok(None)
 }
@@ -886,9 +906,24 @@ pub(crate) struct ModelBodySelection {
 pub(crate) fn design_model_selection(
     scan: &ContainerScan,
 ) -> Result<ModelBodySelection, CodecError> {
+    let mut archive_counts = HashMap::<String, usize>::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.belongs_to_design_asset(&entry.name)
+            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
+    }) {
+        let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
+        if let Some(count) = archive_counts.get_mut(basename) {
+            *count += 1;
+        } else {
+            let name = basename.to_owned();
+
+            archive_counts.insert(name, 1);
+        }
+    }
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_modern_map = false;
+    let mut saw_snapshot_map = false;
     let mut selected_maps_empty = true;
     for entry in scan
         .entries
@@ -903,7 +938,13 @@ pub(crate) fn design_model_selection(
         };
         let modern = body_map_records(bytes, &metadata)?;
         saw_modern_map |= !modern.is_empty();
-        let snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        let mut snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        saw_snapshot_map |= !snapshots.is_empty();
+        snapshots.retain(|record| {
+            !record.bindings.is_empty()
+                || record.blob_name.is_empty()
+                || archive_counts.contains_key(&record.blob_name)
+        });
         for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
                 if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
@@ -933,21 +974,7 @@ pub(crate) fn design_model_selection(
         }
     }
 
-    let mut archive_counts = HashMap::<String, usize>::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        scan.belongs_to_design_asset(&entry.name)
-            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
-    }) {
-        let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
-        if let Some(count) = archive_counts.get_mut(basename) {
-            *count += 1;
-        } else {
-            let name = basename.to_owned();
-
-            archive_counts.insert(name, 1);
-        }
-    }
-    if !saw_modern_map && carrier_counts.is_empty() {
+    if !saw_modern_map && !saw_snapshot_map && carrier_counts.is_empty() {
         let mut names = Vec::new();
         names.extend(archive_counts.into_keys());
         names.sort();
@@ -956,7 +983,7 @@ pub(crate) fn design_model_selection(
             explicitly_empty: false,
         });
     }
-    if carrier_counts != archive_counts {
+    if carrier_counts != archive_counts || archive_counts.values().any(|count| *count != 1) {
         return Err(CodecError::malformed(
             "Design body-map carriers do not classify every binary BREP entry exactly once",
         ));
@@ -1653,6 +1680,202 @@ mod tests {
             records: vec![primary_record(900, 0)],
             secondary_records: Vec::new(),
         }
+    }
+
+    fn snapshot_selection_archive(
+        carriers: &[(&str, u32)],
+        archive_names: &[&str],
+        truncate_last: bool,
+    ) -> Vec<u8> {
+        let mut bulk = Vec::new();
+        let mut records = Vec::new();
+        let mut entities = Vec::new();
+        let mut companions = Vec::new();
+        for (ordinal, (name, pair_count)) in carriers.iter().enumerate() {
+            let entity = 900 + u64_from_index(ordinal) * 10;
+            records.push((entity, u64_from_index(bulk.len())));
+            entities.push(entity);
+            companions.push(entity + 1);
+            let mut frame = snapshot_body_map_bytes_with(
+                0,
+                *pair_count,
+                name,
+                crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
+            );
+            frame[7..15].copy_from_slice(&entity.to_le_bytes());
+            frame[22..30].copy_from_slice(&(entity + 1).to_le_bytes());
+            bulk.extend(frame);
+        }
+        if truncate_last {
+            bulk.pop();
+        }
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[
+                (
+                    crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID,
+                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                    1,
+                    DESIGN_MODULE_BODY,
+                    &entities,
+                ),
+                (
+                    crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
+                    "",
+                    0,
+                    DESIGN_MODULE_BODY,
+                    &companions,
+                ),
+                (
+                    BODY_PRESENTATION_TYPE_GUID,
+                    "",
+                    0,
+                    DESIGN_MODULE_BODY,
+                    &[500],
+                ),
+                (BREP_CONTAINER_TYPE_GUID, "", 0, DESIGN_MODULE_BODY, &[700]),
+            ],
+            &records,
+        );
+        let mut names = archive_names.to_vec();
+        names.sort_unstable();
+        names.dedup();
+        let breps: Vec<_> = names.into_iter().map(|name| (name, &[0][..])).collect();
+        crate::test_support::body_map_test::f3d_with_breps_and_design(&breps, &bulk, &meta)
+    }
+
+    #[test]
+    fn snapshot_selection_classifies_each_archive_basename_once() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.first.smb", 1), ("BREP.second.smb", 1)],
+            &["BREP.first.smb", "BREP.second.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            let selection = super::design_model_selection(scan).unwrap();
+            assert_eq!(selection.blob_names, ["BREP.first.smb", "BREP.second.smb"]);
+            assert!(!selection.explicitly_empty);
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_admits_an_absent_zero_pair_blob() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.first.smb", 1), ("BREP.empty.smb", 0)],
+            &["BREP.first.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            assert_eq!(
+                super::design_model_selection(scan).unwrap().blob_names,
+                ["BREP.first.smb"]
+            );
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_retains_a_present_zero_pair_blob() {
+        let archive =
+            snapshot_selection_archive(&[("BREP.empty.smb", 0)], &["BREP.empty.smb"], false);
+        with_scan(&archive, |scan| {
+            assert_eq!(
+                super::design_model_selection(scan).unwrap().blob_names,
+                ["BREP.empty.smb"]
+            );
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_an_absent_populated_blob() {
+        let archive = snapshot_selection_archive(&[("BREP.absent.smb", 1)], &[], false);
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_an_unclassified_archive_blob() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.absent.smb", 0)],
+            &["BREP.unclassified.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_two_carriers_for_one_archive_basename() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.synthetic.smb", 1); 2],
+            &["BREP.synthetic.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_matching_duplicate_carrier_and_archive_counts() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.synthetic.smb", 1); 2],
+            &["BREP.synthetic.smb", "other/BREP.synthetic.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_a_zero_pair_duplicate_of_a_present_blob() {
+        let archive = snapshot_selection_archive(
+            &[("BREP.synthetic.smb", 1), ("BREP.synthetic.smb", 0)],
+            &["BREP.synthetic.smb"],
+            false,
+        );
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_a_truncated_absent_zero_pair_carrier() {
+        let archive = snapshot_selection_archive(&[("BREP.absent.smb", 0)], &[], true);
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn snapshot_selection_refuses_a_truncated_carrier() {
+        let archive =
+            snapshot_selection_archive(&[("BREP.synthetic.smb", 1)], &["BREP.synthetic.smb"], true);
+        with_scan(&archive, |scan| {
+            assert!(matches!(
+                super::design_model_selection(scan),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
     }
 
     #[test]

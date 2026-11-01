@@ -9,6 +9,7 @@ use super::{
     EPS_SPATIAL_LINE_LENGTH,
 };
 use crate::geometry::nurbs::NurbsError;
+use crate::math::portable::Portable;
 
 /// A condition that scaling checked sketch geometry can break.
 #[derive(Debug)]
@@ -314,8 +315,8 @@ impl SpatialSketchGeometry {
                 let first_point = first.get();
                 let second_point = second.get();
                 let distance = (second_point.x - first_point.x)
-                    .hypot(second_point.y - first_point.y)
-                    .hypot(second_point.z - first_point.z);
+                    .portable_hypot(second_point.y - first_point.y)
+                    .portable_hypot(second_point.z - first_point.z);
                 if distance <= EPS_SPATIAL_LINE_LENGTH {
                     return Err(SketchLengthScaleError::Field(
                         "spatial sketch line endpoints must be finite and separated",

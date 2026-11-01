@@ -47,7 +47,13 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
                 == DesignScopeGeneration::Extrude(DesignExtrudeFrame::ReferenceAware476))
             || (scope.class_tag.as_str() == "375"
                 && scope.paired_class_tag.as_str() == "260"
-                && matches!(scope.frame_length(), Some(477 | 481))))
+                && matches!(scope.frame_length(), Some(477 | 481)))
+            || (scope.class_tag.as_str() == "335"
+                && scope.paired_class_tag.as_str() == "266"
+                && scope.frame_length() == Some(513))
+            || (scope.class_tag.as_str() == "404"
+                && scope.paired_class_tag.as_str() == "262"
+                && scope.frame_length() == Some(535)))
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
@@ -2484,24 +2490,27 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.
-/// The 201/329-byte frames store the origin in the neutral unit directly; the
-/// `EntityGenesis`-flavor 213/341-byte frames and the member-run head record
-/// of a feature-owned sketch store it in centimetres while their sketch point
-/// and curve records carry values ten times the centimetre value, so the
-/// origin scales by ten to stay commensurate with the entities.
+/// Frames with an explicit transform store its translation in centimetres, as
+/// the `EntityGenesis`-flavor 213/341-byte frames and the member-run head
+/// record of a feature-owned sketch do, while their sketch point and curve
+/// records carry values ten times the centimetre value, so the origin scales
+/// by ten to stay commensurate with the entities. The 329-byte explicit scope
+/// frame is one of them: a sketch on the 5 mm top face of a Fusion screw head
+/// stores a translation of 0.5. The compact frame has no translation, and the
+/// 305/325 legacy frames keep the neutral unit.
 pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact
         | DesignSketchFrameForm::ScopeGenesisExplicit(_)
+        | DesignSketchFrameForm::ScopeExplicit(_)
         | DesignSketchFrameForm::MemberCompact { .. }
         | DesignSketchFrameForm::MemberTypedCompact { .. }
         | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
         DesignSketchFrameForm::Authored { .. }
         | DesignSketchFrameForm::ScopeCompact
         | DesignSketchFrameForm::ScopeLegacy305(_)
-        | DesignSketchFrameForm::ScopeLegacy325(_)
-        | DesignSketchFrameForm::ScopeExplicit(_) => 1.0,
+        | DesignSketchFrameForm::ScopeLegacy325(_) => 1.0,
     }
 }
 
@@ -2752,6 +2761,7 @@ mod tests {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
+                        closing_flag: false,
                     },
                 )
                 .expect("source construction frame"),
@@ -2854,6 +2864,7 @@ mod tests {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
+                        closing_flag: false,
                     },
                 )
                 .expect("source construction frame"),
@@ -3142,6 +3153,7 @@ mod tests {
                     trailing_transforms: Vec::new(),
                     trailing_dual_transforms: Vec::new(),
                     trailing_flags: Vec::new(),
+                    closing_flag: false,
                 },
             )
             .expect("source construction frame"),
@@ -3351,6 +3363,11 @@ mod tests {
             super::resolve_face_operand_support_candidate(&operand),
             Some(12)
         );
+        operand.recipe_references[0].candidate_faces.clear();
+        assert_eq!(
+            super::resolve_face_operand_support_candidate(&operand),
+            None
+        );
     }
 
     #[test]
@@ -3542,6 +3559,7 @@ mod tests {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
+                        closing_flag: false,
                     },
                 )
                 .expect("source construction frame"),
