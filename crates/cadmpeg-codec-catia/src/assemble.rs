@@ -14,7 +14,6 @@ use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -528,51 +527,6 @@ pub(crate) fn source_meta(
     matched: &DialectMatch,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("file_size"),
-        format_args!("{}", scan.data.len()),
-    )?;
-    if let Some(dir) = &scan.inner {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("stream_count"),
-            format_args!("{}", dir.descriptors.len()),
-        )?;
-    }
-    if let Some(brep) = &scan.brep {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("brep_stream_len"),
-            format_args!("{}", brep.len()),
-        )?;
-        let digest = sha256(brep);
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("brep_stream_sha256"),
-            format_args!("{}", LowerHex(&digest)),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("fbb_runs"),
-            format_args!("{}", scan.census.fbb_runs),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("fbb_face_rows"),
-            format_args!("{}", scan.census.fbb_face_rows),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("vertex_records"),
-            format_args!("{}", scan.census.vertex_markers),
-        )?;
-    }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("preview_count"),
-        format_args!("{}", scan.previews.len()),
-    )?;
     for (index, preview) in scan.previews.iter().enumerate() {
         resource::source_attribute(
             &mut attributes,
@@ -590,11 +544,6 @@ pub(crate) fn source_meta(
             format_args!("{}", preview.components),
         )?;
     }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("external_reference_count"),
-        format_args!("{}", scan.external_references.len()),
-    )?;
     for (index, reference) in scan.external_references.iter().enumerate() {
         resource::source_attribute(
             &mut attributes,
@@ -602,11 +551,6 @@ pub(crate) fn source_meta(
             format_args!("{}", reference.target),
         )?;
     }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("finjpl_segment_count"),
-        format_args!("{}", scan.finjpl_segments.len()),
-    )?;
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         if let Some(name) = &segment.name {
             resource::source_attribute(
@@ -1004,7 +948,6 @@ pub(crate) fn quintic_jet_pcurve(
 
 #[cfg(test)]
 mod route_tests {
-    use crate::assemble::source_meta;
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
         rational_pcurve_arc, unresolved_carrier_counts,
@@ -1640,20 +1583,6 @@ mod route_tests {
         let mut losses = Vec::new();
         super::insert_unresolved_carrier_loss(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
-    }
-
-    #[test]
-    fn source_metadata_records_the_file_size() {
-        let scan = crate::test_support::with_service_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_container::standard_catpart(),
-            )
-        })
-        .expect("scan the container");
-        let matched = crate::dialect::classify(&scan).expect("classify the dialect");
-        let source = source_meta(&scan, &matched).expect("build the source metadata");
-        assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
     }
 
     #[test]
