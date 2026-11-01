@@ -310,6 +310,7 @@ fn rectangular_parameter_document(parameters: &[DesignParameter; 4]) -> cadmpeg_
                 )
             };
             NeutralParameter {
+                product_definition: None,
                 id: crate::ids::neutral_parameter_id_parts("native", parameter.record_index),
                 owner: None,
                 ordinal: parameter.source_ordinal,
