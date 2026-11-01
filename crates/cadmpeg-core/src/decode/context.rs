@@ -15,6 +15,12 @@ use super::policy::{
 };
 use super::space::{ByteRange, SpaceId};
 use super::view::{u64_from_index, View};
+use sha2::{Digest as _, Sha256};
+
+/// SHA-256 of admitted input bytes.
+pub(crate) fn admission_sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
 
 #[derive(Clone, Copy)]
 enum AllowanceScope {
@@ -34,6 +40,11 @@ pub struct DecodeContext<'a> {
     pub(super) budget: DecodeBudget,
     pub(super) derived_spaces: Cell<usize>,
     pub(super) companions: Option<&'a dyn super::companion::Companions>,
+    /// SHA-256 of the input bytes this session admitted, when admission saw
+    /// them. `complete_input` records the completed bytes;
+    /// `from_bytes_limit` records the caller-owned bytes. Derived contexts
+    /// inherit the value. Contexts that never admit input answer `None`.
+    pub(super) source_digest: Cell<Option<[u8; 32]>>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -52,6 +63,7 @@ impl<'a> DecodeContext<'a> {
             budget: DecodeBudget::new(*policy, 0),
             derived_spaces: Cell::new(0),
             companions: None,
+            source_digest: Cell::new(None),
         }
     }
 
@@ -86,6 +98,7 @@ impl<'a> DecodeContext<'a> {
             budget,
             derived_spaces: Cell::new(0),
             companions: None,
+            source_digest: Cell::new(None),
         })
     }
 
@@ -179,8 +192,17 @@ impl<'a> DecodeContext<'a> {
             budget: DecodeBudget::new(*policy, length),
             derived_spaces: Cell::new(0),
             companions: None,
+            source_digest: Cell::new(Some(admission_sha256(bytes))),
         };
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
+    }
+
+    /// SHA-256 of the input bytes this session admitted, when admission saw
+    /// them. Decoders read this precomputed fact when they start fidelity;
+    /// the decode wrapper stamps the same bytes from its own root view.
+    #[must_use]
+    pub fn source_digest(&self) -> Option<[u8; 32]> {
+        self.source_digest.get()
     }
 
     /// Returns the decode policy in force.
