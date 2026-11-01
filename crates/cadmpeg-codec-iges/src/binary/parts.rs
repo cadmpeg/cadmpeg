@@ -27,7 +27,7 @@ pub(crate) fn normalize(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(NormalizedBinary, PartOutput), CodecError> {
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx);
     let bytes = normalize_with_records(
         source,
         ctx,
