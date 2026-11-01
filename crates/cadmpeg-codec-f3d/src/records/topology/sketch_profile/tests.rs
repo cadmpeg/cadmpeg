@@ -58,14 +58,14 @@ fn sketch_profile_operand_native_retained_limit_refuses_before_clone() {
 }
 
 #[test]
-fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
+fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
     let wire = |kind: u32, identity: u64, words: [u32; 8]| {
         format!("{{\"kind\":{kind},\"kind_offset\":40,\"curve_primary_id\":{identity},\"curve_primary_id_offset\":44,\"incidence_words\":{},\"incidence_words_offset\":48}}", serde_json::to_string(&words).expect("incidence words"))
     };
     for identity in [1, u64::from(u32::MAX)] {
         for flag in [0, 1] {
-            for first in [1, 2] {
-                for second in [1, 2] {
+            for first in [1, 2, 3, 11, u32::MAX] {
+                for second in [1, 2, 3, 12, u32::MAX] {
                     let json = wire(3, identity, [0, 0, 0, flag, first, second, 0, 0]);
                     let member: super::DesignSketchProfileRegionMember =
                         serde_json::from_str(&json).expect("region member");
@@ -97,7 +97,7 @@ fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
     }
     for index in 0..8 {
         let mut words = [0, 0, 0, 0, 1, 1, 0, 0];
-        words[index] = 3;
+        words[index] = if matches!(index, 4 | 5) { 0 } else { 3 };
         let error =
             serde_json::from_str::<super::DesignSketchProfileRegionMember>(&wire(3, 1, words))
                 .expect_err("invalid incidence word");

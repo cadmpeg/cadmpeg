@@ -32,6 +32,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+mod region_members;
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -672,6 +674,30 @@ pub(crate) fn bind_extrude_profile_selections(
                                 curve_resolution.sketch_entities,
                             )
                         });
+                    if explicit_profiles.is_none() {
+                        if let Some((operand, stream)) = scope
+                            .extrude_profile()
+                            .zip(native_stream(&scope.id))
+                            .filter(|(operand, _)| operand.region_selection.is_some())
+                        {
+                            let selected = region_members::resolve(
+                                stream,
+                                operand,
+                                sketch,
+                                curve_resolution.curve_identities,
+                                curve_resolution.sketch_entities,
+                                scoped_resolution,
+                            )?;
+                            *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
+                                PlanarProfileRef::sketch_selection(
+                                    sketch_id.clone(),
+                                    vec![scope.id.clone()],
+                                )
+                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
+                            }));
+                            break 'feature_edit;
+                        }
+                    }
                     if !matching_groups.is_empty() {
                         let mut selections = Vec::new();
                         for group in &matching_groups {
@@ -4006,6 +4032,9 @@ fn resolved_sketch_profile_regions(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<u32>> {
     let selection = profile.region_selection.as_ref()?;
+    if selection.has_extended_incidence() {
+        return None;
+    }
     let Ok(owner_reference) = u32::try_from(profile.entity_id.suffix()) else {
         return None;
     };
@@ -4120,6 +4149,9 @@ fn resolved_spatial_sketch_profile_regions(
         }
         return Some(profiles);
     };
+    if selection.has_extended_incidence() {
+        return None;
+    }
     let Ok(owner_reference) = u32::try_from(profile.entity_id.suffix()) else {
         return None;
     };
