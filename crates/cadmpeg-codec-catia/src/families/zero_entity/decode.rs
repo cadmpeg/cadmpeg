@@ -21,7 +21,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
 use crate::assemble::{
-    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload,
+    annotate, cgm_source_key, neutral_model_is_admissible, preserve_raw_payload,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::{FamilyEntityAdmission, FamilyOutput};
@@ -851,7 +851,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     let mut admission = FamilyEntityAdmission::new(ctx);
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_index = match preserve_raw_payload(
+    let _payload_index = match preserve_raw_payload(
         ctx,
         &mut unknowns,
         &mut annotations,
@@ -872,7 +872,10 @@ pub(in crate::families) fn try_decode_zero_entity(
         ir.model.surfaces.push(Surface { native_ref: None,
             id: id.clone(),
             geometry: surface.geometry,
-            source_object: None,
+            source_object: Some(admitted!(cgm_source_key(
+                "zero-entity-surface",
+                surface.pos
+            ))),
         });
         surface_ids_by_position.insert(surface.pos, id);
     }
@@ -901,7 +904,10 @@ pub(in crate::families) fn try_decode_zero_entity(
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry,
-                    source_object: None,
+                    source_object: Some(admitted!(cgm_source_key(
+                        "zero-entity-curve",
+                        support.record_ordinal
+                    ))),
                 });
                 support_curve_ids.insert(support.record_ordinal, curve_id);
                 transferred_support_curves += 1;
@@ -1073,9 +1079,6 @@ pub(in crate::families) fn try_decode_zero_entity(
         }
     };
 
-    if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
-        return Some(Err(error));
-    }
     let coverage = zero_entity_coverage(transferred_support_curves, transferred_parametric_surface_curves, wire_counts, topology_counts);
     let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
         "Complete zero-entity source edge/use/support/incidence/vertex bindings lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; physical edge, side-use, and vertex identities select their source records."

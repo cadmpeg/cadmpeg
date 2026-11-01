@@ -169,61 +169,19 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     false
 }
 
-pub(crate) fn target(ir: &CadIr, owner: &str) -> AttributeTarget {
+pub(crate) fn target(ir: &CadIr, owner: &str) -> Option<AttributeTarget> {
     if owner == crate::native::native_id("document", "0") {
-        return AttributeTarget::Document;
+        return Some(AttributeTarget::Document);
     }
-    if let Some(feature) = ir
-        .model
-        .features
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Feature(feature.id.clone());
+    let Some(AttributeTarget::Record { arena, id }) =
+        cadmpeg_ir::attributes::AttributeTarget::record_for(&ir.model, owner)
+    else {
+        return None;
+    };
+    if !ir.scope.design && arena.class() == cadmpeg_ir::ArenaClass::Design {
+        return None;
     }
-    if let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Sketch(sketch.id.clone());
-    }
-    if let Some(product) = ir
-        .model
-        .product_definitions
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::ProductDefinition(product.id.clone());
-    }
-    if let Some(occurrence) = ir
-        .model
-        .occurrences
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Occurrence(occurrence.id.clone());
-    }
-    if let Some(drawing) = ir
-        .model
-        .drawings
-        .iter()
-        .find(|record| record.object == owner)
-    {
-        return AttributeTarget::Drawing(drawing.id.clone());
-    }
-    if let Some(annotation) = ir
-        .model
-        .semantic_annotations
-        .iter()
-        .find(|record| record.object == owner)
-    {
-        return AttributeTarget::SemanticAnnotation(annotation.id.clone());
-    }
-    AttributeTarget::Source {
-        source_id: owner.to_owned(),
-    }
+    Some(AttributeTarget::Record { arena, id })
 }
 
 /// A property's value order is retained. Container/count and transport fields
@@ -418,6 +376,9 @@ fn transfer_impl(
             continue;
         }
         if let Some(values) = values(property) {
+            let Some(target) = target(ir, &property.owner) else {
+                continue;
+            };
             attributes.push(SourceAttribute::new(
                 ctx,
                 AttributeId::mint(crate::native::model_id(
@@ -427,7 +388,7 @@ fn transfer_impl(
                 ))
                 .map_err(CodecError::malformed)?,
                 Some(property.id.clone()),
-                target(ir, &property.owner),
+                target,
                 property.name.clone(),
                 values,
             )?);

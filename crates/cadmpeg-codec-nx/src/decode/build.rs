@@ -106,6 +106,24 @@ type GeometryDecode = (
     Vec<UnknownRecord>,
 );
 
+
+/// Identity-only source association for a stream carrier row.
+fn carrier_source(
+    stream: usize,
+    kind: &str,
+    record: u64,
+) -> Result<SourceObjectAssociation, CodecError> {
+    Ok(SourceObjectAssociation {
+        geometry_role: None,
+        format: cadmpeg_ir::CodecFormat::Nx,
+        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+            "nx:s{stream}:{kind}#{record}"
+        ))
+        .ok_or_else(|| CodecError::malformed("NX carrier source object id is blank"))?,
+        instance_path: Vec::new(),
+    })
+}
+
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
@@ -308,8 +326,6 @@ pub(super) fn try_decode_geometry(
         // surface. Later topology completion only fills absent pcurves, so
         // this provenance remains valid through the invalidation pass.
         let mut validated_support_uv_lanes = BTreeSet::new();
-        let first_surface = ir.model.surfaces.len();
-        let first_curve = ir.model.curves.len();
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
@@ -374,7 +390,7 @@ pub(super) fn try_decode_geometry(
                 native_ref: None,
                 id: id.clone(),
                 geometry,
-                source_object: None,
+                source_object: Some(carrier_source(si, "surface-record", u64::from(node.xmt()))?),
             });
             surfaces_by_xmt.insert(node.xmt(), id);
         }
@@ -394,7 +410,7 @@ pub(super) fn try_decode_geometry(
                 native_ref: None,
                 id: id.clone(),
                 geometry: surf.geometry,
-                source_object: None,
+                source_object: Some(carrier_source(si, "nurbs-surface-record", surf.pos as u64)?),
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt(), id);
@@ -618,7 +634,7 @@ pub(super) fn try_decode_geometry(
                 parameter_range: None,
                 id: id.clone(),
                 geometry,
-                source_object: None,
+                source_object: Some(carrier_source(si, "curve-record", u64::from(node.xmt()))?),
             });
             curves_by_xmt.insert(node.xmt(), id);
         }
@@ -639,7 +655,7 @@ pub(super) fn try_decode_geometry(
                 parameter_range: None,
                 id: id.clone(),
                 geometry: crv.geometry,
-                source_object: None,
+                source_object: Some(carrier_source(si, "nurbs-curve-record", crv.pos as u64)?),
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt(), id);
@@ -1205,13 +1221,7 @@ pub(super) fn try_decode_geometry(
         )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
-        let mut unknown = unknown_stream_metadata(si, stream)?;
-        for surface in &ir.model.surfaces[first_surface..] {
-            unknown.links_mut().push(surface.id.as_str().to_owned());
-        }
-        for curve in &ir.model.curves[first_curve..] {
-            unknown.links_mut().push(curve.id.as_str().to_owned());
-        }
+        let unknown = unknown_stream_metadata(si, stream)?;
         annotations.note(
             unknown.id().as_str(),
             &container_stream,
@@ -1295,7 +1305,6 @@ pub(super) fn try_decode_geometry(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let completion_budget = CompletionBudgetStatus {
@@ -1510,35 +1519,6 @@ fn ordered_live_identity_contains(
     }
 }
 
-fn retain_live_unknown_links(
-    ir: &CadIr,
-    unknowns: &mut [UnknownRecord],
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let mut ids = BTreeSet::new();
-    for entity in &ir.model.surfaces {
-        ids.insert(entity.id.as_str().to_owned());
-    }
-    for entity in &ir.model.curves {
-        ids.insert(entity.id.as_str().to_owned());
-    }
-    for entity in &ir.model.pcurves {
-        ids.insert(entity.id.as_str().to_owned());
-    }
-    for entity in &ir.model.procedural_surfaces {
-        ids.insert(entity.id.as_str().to_owned());
-    }
-    for entity in &ir.model.procedural_curves {
-        ids.insert(entity.id.as_str().to_owned());
-    }
-    for unknown in unknowns.iter_mut() {
-        unknown.links_mut().retain(|link| ids.contains(link));
-        if !unknown.links().is_empty() {
-            annotations.derived(unknown.id().as_str(), "links")?;
-        }
-    }
-    Ok(())
-}
 
 pub(super) fn topology_body_node_ids(
     stream_index: usize,

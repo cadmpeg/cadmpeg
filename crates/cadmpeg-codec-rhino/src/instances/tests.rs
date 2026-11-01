@@ -905,14 +905,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
         transform(1.0, [20.0, 0.0, 0.0])
     );
     let unknowns = ir.native_unknowns("rhino").expect("source records");
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        vec![ir.model.bodies[0].id.as_str()]
-    );
+    assert!(unknowns[0].links.is_empty());
     assert!(unknowns[1].links.is_empty());
     assert!(unknowns[2].links.is_empty());
     let native = ir.native.namespace("rhino").expect("native graph");

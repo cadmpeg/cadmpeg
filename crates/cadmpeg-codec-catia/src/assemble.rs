@@ -758,33 +758,6 @@ pub(crate) fn preserve_raw_payload(
     Ok(unknowns.len() - 1)
 }
 
-/// Attribute typed carrier views to the preserved payload when CATIA's binding
-/// layer was not recovered. The raw payload is their byte-backed owner; this
-/// avoids inventing topology or procedural relationships.
-pub(crate) fn link_payload_carriers(
-    ir: &CadIr,
-    payload: &mut UnknownRecord,
-    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let mut links = Vec::new();
-    for id in ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| surface.id.as_str())
-        .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()))
-    {
-        let id = id.to_owned();
-        links.push(id);
-    }
-    if links.is_empty() {
-        return Ok(());
-    }
-    *payload.links_mut() = links;
-    annotations.derived(payload.id().as_str(), "links")?;
-    Ok(())
-}
-
 pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     let mut losses = Vec::new();
     losses.push(CatiaLossCode::GeometryBrepNotTransferred.note(format!(
@@ -1540,7 +1513,7 @@ mod route_tests {
     }
 
     #[test]
-    fn payload_links_the_unknown_curve_carrier() {
+    fn payload_holds_no_neutral_back_link_for_its_unknown_curve_carrier() {
         let mut ir = CadIr::empty();
         let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
@@ -1550,22 +1523,22 @@ mod route_tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut payload = UnknownRecord::retained(
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let payload = UnknownRecord::retained(
                 UnknownId::mint("catia:test:unknown#payload".to_string())
                     .expect("identity grammar"),
                 0,
                 Vec::new(),
                 Vec::new(),
             );
-            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            super::link_payload_carriers(&ir, &mut payload, &mut annotations)?;
-            Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
+            let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+            fidelity.attach_native_unknown_records(&mut ir, "catia", vec![payload], ctx)?;
+            Ok::<_, cadmpeg_core::CodecError>(ir.native_unknowns("catia").expect("native unknowns"))
         };
-        assert_eq!(
-            crate::test_support::with_service_context(run).expect("link payload carriers"),
-            [id.as_str()]
-        );
+        let unknowns =
+            crate::test_support::with_service_context(run).expect("attach payload unknowns");
+        assert_eq!(unknowns.len(), 1);
+        assert!(unknowns[0].links.is_empty());
     }
 
     #[test]
