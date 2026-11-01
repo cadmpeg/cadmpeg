@@ -4891,10 +4891,10 @@ pub(super) fn emit_faces(
             let loops = loop_chain(r, by_index, kept_loops, format);
             // The face record's sense is relative to its surface record's
             // orientation. A reversed spline record flips the cache normal,
-            // and a negative-cosine cone points its normal toward the axis;
-            // the IR stores the forward carrier in both cases, so the
-            // reversal folds into the face sense to keep the IR
-            // self-consistent.
+            // a negative-cosine cone points its normal toward the axis, and a
+            // negative-minor torus points its normal toward the tube center;
+            // the IR stores the forward carrier in each case, so the reversal
+            // folds into the face sense to keep the IR self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
             let carrier_flipped = by_index
