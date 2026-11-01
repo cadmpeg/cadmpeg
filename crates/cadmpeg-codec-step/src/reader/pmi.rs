@@ -302,9 +302,13 @@ pub(super) fn decode(
                 kind
             };
         }
-        let nominal = characteristic_values.get(&id).copied();
-        let definition = PmiDimension::new(kind, nominal, None)
-            .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+        let values = characteristic_values.get(&id);
+        let definition = PmiDimension::new(
+            kind,
+            values.and_then(|values| values.nominal),
+            values.and_then(|values| values.limits.clone()),
+        )
+        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let aspect_ids = record
             .partials
             .iter()
@@ -1803,13 +1807,18 @@ fn modifier_values(
     Ok(())
 }
 
+struct CharacteristicValues {
+    nominal: Option<PmiValue>,
+    limits: Option<DimensionTolerance>,
+}
+
 fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
-    let mut result = BTreeMap::<u64, PmiValue>::new();
+) -> Result<BTreeMap<u64, CharacteristicValues>, CodecError> {
+    let mut result = BTreeMap::<u64, CharacteristicValues>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses);
         let Some(characteristic) = first_matching(record_values(record), ctx, |id| {
@@ -1844,51 +1853,54 @@ fn characteristic_values(
         let parameters = representation_items
             .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
         let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
-        let limits = values
-            .iter()
-            .filter_map(|(name, _)| name.as_deref())
-            .filter(|name| {
-                name.eq_ignore_ascii_case("upper limit") || name.eq_ignore_ascii_case("lower limit")
-            })
-            .count();
-        if limits > 0 {
-            losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
-                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} omits {limits} limit measure(s)"
-            )));
-        }
-        let mut named_count = 0usize;
-        let mut named_first = None;
-        for (name, value) in &values {
-            if name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
-            {
-                named_count += 1;
-                if named_count == 1 {
-                    named_first = Some(*value);
-                }
+        let mut nominals = Vec::new();
+        let mut lower_limits = Vec::new();
+        let mut upper_limits = Vec::new();
+        let mut others = Vec::new();
+        for (name, value) in values {
+            let role = name.as_deref().map(str::to_ascii_lowercase);
+            match role.as_deref() {
+                Some("nominal value") => nominals.push(value),
+                Some("lower limit") => lower_limits.push(value),
+                Some("upper limit") => upper_limits.push(value),
+                _ => others.push(value),
             }
         }
-        let selected = if named_count == 1 {
-            named_first
-        } else if named_count > 1 {
-            losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
-                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {named_count} nominal value measures; the nominal is ambiguous"
-                )));
-            None
-        } else if values.len() == 1 {
-            values.first().map(|(_, value)| *value)
-        } else {
-            if values.len() > 1 {
+        let nominal = match (nominals.as_slice(), others.as_slice()) {
+            ([nominal], _) | ([], [nominal]) => Some(*nominal),
+            ([], []) => None,
+            ([], others) => {
                 losses.push(StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
-                        "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
-                        values.len()
-                    )));
+                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
+                    others.len()
+                )));
+                None
             }
-            None
+            (nominals, _) => {
+                losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
+                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
+                    nominals.len()
+                )));
+                None
+            }
         };
-        if let Some(selected) = selected {
-            result.insert(characteristic, selected);
+        let limits = match (lower_limits.as_slice(), upper_limits.as_slice()) {
+            ([lower], [upper]) => Some(DimensionTolerance::Limits {
+                lower: *lower,
+                upper: *upper,
+            }),
+            ([], []) => None,
+            (lower, upper) => {
+                losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} lower and {} upper limit measures; the limits are omitted",
+                    lower.len(),
+                    upper.len()
+                )));
+                None
+            }
+        };
+        if nominal.is_some() || limits.is_some() {
+            result.insert(characteristic, CharacteristicValues { nominal, limits });
         }
     }
     Ok(result)

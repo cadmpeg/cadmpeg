@@ -2170,17 +2170,16 @@ Practices 4.1 §5.2.1 identifies a nominal value by a
 `nominal value`, and requires that value even when no range is present. For a
 value range, §5.2.4 identifies the items by `nominal value`, `upper limit`, and
 `lower limit`.
-CADIR decision: the reader traverses the complete item graph and compares the
-specified names case-insensitively. One named nominal item supplies the
-nominal. Multiple named nominal items are ambiguous and produce
-`pmi.dimensional-nominal-ambiguous`. If no named nominal item exists, exactly
-one reachable measure is accepted as malformed-source salvage; multiple
-measures are ambiguous and produce
-`pmi.dimensional-unnamed-measure-ambiguous`. CADIR has no limit-dimension
-form; a characteristic representation with `upper limit` or `lower limit`
-items keeps its nominal and produces `pmi.dimensional-limits-omitted`. Neither aggregate order nor
-entity identity selects a value. Complex measure records referenced by a
-characteristic representation remain typed measure carriers.
+The item names are case-insensitive. One item named `nominal value` supplies
+an explicit nominal. One `lower limit` item and one `upper limit` item supply
+absolute lower and upper limits, in compatible measure units. The lower limit
+is at most the upper limit. Limit values are not signed deviations from a
+nominal. A limit dimension can omit its nominal. Multiple items with the same
+role are ambiguous. An incomplete pair does not define limits. An unnamed
+measure supplies a nominal only when it is the sole measure outside the limit
+items. Aggregate order and entity identity do not assign measure roles.
+Complex measure records referenced by a characteristic representation are
+typed measure carriers.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 geometric or topology item. A resolved face, edge, vertex, body, point, or curve

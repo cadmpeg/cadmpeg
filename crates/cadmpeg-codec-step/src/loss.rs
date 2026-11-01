@@ -119,7 +119,7 @@ pub(crate) enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// A datum system has inconsistent precedence compartments.
     PmiDatumSystemInvalid,
-    /// The upper or lower limit measures of a dimensional characteristic are omitted.
+    /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,

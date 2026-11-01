@@ -13,7 +13,6 @@ use cadmpeg_ir::pmi::{
 };
 use cadmpeg_ir::CadIr;
 
-use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 /// Allowance of a decoded PMI value against the value that NIST specifies.
@@ -33,12 +32,29 @@ fn decode_specimen(name: &str) -> DecodeResult {
         .unwrap_or_else(|error| panic!("decode {name}: {error}"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Range {
+    /// Signed lower and upper deviations from the nominal.
+    Deviations(f64, f64),
+    /// Lower and upper limit values.
+    Limits(f64, f64),
+}
+
+impl Range {
+    fn agrees(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Deviations(a, b), Self::Deviations(c, d))
+            | (Self::Limits(a, b), Self::Limits(c, d)) => values_agree(a, c) && values_agree(b, d),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct Dimension {
     kind: DimensionKind,
     nominal: Option<f64>,
-    /// Signed lower and upper deviations.
-    deviations: Option<(f64, f64)>,
+    range: Option<Range>,
 }
 
 impl Dimension {
@@ -46,16 +62,22 @@ impl Dimension {
         Self {
             kind,
             nominal,
-            deviations,
+            range: deviations.map(|(lower, upper)| Range::Deviations(lower, upper)),
+        }
+    }
+
+    fn limits(kind: DimensionKind, nominal: Option<f64>, lower: f64, upper: f64) -> Self {
+        Self {
+            kind,
+            nominal,
+            range: Some(Range::Limits(lower, upper)),
         }
     }
 
     fn agrees(&self, other: &Self) -> bool {
         self.kind == other.kind
             && option_agrees(self.nominal, other.nominal, values_agree)
-            && option_agrees(self.deviations, other.deviations, |a, b| {
-                values_agree(a.0, b.0) && values_agree(a.1, b.1)
-            })
+            && option_agrees(self.range, other.range, Range::agrees)
     }
 }
 
@@ -112,16 +134,19 @@ fn dimensions(ir: &CadIr) -> Vec<Dimension> {
         .pmi
         .iter()
         .filter_map(|annotation| match &annotation.definition {
-            PmiDefinition::Dimension(dimension) => Some(Dimension::new(
-                dimension.kind().clone(),
-                dimension.nominal().map(|value| value.value.get()),
-                dimension.tolerance().map(|tolerance| match tolerance {
+            PmiDefinition::Dimension(dimension) => Some(Dimension {
+                kind: dimension.kind().clone(),
+                nominal: dimension.nominal().map(|value| value.value.get()),
+                range: dimension.tolerance().map(|tolerance| match tolerance {
                     DimensionTolerance::PlusMinus { lower, upper } => {
-                        (lower.value.get(), upper.value.get())
+                        Range::Deviations(lower.value.get(), upper.value.get())
+                    }
+                    DimensionTolerance::Limits { lower, upper } => {
+                        Range::Limits(lower.value.get(), upper.value.get())
                     }
                     other => panic!("NIST CTC tolerance form {other:?}"),
                 }),
-            )),
+            }),
             _ => None,
         })
         .collect()
@@ -213,9 +238,7 @@ fn assert_each_present<T: std::fmt::Debug + Clone>(
     unused
 }
 
-/// NIST CTC-01 rows 3-12 of `NIST-CTC-PMI-Definitions.xlsx`. The limit
-/// dimension of row 7 keeps its STEP nominal and loses its limits (open item
-/// AP-19 in `docs/formats/step-open-items.md`).
+/// NIST CTC-01 rows 3-12 of `NIST-CTC-PMI-Definitions.xlsx`.
 #[test]
 fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
     use DimensionKind::{Angular, Diameter};
@@ -232,9 +255,10 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
         Dimension::new(Diameter, Some(20.0), Some((-0.05, 0.10))),
         // Row 6: ⌀25 ±0.15.
         Dimension::new(Diameter, Some(25.0), Some((-0.15, 0.15))),
-        // Row 7: ⌀34.8 - 35.2 & ⌀35.2/34.8.
-        Dimension::new(Diameter, Some(35.0), None),
-        Dimension::new(Diameter, Some(35.0), None),
+        // Row 7: ⌀34.8 - 35.2 & ⌀35.2/34.8. NIST states no nominal; the
+        // specimen's `nominal value` item is 35.
+        Dimension::limits(Diameter, Some(35.0), 34.8, 35.2),
+        Dimension::limits(Diameter, Some(35.0), 34.8, 35.2),
         // Row 8: ⌀35 0/-0.2 & ⌀35 +0.2/0.
         Dimension::new(Diameter, Some(35.0), Some((-0.2, 0.0))),
         Dimension::new(Diameter, Some(35.0), Some((0.0, 0.2))),
@@ -256,15 +280,6 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
             .iter()
             .all(|dimension| dimension.kind == DimensionKind::Location),
         "dimensions outside the NIST definition: {unmatched:#?}"
-    );
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == StepLossCode::DimensionalLimitsOmitted.kind())
-            .count(),
-        2
     );
 
     let expected_tolerances = [

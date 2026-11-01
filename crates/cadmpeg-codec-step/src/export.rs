@@ -4743,11 +4743,29 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    if let Some(value) = nominal {
-                        let measure = self.emit_pmi_measure_representation_item(*value, name);
+                    let items = if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance
+                    {
+                        let mut items = Vec::new();
+                        if let Some(value) = nominal {
+                            items.push(
+                                self.emit_pmi_measure_representation_item(*value, "nominal value"),
+                            );
+                        }
+                        items
+                            .push(self.emit_pmi_measure_representation_item(*lower, "lower limit"));
+                        items
+                            .push(self.emit_pmi_measure_representation_item(*upper, "upper limit"));
+                        items
+                    } else {
+                        nominal
+                            .map(|value| self.emit_pmi_measure_representation_item(*value, name))
+                            .into_iter()
+                            .collect()
+                    };
+                    if !items.is_empty() {
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
-                            &format!("'',({measure}),{context}"),
+                            &format!("'',{},{context}", refs(&items)),
                         );
                         self.emitter.emit(
                             "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",

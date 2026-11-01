@@ -370,31 +370,6 @@ a reduced layer as source-small. The answer either
 defines a carrier for each neutral member or specifies subset export with a
 per-item record as the exchange form.
 
-### AP-19. Limit dimension without a CADIR tolerance form
-
-**Question.** Which CADIR dimension form carries the upper and lower limits of
-a STEP limit dimension?
-
-**Known.** CAx-IF AP242 PMI Recommended Practices 4.1 §5.2.4 gives a value
-range as `MEASURE_REPRESENTATION_ITEM` items named `nominal value`,
-`upper limit`, and `lower limit` in one `SHAPE_DIMENSION_REPRESENTATION`.
-`step.md` §8 "CADIR decision: the reader traverses the complete item graph"
-selects the named nominal. `DimensionTolerance` in
-`crates/cadmpeg-ir/src/pmi.rs` has the forms `PlusMinus`, `Fit`, and
-`PlusMinusFit`. A plus/minus form stores signed deviations from the nominal,
-so it does not record that the source states limits, and the deviations
-computed from the limits are not exact in binary floating point. The reader
-keeps the nominal, omits the limit items, and records
-`pmi.dimensional-limits-omitted`. The NIST CTC-01 specimen
-`corpus/nist-pmi/step/nist_ctc_01_asme1_ap242-e1.stp` encodes the NIST
-definition `⌀34.8 - 35.2 & ⌀35.2/34.8` in this form.
-
-**Need.** A limit dimension states its tolerance only through its limits.
-Without them, the decoded dimension is a basic-looking nominal with no
-tolerance. The answer adds a limits form to `DimensionTolerance`, or states a
-projection to an existing form and the loss that marks it. A change to
-`cadmpeg-ir` reaches every codec and golden, so the maintainers select it.
-
 ## 8. Product structure and placement
 
 ### PS-16. Occurrence placement inferred without a STEP occurrence association
