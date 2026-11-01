@@ -62,6 +62,32 @@ fn fixed_ascii_detection_allows_eight_bit_data_fields() {
 }
 
 #[test]
+fn prefix_classification_leaves_a_short_file_unrecognized() {
+    for bytes in [card(b"generated fixture", b'S', 1), {
+        let mut bytes = card(b"generated fixture", b'S', 1);
+        bytes.extend_from_slice(b"short\n");
+        bytes
+    }] {
+        let mut reader = Cursor::new(bytes);
+        assert_eq!(crate::representation::classify(&mut reader).unwrap(), None);
+    }
+}
+
+#[test]
+fn whole_file_classification_admits_a_short_file() {
+    for bytes in [card(b"generated fixture", b'S', 1), {
+        let mut bytes = card(b"generated fixture", b'S', 1);
+        bytes.extend_from_slice(b"short\n");
+        bytes
+    }] {
+        assert_eq!(
+            crate::representation::classify_whole(&bytes).unwrap(),
+            Some(crate::representation::Representation::FixedAscii)
+        );
+    }
+}
+
+#[test]
 fn representation_classification_fills_its_prefix_across_short_reads() {
     let bytes = point_file();
     let mut reader = ShortReader {
