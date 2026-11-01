@@ -3422,7 +3422,7 @@ mod cache_form_tests {
             [-2.0, 1.0],
             [-2.0, 0.0],
         ];
-        let knots = [(-PI, 3), (-FRAC_PI_2, 2), (0.0, 2), (FRAC_PI_2, 2), (PI, 3)];
+        let knots = [(-PI, 2), (-FRAC_PI_2, 2), (0.0, 2), (FRAC_PI_2, 2), (PI, 2)];
         for conic in [false, true] {
             for name in ["cyl_spl_sur", "cylsur"] {
                 let mut definition = vec![
@@ -3484,9 +3484,9 @@ mod cache_form_tests {
                 }
                 definition.extend([
                     Token::Double(0.0),
-                    Token::Long(2),
+                    Token::Long(1),
                     Token::Double(1.0),
-                    Token::Long(2),
+                    Token::Long(1),
                 ]);
                 for z in [0.0, 1.0] {
                     for (index, [x, y]) in poles.iter().enumerate() {
@@ -3531,13 +3531,20 @@ mod cache_form_tests {
                                 .unwrap()
                                 .unwrap();
                         assert_eq!(cur.pos(), tokens.len());
-                        assert!(matches!(support.surface, super::SupportSlot::Surface(_)));
+                        let super::SupportSlot::Surface(geometry) = &support.surface else {
+                            panic!("solved extrusion cache");
+                        };
+                        let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+                            geometry.solved()
+                        else {
+                            panic!("rational extrusion cache");
+                        };
+                        assert_eq!(surface.u_count(), 9);
+                        assert_eq!(surface.v_count(), 2);
+                        assert_eq!(surface.poles()[0].get(), Point3::new(-20.0, 0.0, 0.0));
                         assert_eq!(support.bounds, [None; 4]);
                         if conic {
                             const MIN_CHART_SEPARATION_MM: f64 = 0.1;
-                            let super::SupportSlot::Surface(geometry) = &support.surface else {
-                                panic!("solved extrusion cache");
-                            };
                             let u = -7.0 * PI / 8.0;
                             let cached = cadmpeg_ir::eval::decode::surface_point_solved(
                                 &ctx,

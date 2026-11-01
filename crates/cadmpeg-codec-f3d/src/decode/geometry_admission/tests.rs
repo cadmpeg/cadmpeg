@@ -267,8 +267,9 @@ fn an_unowned_vertex_has_no_body_bound() {
 #[test]
 fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
     use cadmpeg_ir::geometry::{
-        pcurve::PcurveNurbs, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-        ProceduralCurve, ProceduralCurveDefinition, SupportPcurve,
+        pcurve::{PcurveGeometry, PcurveNurbs},
+        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition,
+        SupportPcurve,
     };
     use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
     use cadmpeg_ir::math::Point2;
