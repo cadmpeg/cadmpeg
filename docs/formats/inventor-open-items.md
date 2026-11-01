@@ -250,11 +250,11 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-09. Additional edge naming forms
 
-**Question.** Which selector forms and naming families resolve edge items outside the direct schema-44 matched-attribute form, and what does an empty edge-item index-reference list select?
+**Question.** Which secondary naming arrays, additional selector forms, and naming families resolve edge items, and what does an empty edge-item index-reference list select?
 
-**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body. A selector's trailing edge-item reference selects its owning item, including an item whose index-reference list is empty.
+**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body. A selector's trailing edge-item reference selects its owning item, including an item whose index-reference list is empty. Section 13 defines the qualified direct selector with one or two generator indexes, an empty secondary array, a reciprocal explicit edge-item reference, one matched edge revision, and straight historical geometry.
 
-**Need.** Additional selector forms, secondary naming arrays, matched-attribute qualifiers, generated roles, and naming families require exact operands and joins before neutral edge resolution. The reverse edge-item relation requires an operative-selector rule when the item's index-reference list is empty. Result-face names require an exact selected-input-edge join, an input-body revision, and edge-set ownership. Suppressed features require their stored selection independently of evaluated result faces. A generated source-name contribution alone does not supply these relations.
+**Need.** Additional selector forms, nonempty secondary naming arrays, matched-attribute qualifiers, generated roles, curved input revisions, naming families, and Boolean control tuples outside section 13 require exact operands and joins before neutral edge resolution. The reverse edge-item relation requires an operative-selector rule when the item's index-reference list is empty. Result-face names require an exact selected-input-edge join, an input-body revision, and edge-set ownership. Suppressed features require their stored selection independently of evaluated result faces. A generated source-name contribution alone does not supply these relations.
 
 ### DE-10. Sheet-metal generated names
 

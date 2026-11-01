@@ -175,5 +175,37 @@ pub(crate) fn matches(expected: &[Operand<'_>], groups: &[FilletGroup]) -> bool 
         })
 }
 
+pub(crate) fn explicit_selection_controls<'a>(
+    source: &PmDcFeature,
+    corner: bool,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let value = |slot: usize| {
+        let reference = *source.properties.references().get(slot)?;
+        if !reference.qualified() {
+            return None;
+        }
+        let PmDcFeaturePropertyKind::Boolean { value, .. } = &property(reference)?.kind else {
+            return None;
+        };
+        Some(*value)
+    };
+    let [Some(slot_2), Some(slot_3), Some(slot_4), Some(slot_5), Some(slot_8)] =
+        [value(2), value(3), value(4), value(5), value(8)]
+    else {
+        return false;
+    };
+    let values = [slot_2, slot_3, slot_4, slot_5, slot_8];
+    if corner {
+        [[false, true, true, false, false]].contains(&values)
+    } else {
+        [
+            [true, true, true, false, false],
+            [true, true, true, true, false],
+        ]
+        .contains(&values)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests;
