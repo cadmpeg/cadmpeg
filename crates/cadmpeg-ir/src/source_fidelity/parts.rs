@@ -16,11 +16,12 @@ use serde::Serialize;
 use crate::codec::DecodeLossCode;
 use crate::document::{ArenaClass, ArenaClasses, Model};
 use crate::draft::ArenaEntity;
-use crate::ids::UnknownId;
+use crate::ids::{Identity, UnknownId};
 use crate::native::Native;
 use crate::provenance::{CodecFormat, SourceOwner, SourceProvenance, StreamName};
 use crate::report::loss::LossNote;
 use crate::source_fidelity::{RetainedBytes, RetainedSourceRecord, SourceFidelity};
+use crate::NativeUnknownRecord;
 
 /// The label, stream and content classes of one part.
 #[derive(Debug, Clone)]
@@ -28,6 +29,10 @@ pub struct PartSpec {
     label: &'static str,
     stream: Option<StreamName>,
     classes: Option<ArenaClasses>,
+    /// The part's own record id, when the part is one record.
+    record: Option<Identity>,
+    /// The innermost containing native record, when one exists.
+    containing: Option<Identity>,
 }
 
 impl PartSpec {
@@ -37,6 +42,8 @@ impl PartSpec {
             label,
             stream: None,
             classes: None,
+            record: None,
+            containing: None,
         }
     }
 
@@ -51,6 +58,22 @@ impl PartSpec {
     #[must_use]
     pub fn holding(mut self, classes: impl IntoIterator<Item = ArenaClass>) -> Self {
         self.classes = Some(classes.into_iter().collect());
+        self
+    }
+
+    /// Name the part's own record id, reported by the give-up loss.
+    #[must_use]
+    pub fn record_id(mut self, record: Identity) -> Self {
+        self.record = Some(record);
+        self
+    }
+
+    /// Link the innermost native record containing the part. The helper
+    /// refuses a link outside the committed part output: a neutral record is
+    /// never a container.
+    #[must_use]
+    pub fn contained_in(mut self, containing: Identity) -> Self {
+        self.containing = Some(containing);
         self
     }
 }
@@ -228,19 +251,22 @@ impl DecodeParts for DecodeContext<'_> {
             )));
         }
         let codec = output.codec;
+        // The stage outlives the part runner so a failed part can still name
+        // the records it built.
+        let mut stage = PartOutput::new(codec);
         let result = self.run_part(|| {
-            let mut stage = PartOutput::new(codec);
             let value = decode(&mut stage)?;
             if let Some(limit) = self.resource_refusal() {
                 return Err(limit.into());
             }
-            output.append(self, stage)?;
+            let staged = std::mem::replace(&mut stage, PartOutput::new(codec));
+            output.append(self, staged)?;
             Ok(value)
         })?;
         match result {
             Ok(value) => Ok(Some(value)),
             Err(error) => {
-                give_up(self, output, extent, &spec, &error)?;
+                give_up(self, output, extent, &spec, &error, &stage)?;
                 Ok(None)
             }
         }
@@ -253,11 +279,22 @@ fn give_up(
     extent: View<'_>,
     spec: &PartSpec,
     error: &CodecError,
+    stage: &PartOutput,
 ) -> Result<(), CodecError> {
     let offset = u64_from_index(extent.start());
     let bytes = extent.window();
     let stream = spec.stream.as_ref().map_or("", StreamName::as_str);
     let id = part_id(output.codec, spec.label, stream, offset)?;
+    let mut links = Vec::new();
+    if let Some(containing) = spec.containing.as_ref() {
+        if !native_contains(&output.native, containing.as_str()) {
+            return Err(CodecError::malformed(format_args!(
+                "part {} links a record outside the committed part output: {containing}",
+                spec.label
+            )));
+        }
+        links.push(containing.clone());
+    }
     let classes = spec
         .classes
         .clone()
@@ -274,7 +311,12 @@ fn give_up(
         .map_or(SourceOwner::Root, SourceOwner::from);
     let record = RetainedSourceRecord::from_bytes(owner, offset, RetainedBytes::Inline { data })?
         .with_untyped(classes);
-    output.fidelity.insert_retained_record(id, record)?;
+    output.fidelity.insert_retained_record(id.clone(), record)?;
+    let stub = NativeUnknownRecord {
+        id: id.clone(),
+        links,
+    };
+    output.insert_native(ctx, "unknowns", stub)?;
     let length = u64_from_index(bytes.len());
     let mut provenance = match &spec.stream {
         Some(stream) => SourceProvenance::in_stream(output.codec.as_str(), stream.clone(), offset),
@@ -283,16 +325,66 @@ fn give_up(
     if length != 0 {
         provenance = provenance.with_byte_len(length)?;
     }
+    let record_part = spec
+        .record
+        .as_ref()
+        .map(|record| format!(" record={}", record.as_str()))
+        .unwrap_or_default();
+    let mut dropped: Vec<String> = Vec::new();
+    collect_dropped(&stage.model, &mut dropped);
+    collect_native_dropped(&output.native, &stage.native, &mut dropped);
+    dropped.sort();
+    dropped.dedup();
     let message = format!(
-        "part {} stream={stream:?} offset={offset} length={length}: {error}",
-        spec.label
+        "part {} stream={stream:?} offset={offset} length={length}{record_part}: {error}; dropped=[{}]",
+        spec.label,
+        dropped.join(", ")
     );
-    output.push_loss(
-        ctx,
-        DecodeLossCode::RecordUnreadable
-            .note(message)
-            .with_provenance(provenance),
-    )
+    let mut loss = DecodeLossCode::RecordUnreadable
+        .note(message)
+        .with_provenance(provenance);
+    loss.dropped = dropped;
+    output.push_loss(ctx, loss)
+}
+
+/// True when `native` holds a record with `id` in any namespace and arena.
+fn native_contains(native: &Native, id: &str) -> bool {
+    native.0.values().any(|namespace| {
+        namespace
+            .arenas()
+            .values()
+            .any(|records| records.iter().any(|record| record.id() == id))
+    })
+}
+
+/// Collect the identities of neutral records the failed part built.
+fn collect_dropped(model: &Model, dropped: &mut Vec<String>) {
+    macro_rules! collect_model_ids {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(for entity in &model.$field {
+                dropped.push(crate::schema::EntitySchema::identity(entity).to_owned());
+            })*
+        };
+    }
+    crate::document::arena_registry!(collect_model_ids);
+}
+
+/// Collect native records the failed part staged, skipping records that an
+/// earlier part already committed to `output`.
+fn collect_native_dropped(output: &Native, staged: &Native, dropped: &mut Vec<String>) {
+    for (format, namespace) in &staged.0 {
+        for (arena, records) in namespace.arenas() {
+            for record in records {
+                let known = output
+                    .namespace(format.as_str())
+                    .and_then(|namespace| namespace.arenas().get(arena))
+                    .is_some_and(|records| records.iter().any(|known| known.id() == record.id()));
+                if !known {
+                    dropped.push(record.id().to_owned());
+                }
+            }
+        }
+    }
 }
 
 /// The retained-record identity of a given-up part, derived from its address.
