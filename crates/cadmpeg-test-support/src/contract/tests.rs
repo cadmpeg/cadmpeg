@@ -260,6 +260,7 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
         .expect("valid authored test fixture");
     let cache = ParameterValue::Length(Length::new(37.0).expect("valid authored test fixture"));
     full.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter_id.clone(),
         owner: None,
         ordinal: 0,
