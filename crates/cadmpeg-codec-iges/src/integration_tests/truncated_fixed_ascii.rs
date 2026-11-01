@@ -479,7 +479,7 @@ fn file_without_a_terminate_card_keeps_every_entity() {
 }
 
 #[test]
-fn truncated_prefixes_and_byte_cuts_keep_complete_records() {
+fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
     let file = synthetic();
     let complete = decode(&file.bytes()).expect("the complete file decodes");
     let complete_outcome = outcome_of(&complete);
@@ -655,4 +655,98 @@ fn insert_line(bytes: &[u8], at: usize, line: &[u8]) -> Vec<u8> {
     out.extend_from_slice(line);
     out.extend_from_slice(&bytes[at..]);
     out
+}
+
+fn prohibited_delimiter_global() -> &'static [u8] {
+    b"1H++1H;+7Hproduct+8Hpart.igs+7Hcadmpeg+3H0.1+32+38+6+308+15+0H+1.0+2+2HMM+1+1.0+15H20260714.000000+0.001+1000.0+6Hauthor+3Horg+11+0+0H+0H;"
+}
+
+fn start_and_global(global: &[u8]) -> Vec<u8> {
+    let cards = crate::global::layout_global_cards(global).expect("the Global record lays out");
+    let mut bytes = card(b"generated fixture", b'S', 1);
+    for (index, payload) in cards.iter().enumerate() {
+        let sequence = u32::try_from(index + 1).expect("global sequence");
+        bytes.extend(card(payload, b'G', sequence));
+    }
+    bytes
+}
+
+fn is_global_malformed(bytes: &[u8]) -> bool {
+    matches!(
+        decode(bytes),
+        Err(DecodeFailure::Codec(CodecError::Malformed(_)))
+    )
+}
+
+#[test]
+fn a_finished_global_with_a_prohibited_delimiter_is_malformed_when_the_file_ends() {
+    let global = prohibited_delimiter_global();
+    let ended = start_and_global(global);
+    let terminated = crate::test_support::test_cards::fixed_ascii_with_global(global);
+    assert!(is_global_malformed(&terminated));
+    assert!(is_global_malformed(&ended));
+}
+
+#[test]
+fn a_file_that_ends_inside_global_publishes_no_global_value() {
+    let file = synthetic();
+    let last_global = file.global_card_count;
+    let payload = &file.cards[last_global].bytes[..72];
+    let semicolon = payload
+        .iter()
+        .rposition(|byte| *byte == b';')
+        .expect("the last Global card carries the record delimiter");
+    let mut bytes = file.prefix(last_global);
+    bytes.extend_from_slice(&file.cards[last_global].bytes[..semicolon]);
+    let decoded = decode(&bytes).expect("a cut Global record decodes");
+    assert_dialect(&decoded, false);
+    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().model.curves.is_empty());
+    assert_eq!(
+        decoded.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("a cut Global record inspects");
+    let declared = only_match(summary.dialects()).declared();
+    for key in [
+        "version_flag",
+        "effective_version",
+        "effective_version_flag",
+        "version_flag_declaration",
+    ] {
+        assert!(!declared.contains_key(key), "{key}");
+    }
+    let global_note = |note: &str| {
+        matches!(
+            note.split_once('=').map_or(note, |(key, _)| key),
+            "iges_version"
+                | "iges_declared_version_flag"
+                | "iges_effective_version"
+                | "units"
+                | "parameter_delimiter"
+                | "record_delimiter"
+                | "sender_product"
+                | "receiver_product"
+                | "native_units"
+                | "model_scale"
+        )
+    };
+    assert!(
+        summary.notes.iter().all(|note| !global_note(note)),
+        "{:#?}",
+        summary.notes
+    );
+    assert_eq!(
+        loss_count(&summary.losses, IgesLossCode::SourceDialectUnverified),
+        1
+    );
+    assert_eq!(
+        loss_count(&summary.losses, IgesLossCode::CardFramingRecovered),
+        1
+    );
 }
