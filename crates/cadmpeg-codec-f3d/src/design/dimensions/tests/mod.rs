@@ -87,6 +87,7 @@ fn length_parameter_document(
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
             id,
             owner: None,
             ordinal: 0,

@@ -151,7 +151,7 @@ pub(crate) fn attach(
                 })
                 .map_or(
                     source.record_index,
-                    crate::records::parameters::DesignParameterOwner::scope_record_index,
+                    |row| row.scope_record_index().unwrap_or(source.record_index),
                 );
             resolve(native, model, losses, &source.id, record_index)
         } else {
