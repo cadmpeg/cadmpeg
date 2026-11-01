@@ -440,7 +440,7 @@ fn validation_unit_conversion_refuses_nonfinite_quantities() {
 fn complex_geometric_usage_reads_the_inherited_representation_usage_fields() {
     let (ir, first) = aspect_part(|part| {
         format!(
-            "#901=(GEOMETRIC_ITEM_SPECIFIC_USAGE() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','shape for validation properties',#900,#{},(#{})));\n",
+            "#901=(GEOMETRIC_ITEM_SPECIFIC_USAGE() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','shape for validation properties',#900,#{},#{}));\n",
             part.representation, part.items[0]
         )
     });
@@ -502,7 +502,7 @@ fn tessellated_input_keeps_the_stated_quantities_without_a_decode_time_compariso
                 value: scalar(50.0)
             },
             DeclaredQuantity::SolidCentroid {
-                value: point(3.333333333333333, 3.333333333333333, 0.0)
+                value: point(3.333_333_333_333_333, 3.333_333_333_333_333, 0.0)
             },
             DeclaredQuantity::Volume { value: scalar(0.0) },
             DeclaredQuantity::SolidArea {
