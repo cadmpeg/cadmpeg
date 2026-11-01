@@ -4489,17 +4489,22 @@ pub(super) fn emit_vertices(
                                     "vertex leading tolerance must be finite",
                                 ));
                             };
+                            let namespace =
+                                crate::brep::records::identity::NativeRecordNamespace::new(format);
+                            let record_index = u32::try_from(r.index).map_err(|_| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "ASM native record index exceeds the u32 range",
+                                )
+                            })?;
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
-                                source_namespace:
-                                    crate::brep::records::identity::NativeRecordNamespace::new(
-                                        format,
+                                source_namespace: namespace.clone(),
+                                record_index,
+                                owner:
+                                    crate::brep::records::identity::NativeRowId::row_id(
+                                        &namespace,
+                                        "vertex-ownership",
+                                        record_index,
                                     ),
-                                vertex: <VertexId>::from(id(format, i)),
-                                record_index: u32::try_from(r.index).map_err(|_| {
-                                    cadmpeg_core::CodecError::malformed(
-                                        "ASM native record index exceeds the u32 range",
-                                    )
-                                })?,
                                 leading_tolerances: [first, second],
                                 evaluated_slot: {
                                     let trailing = match r.chunk(9) {
@@ -4519,31 +4524,39 @@ pub(super) fn emit_vertices(
                             });
                         }
                     }
-                    if let (Some(owning_edge), Some(endpoint_index)) = (
-                        r.ref_at(3).filter(|owner| {
+                    let namespace =
+                        crate::brep::records::identity::NativeRecordNamespace::new(format);
+                    let owner = r
+                        .ref_at(3)
+                        .filter(|owner| {
                             by_index
                                 .get(owner)
                                 .is_some_and(|record| is_edge_record(record))
-                        }),
-                        match r.chunk(4) {
-                            Some(Token::Long(0)) => Some(EndpointSlot::Start),
-                            Some(Token::Long(1)) => Some(EndpointSlot::End),
-                            _ => None,
-                        },
-                    ) {
-                        out.vertex_ownerships.push(VertexOwnership {
-                            source_namespace:
-                                crate::brep::records::identity::NativeRecordNamespace::new(format),
-                            vertex: <VertexId>::from(id(format, i)),
-                            record_index: u32::try_from(r.index).map_err(|_| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "ASM native record index exceeds the u32 range",
+                        })
+                        .and_then(|owning_edge| {
+                            u32::try_from(owning_edge).ok().map(|index| {
+                                crate::brep::records::identity::NativeRowId::row_id(
+                                    &namespace,
+                                    "edge-ownership",
+                                    index,
                                 )
-                            })?,
-                            owning_edge: <EdgeId>::from(id(format, owning_edge)),
-                            endpoint_index,
+                            })
                         });
-                    }
+                    let endpoint_index = owner.as_ref().and_then(|_| match r.chunk(4) {
+                        Some(Token::Long(0)) => Some(EndpointSlot::Start),
+                        Some(Token::Long(1)) => Some(EndpointSlot::End),
+                        _ => None,
+                    });
+                    out.vertex_ownerships.push(VertexOwnership {
+                        source_namespace: namespace,
+                        record_index: u32::try_from(r.index).map_err(|_| {
+                            cadmpeg_core::CodecError::malformed(
+                                "ASM native record index exceeds the u32 range",
+                            )
+                        })?,
+                        owner,
+                        endpoint_index,
+                    });
                 }
             }
         }
@@ -4690,16 +4703,21 @@ pub(super) fn emit_edges(
                 tolerance,
             });
             if let Some((entity_revision, trailing_field)) = tolerant_tail {
+                let namespace =
+                    crate::brep::records::identity::NativeRecordNamespace::new(format);
+                let record_index = u32::try_from(r.index).map_err(|_| {
+                    cadmpeg_core::CodecError::malformed(
+                        "ASM native record index exceeds the u32 range",
+                    )
+                })?;
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
-                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
-                        format,
+                    source_namespace: namespace.clone(),
+                    record_index,
+                    owner: crate::brep::records::identity::NativeRowId::row_id(
+                        &namespace,
+                        "edge-ownership",
+                        record_index,
                     ),
-                    edge: EdgeId::from(id(format, i)),
-                    record_index: u32::try_from(r.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
                     entity_revision,
                     trailing_field,
                 });
@@ -4708,25 +4726,31 @@ pub(super) fn emit_edges(
                 source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
                     format,
                 ),
-                edge: EdgeId::from(id(format, i)),
                 record_index: u32::try_from(r.index).map_err(|_| {
                     cadmpeg_core::CodecError::malformed(
                         "ASM native record index exceeds the u32 range",
                     )
                 })?,
-                owner_coedge: r.ref_at(7).map(|owner| CoedgeId::from(id(format, owner))),
+                owner_coedge_index: r
+                    .ref_at(7)
+                    .and_then(|owner| u32::try_from(owner).ok()),
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
+                let record_index = u32::try_from(r.index).map_err(|_| {
+                    cadmpeg_core::CodecError::malformed(
+                        "ASM native record index exceeds the u32 range",
+                    )
+                })?;
                 out.edge_continuities.push(EdgeContinuity {
                     source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
                         format,
                     ),
-                    edge: EdgeId::from(id(format, i)),
-                    record_index: u32::try_from(r.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
+                    record_index,
+                    owner: crate::brep::records::identity::NativeRowId::row_id(
+                        &crate::brep::records::identity::NativeRecordNamespace::new(format),
+                        "edge-ownership",
+                        record_index,
+                    ),
                     sense: sense_at(r, 9),
                     continuity: continuity.to_owned(),
                 });
@@ -4897,7 +4921,6 @@ pub(super) fn emit_coedges(
                     .push(TolerantCoedgeParameters {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        coedge: <CoedgeId>::from(id(format, i)),
                         record_index: u32::try_from(r.index).map_err(|_| {
                             cadmpeg_core::CodecError::malformed(
                                 "ASM native record index exceeds the u32 range",
@@ -5198,7 +5221,6 @@ pub fn emit_containers(
                     out.body_native_keys.push(BodyNativeKey {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        body: body_id.clone(),
                         record_index: u32::try_from(r.index).map_err(|_| {
                             cadmpeg_core::CodecError::malformed(
                                 "ASM native record index exceeds the u32 range",
@@ -5229,12 +5251,22 @@ pub fn emit_containers(
                         out.transform_hints.push(TransformHints {
                             source_namespace:
                                 crate::brep::records::identity::NativeRecordNamespace::new(format),
-                            body: body_id.clone(),
                             record_index: u32::try_from(transform.index).map_err(|_| {
                                 cadmpeg_core::CodecError::malformed(
                                     "ASM native record index exceeds the u32 range",
                                 )
                             })?,
+                            owner: crate::brep::records::identity::NativeRowId::row_id(
+                                &crate::brep::records::identity::NativeRecordNamespace::new(
+                                    format,
+                                ),
+                                "body-native-key",
+                                u32::try_from(r.index).map_err(|_| {
+                                    cadmpeg_core::CodecError::malformed(
+                                        "ASM native record index exceeds the u32 range",
+                                    )
+                                })?,
+                            ),
                             rotation,
                             reflection,
                             shear,

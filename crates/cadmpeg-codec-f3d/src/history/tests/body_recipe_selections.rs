@@ -233,7 +233,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let (_, _, operands, _) = selection_fixture();
     let body = cadmpeg_ir::topology::Body {
-        native_ref: None,
+        native_ref: Some("f3d:asm:body-native-key#1".to_owned()),
         id: cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),
@@ -264,7 +264,10 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let link = crate::records::sketch_links::PersistentDesignLink {
         id: "link".into(),
-        target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#1".to_owned(),
+        ),
+        target_coedge: None,
         design_id: "301".to_owned().try_into().unwrap(),
         design_reference: 9,
         ordinal: 0,

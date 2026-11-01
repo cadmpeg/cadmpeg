@@ -163,29 +163,47 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
     source_less.model.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
-    let tangent_edge = source_less.model.edges[0].id.clone();
-    let visible_body = source_less.model.bodies[0].id.clone();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
-    let tolerant_edge = source_less.model.edges[0].id.clone();
-    let owner_coedge = source_less.model.coedges[0].id.clone();
-    let tolerant_coedge = source_less.model.coedges[1].id.clone();
+    let tangent_edge = source_less.model.edges[0]
+        .native_ref
+        .clone()
+        .expect("decoded edge links its ownership row");
+    let visible_body = source_less.model.bodies[0]
+        .native_ref
+        .clone()
+        .expect("decoded body links its key row");
+    let tolerant_vertex = source_less.model.vertices[0]
+        .native_ref
+        .clone()
+        .expect("decoded vertex links its ownership row");
+    let tolerant_edge = source_less.model.edges[0]
+        .native_ref
+        .clone()
+        .expect("decoded edge links its ownership row");
+    let owner_coedge = cadmpeg_asm::brep::records::neutral_record_index(
+        source_less.model.coedges[0].id.as_str(),
+    )
+    .expect("decoded coedge carries a record index");
+    let tolerant_coedge = cadmpeg_asm::brep::records::neutral_record_index(
+        source_less.model.coedges[1].id.as_str(),
+    )
+    .expect("decoded coedge carries a record index");
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
             .edge_continuities
             .iter_mut()
-            .find(|metadata| metadata.edge == tangent_edge)
+            .find(|metadata| metadata.owner.as_str() == tangent_edge)
             .expect("generated edge continuity");
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
         native.face_sidedness[0].containment =
             Some(cadmpeg_asm::brep::records::FaceContainment::In);
-        native.edge_ownerships[0].owner_coedge = Some(owner_coedge);
+        native.edge_ownerships[0].owner_coedge_index = Some(owner_coedge);
         native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            vertex: tolerant_vertex,
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_vertex),
             record_index: 0,
             leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
@@ -196,7 +214,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            edge: tolerant_edge,
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_edge),
             record_index: 0,
             entity_revision: 22800,
             trailing_field: Some(1),
@@ -206,8 +224,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                     crate::ids::ID_FORMAT,
                 ),
-                coedge: tolerant_coedge,
-                record_index: 0,
+                record_index: tolerant_coedge,
                 parameter_range: cadmpeg_ir::units::FiniteVector::new([0.25, 0.75])
                     .expect("finite interval"),
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
@@ -215,7 +232,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         native.body_visibilities = vec![crate::records::bodies::BodyVisibility::try_from(
             crate::records::bodies::BodyVisibilityWire {
                 id: "f3d:design:body-visibility#42".into(),
-                body: visible_body,
+                body: cadmpeg_asm::brep::records::identity::NativeRowId::from(visible_body),
                 stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
                 byte_offset: 0,
                 asm_body_key_offset: 0,
@@ -369,17 +386,19 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index.code())
+            .map(|metadata| metadata.endpoint_index.map(|slot| slot.code()))
             .collect::<Vec<_>>(),
-        [0, 1, 0]
+        [Some(0), Some(1), Some(0)]
     );
     let continuities = f3d_native(round_trip.ir()).edge_continuities;
     assert_eq!(continuities.len(), 3);
     assert_eq!(continuities[0].continuity, "tangent");
     assert_eq!(continuities[0].sense, cadmpeg_ir::topology::Sense::Reversed);
     assert_eq!(
-        f3d_native(round_trip.ir()).edge_ownerships[0].owner_coedge,
-        Some(round_trip.ir().model.coedges[0].id.clone())
+        f3d_native(round_trip.ir()).edge_ownerships[0].owner_coedge_index,
+        cadmpeg_asm::brep::records::neutral_record_index(
+            round_trip.ir().model.coedges[0].id.as_str()
+        )
     );
     assert!(continuities[1..]
         .iter()
@@ -477,15 +496,21 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
         source_less.model.edges[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
-        let tolerant_vertex = source_less.model.vertices[0].id.clone();
-        let tolerant_edge = source_less.model.edges[0].id.clone();
+        let tolerant_vertex = source_less.model.vertices[0]
+            .native_ref
+            .clone()
+            .expect("decoded vertex links its ownership row");
+        let tolerant_edge = source_less.model.edges[0]
+            .native_ref
+            .clone()
+            .expect("decoded edge links its ownership row");
         {
             let mut native = f3d_native_mut(&mut source_less);
             native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                     crate::ids::ID_FORMAT,
                 ),
-                vertex: tolerant_vertex,
+                owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_vertex),
                 record_index: 0,
                 leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
                 evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
@@ -496,7 +521,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                     crate::ids::ID_FORMAT,
                 ),
-                edge: tolerant_edge,
+                owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_edge),
                 record_index: 0,
                 entity_revision: 22800,
                 trailing_field: edge_trailing,
@@ -540,7 +565,10 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    let tolerant_vertex = source_less.model.vertices[0]
+        .native_ref
+        .clone()
+        .expect("decoded vertex links its ownership row");
     assert_eq!(source_less.model.vertices[0].tolerance, None);
     {
         let mut native = f3d_native_mut(&mut source_less);
@@ -548,7 +576,9 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            vertex: tolerant_vertex,
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                tolerant_vertex.clone(),
+            ),
             record_index: 0,
             leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
@@ -572,7 +602,15 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             f3d_native(round_trip.ir())
                 .tolerant_vertex_tails
                 .iter()
-                .any(|tail| tail.vertex == vertex.id)
+                .any(|tail| {
+                    crate::test_support::native_test::native_row_neutral(
+                        round_trip.ir(),
+                        &tail.owner,
+                        None,
+                    )
+                    .as_deref()
+                        == Some(vertex.id.as_str())
+                })
         })
         .expect("tolerant vertex survives");
     assert_eq!(vertex.tolerance, None);
@@ -601,7 +639,10 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    let tolerant_vertex = source_less.model.vertices[0]
+        .native_ref
+        .clone()
+        .expect("decoded vertex links its ownership row");
     assert_eq!(source_less.model.vertices[0].tolerance, None);
     {
         let mut native = f3d_native_mut(&mut source_less);
@@ -609,7 +650,9 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            vertex: tolerant_vertex,
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                tolerant_vertex.clone(),
+            ),
             record_index: 0,
             leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},
@@ -631,7 +674,15 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             f3d_native(round_trip.ir())
                 .tolerant_vertex_tails
                 .iter()
-                .any(|tail| tail.vertex == vertex.id)
+                .any(|tail| {
+                    crate::test_support::native_test::native_row_neutral(
+                        round_trip.ir(),
+                        &tail.owner,
+                        None,
+                    )
+                    .as_deref()
+                        == Some(vertex.id.as_str())
+                })
         })
         .expect("tolerant vertex survives");
     assert_eq!(vertex.tolerance, None);

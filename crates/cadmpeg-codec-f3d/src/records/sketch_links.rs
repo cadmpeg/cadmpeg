@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Links from a design record to a sketch curve, and the persistent design-link table.
 
-use cadmpeg_ir::attributes::AttributeTarget;
 use serde::{Deserialize, Deserializer, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_sense, SketchLinkSense, "sense");
+cadmpeg_core::named_optional_field!(deserialize_target_coedge, u32, "target_coedge");
 /// The `sketch_attrib_def` sense value that constrains nothing, written as the
 /// unsigned decimal spelling of `0xFFFFFFFF`.
 pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
@@ -43,8 +43,18 @@ impl From<SketchLinkSense> for i64 {
 pub(crate) struct SketchCurveLink {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
-    /// Solved B-rep entity this link provenances back to a sketch curve.
-    pub(crate) target: AttributeTarget,
+    /// Canonical native row carrying the targeted entity. The neutral entity
+    /// resolves through its `native_ref`, which names the same row. A coedge
+    /// target names its owning edge's row; see `target_coedge`.
+    pub(crate) target: cadmpeg_asm::brep::records::identity::NativeRowId,
+    /// Source coedge record index when the target names an edge row for a
+    /// coedge-owned link. Absent for direct entity targets.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_coedge"
+    )]
+    pub(crate) target_coedge: Option<u32>,
     /// First member of the component-scoped source-curve key.
     pub(crate) sketch_curve_id: i64,
     /// Secondary curve identity or owning sketch-text record index.
@@ -100,8 +110,18 @@ impl From<DesignPersistentIdText> for String {
 pub(crate) struct PersistentDesignLink {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
-    /// Solved B-rep entity this persistent Fusion design id is attached to.
-    pub(crate) target: AttributeTarget,
+    /// Canonical native row carrying the targeted entity. The neutral entity
+    /// resolves through its `native_ref`, which names the same row. A coedge
+    /// target names its owning edge's row; see `target_coedge`.
+    pub(crate) target: cadmpeg_asm::brep::records::identity::NativeRowId,
+    /// Source coedge record index when the target names an edge row for a
+    /// coedge-owned link. Absent for direct entity targets.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_coedge"
+    )]
+    pub(crate) target_coedge: Option<u32>,
     /// Fusion persistent design-entity id string, stable across regeneration.
     pub(crate) design_id: DesignPersistentIdText,
     /// Design-stream reference paired with this persistent identifier.
@@ -122,6 +142,7 @@ impl Clone for PersistentDesignLink {
         Self {
             id: self.id.clone(),
             target: self.target.clone(),
+            target_coedge: self.target_coedge,
             design_id: self.design_id.clone(),
             design_reference: self.design_reference,
             ordinal: self.ordinal,
@@ -135,12 +156,12 @@ impl Clone for PersistentDesignLink {
 #[cfg(test)]
 pub(crate) fn current_persistent_design_links(
     links: &[PersistentDesignLink],
-) -> std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> {
-    let mut current: std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> =
+) -> std::collections::BTreeMap<(&str, Option<u32>), &PersistentDesignLink> {
+    let mut current: std::collections::BTreeMap<(&str, Option<u32>), &PersistentDesignLink> =
         std::collections::BTreeMap::new();
     for link in links {
         current
-            .entry(&link.target)
+            .entry((link.target.as_str(), link.target_coedge))
             .and_modify(|existing| {
                 if link.ordinal > existing.ordinal {
                     *existing = link;
@@ -155,8 +176,11 @@ pub(crate) fn current_persistent_design_links(
 struct PersistentDesignLinkWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Solved B-rep entity this persistent Fusion design id is attached to.
-    target: AttributeTarget,
+    /// Canonical native row carrying the targeted entity.
+    target: cadmpeg_asm::brep::records::identity::NativeRowId,
+    /// Source coedge record index for a coedge-owned link.
+    #[serde(default, deserialize_with = "deserialize_target_coedge")]
+    target_coedge: Option<u32>,
     /// Fusion persistent design-entity id string, stable across regeneration.
     design_id: String,
     entity_kind: i64,
@@ -171,7 +195,8 @@ impl Serialize for PersistentDesignLink {
         #[derive(Serialize)]
         struct WireRef<'a> {
             id: &'a str,
-            target: &'a AttributeTarget,
+            target: &'a cadmpeg_asm::brep::records::identity::NativeRowId,
+            target_coedge: Option<u32>,
             design_id: &'a str,
             entity_kind: i64,
             design_reference: i64,
@@ -180,6 +205,7 @@ impl Serialize for PersistentDesignLink {
         WireRef {
             id: &self.id,
             target: &self.target,
+            target_coedge: self.target_coedge,
             design_id: self.design_id.as_str(),
             entity_kind: 3,
             design_reference: self.design_reference,
@@ -199,6 +225,7 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
         Ok(Self {
             id: wire.id,
             target: wire.target,
+            target_coedge: wire.target_coedge,
             design_id: wire.design_id.try_into()?,
             design_reference: wire.design_reference,
             ordinal: wire.ordinal,
@@ -212,6 +239,7 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
         Self {
             id: record.id,
             target: record.target,
+            target_coedge: record.target_coedge,
             design_id: record.design_id.into(),
             entity_kind: 3,
             design_reference: record.design_reference,
@@ -225,8 +253,18 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
 pub(crate) struct PersistentSubentityTag {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
-    /// Solved B-rep face or edge carrying this tag group.
-    pub(crate) target: AttributeTarget,
+    /// Canonical native row carrying the tagged face or edge. The neutral
+    /// entity resolves through its `native_ref`, which names the same row. A
+    /// coedge target names its owning edge's row; see `target_coedge`.
+    pub(crate) target: cadmpeg_asm::brep::records::identity::NativeRowId,
+    /// Source coedge record index when the target names an edge row for a
+    /// coedge-owned link. Absent for direct entity targets.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_coedge"
+    )]
+    pub(crate) target_coedge: Option<u32>,
     /// Native selector stored before the tag token.
     pub(crate) selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.

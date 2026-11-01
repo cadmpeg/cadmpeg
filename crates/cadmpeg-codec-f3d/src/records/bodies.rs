@@ -2,14 +2,14 @@
 //! Design body members, bounds, bindings and visibility.
 
 use super::identity::NativeRecordId;
+use cadmpeg_asm::brep::records::identity::NativeRowId;
 use super::mesh::DesignMeshSceneBounds;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
-cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(deserialize_body, NativeRowId, "body");
 cadmpeg_core::named_optional_field!(
     deserialize_component_owner,
     super::body_ownership::BodyOwnership,
@@ -421,9 +421,11 @@ pub(crate) struct DesignBodyBinding {
     blob_name: String,
     /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
     blob_name_offset: Option<u64>,
-    /// Solved body in the BREP blob named by this pair.
+    /// Body key row carrying the solved body in the BREP blob named by this
+    /// pair. The neutral body resolves through its `native_ref`, which names
+    /// the same key row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) body: Option<BodyId>,
+    pub(crate) body: Option<NativeRowId>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -472,7 +474,7 @@ struct DesignBodyBindingWireRef<'a> {
     entity_suffix: u64,
     blob_name: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    body: Option<&'a BodyId>,
+    body: Option<&'a NativeRowId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     component_owner: Option<&'a super::body_ownership::BodyOwnership>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -512,7 +514,7 @@ pub(crate) struct DesignBodyBindingContent {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_body"
     )]
-    pub(crate) body: Option<BodyId>,
+    pub(crate) body: Option<NativeRowId>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -580,13 +582,14 @@ pub(crate) struct DesignBodyBindingWire {
     pub(crate) blob_name: String,
     /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
     pub(crate) blob_name_offset: u64,
-    /// Solved body in the BREP blob named by this pair.
+    /// Body key row carrying the solved body in the BREP blob named by this
+    /// pair.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_body"
     )]
-    pub(crate) body: Option<BodyId>,
+    pub(crate) body: Option<NativeRowId>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -698,7 +701,9 @@ impl From<DesignBodyBinding> for DesignBodyBindingContent {
 #[serde(try_from = "BodyVisibilityContent")]
 pub(crate) struct BodyVisibility {
     id: NativeRecordId,
-    pub(crate) body: BodyId,
+    /// Body key row carrying the solved body. The neutral body resolves
+    /// through its `native_ref`, which names the same key row.
+    pub(crate) body: NativeRowId,
     stream: DesignBulkStreamPath,
     pub(crate) byte_offset: Option<u64>,
     pub(crate) asm_body_key_offset: Option<u64>,
@@ -710,7 +715,7 @@ pub(crate) struct BodyVisibility {
 #[derive(Deserialize, Serialize)]
 pub(crate) struct BodyVisibilityWire {
     pub(crate) id: String,
-    pub(crate) body: BodyId,
+    pub(crate) body: NativeRowId,
     pub(crate) stream: String,
     pub(crate) byte_offset: u64,
     pub(crate) asm_body_key_offset: u64,
@@ -751,7 +756,7 @@ impl BodyVisibility {
 #[serde(deny_unknown_fields)]
 pub(crate) struct BodyVisibilityContent {
     pub(crate) id: String,
-    pub(crate) body: BodyId,
+    pub(crate) body: NativeRowId,
     pub(crate) stream: String,
     #[serde(
         default,
@@ -832,11 +837,11 @@ mod tests {
     };
 
     #[test]
-    fn native_reference_walk_visits_typed_body_without_copying_plain_text() {
+    fn native_reference_walk_visits_body_key_without_copying_plain_text() {
         use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
         let value = super::BodyVisibility::try_from(super::BodyVisibilityWire {
             id: "f3d:Design/BulkStream.dat:body-visibility#1".to_owned(),
-            body: super::BodyId::mint("f3d:model:body#1").unwrap(),
+            body: super::NativeRowId::from("f3d:asm:body-native-key#1".to_string()),
             stream: "Design/BulkStream.dat".to_owned(),
             byte_offset: 0,
             asm_body_key_offset: 0,
@@ -856,7 +861,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        assert_eq!(references, ["f3d:model:body#1"]);
+        assert_eq!(references, ["f3d:asm:body-native-key#1"]);
         ctx.finish_session().unwrap();
     }
 

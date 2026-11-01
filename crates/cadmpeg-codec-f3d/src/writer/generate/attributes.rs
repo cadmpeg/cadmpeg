@@ -32,15 +32,15 @@ pub(super) struct AttributeIndex<'a> {
     face_group_ordinals: HashMap<String, usize>,
     edge_group_ordinals: HashMap<String, usize>,
     sketch_ordinals: HashMap<String, usize>,
-    body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
-    face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
-    edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
-    body_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    face_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    edge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
+    body_links: HashMap<String, Vec<&'a PersistentDesignLink>>,
+    face_tags: HashMap<String, Vec<&'a PersistentSubentityTag>>,
+    edge_tags: HashMap<String, Vec<&'a PersistentSubentityTag>>,
+    body_timestamps: HashMap<String, IndexedTimestamp<'a>>,
+    face_timestamps: HashMap<String, IndexedTimestamp<'a>>,
+    edge_timestamps: HashMap<String, IndexedTimestamp<'a>>,
+    coedge_timestamps: HashMap<String, IndexedTimestamp<'a>>,
+    vertex_timestamps: HashMap<String, IndexedTimestamp<'a>>,
+    coedge_sketch_links: HashMap<String, &'a SketchCurveLink>,
     body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
 }
 
@@ -67,11 +67,23 @@ impl<'a> AttributeIndex<'a> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
-            body_keys.entry(key.body.as_str()).or_insert(key);
+            if let Some(body) = target.model.bodies.iter().find(|body| {
+                key.owns_native_ref(body.native_ref.as_deref())
+            }) {
+                body_keys.entry(body.id.as_str()).or_insert(key);
+            }
         }
         for link in &native.persistent_design_links {
-            if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = &link.target {
-                body_links.entry(id.as_str()).or_default().push(link);
+            if let Some(body) = crate::brep::link_neutral_id(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &link.target,
+                link.target_coedge,
+            ) {
+                body_links.entry(body).or_default().push(link);
             }
         }
         for group in body_links.values_mut() {
@@ -80,14 +92,22 @@ impl<'a> AttributeIndex<'a> {
         let mut face_tags: HashMap<_, Vec<_>> = HashMap::new();
         let mut edge_tags: HashMap<_, Vec<_>> = HashMap::new();
         for tag in &native.persistent_subentity_tags {
-            match &tag.target {
-                cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
-                    face_tags.entry(id.as_str()).or_default().push(tag);
+            let neutral = crate::brep::link_neutral_id(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &tag.target,
+                tag.target_coedge,
+            );
+            // Tags are derived for faces and edges only; anything else stays unindexed.
+            if let Some(id) = neutral {
+                if target.model.faces.iter().any(|face| face.id.as_str() == id) {
+                    face_tags.entry(id).or_default().push(tag);
+                } else if target.model.edges.iter().any(|edge| edge.id.as_str() == id) {
+                    edge_tags.entry(id).or_default().push(tag);
                 }
-                cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
-                    edge_tags.entry(id.as_str()).or_default().push(tag);
-                }
-                _ => {}
             }
         }
         for group in face_tags.values_mut().chain(edge_tags.values_mut()) {
@@ -99,54 +119,55 @@ impl<'a> AttributeIndex<'a> {
         let mut coedge_timestamps = HashMap::new();
         let mut vertex_timestamps = HashMap::new();
         for timestamp in &native.creation_timestamps {
-            match &timestamp.target {
-                cadmpeg_ir::attributes::AttributeTarget::Body(id) => {
-                    body_timestamps
-                        .entry(id.as_str())
-                        .or_insert(IndexedTimestamp {
-                            source: timestamp,
-                            ordinal: None,
-                        });
-                }
-                cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
-                    face_timestamps
-                        .entry(id.as_str())
-                        .or_insert(IndexedTimestamp {
-                            source: timestamp,
-                            ordinal: None,
-                        });
-                }
-                cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
-                    edge_timestamps
-                        .entry(id.as_str())
-                        .or_insert(IndexedTimestamp {
-                            source: timestamp,
-                            ordinal: None,
-                        });
-                }
-                cadmpeg_ir::attributes::AttributeTarget::Coedge(id) => {
-                    coedge_timestamps
-                        .entry(id.as_str())
-                        .or_insert(IndexedTimestamp {
-                            source: timestamp,
-                            ordinal: None,
-                        });
-                }
-                cadmpeg_ir::attributes::AttributeTarget::Vertex(id) => {
-                    vertex_timestamps
-                        .entry(id.as_str())
-                        .or_insert(IndexedTimestamp {
-                            source: timestamp,
-                            ordinal: None,
-                        });
-                }
-                _ => {}
-            }
+            let neutral = crate::brep::link_neutral_id(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &timestamp.target,
+                timestamp.target_coedge,
+            );
+            let Some(id) = neutral else {
+                continue;
+            };
+            let entry = if target.model.bodies.iter().any(|body| body.id.as_str() == id) {
+                &mut body_timestamps
+            } else if target.model.faces.iter().any(|face| face.id.as_str() == id) {
+                &mut face_timestamps
+            } else if target.model.edges.iter().any(|edge| edge.id.as_str() == id) {
+                &mut edge_timestamps
+            } else if target.model.coedges.iter().any(|coedge| coedge.id.as_str() == id) {
+                &mut coedge_timestamps
+            } else if target.model.vertices.iter().any(|vertex| vertex.id.as_str() == id) {
+                &mut vertex_timestamps
+            } else {
+                continue;
+            };
+            entry.entry(id).or_insert(IndexedTimestamp {
+                source: timestamp,
+                ordinal: None,
+            });
         }
         let mut coedge_sketch_links = HashMap::new();
         for link in &native.sketch_curve_links {
-            if let cadmpeg_ir::attributes::AttributeTarget::Coedge(id) = &link.target {
-                coedge_sketch_links.entry(id.as_str()).or_insert(link);
+            if let Some(id) = crate::brep::link_neutral_id(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &link.target,
+                link.target_coedge,
+            )
+            .filter(|id| {
+                target
+                    .model
+                    .coedges
+                    .iter()
+                    .any(|coedge| coedge.id.as_str() == id)
+            }) {
+                coedge_sketch_links.entry(id).or_insert(link);
             }
         }
         let mut split_ordinal = 0;
@@ -882,7 +903,17 @@ pub(super) fn encode_source_less_attributes(
                 timestamp.id
             )));
         }
-        if timestamp_attribute_ordinal(index, &timestamp.target).is_none() {
+        if crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &timestamp.target,
+            timestamp.target_coedge,
+        )
+        .is_none()
+        {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D creation timestamp has an unsupported or missing target: {}",
                 timestamp.id

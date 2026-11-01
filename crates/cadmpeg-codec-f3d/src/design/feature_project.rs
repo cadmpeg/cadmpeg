@@ -19,6 +19,7 @@ use crate::design::face_resolve::{
 
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use cadmpeg_ir::ids::BodyId;
 
 use crate::records::{
     bodies::DesignBodyBinding,
@@ -105,6 +106,8 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) legacy_loft_body_carriers: &'a [DesignLoftLegacyBodyCarrier],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
+    /// Neutral body per body key row id, linking map pairs to solved bodies.
+    pub(crate) body_key_bodies: Option<&'a std::collections::BTreeMap<String, BodyId>>,
     pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
     pub(crate) face_boundaries:
@@ -622,6 +625,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         body_recipe_operands,
         placements,
         body_bindings,
+        body_key_bodies,
         component_naming_spaces,
         histories,
         face_boundaries,
@@ -1245,6 +1249,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     .iter()
                                     .map(|body| u64::from(body.copied.value)),
                                 body_bindings,
+                                body_key_bodies,
                             );
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved {
@@ -1290,6 +1295,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     scope,
                                     construction.body_entity_suffixes(),
                                     body_bindings,
+                                    body_key_bodies,
                                 ),
                             })
                         } else {
@@ -2620,6 +2626,7 @@ fn design_body_selection(
     scope: &DesignParameterScope,
     entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
+    body_key_bodies: Option<&std::collections::BTreeMap<String, BodyId>>,
 ) -> cadmpeg_ir::features::BodySelection {
     use cadmpeg_ir::features::BodySelection;
 
@@ -2630,13 +2637,19 @@ fn design_body_selection(
         let mut matches = body_bindings.iter().filter(|binding| {
             native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
         });
-        let Some(body) = matches.next().and_then(|binding| binding.body.as_ref()) else {
+        let Some(row) = matches.next().and_then(|binding| binding.body.as_ref()) else {
             return BodySelection::Native(scope.id.clone());
         };
-        if matches.any(|candidate| candidate.body.as_ref() != Some(body)) {
+        if matches.any(|candidate| candidate.body.as_ref() != Some(row)) {
             return BodySelection::Native(scope.id.clone());
         }
-        bodies.push(body.clone());
+        let Some(body) = body_key_bodies
+            .and_then(|bodies| bodies.get(row.as_str()))
+            .cloned()
+        else {
+            return BodySelection::Native(scope.id.clone());
+        };
+        bodies.push(body);
     }
     if bodies.len() == expected_count {
         if let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) {

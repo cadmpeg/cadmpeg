@@ -2606,8 +2606,12 @@ impl<'a> F3dDecodeSession<'a> {
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
         )?;
-        let geometry_materials =
-            materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
+        let geometry_materials = materials::decode_with_body_bindings(
+            ctx,
+            scan,
+            &design_body_bindings,
+            &brep.asm.bodies,
+        )?;
         let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         geometry_admission::admit(
@@ -2888,6 +2892,9 @@ impl<'a> F3dDecodeSession<'a> {
                 regions: &model.regions,
                 shells: &model.shells,
                 faces: &model.faces,
+                edges: &model.edges,
+                vertices: &model.vertices,
+                coedges: &model.coedges,
                 surfaces: &model.surfaces,
                 subds: &model.subds,
                 assets: &model.assets,
@@ -3073,6 +3080,20 @@ impl<'a> F3dDecodeSession<'a> {
             .filter(|body| body.visible == Some(false))
             .map(|body| body.id.clone())
             .collect::<std::collections::BTreeSet<_>>();
+        let body_key_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter_map(|body| {
+                body.native_ref.as_ref().map(|native_ref| {
+                    (
+                        native_ref.clone(),
+                        body.id.clone(),
+                    )
+                })
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
@@ -3080,6 +3101,7 @@ impl<'a> F3dDecodeSession<'a> {
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
+            body_key_bodies: Some(&body_key_bodies),
             root_ordinal_start: prereqs
                 .xref_table()
                 .map_or(0, |table| table.references.len()),
@@ -3625,10 +3647,17 @@ fn decode_scanned_document<'a>(
                         body_selector,
                     );
 
+                    let Some(key) = part.asm.body_native_keys.iter().find(|key| {
+                        key.owns_native_ref(body.native_ref.as_deref())
+                    }) else {
+                        continue;
+                    };
                     let visibility = crate::records::bodies::BodyVisibility::try_from(
                         crate::records::bodies::BodyVisibilityWire {
                             id,
-                            body: body.id.clone(),
+                            body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                                key.id(),
+                            ),
                             stream: visibility.stream.clone(),
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
@@ -5739,11 +5768,13 @@ pub(crate) fn apply_body_presentation_names(
             let (Some(binding), None) = (matching.next(), matching.next()) else {
                 continue;
             };
-            if let Some(body_id) = &binding.body {
-                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
-                    if body.name.is_none() {
-                        body.name = Some(name.to_string());
-                    }
+            if let Some(body) = binding.body.as_ref().and_then(|row| {
+                ir.model.bodies.iter_mut().find(|body| {
+                    body.native_ref.as_deref() == Some(row.as_str())
+                })
+            }) {
+                if body.name.is_none() {
+                    body.name = Some(name.to_string());
                 }
             }
         }

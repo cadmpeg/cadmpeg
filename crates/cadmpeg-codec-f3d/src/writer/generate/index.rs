@@ -24,21 +24,56 @@ pub(super) struct NativeGenerationIndex<'a> {
 
 impl<'a> NativeGenerationIndex<'a> {
     pub(super) fn new(target: &'a cadmpeg_ir::CadIr, native: &'a F3dNative) -> Self {
-        macro_rules! first_by_id {
-            ($items:expr, $field:ident) => {{
-                let mut map = HashMap::new();
-                for item in $items {
-                    map.entry(item.$field.as_str()).or_insert(item);
-                }
-                map
-            }};
-        }
         let mut wires_by_shell: HashMap<_, Vec<_>> = HashMap::new();
+        // Canonical native row id to the neutral entity linked from it.
+        let mut row_owner: HashMap<_, _> = HashMap::new();
+        for body in &target.model.bodies {
+            if let Some(native_ref) = body.native_ref.as_deref() {
+                row_owner.entry(native_ref).or_insert(body.id.as_str());
+            }
+        }
+        for face in &target.model.faces {
+            if let Some(native_ref) = face.native_ref.as_deref() {
+                row_owner.entry(native_ref).or_insert(face.id.as_str());
+            }
+        }
+        for edge in &target.model.edges {
+            if let Some(native_ref) = edge.native_ref.as_deref() {
+                row_owner.entry(native_ref).or_insert(edge.id.as_str());
+            }
+        }
+        for vertex in &target.model.vertices {
+            if let Some(native_ref) = vertex.native_ref.as_deref() {
+                row_owner.entry(native_ref).or_insert(vertex.id.as_str());
+            }
+        }
         for wire in &native.wire_topologies {
-            wires_by_shell
-                .entry(wire.shell.as_str())
-                .or_default()
-                .push(wire);
+            let members = wire
+                .members
+                .edges()
+                .iter()
+                .map(|member| member.as_str())
+                .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+                .filter_map(|member| row_owner.get(member).copied())
+                .collect::<Vec<_>>();
+            for shell in &target.model.shells {
+                let owns = members.iter().any(|neutral| {
+                    shell
+                        .wire_edges()
+                        .iter()
+                        .any(|edge| edge.as_str() == *neutral)
+                        || shell
+                            .free_vertices()
+                            .iter()
+                            .any(|vertex| vertex.as_str() == *neutral)
+                });
+                if owns {
+                    wires_by_shell
+                        .entry(shell.id.as_str())
+                        .or_default()
+                        .push(wire);
+                }
+            }
         }
         let face_native_keys = target
             .model
@@ -55,7 +90,15 @@ impl<'a> NativeGenerationIndex<'a> {
             })
             .collect();
         Self {
-            edge_continuities: first_by_id!(&native.edge_continuities, edge),
+            edge_continuities: native
+                .edge_continuities
+                .iter()
+                .filter_map(|row| {
+                    row_owner
+                        .get(row.owner.as_str())
+                        .map(|edge| (*edge, row))
+                })
+                .collect(),
             edge_ownerships: &native.edge_ownerships,
             face_sidedness: target
                 .model
@@ -75,11 +118,60 @@ impl<'a> NativeGenerationIndex<'a> {
                 })
                 .collect(),
             face_native_keys,
-            tolerant_coedges: first_by_id!(&native.tolerant_coedge_parameters, coedge),
-            tolerant_edges: first_by_id!(&native.tolerant_edge_tails, edge),
-            tolerant_vertices: first_by_id!(&native.tolerant_vertex_tails, vertex),
-            transform_hints: first_by_id!(&native.transform_hints, body),
-            vertex_ownerships: first_by_id!(&native.vertex_ownerships, vertex),
+            tolerant_coedges: native
+                .tolerant_coedge_parameters
+                .iter()
+                .filter_map(|row| {
+                    cadmpeg_asm::brep::records::native_entity_id(
+                        &row.source_namespace,
+                        row.record_index,
+                    )
+                    .and_then(|entity| {
+                        target
+                            .model
+                            .coedges
+                            .iter()
+                            .find(|coedge| coedge.id.as_str() == entity)
+                            .map(|coedge| (coedge.id.as_str(), row))
+                    })
+                })
+                .collect(),
+            tolerant_edges: native
+                .tolerant_edge_tails
+                .iter()
+                .filter_map(|row| {
+                    row_owner
+                        .get(row.owner.as_str())
+                        .map(|edge| (*edge, row))
+                })
+                .collect(),
+            tolerant_vertices: native
+                .tolerant_vertex_tails
+                .iter()
+                .filter_map(|row| {
+                    row_owner
+                        .get(row.owner.as_str())
+                        .map(|vertex| (*vertex, row))
+                })
+                .collect(),
+            transform_hints: native
+                .transform_hints
+                .iter()
+                .filter_map(|row| {
+                    row_owner
+                        .get(row.owner.as_str())
+                        .map(|body| (*body, row))
+                })
+                .collect(),
+            vertex_ownerships: native
+                .vertex_ownerships
+                .iter()
+                .filter_map(|row| {
+                    row_owner
+                        .get(row.id().as_str())
+                        .map(|vertex| (*vertex, row))
+                })
+                .collect(),
             wires_by_shell,
         }
     }

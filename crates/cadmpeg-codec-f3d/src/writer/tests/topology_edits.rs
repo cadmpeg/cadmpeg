@@ -62,15 +62,19 @@ fn generated_f3d_rewrites_body_transform() {
 
 #[test]
 fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
-    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let namespace = cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+        crate::ids::ID_FORMAT,
+    );
+    let row = cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+        &namespace,
+        "body-native-key",
+        1,
+    );
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys
         .push(cadmpeg_asm::brep::records::BodyNativeKey {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            body: body.clone(),
+            source_namespace: namespace,
             record_index: 1,
             body_ordinal: 0,
             source_brep: Some("BREP.source.smb".into()),
@@ -80,7 +84,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
         crate::records::bodies::BodyVisibility::try_from(
             crate::records::bodies::BodyVisibilityWire {
                 id: "f3d:design:body-visibility#0".into(),
-                body,
+                body: row,
                 stream: "Design1/BulkStream.dat".into(),
                 byte_offset: 20,
                 asm_body_key_offset: 40,
@@ -277,12 +281,15 @@ fn generated_f3d_rewrites_edge_native_metadata() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let owner = edited.model.coedges[0].id.clone();
+    let owner = cadmpeg_asm::brep::records::neutral_record_index(
+        edited.model.coedges[0].id.as_str(),
+    )
+    .expect("decoded coedge carries a record index");
     {
         let mut native = f3d_native_mut(&mut edited);
         native.edge_continuities[0].continuity = "tangent".into();
         native.edge_continuities[0].sense = cadmpeg_ir::topology::Sense::Reversed;
-        native.edge_ownerships[0].owner_coedge = Some(owner.clone());
+        native.edge_ownerships[0].owner_coedge_index = Some(owner);
     }
 
     let mut regenerated = Vec::new();
@@ -301,15 +308,24 @@ fn generated_f3d_rewrites_edge_native_metadata() {
     );
     let native = f3d_native(round_trip.ir());
     let ownership = &native.edge_ownerships[0];
-    if let Some(owner) = &ownership.owner_coedge {
-        let coedge = round_trip
-            .ir()
-            .model
+    if let Some(index) = ownership.owner_coedge_index {
+        let model = &round_trip.ir().model;
+        let edge = crate::test_support::native_test::native_row_neutral(
+            round_trip.ir(),
+            &cadmpeg_asm::brep::records::identity::NativeRowId::from(ownership.id()),
+            None,
+        )
+        .expect("a regenerated owner names a held edge");
+        let coedge = model
             .coedges
             .iter()
-            .find(|coedge| &coedge.id == owner)
+            .find(|coedge| {
+                coedge.edge.as_str() == edge
+                    && cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+                        == Some(index)
+            })
             .expect("a regenerated owner names a held coedge");
-        assert_eq!(coedge.edge, ownership.edge);
+        assert_eq!(coedge.edge.as_str(), edge);
     }
 }
 
@@ -320,12 +336,17 @@ fn generated_f3d_rewrites_vertex_ownership() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let replacement = edited.model.edges[1].id.clone();
+    let replacement = edited.model.edges[1]
+        .native_ref
+        .clone()
+        .expect("decoded edge links its ownership row");
     {
         let mut native = f3d_native_mut(&mut edited);
-        native.vertex_ownerships[1].owning_edge = replacement.clone();
+        native.vertex_ownerships[1].owner = Some(
+            cadmpeg_asm::brep::records::identity::NativeRowId::from(replacement.clone()),
+        );
         native.vertex_ownerships[1].endpoint_index =
-            cadmpeg_asm::brep::records::EndpointSlot::Start;
+            Some(cadmpeg_asm::brep::records::EndpointSlot::Start);
     }
 
     let mut regenerated = Vec::new();
@@ -336,20 +357,36 @@ fn generated_f3d_rewrites_vertex_ownership() {
         .expect("regenerated F3D decode");
     let native = f3d_native(round_trip.ir());
     let ownership = &native.vertex_ownerships[1];
+    let owner = ownership.owner.as_ref().expect("regenerated owner");
     let edge = round_trip
         .ir()
         .model
         .edges
         .iter()
-        .find(|edge| edge.id == ownership.owning_edge)
+        .find(|edge| {
+            edge.native_ref.as_deref() == Some(owner.as_str())
+        })
         .expect("the regenerated native owner names a held edge");
-    let endpoint = if ownership.endpoint_index.code() == 0 {
+    let endpoint = if ownership.endpoint_index.map(|slot| slot.code()) == Some(0) {
         &edge.start
     } else {
         &edge.end
     };
+    let vertex = crate::test_support::native_test::native_row_neutral(
+        round_trip.ir(),
+        &cadmpeg_asm::brep::records::identity::NativeRowId::from(ownership.id()),
+        None,
+    )
+    .expect("the regenerated ownership row names a held vertex");
+    let vertex = round_trip
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .find(|candidate| candidate.id.as_str() == vertex)
+        .expect("the regenerated vertex is held");
     assert_eq!(
-        endpoint, &ownership.vertex,
+        endpoint, &vertex.id,
         "native owner selection must agree with neutral incidence"
     );
 }

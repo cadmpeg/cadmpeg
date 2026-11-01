@@ -62,8 +62,7 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         | AttributeTarget::SemanticAnnotation(_)
         | AttributeTarget::Drawing(_)
         | AttributeTarget::ViewPresentation(_)
-        | AttributeTarget::Record { .. }
-        | AttributeTarget::Source { .. } => return false,
+        | AttributeTarget::Record { .. } => return false,
     };
     reachable.contains(id)
 }

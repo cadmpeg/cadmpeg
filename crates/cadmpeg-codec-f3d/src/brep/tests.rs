@@ -28,6 +28,50 @@ fn with_context<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) ->
     with_limits(u64::MAX, run)
 }
 
+fn asm_with_face(face: &str, index: u32) -> AsmBrep {
+    use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, FaceNativeKey};
+    let key = FaceNativeKey {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        record_index: index,
+        asm_face_key: Some(7),
+    };
+    let mut model_face = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .model
+        .faces
+        .remove(0);
+    model_face.id = face.try_into().expect("face id");
+    model_face.native_ref = Some(key.id());
+    AsmBrep {
+        faces: vec![model_face],
+        face_native_keys: vec![key],
+        ..AsmBrep::default()
+    }
+}
+
+fn asm_with_body(body: &str, index: u32) -> AsmBrep {
+    use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, BodyNativeKey};
+    let key = BodyNativeKey {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        record_index: index,
+        body_ordinal: 0,
+        source_brep: None,
+        asm_body_key: Some(11),
+    };
+    let mut model_body = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .model
+        .bodies
+        .remove(0);
+    model_body.id = body.try_into().expect("body id");
+    model_body.native_ref = Some(key.id());
+    AsmBrep {
+        bodies: vec![model_body],
+        body_native_keys: vec![key],
+        ..AsmBrep::default()
+    }
+}
+
 fn generic_tag_attribute(
     target: AttributeTarget,
     versions: (i64, i64),
@@ -87,9 +131,10 @@ fn generic_tag_payload_accepts_both_equal_envelope_versions() {
             1,
             groups,
         );
-        assert_eq!(persistent_subentity_tags(&attribute).unwrap().len(), 1);
+        let asm = asm_with_face("f3d:test:face#1", 7);
+        assert_eq!(persistent_subentity_tags(&asm, &attribute).unwrap().len(), 1);
         assert_eq!(
-            persistent_subentity_tags(&attribute).unwrap()[0].design_references,
+            persistent_subentity_tags(&asm, &attribute).unwrap()[0].design_references,
             [302]
         );
     }
@@ -111,7 +156,8 @@ fn generic_tag_payload_rejects_mixed_or_unsupported_envelope_versions() {
             1,
             groups.clone(),
         );
-        assert!(persistent_subentity_tags(&attribute).unwrap().is_empty());
+        let asm = asm_with_face("f3d:test:face#1", 7);
+        assert!(persistent_subentity_tags(&asm, &attribute).unwrap().is_empty());
     }
 }
 
@@ -128,7 +174,8 @@ fn generic_tag_payload_binds_modern_body_design_links() {
             AttributeValue::Integer(0),
         ],
     );
-    let links = persistent_design_links(&attribute).unwrap();
+    let asm = asm_with_body("f3d:test:body#1", 9);
+    let links = persistent_design_links(&asm, &attribute).unwrap();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].design_id.as_str(), "301");
     assert_eq!(links[0].design_reference, 1);
@@ -148,17 +195,27 @@ fn generic_tag_payload_binds_legacy_body_design_links() {
             AttributeValue::Integer(0),
         ],
     );
-    assert_eq!(persistent_design_links(&attribute).unwrap().len(), 1);
+    let asm = asm_with_body("f3d:test:body#1", 9);
+    assert_eq!(persistent_design_links(&asm, &attribute).unwrap().len(), 1);
 }
 
 #[test]
 fn brep_qualification_rewrites_owned_ids_and_cross_references() {
+    let key = || BodyNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            crate::ids::ID_FORMAT,
+        ),
+        record_index: 1,
+        body_ordinal: 0,
+        source_brep: Some("BREP.source.smbh".into()),
+        asm_body_key: Some(7),
+    };
     let body = BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
     let region = RegionId::mint("f3d:brep:entity#2").expect("identity grammar");
     let mut brep = Brep {
         asm: AsmBrep {
             bodies: vec![Body {
-                native_ref: None,
+                native_ref: Some(key().id()),
                 id: body.clone(),
                 kind: BodyKind::default(),
                 regions: vec![region.clone()],
@@ -174,16 +231,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
                 shells: Vec::new(),
             }],
 
-            body_native_keys: vec![BodyNativeKey {
-                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    crate::ids::ID_FORMAT,
-                ),
-                body,
-                record_index: 1,
-                body_ordinal: 0,
-                source_brep: Some("BREP.source.smbh".into()),
-                asm_body_key: Some(7),
-            }],
+            body_native_keys: vec![key()],
             annotation_records: vec![AnnotationRecord {
                 id: "f3d:brep:entity#1".into(),
                 stream: "asset/BREP.source.smbh".into(),
@@ -202,12 +250,17 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
     let qualified = BodyId::mint("f3d:brep/source/brep:entity#1").expect("identity grammar");
     assert_eq!(brep.asm.bodies[0].id, qualified);
     assert_eq!(brep.asm.regions[0].body, qualified);
-    assert_eq!(brep.asm.body_native_keys[0].body, qualified);
+    assert_eq!(
+        brep.asm.bodies[0].native_ref.as_deref(),
+        Some(brep.asm.body_native_keys[0].id().as_str())
+    );
     assert_eq!(
         brep.asm
             .body_native_keys
             .iter()
-            .find(|record| record.body == qualified)
+            .find(|record| {
+                brep.asm.bodies[0].native_ref.as_deref() == Some(record.id().as_str())
+            })
             .and_then(|record| record.asm_body_key.as_ref()),
         Some(&7)
     );
@@ -220,8 +273,21 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
 
 #[test]
 fn body_key_retention_keeps_only_the_selected_connected_graph() {
-    let body = |index, region| Body {
-        native_ref: None,
+    let native_key = |index, key| BodyNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            crate::ids::ID_FORMAT,
+        ),
+        record_index: index,
+        body_ordinal: index - 1,
+        source_brep: Some("BREP.source.smbh".into()),
+        asm_body_key: Some(key),
+    };
+    let keys = vec![native_key(1, 10), native_key(3, 20)];
+    let body = |index: u32, region| Body {
+        native_ref: keys
+            .iter()
+            .find(|key| key.record_index == index)
+            .map(|key| key.id()),
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: vec![
@@ -231,16 +297,6 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
         name: None,
         color: None,
         visible: None,
-    };
-    let native_key = |index, key| BodyNativeKey {
-        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-            crate::ids::ID_FORMAT,
-        ),
-        body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-        record_index: index,
-        body_ordinal: index - 1,
-        source_brep: Some("BREP.source.smbh".into()),
-        asm_body_key: Some(key),
     };
     let mut brep = Brep {
         asm: AsmBrep {
@@ -266,7 +322,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
                 },
             ],
 
-            body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+            body_native_keys: keys,
             ..AsmBrep::default()
         },
         ..Brep::default()
@@ -292,8 +348,21 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
 
 #[test]
 fn body_key_retention_preserves_derived_links_for_reachable_targets() {
-    let body = |index| Body {
-        native_ref: None,
+    let native_key = |index, key| BodyNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            crate::ids::ID_FORMAT,
+        ),
+        record_index: index,
+        body_ordinal: index - 1,
+        source_brep: Some("BREP.source.smbh".into()),
+        asm_body_key: Some(key),
+    };
+    let keys = vec![native_key(1, 10), native_key(3, 20)];
+    let body = |index: u32| Body {
+        native_ref: keys
+            .iter()
+            .find(|key| key.record_index == index)
+            .map(|key| key.id()),
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),
@@ -302,32 +371,27 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         color: None,
         visible: None,
     };
-    let native_key = |index, key| BodyNativeKey {
-        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-            crate::ids::ID_FORMAT,
-        ),
-        body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-        record_index: index,
-        body_ordinal: index - 1,
-        source_brep: Some("BREP.source.smbh".into()),
-        asm_body_key: Some(key),
-    };
-    let target = |index| {
-        AttributeTarget::Body(
-            BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
+    let target = |index: u32| {
+        cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            keys
+                .iter()
+                .find(|key| key.record_index == index)
+                .map(|key| key.id())
+                .expect("key row"),
         )
     };
     let mut brep = Brep {
         asm: AsmBrep {
             bodies: vec![body(1), body(3)],
 
-            body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+            body_native_keys: keys.clone(),
             ..AsmBrep::default()
         },
         sketch_curve_links: vec![
             SketchCurveLink {
                 id: "link-retained".into(),
                 target: target(1),
+                target_coedge: None,
                 sketch_curve_id: 1,
                 ref_b: 0,
                 sense: None,
@@ -337,6 +401,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
             SketchCurveLink {
                 id: "link-dropped".into(),
                 target: target(3),
+                target_coedge: None,
                 sketch_curve_id: 3,
                 ref_b: 0,
                 sense: None,
@@ -348,16 +413,16 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
             PersistentDesignLink {
                 id: "design-retained".into(),
                 target: target(1),
+                target_coedge: None,
                 design_id: "301".to_owned().try_into().unwrap(),
-
                 design_reference: 1,
                 ordinal: 0,
             },
             PersistentDesignLink {
                 id: "design-dropped".into(),
                 target: target(3),
+                target_coedge: None,
                 design_id: "303".to_owned().try_into().unwrap(),
-
                 design_reference: 3,
                 ordinal: 0,
             },
@@ -366,6 +431,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
             PersistentSubentityTag {
                 id: "tag-retained".into(),
                 target: target(1),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
                 design_references: vec![1],
@@ -374,6 +440,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
             PersistentSubentityTag {
                 id: "tag-dropped".into(),
                 target: target(3),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
                 design_references: vec![3],
@@ -384,12 +451,14 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
             CreationTimestamp {
                 id: "time-retained".into(),
                 target: target(1),
+                target_coedge: None,
                 record_index: 1,
                 unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
             },
             CreationTimestamp {
                 id: "time-dropped".into(),
                 target: target(3),
+                target_coedge: None,
                 record_index: 3,
                 unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
             },
@@ -439,7 +508,6 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                     crate::ids::ID_FORMAT,
                 ),
-                body: native_body,
                 record_index: 1,
                 body_ordinal: 0,
                 source_brep: Some("BREP.source.smbh".into()),
@@ -463,14 +531,33 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
             crate::ids::ID_FORMAT,
         ),
-        body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
         record_index: ordinal,
         body_ordinal: ordinal,
         source_brep: Some("BREP.source.smb".into()),
         asm_body_key: key,
     };
+    let body = |ordinal: u32| Body {
+        native_ref: Some(
+            cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+                &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
+                "body-native-key",
+                ordinal,
+            )
+            .to_string(),
+        ),
+        id: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
+        kind: BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
     let mut brep = Brep {
         asm: AsmBrep {
+            bodies: vec![body(0), body(1)],
             body_native_keys: vec![native_key(0, None), native_key(1, None)],
             ..AsmBrep::default()
         },
@@ -499,14 +586,33 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
             crate::ids::ID_FORMAT,
         ),
-        body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
         record_index: ordinal,
         body_ordinal: ordinal,
         source_brep: Some("BREP.source.smb".into()),
         asm_body_key: Some(key),
     };
+    let body = |ordinal: u32| Body {
+        native_ref: Some(
+            cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+                &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
+                "body-native-key",
+                ordinal,
+            )
+            .to_string(),
+        ),
+        id: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
+        kind: BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
     let mut brep = Brep {
         asm: AsmBrep {
+            bodies: vec![body(0), body(1)],
             body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
             ..AsmBrep::default()
         },

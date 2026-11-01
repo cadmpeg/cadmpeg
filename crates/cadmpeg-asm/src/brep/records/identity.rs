@@ -190,6 +190,82 @@ impl serde::Serialize for NativeRecordIdentity<'_> {
     }
 }
 
+/// Native identity of another ASM record in the same source namespace.
+///
+/// Cross-references between native rows name the referenced row's derived id
+/// (for example an edge's ownership row) instead of naming a neutral record,
+/// so no native row holds a neutral back-link. Resolution runs through the
+/// neutral record's `native_ref`, which names the same row id.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct NativeRowId(String);
+
+impl NativeRowId {
+    /// Name an ASM row of `kind` at `record_index` in `namespace`.
+    #[must_use]
+    pub fn row_id(
+        namespace: &NativeRecordNamespace,
+        kind: &str,
+        record_index: u32,
+    ) -> Self {
+        Self(namespace.id(kind, record_index))
+    }
+
+    /// The referenced row identity.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NativeRowId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl From<String> for NativeRowId {
+    fn from(id: String) -> Self {
+        Self(id)
+    }
+}
+
+impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for NativeRowId {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: &mut serde_json::Value,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let _depth = ctx.enter_nested("rewrite ASM native row reference")?;
+        let serde_json::Value::String(source) = value else {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "native row reference must be text",
+            ));
+        };
+        *source = map.identity(source)?;
+        Ok(())
+    }
+
+    fn visit_identity_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let _depth = ctx.enter_nested("walk ASM native row reference")?;
+        visitor(&self.0)
+    }
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let _depth = ctx.enter_nested("rewrite ASM native row reference")?;
+        self.0 = map.identity(&self.0)?;
+        Ok(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde::{de::DeserializeOwned, Serialize};
@@ -285,7 +361,7 @@ mod tests {
             "edge-continuity",
             serde_json::json!({
                 "id": "f3d:asm:edge-continuity#1", "record_index": 1,
-                "edge": "f3d:brep:entity#1", "sense": "forward", "continuity": "tangent"
+                "owner": "f3d:asm:edge-ownership#1", "sense": "forward", "continuity": "tangent"
             }),
         );
     }

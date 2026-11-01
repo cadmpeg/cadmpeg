@@ -254,6 +254,7 @@ fn encode_source_less_wires(
             native_ref(records, native_record_index(shell_start, shell_ordinal)?);
             native_ref(records, -1);
             records.push(native_wire_side(
+                target,
                 topology,
                 &shell.id,
                 shell.wire_edges(),
@@ -296,7 +297,7 @@ fn encode_source_less_wires(
             native_ref(records, -1);
             native_ref(records, native_record_index(shell_start, shell_ordinal)?);
             native_ref(records, native_record_index(vertex_start, vertex_ordinal)?);
-            records.push(native_wire_side(topology, &shell.id, &[], Some(vertex_id))?);
+            records.push(native_wire_side(target, topology, &shell.id, &[], Some(vertex_id))?);
             records.push(0x11);
             wire_ordinal += 1;
         }
@@ -1705,30 +1706,59 @@ fn vertex_ownership(
 ) -> Result<(usize, EndpointSlot), CodecError> {
     let model = &target.model;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
-        let ordinal = model
-            .edges
-            .iter()
-            .position(|edge| edge.id == metadata.owning_edge)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "vertex {} references missing owning edge {}",
-                    vertex.id, metadata.owning_edge
-                ))
-            })?;
-        let edge = &model.edges[ordinal];
-        let valid = match metadata.endpoint_index {
-            EndpointSlot::Start => edge.start == vertex.id,
-            EndpointSlot::End => edge.end == vertex.id,
-        };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "vertex {} endpoint slot {} conflicts with owning edge {}",
-                vertex.id,
-                metadata.endpoint_index.code(),
-                metadata.owning_edge
-            )));
+        if let Some(owner) = metadata.owner.as_ref() {
+            let edge = model
+                .edges
+                .iter()
+                .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "vertex {} references missing owning edge row {}",
+                        vertex.id,
+                        owner.as_str()
+                    ))
+                })?;
+            let ordinal = model
+                .edges
+                .iter()
+                .position(|candidate| candidate.id == edge.id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "vertex {} references missing owning edge {}",
+                        vertex.id, edge.id
+                    ))
+                })?;
+            let slot = match metadata.endpoint_index {
+                Some(slot) => {
+                    let valid = match slot {
+                        EndpointSlot::Start => edge.start == vertex.id,
+                        EndpointSlot::End => edge.end == vertex.id,
+                    };
+                    if !valid {
+                        return Err(CodecError::malformed(format_args!(
+                            "vertex {} endpoint slot {} conflicts with owning edge {}",
+                            vertex.id,
+                            slot.code(),
+                            edge.id
+                        )));
+                    }
+                    slot
+                }
+                None => {
+                    if edge.start == vertex.id {
+                        EndpointSlot::Start
+                    } else if edge.end == vertex.id {
+                        EndpointSlot::End
+                    } else {
+                        return Err(CodecError::malformed(format_args!(
+                            "vertex {} matches neither endpoint of owning edge {}",
+                            vertex.id, edge.id
+                        )));
+                    }
+                }
+            };
+            return Ok((ordinal, slot));
         }
-        return Ok((ordinal, metadata.endpoint_index));
     }
     model
         .edges
@@ -1777,6 +1807,7 @@ fn native_face_sense(
 }
 
 fn native_wire_side(
+    target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
     shell: &ShellId,
     edges: &[cadmpeg_ir::ids::EdgeId],
@@ -1788,7 +1819,30 @@ fn native_wire_side(
         .into_iter()
         .flatten()
         .copied()
-        .filter(|wire| wire.members.edges() == edges && wire.members.free_vertex() == free_vertex);
+        .filter(|wire| {
+            wire.members.edges().len() == edges.len()
+                && wire
+                    .members
+                    .edges()
+                    .iter()
+                    .zip(edges.iter())
+                    .all(|(member, edge)| {
+                        target.model.edges.iter().any(|candidate| {
+                            candidate.id == *edge
+                                && candidate.native_ref.as_deref() == Some(member.as_str())
+                        })
+                    })
+                && match (wire.members.free_vertex(), free_vertex) {
+                    (None, None) => true,
+                    (Some(member), Some(vertex)) => {
+                        target.model.vertices.iter().any(|candidate| {
+                            &candidate.id == vertex
+                                && candidate.native_ref.as_deref() == Some(member.as_str())
+                        })
+                    }
+                    _ => false,
+                }
+        });
     let side = match (matches.next(), matches.next()) {
         (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
@@ -1905,46 +1959,44 @@ fn apply_native_edge_owners(
     owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
 ) -> Result<(), CodecError> {
     for ownership in topology.edge_ownerships {
-        if !target
+        let edge = target
             .model
             .edges
             .iter()
-            .any(|edge| edge.id == ownership.edge)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D edge ownership {} references missing edge {}",
-                ownership.id(),
-                ownership.edge
-            )));
-        }
-        let owner = match &ownership.owner_coedge {
+            .find(|edge| edge.native_ref.as_deref() == Some(ownership.id().as_str()))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "F3D edge ownership {} resolves to no neutral edge",
+                    ownership.id(),
+                ))
+            })?;
+        let owner = match ownership.owner_coedge_index {
             None => -1,
-            Some(owner) => {
-                if let Some((ordinal, coedge)) = target
+            Some(index) => {
+                if let Some((ordinal, _)) = target
                     .model
                     .coedges
                     .iter()
                     .enumerate()
-                    .find(|(_, coedge)| coedge.id == *owner)
+                    .find(|(_, coedge)| {
+                        coedge.edge == edge.id
+                            && cadmpeg_asm::brep::records::neutral_record_index(
+                                coedge.id.as_str(),
+                            ) == Some(index)
+                    })
                 {
-                    if coedge.edge != ownership.edge {
-                        return Err(CodecError::malformed(format_args!(
-                            "F3D edge ownership {} selects a coedge of another edge",
-                            ownership.id()
-                        )));
-                    }
                     native_record_index(coedge_start, ordinal)?
-                } else if owners.contains_key(&ownership.edge) {
+                } else if owners.contains_key(&edge.id) {
                     continue;
                 } else {
                     return Err(CodecError::malformed(format_args!(
-                        "F3D edge ownership {} references missing coedge {owner}",
+                        "F3D edge ownership {} references missing coedge index {index}",
                         ownership.id()
                     )));
                 }
             }
         };
-        owners.insert(ownership.edge.clone(), owner);
+        owners.insert(edge.id.clone(), owner);
     }
     Ok(())
 }

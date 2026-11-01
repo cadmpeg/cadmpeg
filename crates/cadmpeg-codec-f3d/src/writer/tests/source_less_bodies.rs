@@ -120,22 +120,41 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         recipes::CreationTimestamp,
         sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     };
-    use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].color = Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
     source_less.model.faces[0].color = Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
-    let body_id = source_less.model.bodies[0].id.clone();
-    let face_id = source_less.model.faces[0].id.clone();
-    let edge_id = source_less.model.edges[0].id.clone();
-    let coedge_id = source_less.model.coedges[0].id.clone();
-    let vertex_id = source_less.model.vertices[0].id.clone();
+    // Link targets name canonical native rows; each neutral entity carries the
+    // row id in its `native_ref`. The coedge-owned link names its owning
+    // edge's row with the coedge source index, since coedges hold no row.
+    use cadmpeg_asm::brep::records::identity::NativeRowId;
+    let body_row = NativeRowId::from("f3d:asm:body-native-key#1".to_string());
+    let face_row = NativeRowId::from("f3d:asm:face-native-key#2".to_string());
+    let edge_row = NativeRowId::from("f3d:asm:edge-ownership#3".to_string());
+    let vertex_row = NativeRowId::from("f3d:asm:vertex-ownership#4".to_string());
+    source_less.model.bodies[0].native_ref = Some(body_row.to_string());
+    source_less.model.faces[0].native_ref = Some(face_row.to_string());
+    source_less.model.edges[0].native_ref = Some(edge_row.to_string());
+    source_less.model.vertices[0].native_ref = Some(vertex_row.to_string());
+    assert_eq!(
+        source_less.model.coedges[0].edge,
+        source_less.model.edges[0].id,
+        "the coedge-owned link shares its owning edge's row with the edge tag"
+    );
+    let coedge_index = 5;
+    crate::test_support::native_test::pair_cube_coedge_with_native_record(
+        &mut source_less,
+        &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        0,
+        coedge_index,
+    );
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#0".into(),
-            target: AttributeTarget::Body(body_id.clone()),
+            target: body_row.clone(),
+            target_coedge: None,
             design_id: "311".to_owned().try_into().unwrap(),
 
             design_reference: 7,
@@ -143,7 +162,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#1".into(),
-            target: AttributeTarget::Body(body_id.clone()),
+            target: body_row.clone(),
+            target_coedge: None,
             design_id: "322".to_owned().try_into().unwrap(),
 
             design_reference: 8,
@@ -153,7 +173,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     native.persistent_subentity_tags = vec![
         PersistentSubentityTag {
             id: "f3d:generated:persistent-subentity-tag#0".into(),
-            target: AttributeTarget::Face(face_id.clone()),
+            target: face_row.clone(),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("8").unwrap(),
             design_references: vec![301, -314, 411],
@@ -161,7 +182,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
         PersistentSubentityTag {
             id: "f3d:generated:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Edge(edge_id.clone()),
+            target: edge_row.clone(),
+            target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("-1").unwrap(),
             design_references: vec![511],
@@ -169,7 +191,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
         PersistentSubentityTag {
             id: "f3d:generated:persistent-subentity-tag#2".into(),
-            target: AttributeTarget::Face(face_id.clone()),
+            target: face_row.clone(),
+            target_coedge: None,
             selector: 3,
             token: cadmpeg_core::text::NonBlankString::new("42").unwrap(),
             design_references: Vec::new(),
@@ -178,7 +201,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
-        target: AttributeTarget::Coedge(coedge_id.clone()),
+        target: edge_row.clone(),
+        target_coedge: Some(coedge_index),
         sketch_curve_id: 113,
         ref_b: 0,
         sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
@@ -186,17 +210,18 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         closure: 3,
     }];
     native.creation_timestamps = [
-        (AttributeTarget::Body(body_id), 1_579_392_000_000_001.0),
-        (AttributeTarget::Face(face_id), 1_579_392_000_000_002.0),
-        (AttributeTarget::Edge(edge_id), 1_579_392_000_000_003.0),
-        (AttributeTarget::Coedge(coedge_id), 1_579_392_000_000_004.0),
-        (AttributeTarget::Vertex(vertex_id), 1_579_392_000_000_005.0),
+        (body_row, None, 1_579_392_000_000_001.0),
+        (face_row, None, 1_579_392_000_000_002.0),
+        (edge_row.clone(), None, 1_579_392_000_000_003.0),
+        (edge_row, Some(coedge_index), 1_579_392_000_000_004.0),
+        (vertex_row, None, 1_579_392_000_000_005.0),
     ]
     .into_iter()
     .enumerate()
-    .map(|(ordinal, (target, unix_microseconds))| CreationTimestamp {
+    .map(|(ordinal, (target, target_coedge, unix_microseconds))| CreationTimestamp {
         id: format!("f3d:generated:creation-timestamp#{ordinal}"),
         target,
+        target_coedge,
         record_index: 0,
         unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(unix_microseconds).unwrap(),
     })
@@ -313,8 +338,33 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         ["322"]
     );
     assert_eq!(native.persistent_subentity_tags.len(), 3);
+    let neutral_of = |target: &cadmpeg_asm::brep::records::identity::NativeRowId,
+                      target_coedge: Option<u32>| {
+        crate::test_support::native_test::native_row_neutral(round_trip.ir(), target, target_coedge)
+    };
+    let is_face = |neutral: &Option<String>| {
+        neutral.as_deref().is_some_and(|neutral| {
+            round_trip
+                .ir()
+                .model
+                .faces
+                .iter()
+                .any(|face| face.id.as_str() == neutral)
+        })
+    };
+    let is_edge = |neutral: &Option<String>| {
+        neutral.as_deref().is_some_and(|neutral| {
+            round_trip
+                .ir()
+                .model
+                .edges
+                .iter()
+                .any(|edge| edge.id.as_str() == neutral)
+        })
+    };
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
+        tag.design_references == [301, -314, 411]
+            && is_face(&neutral_of(&tag.target, tag.target_coedge))
     }));
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, round_trip.ir())
@@ -324,12 +374,12 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "-1"
             && tag.design_references == [511]
-            && matches!(tag.target, AttributeTarget::Edge(_))
+            && is_edge(&neutral_of(&tag.target, tag.target_coedge))
     }));
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "42"
             && tag.design_references.is_empty()
-            && matches!(tag.target, AttributeTarget::Face(_))
+            && is_face(&neutral_of(&tag.target, tag.target_coedge))
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
@@ -338,7 +388,16 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
     assert!(native.creation_timestamps.iter().any(|timestamp| {
-        matches!(timestamp.target, AttributeTarget::Vertex(_))
+        neutral_of(&timestamp.target, timestamp.target_coedge)
+            .as_deref()
+            .is_some_and(|neutral| {
+                round_trip
+                    .ir()
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.id.as_str() == neutral)
+            })
             && timestamp.unix_microseconds.get() == 1_579_392_000_000_005.0
     }));
     assert_eq!(
@@ -366,17 +425,17 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 #[test]
 fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordinals() {
     use crate::records::sketch_links::{PersistentDesignLink, SketchCurveLink};
-    use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = source_less.model.bodies[0].id.clone();
-    let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
             id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
-            target: AttributeTarget::Coedge(coedge.clone()),
-            sketch_curve_id: 113 + ordinal,
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "f3d:asm:edge-ownership#999".to_string(),
+            ),
+            target_coedge: Some(ordinal),
+            sketch_curve_id: 113 + i64::from(ordinal),
             ref_b: 0,
             sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
             role: 2,
@@ -392,9 +451,14 @@ fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordina
     super::source_less_analytic::assert_native_omission(&report);
 
     f3d_native_mut(&mut source_less).sketch_curve_links.pop();
+    let body_row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "f3d:asm:body-native-key#1".to_string(),
+    );
+    source_less.model.bodies[0].native_ref = Some(body_row.to_string());
     f3d_native_mut(&mut source_less).persistent_design_links = vec![PersistentDesignLink {
         id: "f3d:generated:persistent-design-link#0".into(),
-        target: AttributeTarget::Body(body),
+        target: body_row,
+        target_coedge: None,
         design_id: "311".to_owned().try_into().unwrap(),
 
         design_reference: 7,
@@ -412,8 +476,14 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
     use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let edge = source_less.model.edges[0].id.clone();
-    let vertex = source_less.model.vertices[0].id.clone();
+    let edge_row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "f3d:asm:edge-ownership#0".to_string(),
+    );
+    let vertex_row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "f3d:asm:vertex-ownership#0".to_string(),
+    );
+    source_less.model.edges[0].native_ref = Some(edge_row.to_string());
+    source_less.model.vertices[0].native_ref = Some(vertex_row.to_string());
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.edge_continuities = [0, 1]
@@ -421,7 +491,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                     crate::ids::ID_FORMAT,
                 ),
-                edge: edge.clone(),
+                owner: edge_row.clone(),
                 record_index: ordinal,
                 sense: cadmpeg_ir::topology::Sense::Forward,
                 continuity: "unknown".into(),
@@ -443,7 +513,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            vertex,
+            owner: vertex_row.clone(),
             record_index: 0,
             leading_tolerances: [
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),

@@ -11,8 +11,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    CoedgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
@@ -24,7 +23,7 @@ use super::geometry::{
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
     reverse_procedural_curve_definition, vertex_point_ref,
 };
-use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
+use super::{count_kind, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(super) fn decode_analytic_carriers(
@@ -244,7 +243,6 @@ pub(super) fn keep_faces_and_carriers(
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        surface: SurfaceId::from(id(format, surf_ref)),
                         record_index: u32::try_from(surf_rec.index).map_err(|_| {
                             cadmpeg_core::CodecError::malformed(
                                 "ASM native record index exceeds the u32 range",
@@ -651,22 +649,46 @@ pub(super) fn collect_wire_topology(
                     }
                 }
                 if let Some(side) = side {
+                    let namespace =
+                        crate::brep::records::identity::NativeRecordNamespace::new(format);
                     out.wire_topologies.push(WireTopology {
-                        source_namespace:
-                            crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        shell: ShellId::from(id(format, shell_index)),
+                        source_namespace: namespace.clone(),
                         record_index: u32::try_from(wire.index).map_err(|_| {
                             cadmpeg_core::CodecError::malformed(
                                 "ASM native record index exceeds the u32 range",
                             )
                         })?,
                         members: match free_vertex {
-                            Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
+                            Some(vertex) => WireMembers::Vertex(
+                                crate::brep::records::identity::NativeRowId::row_id(
+                                    &namespace,
+                                    "vertex-ownership",
+                                    u32::try_from(vertex).map_err(|_| {
+                                        cadmpeg_core::CodecError::malformed(
+                                            "ASM native record index exceeds the u32 range",
+                                        )
+                                    })?,
+                                ),
+                            ),
                             None => WireMembers::Edges(
                                 wire_edges
                                     .into_iter()
-                                    .map(|edge| EdgeId::from(id(format, edge)))
-                                    .collect::<Vec<_>>(),
+                                    .map(|edge| {
+                                        u32::try_from(edge)
+                                            .map_err(|_| {
+                                                cadmpeg_core::CodecError::malformed(
+                                                    "ASM native record index exceeds the u32 range",
+                                                )
+                                            })
+                                            .map(|index| {
+                                                crate::brep::records::identity::NativeRowId::row_id(
+                                                    &namespace,
+                                                    "edge-ownership",
+                                                    index,
+                                                )
+                                            })
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()?,
                             ),
                         },
                         side,
