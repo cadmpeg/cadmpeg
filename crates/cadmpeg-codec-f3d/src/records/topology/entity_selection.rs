@@ -312,7 +312,7 @@ impl DesignEntitySelectionOperand {
             | EntitySelectionFrame::Pair {
                 next_record_index, ..
             } => next_record_index,
-            _ => self.frame.index(4),
+            EntitySelectionFrame::SketchCurve { .. } => self.frame.index(4),
         }
     }
     pub(crate) fn next_byte_offset(&self) -> u64 {
