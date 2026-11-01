@@ -14,7 +14,9 @@ use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedCurveGeometry};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse, SketchGeometryDefinition};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
 use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
@@ -350,7 +352,8 @@ pub(super) struct ProfileIndex<'a> {
     /// id; `None` when the id names more than one curve.
     curves: HashMap<(&'a str, u32, i64), Option<String>>,
     by_id: HashMap<&'a str, &'a SketchEntity>,
-    incomplete_sketches: std::collections::HashSet<(&'a str, u32)>,
+    incomplete_sketches: HashMap<(&'a str, u32), Vec<Option<LoopCurve>>>,
+    non_curves: std::collections::HashSet<String>,
     /// Loops that resolved selections append to sketch profile tables.
     added: RefCell<HashMap<String, Vec<Vec<SketchEntityUse>>>>,
 }
@@ -443,30 +446,73 @@ impl<'a> ProfileIndex<'a> {
             })
             .map(SketchEntity::id)
             .collect::<std::collections::HashSet<_>>();
-        let incomplete_sketches = raw_entities
-            .iter()
-            .filter(|entity| {
-                matches!(
-                    entity.kind,
-                    PmDcSketchEntityKind::Line { .. }
-                        | PmDcSketchEntityKind::Circle { .. }
-                        | PmDcSketchEntityKind::Ellipse { .. }
-                        | PmDcSketchEntityKind::Spline { .. }
-                )
-            })
-            .filter(|entity| {
-                crate::sketch::entity_id(entity).is_none_or(|id| !resolved_ids.contains(&id))
-            })
-            .filter_map(|entity| {
-                Some((
+        let raw_geometry = cadmpeg_core::decode::unique_index(raw_entities.iter().map(|entity| {
+            (
+                (
                     entity.identity.segment_token.as_str(),
-                    entity.sketch.record_ordinal()?,
-                ))
-            })
-            .collect();
+                    entity.identity.record_ordinal,
+                ),
+                entity,
+            )
+        }));
+        let mut incomplete_sketches = HashMap::<_, Vec<_>>::new();
+        let mut non_curves = std::collections::HashSet::new();
+        for entity in raw_entities {
+            let id = crate::sketch::entity_id(entity);
+            let missing = match &entity.kind {
+                PmDcSketchEntityKind::Point { .. }
+                | PmDcSketchEntityKind::Polygon { .. }
+                | PmDcSketchEntityKind::BlockMember { .. } => {
+                    non_curves.extend(id.map(|id| id.as_str().to_owned()));
+                    false
+                }
+                PmDcSketchEntityKind::BlockInstance { definition, .. } => {
+                    let mut has_curves = false;
+                    let placed = definition.record_ordinal().is_some()
+                        && raw_entities
+                            .iter()
+                            .filter(|member| {
+                                member.identity.segment_token == entity.identity.segment_token
+                                    && member.sketch.index() == definition.index()
+                            })
+                            .all(|member| match member.kind {
+                                PmDcSketchEntityKind::Point { .. }
+                                | PmDcSketchEntityKind::Polygon { .. }
+                                | PmDcSketchEntityKind::BlockMember { .. } => true,
+                                PmDcSketchEntityKind::BlockInstance { .. } => false,
+                                PmDcSketchEntityKind::Line { .. }
+                                | PmDcSketchEntityKind::Circle { .. }
+                                | PmDcSketchEntityKind::Ellipse { .. }
+                                | PmDcSketchEntityKind::Spline { .. } => {
+                                    has_curves = true;
+                                    crate::sketch::marks_construction(member)
+                                        || crate::sketch::block_curve_id(entity, member)
+                                            .is_some_and(|id| resolved_ids.contains(&id))
+                                }
+                            })
+                        && has_curves;
+                    if placed {
+                        non_curves.extend(id.map(|id| id.as_str().to_owned()));
+                    }
+                    !placed
+                }
+                _ => id.is_none_or(|id| !resolved_ids.contains(&id)),
+            };
+            if missing && !crate::sketch::marks_construction(entity) {
+                if let Some(sketch) = entity.sketch.record_ordinal() {
+                    let curve = crate::sketch::project_geometry(entity, &raw_geometry)
+                        .and_then(|geometry| LoopCurve::from_geometry(&geometry, false));
+                    incomplete_sketches
+                        .entry((entity.identity.segment_token.as_str(), sketch))
+                        .or_default()
+                        .push(curve);
+                }
+            }
+        }
         Self {
             bodies: body_index,
             incomplete_sketches,
+            non_curves,
             kernel_links: kernel_links
                 .iter()
                 .map(|link| {
@@ -532,8 +578,10 @@ impl<'a> ProfileIndex<'a> {
         links: &[u32],
         material: bool,
     ) -> Option<PlanarProfileRef> {
-        // A curve that does not project is a curve outside the loops.
-        let material = material && !self.incomplete_sketches.contains(&(token, sketch_ordinal));
+        let incomplete = self
+            .incomplete_sketches
+            .get(&(token, sketch_ordinal))
+            .map_or(&[][..], Vec::as_slice);
         let frame = SketchFrame::new(sketch)?;
         if let Some(profile) =
             self.closed_spline_region(token, sketch_ordinal, sketch, &frame, links)
@@ -566,7 +614,7 @@ impl<'a> ProfileIndex<'a> {
             .iter()
             .all(|ring| ring.iter().all(|piece| piece.whole))
         {
-            self.loop_regions(sketch, &rings, material)
+            self.loop_regions(sketch, &rings, material, incomplete)
         } else {
             trimmed_regions(sketch, &rings)
         }
@@ -638,6 +686,7 @@ impl<'a> ProfileIndex<'a> {
         sketch: &Sketch,
         rings: &[Vec<Piece<'a>>],
         material: bool,
+        incomplete: &[Option<LoopCurve>],
     ) -> Option<PlanarProfileRef> {
         let mut table = sketch.profiles.iter().cloned().collect::<Vec<_>>();
         if let Some(added) = self.added.borrow().get(sketch.id.as_str()) {
@@ -684,7 +733,7 @@ impl<'a> ProfileIndex<'a> {
                 .push(SketchProfileRegion::loops(u32::try_from(loops[*outer]).ok()?, holes).ok()?);
         }
         let faces = if material {
-            self.material_faces(sketch, &table, &loops, &nested)
+            self.material_faces(sketch, &table, &loops, &nested, incomplete)
         } else {
             None
         };
@@ -1202,7 +1251,11 @@ enum LoopCurve {
 
 impl LoopCurve {
     fn new(entity: &SketchEntity, reversed: bool) -> Option<Self> {
-        Some(match *entity.geometry.definition() {
+        Self::from_geometry(&entity.geometry, reversed)
+    }
+
+    fn from_geometry(geometry: &SketchGeometry, reversed: bool) -> Option<Self> {
+        Some(match *geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => {
                 let (start, end) = (start.get(), end.get());
                 if reversed {
