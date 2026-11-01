@@ -2,6 +2,7 @@
 
 mod axis_distance;
 mod delete_face;
+mod edge_selections;
 mod revolve_axis;
 mod split_face;
 mod tagging;

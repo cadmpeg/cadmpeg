@@ -4,12 +4,13 @@
 use super::{PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind, ProjectionIndex};
 use crate::{
     kernel::ActiveCarrierState,
-    pmdc::{state_content_header, u32_list, Cursor},
     rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind},
 };
 use cadmpeg_asm::sab::{Record, Token};
+#[cfg(test)]
+use cadmpeg_core::decode::View;
 use cadmpeg_core::{
-    decode::{unique_index, DecodeContext, View},
+    decode::{unique_index, DecodeContext},
     CodecError,
 };
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
@@ -17,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 mod archive;
 pub(in crate::feature) mod geometry;
+pub(crate) mod historical;
 
 #[derive(Debug, Default)]
 pub(super) struct EdgeInventory {
@@ -24,6 +26,7 @@ pub(super) struct EdgeInventory {
     pub(super) geometry: HashMap<(String, u32), geometry::EdgeGeometry>,
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
+    pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -202,42 +205,29 @@ const fn selector_has_qualifier(version: u8) -> bool {
 /// The `PmDc` segment major version whose direct edge selector has no qualifier word.
 const SELECTOR_WITHOUT_QUALIFIER: u8 = 19;
 
-fn selector(payload: View<'_>, version: u8) -> Result<Option<Selector>, CodecError> {
-    let mut cursor = Cursor::new(payload);
-    let header = state_content_header(&mut cursor, version)?;
-    if cursor.i32("edge selector state")? != -1
-        || cursor.u8("edge selector enabled")? != 1
-        || cursor.u8("edge selector form")? != 5
-    {
-        return Ok(None);
-    }
-    cursor.reference("edge selector body")?;
-    if cursor.u32("edge selector topology")? != 2
-        || (selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
-        || cursor.u32("edge selector naming form")? != 2
-    {
-        return Ok(None);
-    }
-    let generators = u32_list(&mut cursor, 8, "edge selector generators")?;
-    let [generator] = generators.values() else {
-        return Ok(None);
-    };
-    if !u32_list(&mut cursor, 8, "edge selector secondary names")?
-        .values()
-        .is_empty()
-        || cursor.u8("edge selector suffix form")? != 0
-    {
-        return Ok(None);
-    }
-    cursor.reference("edge selector item")?;
-    cursor.reference("edge selector context")?;
-    let key = cursor.u32("edge selector key")?;
-    cursor.finish("edge selector")?;
-    Ok(Some(Selector {
-        source: header.source_index,
-        generator: *generator,
-        key,
-    }))
+#[cfg(test)]
+fn selector(
+    payload: cadmpeg_core::decode::View<'_>,
+    version: u8,
+) -> Result<Option<Selector>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    Ok(
+        historical::parse(&ctx, payload, version)?.and_then(|stored| {
+            let [generator] = stored.generators.as_slice() else {
+                return None;
+            };
+            Some(Selector {
+                source: stored.source,
+                generator: *generator,
+                key: stored.key,
+            })
+        }),
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -432,7 +422,14 @@ pub(super) fn inventory(
     if ctx.container_only() || ctx.depth() != cadmpeg_core::decode::DecodeDepth::Full {
         return Ok(EdgeInventory::default());
     }
+    let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
+        return Ok(EdgeInventory::default());
+    };
+    if !historical::supported_schema(carrier.schema) {
+        return Ok(EdgeInventory::default());
+    }
     let mut selectors = Vec::new();
+    let mut stored_selectors = Vec::new();
     let mut sample_geometry = false;
     let mut has_flange = false;
     let mut tokens = HashSet::new();
@@ -453,6 +450,14 @@ pub(super) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
+        let record_types = unique_index(
+            table
+                .records
+                .iter()
+                .map(|record| (record.ordinal, record.type_id)),
+        );
+        let mut selector_sources = HashMap::<u32, usize>::new();
+        let stored_start = stored_selectors.len();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
@@ -460,17 +465,42 @@ pub(super) fn inventory(
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
-            if let Ok(Some(selector)) = selector(record.payload, version) {
-                selectors.push(selector);
+            if let Ok(source) = historical::source(record.payload, version) {
+                *selector_sources.entry(source).or_default() += 1;
+            }
+            let stored = match historical::parse(ctx, record.payload, version) {
+                Ok(stored) => stored,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => None,
+            };
+            if let Some(stored) = stored {
+                if let [generator] = stored.generators.as_slice() {
+                    selectors.push(Selector {
+                        source: stored.source,
+                        generator: *generator,
+                        key: stored.key,
+                    });
+                }
+                if historical::links(&stored, |ordinal| {
+                    record_types.get(&ordinal).copied().flatten()
+                }) {
+                    stored_selectors.push(stored);
+                }
             }
         }
+        let mut position = 0;
+        stored_selectors.retain(|selector| {
+            let keep =
+                position < stored_start || selector_sources.get(&selector.source) == Some(&1);
+            position += 1;
+            keep
+        });
     }
-    let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(EdgeInventory::default());
-    };
     let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
     if tokens.len() != 1
-        || ((selectors.is_empty() || !names_joined(carrier.schema, has_flange)) && !name_corners)
+        || (stored_selectors.is_empty()
+            && (selectors.is_empty() || !names_joined(carrier.schema, has_flange))
+            && !name_corners)
     {
         return Ok(EdgeInventory::default());
     }
@@ -482,6 +512,14 @@ pub(super) fn inventory(
     let Some(token) = tokens.into_iter().next() else {
         return Ok(EdgeInventory::default());
     };
+    let historical = if archive_complete {
+        historical::selected(&records, &stored_selectors, carrier.schema)
+            .into_iter()
+            .map(|(source, edge)| ((token.clone(), source), edge))
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let (generated_sources, generated_sources_complete) = if name_corners {
         let (sources, complete) = generated_sources(&records, carrier.schema);
         (Some(sources), archive_complete && complete)
@@ -492,6 +530,7 @@ pub(super) fn inventory(
         return Ok(EdgeInventory {
             generated_sources,
             generated_sources_complete,
+            historical,
             ..EdgeInventory::default()
         });
     }
@@ -505,6 +544,7 @@ pub(super) fn inventory(
         HashMap::new()
     };
     Ok(EdgeInventory {
+        historical,
         generated_sources,
         generated_sources_complete,
         names: names
@@ -722,8 +762,20 @@ pub(crate) fn matches_selection(
         cadmpeg_ir::features::EdgeSelection::Generated { native: actual, .. } => {
             direct && actual.as_str() == native
         }
+        cadmpeg_ir::features::EdgeSelection::Historical { native: actual, .. } => {
+            direct && actual.as_str() == native
+        }
         _ => false,
     }
+}
+
+pub(crate) fn native_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut losses = empty_item_losses(inventory, features);
+    losses.extend(historical::native_losses(features));
+    losses
 }
 
 fn collection_has_empty_item<'a>(
@@ -744,7 +796,7 @@ fn collection_has_empty_item<'a>(
     })
 }
 
-pub(crate) fn native_losses(
+fn empty_item_losses(
     inventory: &super::FeatureInventory,
     features: &[cadmpeg_ir::features::Feature],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {

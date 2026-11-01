@@ -231,3 +231,51 @@ fn chamfer_false_direction_remains_native() {
         Some(NativeReason::Direction)
     );
 }
+
+#[test]
+fn explicit_edge_controls_require_qualified_measured_boolean_tuples() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("context");
+    for change in 0..4 {
+        let (mut inventory, _) =
+            crate::feature::edge_selection::historical::tests::fixture(&ctx, true);
+        if change == 1 || change == 2 {
+            let ordinal = 79 + change;
+            inventory
+                .properties
+                .iter_mut()
+                .find(|p| p.identity.record_ordinal == ordinal)
+                .expect("control")
+                .edit(|payload| {
+                    if let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind {
+                        *value = false;
+                    }
+                });
+        }
+        if change == 3 {
+            inventory.features[0].edit(|payload| {
+                let mut references = payload.properties.references().to_vec();
+                references[6] = PmDcReference::new(references[6].index(), false)
+                    .expect("unqualified reference");
+                payload.properties = crate::pmdc::PmDcReferenceList::new(
+                    2,
+                    Some(crate::pmdc::PmDcListMetadata::U32([12, 0])),
+                    references,
+                )
+                .expect("slots");
+            });
+        }
+        assert_eq!(
+            explicit_selection_controls(&inventory.features[0], |r| inventory
+                .properties
+                .iter()
+                .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())),
+            change == 0 || change == 2
+        );
+    }
+}
