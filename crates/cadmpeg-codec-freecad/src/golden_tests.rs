@@ -691,3 +691,47 @@ fn goldens_hold_no_native_back_links() {
         &harness().fixture_inputs(),
     );
 }
+
+/// §4.5 damaged fixtures (#215): one bounded corruption with its builder.
+///
+/// The builder stores a `Document.xml` holding one readable string property
+/// and one integer property whose value overflows `i64`. The integer value
+/// part is framed by the recovering scanner and given up; the peer survives.
+mod damaged {
+    /// Damaged stem under `tests/golden/fixtures/damaged/`.
+    const STEM: &str = "damaged/bad_integer_property";
+
+    /// The `Document.xml` member the builder stores.
+    const DOCUMENT: &[u8] = b"<Document SchemaVersion='4' FileVersion='1'><Properties Count='2'><Property name='Bad' type='App::PropertyInteger'><Integer value='9223372036854775808'/></Property><Property name='Good' type='App::PropertyString'><String value='A&amp;B'/></Property></Properties><Objects Count='0'/><ObjectData Count='0'/></Document>";
+
+    /// Store `DOCUMENT` as one uncompressed archive member.
+    fn damaged_bytes() -> Vec<u8> {
+        cadmpeg_test_support::zip_fixture::archive(
+            &[cadmpeg_test_support::zip_fixture::RawEntry::stored(
+                "Document.xml",
+                DOCUMENT,
+            )],
+        )
+    }
+
+    /// The committed damaged fixture matches its builder, byte for byte.
+    ///
+    /// `UPDATE_GOLDEN_FIXTURES=1` rewrites the frozen input from the builder.
+    #[test]
+    fn damaged_fixture_matches_builder() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let built = damaged_bytes();
+        let path = manifest.join(format!("tests/golden/fixtures/{STEM}.FCStd"));
+        if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+            std::fs::create_dir_all(path.parent().expect("damaged fixture dir"))
+                .expect("create damaged fixture dir");
+            std::fs::write(&path, &built).expect("write damaged fixture");
+            return;
+        }
+        let committed = std::fs::read(&path).expect(
+            "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-freecad damaged`",
+        );
+        assert_eq!(committed, built, "the damaged fixture matches its builder");
+    }
+}
+
