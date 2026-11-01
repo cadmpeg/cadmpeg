@@ -44,6 +44,24 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
+## `construction_operand_extended_path_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 65 B
+
+Offsets are relative to the path record's indexed header. The placement follows the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 28 | `zero_run` | `bytes[28]` | little | spec | Its indexed header is followed by 28 zero bytes |
+| 39 | 4 | `prefix_value` | `u32` | little | spec | `u32 3` at offset 39 · value `3` |
+| 43 | 13 | `trailing_zero_run` | `bytes[13]` | little | spec | and 13 zero bytes |
+| 56 | 1 | `entity_marker` | `u8` | little | spec | Byte 56 is `01` · value `1` |
+| 57 | 8 | `entity_reference` | `u64` | little | spec | the u64 persistent entity reference is at offset 57 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
 ## `sketch_container_visibility_member_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 37 B

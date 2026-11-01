@@ -5266,6 +5266,16 @@ fn is_path_seed_group(
     group.role() == DesignOperandRole::PATH_SEED
         && group.members().is_empty()
         && group.frame.auxiliary_records.len() == 2
+        && group
+            .frame
+            .auxiliary_paths()
+            .iter()
+            .map(|path| path.record_index())
+            .eq(group
+                .frame
+                .auxiliary_records
+                .iter()
+                .map(|record| record.value))
         && group.frame.trailing_records().len() == 1
         && !group.frame.variant
 }

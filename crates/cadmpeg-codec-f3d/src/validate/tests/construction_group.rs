@@ -496,29 +496,81 @@ fn a_selected_face_group_stays_refused_outside_the_patterns() {
 }
 
 /// A pattern scope whose only group is a path-carried seed: no member, two
-/// auxiliary occurrence paths, and one trailing reference.
+/// auxiliary references that `paths` of which decode as construction-operand
+/// paths, and one trailing reference.
 fn path_seed_native(
     kind: crate::records::feature::scope::DesignFeatureKind,
+    paths: usize,
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> crate::native::F3dNative {
     use crate::records::{
-        decal::DesignRecordHeader, topology::extrude_selection::DesignOperandRole,
+        decal::DesignRecordHeader,
+        topology::{
+            construction::{
+                DesignConstructionOperandPath, DesignConstructionOperandPathDraft,
+                DesignConstructionPathPlacement,
+            },
+            extrude_selection::DesignOperandRole,
+        },
     };
     let stream = "f3d:Design/BulkStream.dat";
     let mut native = pattern_native(kind, DesignOperandRole::PATH_SEED, None);
     let mut group = serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
     group["members"] = serde_json::json!([]);
     group["member_offsets"] = serde_json::json!([]);
-    group["frame"]["auxiliary_record_indices"] = serde_json::json!([103, 104]);
+    group["frame"]["auxiliary_record_indices"] = serde_json::json!([103, 106]);
     group["frame"]["auxiliary_record_offsets"] = serde_json::json!([1_026, 1_037]);
-    group["frame"]["trailing_record_indices"] = serde_json::json!([105]);
+    group["frame"]["trailing_record_indices"] = serde_json::json!([109]);
     group["frame"]["trailing_record_offsets"] = serde_json::json!([1_030]);
     edit(&mut group);
-    native.design_construction_operand_groups[0] = serde_json::from_value(group).unwrap();
+    let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
+        serde_json::from_value(group).unwrap();
+    let path = |record_index: u32, byte_offset: u64, placement| {
+        let scope_offset = byte_offset
+            + match placement {
+                DesignConstructionPathPlacement::Transform(_) => 198,
+                DesignConstructionPathPlacement::Compact(_) => 70,
+            };
+        DesignConstructionOperandPath::try_new(DesignConstructionOperandPathDraft {
+            record_index,
+            byte_offset,
+            class_tag: "390".to_owned().try_into().unwrap(),
+            entity_ref: 55,
+            entity_ref_offset: byte_offset + 57,
+            placement,
+            scope_record_index: 10,
+            scope_record_index_offset: scope_offset,
+            nested_record_index: record_index + 2,
+            nested_record_index_offset: scope_offset + 11,
+            following_record_index: record_index + 1,
+            following_byte_offset: scope_offset + 27,
+            following_class_tag: "295".to_owned().try_into().unwrap(),
+        })
+        .unwrap()
+    };
+    let decoded = [
+        path(103, 1_200, DesignConstructionPathPlacement::Compact(true)),
+        path(
+            106,
+            1_500,
+            DesignConstructionPathPlacement::Transform(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            ),
+        ),
+    ];
+    group
+        .frame
+        .try_set_auxiliary_paths(decoded.into_iter().take(paths).collect())
+        .unwrap();
+    native.design_construction_operand_groups[0] = group;
     for (index, class_tag, offset) in [
         (103, "390", 1_200),
-        (104, "390", 1_300),
-        (105, "294", 1_400),
+        (104, "295", 1_297),
+        (105, "295", 1_400),
+        (106, "390", 1_500),
+        (107, "295", 1_725),
+        (108, "295", 1_700),
+        (109, "294", 1_800),
     ] {
         native.design_record_headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{index}"),
@@ -534,24 +586,22 @@ fn path_seed_native(
 fn a_pattern_admits_a_path_carried_seed_group_without_members() {
     use crate::records::feature::scope::DesignFeatureKind::{CPattern, RPattern};
     for kind in [RPattern, CPattern] {
-        assert!(invalid_group_records(&path_seed_native(kind, |_| {})).is_empty());
+        assert!(invalid_group_records(&path_seed_native(kind, 2, |_| {})).is_empty());
     }
 }
 
 #[test]
 fn a_path_carried_seed_group_keeps_its_exact_shape() {
     use crate::records::feature::scope::DesignFeatureKind::{Fillet, RPattern};
-    let one_auxiliary = path_seed_native(RPattern, |group| {
-        group["frame"]["auxiliary_record_indices"] = serde_json::json!([103]);
-        group["frame"]["auxiliary_record_offsets"] = serde_json::json!([1_026]);
-    });
-    let variant = path_seed_native(RPattern, |group| group["frame"]["variant"] = true.into());
-    let member = path_seed_native(RPattern, |group| {
+    let bare_references = path_seed_native(RPattern, 0, |_| {});
+    let one_path = path_seed_native(RPattern, 1, |_| {});
+    let variant = path_seed_native(RPattern, 2, |group| group["frame"]["variant"] = true.into());
+    let member = path_seed_native(RPattern, 2, |group| {
         group["members"] = serde_json::json!([101]);
         group["member_offsets"] = serde_json::json!([1_026]);
     });
-    let outside_patterns = path_seed_native(Fillet, |_| {});
-    for native in [one_auxiliary, variant, member, outside_patterns] {
+    let outside_patterns = path_seed_native(Fillet, 2, |_| {});
+    for native in [bare_references, one_path, variant, member, outside_patterns] {
         assert_eq!(invalid_group_records(&native).len(), 1);
     }
 }
