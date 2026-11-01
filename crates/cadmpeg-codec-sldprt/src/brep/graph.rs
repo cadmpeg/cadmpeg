@@ -48,6 +48,7 @@ use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
 use super::typed;
+use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
@@ -2537,12 +2538,26 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
                 });
             }
             shells.sort_by_key(|record| record.attr);
-            regions.push(RegionRecord {
-                attr: region.attr,
-                offset: region.offset,
-                shells,
-            });
+            regions.push((
+                region.kind,
+                RegionRecord {
+                    attr: region.attr,
+                    offset: region.offset,
+                    shells,
+                },
+            ));
         }
+        let owns_faces =
+            |record: &RegionRecord| record.shells.iter().any(|shell| !shell.refs.is_empty());
+        let body_has_material = regions
+            .iter()
+            .any(|(kind, record)| *kind == RegionKind::Solid || owns_faces(record));
+        // The faces of the neighbouring region's shell bound a void region that
+        // owns no faces, so that region has no neutral boundary of its own.
+        regions.retain(|(kind, record)| {
+            !body_has_material || *kind == RegionKind::Solid || owns_faces(record)
+        });
+        let mut regions: Vec<_> = regions.into_iter().map(|(_, record)| record).collect();
         regions.sort_by_key(|record| record.attr);
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
@@ -9507,6 +9522,7 @@ mod tests {
                     attr: 11,
                     node_id: 244,
                     refs: [1, 3, 39, 1, 44],
+                    kind: super::RegionKind::Void,
                     offset: 5,
                     end: 6,
                 },
@@ -9514,6 +9530,7 @@ mod tests {
                     attr: 39,
                     node_id: 815,
                     refs: [1, 3, 1, 11, 7],
+                    kind: super::RegionKind::Solid,
                     offset: 7,
                     end: 8,
                 },
@@ -9540,9 +9557,9 @@ mod tests {
         let records = super::typed_body_records(&facts, &tables).expect("typed body records");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].kind, BodyKind::Sheet);
-        assert_eq!(records[0].regions.len(), 2);
+        assert_eq!(records[0].regions.len(), 1);
         assert!(records[0].refs.contains(&100));
-        assert_eq!(records[0].regions[1].shells[0].refs, vec![100]);
+        assert_eq!(records[0].regions[0].shells[0].refs, vec![100]);
         assert_eq!(
             facts
                 .hierarchies(&HashSet::from([100]))

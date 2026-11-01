@@ -14,9 +14,10 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, RegionId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::topology::Region;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -517,6 +518,37 @@ fn writer_reports_region_without_shells() {
         loss.code == StepLossCode::RegionNoShellList.kind()
             && loss.message.contains("region(s) have no shell list")
     }));
+}
+
+#[test]
+fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let lost = RegionId::mint("test:brep:region#lost").expect("lost region id");
+    let body = ir.model.bodies[0].id.clone();
+    let shells = Vec::new();
+    let bounded = ir.model.regions[0].id.clone();
+    ir.model.bodies[0].regions.push(lost.clone());
+    ir.model.regions.push(Region {
+        id: lost.clone(),
+        body,
+        shells,
+    });
+
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("the bounded region writes");
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == StepLossCode::RegionNoShellList.kind())
+        .expect("the lost region is reported");
+    assert!(loss.message.contains(lost.as_str()));
+    assert!(!loss.message.contains(bounded.as_str()));
 }
 
 #[test]
