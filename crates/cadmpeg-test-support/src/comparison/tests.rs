@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The §5.3 acceptance table, including tolerance-boundary and alias controls.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
 
-use super::{agree, assert_decodes_agree, Allowances, Mode};
+use super::{agree, assert_decodes_agree, Allowances, CrossProjection, Mode};
 
 fn document(rows: &Value) -> Value {
     json!({"model": {"points": rows}, "native": {}})
@@ -111,6 +111,7 @@ fn shell_can_lose_only_an_allowed_face_entry() {
     let (before, after) = face_removal();
     let allowances = Allowances {
         removed: ["f2".to_owned()].into(),
+        removed_fields: BTreeSet::new(),
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
 }
@@ -156,6 +157,7 @@ fn removal_in_a_nested_list_preserves_the_holder() {
         json!({"model":{"faces":[],"shells":[{"id":"t","groups":[{"name":"kept","members":[]}]}]}});
     let allowances = Allowances {
         removed: ["f".to_owned()].into(),
+        removed_fields: BTreeSet::new(),
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
     let mut dropped_holder = after;
@@ -211,4 +213,97 @@ fn a_reference_map_key_cannot_switch_to_a_different_record() {
     let before = json!({"model":{"parameters":[{"id":"a","value":1},{"id":"b","value":2}],"configurations":[{"id":"c","overrides":{"a":3}}]}});
     let after = json!({"model":{"parameters":[{"id":"x","value":1},{"id":"y","value":2}],"configurations":[{"id":"d","overrides":{"y":3}}]}});
     assert!(!accepts(&before, &after));
+}
+
+#[test]
+fn a_minted_source_object_is_not_content() {
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(
+        &json!([{"id":"x","x":1.0,"source_object":{"format":"rhino","object_id":"2a6f0b31-9b8a-4f4e-9c9a-9b8a4f4e9c9a"}}]),
+    );
+    assert!(accepts(&before, &after));
+    let mut changed = after;
+    changed["model"]["points"][0]["x"] = json!(2.0);
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
+fn a_removal_named_only_by_a_loss_still_fails() {
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(&json!([]));
+    let report = json!({"losses": [{
+        "code": "decode/record.unreadable",
+        "severity": "error",
+        "message": "part step.simple_entity_instance stream=\"\" offset=0 length=10: test",
+        "provenance": {"format": "step", "offset": 0, "byte_len": 10},
+    }]});
+    let allowances = Allowances::given_up(&before, &report).expect("losses with structured spans");
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_err());
+}
+
+#[test]
+fn an_export_without_stubs_or_dispositions_allows_nothing() {
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(&json!([]));
+    let allowances = Allowances::export(&before, &json!({})).expect("a stub-free export");
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_err());
+}
+
+#[test]
+fn an_export_may_drop_a_stub_and_its_dependants() {
+    let before = json!({
+        "model": {"points": [
+            {"id": "p", "at": "step:source:part#s"},
+            {"id": "r", "carrier": {"part": "step:source:part#s"}},
+        ]},
+        "native": {"step": {"unknowns": [{"id": "step:source:part#s"}]}},
+    });
+    // The stub field goes, its record stays; the nested dependant goes.
+    let after = json!({
+        "model": {"points": [{"id": "x"}]},
+        "native": {"step": {"unknowns": []}},
+    });
+    let allowances = Allowances::export(&before, &json!({})).expect("stub allowances");
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
+}
+
+fn cross(projection: &[&str]) -> Mode {
+    Mode::Cross(CrossProjection::new(
+        projection.iter().map(|key| (*key).to_owned()).collect(),
+    ))
+}
+
+#[test]
+fn cross_mode_ignores_a_key_only_in_after() {
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(&json!([{"id":"x","x":1.0,"writer_default":true}]));
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
+}
+
+#[test]
+fn cross_mode_fails_a_key_only_in_before() {
+    let before = document(&json!([{"id":"a","x":1.0,"required":true}]));
+    let after = document(&json!([{"id":"x","x":1.0}]));
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_err());
+}
+
+#[test]
+fn cross_mode_projects_the_named_keys_on_both_sides() {
+    let before = document(&json!([{"id":"a","x":1.0,"surface_form":1}]));
+    let after = document(&json!([{"id":"x","x":1.0,"surface_form":2}]));
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_err());
+    assert!(agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        cross(&["surface_form"])
+    )
+    .is_ok());
+}
+
+#[test]
+fn cross_mode_skips_the_native_namespaces() {
+    let before = json!({"model":{},"native":{"step":{"tables":[{"id":"n","value":1}]}}});
+    let after = json!({"model":{},"native":{"iges":{"tables":[]}}});
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
 }
