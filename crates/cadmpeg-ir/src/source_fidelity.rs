@@ -373,6 +373,8 @@ pub struct SourceFidelity {
     pub annotations: Annotations,
     /// Source layout and fingerprint facts, never document content or payload bytes.
     pub metadata: BTreeMap<String, String>,
+    /// Decode-time document digest baseline for byte reuse, when recorded.
+    pub decode_digest: Option<Sha256Digest>,
     /// Native records retained for recovery or replay, keyed by record id.
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
@@ -390,6 +392,9 @@ struct SourceFidelityWire {
     /// Facts about source layout and fingerprints.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     metadata: BTreeMap<String, String>,
+    /// Decode-time document digest baseline for byte reuse, when recorded.
+    #[serde(default, deserialize_with = "deserialize_decode_digest")]
+    decode_digest: Option<Sha256Digest>,
     /// Native records retained for recovery or replay.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
@@ -402,6 +407,7 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
         let value = Self {
             annotations: wire.annotations,
             metadata: wire.metadata,
+            decode_digest: wire.decode_digest,
             retained_records: wire.retained_records,
         };
         let derived = value.unrepresented();
@@ -415,23 +421,27 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
     }
 }
 
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SourceFidelityWriteWire<'a> {
+    unrepresented: crate::document::ArenaClasses,
+    annotations: &'a Annotations,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    metadata: &'a BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decode_digest: &'a Option<Sha256Digest>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
+}
+
 impl Serialize for SourceFidelity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(deny_unknown_fields)]
-        struct Wire<'a> {
-            unrepresented: crate::document::ArenaClasses,
-            annotations: &'a Annotations,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            metadata: &'a BTreeMap<String, String>,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
-        }
-        Wire {
+        SourceFidelityWriteWire {
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
             metadata: &self.metadata,
+            decode_digest: &self.decode_digest,
             retained_records: &self.retained_records,
         }
         .serialize(serializer)
@@ -444,6 +454,7 @@ impl SourceFidelity {
         Self {
             annotations,
             metadata: BTreeMap::new(),
+            decode_digest: None,
             retained_records: BTreeMap::new(),
         }
     }
@@ -496,6 +507,17 @@ impl SourceFidelity {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "duplicate retained or native unknown record {id}"
                 )));
+            }
+        }
+        if let Some(other_digest) = other.decode_digest {
+            match &self.decode_digest {
+                None => self.decode_digest = Some(other_digest),
+                Some(digest) if *digest == other_digest => {}
+                Some(_) => {
+                    return Err(CodecError::malformed(format_args!(
+                        "conflicting source fidelity decode digests"
+                    )));
+                }
             }
         }
         self.annotations.append(other.annotations)?;
@@ -664,6 +686,8 @@ fn duplicate_record(id: &UnknownId) -> NativeConvertError {
     ))
 }
 
+cadmpeg_core::named_optional_field!(deserialize_decode_digest, Sha256Digest, "decode_digest");
+
 #[cfg(test)]
 mod tests {
     mod admission;
@@ -729,6 +753,27 @@ mod tests {
         );
         fidelity.remove_retained_record(id("model").as_str());
         assert!(fidelity.unrepresented().is_empty());
+    }
+
+    #[test]
+    fn decode_digest_round_trips_and_merges_without_collision() {
+        let digest = Sha256Digest::digest(b"decode baseline");
+        let mut fidelity = SourceFidelity::default();
+        assert_eq!(fidelity.decode_digest, None);
+        fidelity.decode_digest = Some(digest.clone());
+        let wire = serde_json::to_value(&fidelity).expect("serializes");
+        assert_eq!(wire["decode_digest"], serde_json::json!(digest.as_str()));
+        assert_eq!(
+            serde_json::from_value::<SourceFidelity>(wire).expect("round trip"),
+            fidelity
+        );
+        let mut empty = SourceFidelity::default();
+        assert!(empty.append(fidelity.clone()).is_ok());
+        assert_eq!(empty.decode_digest, Some(digest.clone()));
+        let mut conflict = SourceFidelity::default();
+        conflict.decode_digest = Some(Sha256Digest::digest(b"other baseline"));
+        assert!(fidelity.append(conflict).is_err());
+        assert_eq!(fidelity.decode_digest, Some(digest));
     }
 
     #[test]
