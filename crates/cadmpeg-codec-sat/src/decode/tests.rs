@@ -1051,7 +1051,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
                 [
                     IntcurveSupportSide {
                         surface: surface_present
-                            .then(|| SurfaceId::mint("test:surface#0").unwrap()),
+                            .then(|| SurfaceId::mint("test:model:surface#0").unwrap()),
                         pcurve: pcurve_present.then(|| pcurve.clone()),
                     },
                     IntcurveSupportSide {
