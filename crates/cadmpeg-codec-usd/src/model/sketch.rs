@@ -38,6 +38,35 @@ use crate::ids::sketch::{
 };
 
 impl super::Builder<'_, '_, '_, '_> {
+    /// Adds each sketch read to the product definition that its
+    /// `sketch:definition` names (spec §18.2).
+    pub(super) fn sketch_owners(&mut self) {
+        let stage = self.stage;
+        for (path, sketch) in std::mem::take(&mut self.sketch_prims) {
+            let Some(prim) = stage.find(&path) else {
+                continue;
+            };
+            match self.definition_target(prim, "sketch:definition") {
+                Ok(Some(definition)) => {
+                    if let Some(record) = self
+                        .ir
+                        .model
+                        .product_definitions
+                        .iter_mut()
+                        .find(|record| record.id == definition)
+                    {
+                        record.sketches.push(sketch);
+                    }
+                }
+                Ok(None) => {}
+                Err(reason) => self
+                    .tallies
+                    .sketch_properties
+                    .push(format!("{path}: {reason}")),
+            }
+        }
+    }
+
     fn sketch_point(&self, position: [f64; 2]) -> Option<FinitePoint2> {
         FinitePoint2::new(Point2::new(
             position[0] * self.scale,
@@ -58,6 +87,7 @@ impl super::Builder<'_, '_, '_, '_> {
         let id = self
             .cad_id(&prim.path, |text| SketchId::mint(text).ok())
             .unwrap_or_else(|| sketch_id(&prim.path));
+        self.sketch_prims.push((prim.path.clone(), id.clone()));
         let column = |axis: usize| [world[0][axis], world[1][axis], world[2][axis]];
         let (u_axis, v_axis) = (column(0), column(1));
         // The normal is u × v, so that a reflected placement keeps each

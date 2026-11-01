@@ -1326,6 +1326,18 @@ A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`
 
 A prim that states an occurrence has `cad:id`, the CADIR identity of the occurrence. The prim that defines a product definition has `uniform string cad:definition:id`, the CADIR identity of the definition: the occurrence prim, or the prototype prim that instances of a shared definition reference. Prims with one `cad:definition:id` are occurrences of one definition; the first of them in stage order defines it.
 
+The prim that defines a product definition also states its product data:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:definition:sourceName` | uniform string | the source object name that product and BOM tools use; unauthored, the prim name |
+| `cad:definition:label` | uniform string | the component label, when it differs from the source name |
+| `cad:definition:partNumber` | uniform string | the part or stock number |
+| `cad:definition:bomNames`, `cad:definition:bomValues` | uniform `string[]` | further bill-of-materials fields, as parallel arrays |
+| `documentation` | metadata | the bill-of-materials description |
+
+A `CadSketch` names the product definition that owns it with `rel sketch:definition`, whose one target is a prim of that definition.
+
 ### 18.1 CadBrepIdentityAPI
 
 `CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex, and the name of each B-rep and face:

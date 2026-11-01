@@ -92,10 +92,12 @@
     "{",
     "    uniform string cad:id = \"usd:stage:occurrence#/Scene\"",
     "    uniform string cad:definition:id = \"usd:stage:definition#/Scene\"",
+    "    uniform string cad:definition:sourceName = \"Scene\"",
     "    def Xform \"Box\"",
     "    {",
     "        uniform string cad:id = \"usd:stage:occurrence#/Scene/Box\"",
     "        uniform string cad:definition:id = \"usd:stage:definition#/Scene/Box\"",
+    "        uniform string cad:definition:sourceName = \"Box\"",
     "        def BrepArray \"Brep\" (",
     "            prepend apiSchemas = [\"BrepPointAPI:vertexPoint\", \"BrepCurve3dNurbAPI:edge3dNurb\", \"BrepSurfaceNurbAPI\", \"BrepCurveUvNurbAPI\", \"CadBrepIdentityAPI\", \"CadBrepAnalyticAPI\"]",
     "        )",
@@ -358,6 +360,7 @@
     "    {",
     "        uniform string cad:id = \"usd:stage:occurrence#/Scene/Robot\"",
     "        uniform string cad:definition:id = \"usd:stage:definition#/Scene/Robot\"",
+    "        uniform string cad:definition:sourceName = \"Robot\"",
     "    }",
     "    def Xform \"Shelf\" (",
     "        prepend references = @shelf.usda@",
@@ -365,6 +368,7 @@
     "    {",
     "        uniform string cad:id = \"usd:stage:occurrence#/Scene/Shelf\"",
     "        uniform string cad:definition:id = \"usd:stage:definition#/Scene/Shelf\"",
+    "        uniform string cad:definition:sourceName = \"Shelf\"",
     "    }",
     "}"
   ]

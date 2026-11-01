@@ -43,7 +43,9 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{
+    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
+};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TextureCoordinateAddressing};
 use cadmpeg_ir::topology::{Body, Sense};
@@ -692,7 +694,8 @@ impl<'ir> Writer<'ir> {
             quoted(occurrence.id.as_str())
         ));
         if let Some(definition) = definition.filter(|_| !shared) {
-            placement.properties.push(definition_line(&definition.id));
+            placement.properties.extend(definition_lines(definition));
+            placement.metadata.extend(definition_metadata(definition));
         }
         let bodies: Vec<&'ir Body> = definition
             .filter(|_| !shared)
@@ -1629,7 +1632,8 @@ impl<'ir> Writer<'ir> {
                 .collect();
             let mut names = Names::default();
             let placement = Placement {
-                properties: vec![definition_line(&definition.id)],
+                metadata: definition_metadata(definition),
+                properties: definition_lines(definition),
                 ..Placement::default()
             };
             if let [body] = bodies.as_slice() {
@@ -1956,10 +1960,52 @@ fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
     out
 }
 
-/// The `cad:definition:id` attribute of the prim that defines `definition`.
-fn definition_line(definition: &ProductDefinitionId) -> String {
-    format!(
+/// The attributes of the prim that defines `definition` (spec §18).
+fn definition_lines(definition: &ProductDefinition) -> Vec<String> {
+    let mut lines = vec![format!(
         "uniform string cad:definition:id = {}",
-        quoted(definition.as_str())
-    )
+        quoted(definition.id.as_str())
+    )];
+    for (name, value) in [
+        ("sourceName", &definition.source_name),
+        ("label", &definition.label),
+        ("partNumber", &definition.part_number),
+    ] {
+        if let Some(value) = value {
+            lines.push(format!(
+                "uniform string cad:definition:{name} = {}",
+                quoted(value)
+            ));
+        }
+    }
+    if !definition.bom_properties.is_empty() {
+        let names: Vec<String> = definition
+            .bom_properties
+            .keys()
+            .map(|name| quoted(name.as_str()))
+            .collect();
+        let values: Vec<String> = definition
+            .bom_properties
+            .values()
+            .map(|value| quoted(value))
+            .collect();
+        lines.push(format!(
+            "uniform string[] cad:definition:bomNames = [{}]",
+            names.join(", ")
+        ));
+        lines.push(format!(
+            "uniform string[] cad:definition:bomValues = [{}]",
+            values.join(", ")
+        ));
+    }
+    lines
+}
+
+/// The metadata of the prim that defines `definition`.
+fn definition_metadata(definition: &ProductDefinition) -> Vec<String> {
+    definition
+        .description
+        .iter()
+        .map(|description| format!("documentation = {}", quoted(description)))
+        .collect()
 }

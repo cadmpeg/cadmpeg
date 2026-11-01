@@ -314,6 +314,8 @@ struct Builder<'s, 'l, 'c, 'a> {
     pending_joints: Vec<physics::PendingJoint>,
     /// Mate prims, resolved after every occurrence exists.
     pending_mates: Vec<usize>,
+    /// The `CadSketch` prim and the sketch of each sketch read.
+    sketch_prims: Vec<(String, cadmpeg_ir::sketches::SketchId)>,
     /// The IR identity of each occurrence, by prim path.
     occurrence_ids: BTreeMap<String, cadmpeg_ir::ids::OccurrenceId>,
     /// The definition key of each `cad:definition:id`: the path of the first
@@ -365,6 +367,7 @@ pub(crate) fn build<'a>(
         parameter_ids: BTreeMap::new(),
         feature_ids: BTreeMap::new(),
         occurrence_ids: BTreeMap::new(),
+        sketch_prims: Vec::new(),
         definition_ids: BTreeMap::new(),
         identified_definitions: BTreeMap::new(),
         brep_entries: BTreeMap::new(),
@@ -382,6 +385,7 @@ pub(crate) fn build<'a>(
                 .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
         }
     }
+    builder.sketch_owners();
     builder.features()?;
     builder.parameters()?;
     builder.configurations()?;
@@ -778,14 +782,42 @@ impl Builder<'_, '_, '_, '_> {
         if !bodies.is_empty() {
             self.bodied.insert(key.to_owned());
         }
+        let mut text = |name: &str| {
+            crate::schema::token(prim, name, &mut self.issues).filter(|value| !value.is_empty())
+        };
+        let (source_name, label, part_number) = (
+            text("cad:definition:sourceName"),
+            text("cad:definition:label"),
+            text("cad:definition:partNumber"),
+        );
+        let bom_names = crate::schema::tokens(prim, "cad:definition:bomNames", &mut self.issues)
+            .unwrap_or_default();
+        let bom_values = crate::schema::tokens(prim, "cad:definition:bomValues", &mut self.issues)
+            .unwrap_or_default();
+        let bom_properties = if bom_names.len() == bom_values.len() {
+            bom_names
+                .into_iter()
+                .zip(bom_values)
+                .filter_map(|(name, value)| {
+                    Some((cadmpeg_core::text::NonBlankString::new(name)?, value))
+                })
+                .collect()
+        } else {
+            self.issues.malformed(
+                prim,
+                "cad:definition:bomValues",
+                "the bill-of-materials names and values differ in length",
+            );
+            BTreeMap::new()
+        };
         self.ir.model.product_definitions.push(ProductDefinition {
             id: self.definition_id(key),
             kind,
-            source_name: Some(definition_name(prim, key).to_owned()),
-            label: None,
+            source_name: Some(source_name.unwrap_or_else(|| definition_name(prim, key).to_owned())),
+            label,
             description: prim.metadata_text("documentation").map(str::to_owned),
-            part_number: None,
-            bom_properties: BTreeMap::new(),
+            part_number,
+            bom_properties,
             bodies,
             sketches: Vec::new(),
             native_ref: Some(prim.path.clone()),
@@ -1544,10 +1576,8 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
 /// carried `PhysX` schemas.
 fn group_property_read(prim: &Prim<'_>, name: &str) -> bool {
     name.starts_with("xformOp")
-        || matches!(
-            name,
-            "visibility" | "purpose" | "cad:id" | "cad:definition:id"
-        )
+        || matches!(name, "visibility" | "purpose" | "cad:id")
+        || name.starts_with("cad:definition:")
         || name.starts_with("material:binding")
         || name.starts_with("physics:")
         || name.starts_with("drive:")

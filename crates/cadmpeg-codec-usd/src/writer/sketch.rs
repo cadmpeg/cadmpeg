@@ -554,6 +554,17 @@ impl Writer<'_> {
             "uniform string cad:id = {}",
             quoted(sketch.id.as_str())
         ));
+        if let Some(definition) = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.sketches.contains(&sketch.id))
+            .and_then(|definition| self.definition_path(&definition.id))
+        {
+            self.out
+                .line(&format!("rel sketch:definition = <{definition}>"));
+        }
         self.placement(&Placement {
             transform: frame.as_ref(),
             ..Placement::default()

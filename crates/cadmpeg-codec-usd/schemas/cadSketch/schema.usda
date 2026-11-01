@@ -104,6 +104,9 @@ class CadSketch "CadSketch" (
     uniform string cad:id (
         doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
     )
+    rel sketch:definition (
+        doc = """One target, a prim of the product definition that owns the sketch."""
+    )
     uniform double sketch:tolerance = 0.000000001 (
         doc = """SCALE-RELATIVE constraint-satisfaction tolerance (dimensionless). The
                  authored geometry satisfies a constraint when |residual| <=
