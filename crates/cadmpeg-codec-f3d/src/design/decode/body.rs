@@ -1129,7 +1129,8 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        let owners = super::component_bodies::owners(ctx, bytes, &metadata)?;
+        let memberships = super::component_bodies::owners(ctx, bytes, &metadata)?;
+        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
@@ -1145,10 +1146,20 @@ pub(crate) fn decode_design_body_bindings(
                 }
             }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
-                let body = crate::brep::resolve_body_selector(
-                    source_bodies.iter().copied(),
-                    binding.asm_key,
-                )?;
+                let owner = memberships.owners.get(&binding.entity_suffix);
+                let history_only = memberships.complete
+                    && owner.is_none()
+                    && hidden_by_entity
+                        .get(&binding.entity_suffix)
+                        .is_some_and(|node| node.hidden);
+                let body = if history_only {
+                    None
+                } else {
+                    crate::brep::resolve_body_selector(
+                        source_bodies.iter().copied(),
+                        binding.asm_key,
+                    )?
+                };
                 let id = design_record_id(
                     &entry.name,
                     ":design-body-binding#",
@@ -1167,13 +1178,12 @@ pub(crate) fn decode_design_body_bindings(
                         blob_name: record.blob_name.clone(),
                         blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body.cloned(),
-                        component_owner: owners
-                            .get(&binding.entity_suffix)
+                        component_owner: owner
                             .and_then(super::component_bodies::OwnerResolution::admitted)
                             .cloned(),
-                        component_owner_unresolved: owners
-                            .get(&binding.entity_suffix)
+                        component_owner_unresolved: owner
                             .is_some_and(|owner| owner.admitted().is_none()),
+                        history_only,
                     })
                     .map_err(CodecError::Malformed)?;
 
@@ -2114,6 +2124,57 @@ mod tests {
         });
     }
 
+    #[test]
+    fn history_only_pair_requires_complete_memberships_that_omit_a_hidden_entity() {
+        use crate::test_support::component_body_test::{
+            history_only_design, HistoryOnlyContainer as Container,
+        };
+        const PREFIX: &str = "FusionAssetName[Active]/Design1/";
+        const BLOB: &str = "BREP.synthetic.smbh";
+        for (hidden, container, history_only, owned) in [
+            (Some(true), Container::Lists(&[]), true, false),
+            (Some(false), Container::Lists(&[]), false, false),
+            (None, Container::Lists(&[]), false, false),
+            (Some(true), Container::Lists(&[350]), false, true),
+            (Some(true), Container::Absent, false, false),
+            (Some(true), Container::Malformed, false, false),
+            (Some(true), Container::OtherVersion(&[]), false, false),
+            (Some(true), Container::ListsAndMalformed, false, false),
+        ] {
+            let (bulk, metadata) = history_only_design(BLOB, hidden, container);
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+            write_synthetic_manifests(&mut zip, stored);
+            zip.start_file(format!("{PREFIX}BulkStream.dat"), stored)
+                .unwrap();
+            zip.write_all(&bulk).unwrap();
+            zip.start_file(format!("{PREFIX}MetaStream.dat"), stored)
+                .unwrap();
+            zip.write_all(&metadata).unwrap();
+            zip.start_file(
+                format!("FusionAssetName[Active]/Breps.BlobParts/{BLOB}"),
+                stored,
+            )
+            .unwrap();
+            zip.write_all(&[0]).unwrap();
+            let archive = zip.finish().unwrap().into_inner();
+            with_scan(&archive, |scan| {
+                let bindings = super::decode_design_body_bindings(
+                    &cadmpeg_test_support::service_decode_context(),
+                    scan,
+                    None,
+                    &[],
+                )
+                .unwrap();
+                let [binding] = bindings.as_slice() else {
+                    panic!("one body-map pair: {}", bindings.len());
+                };
+                assert_eq!(binding.history_only, history_only, "{hidden:?}");
+                assert_eq!(binding.component_owner.is_some(), owned, "{hidden:?}");
+            });
+        }
+    }
+
     fn push_browser_node(
         out: &mut Vec<u8>,
         record_index: u32,
@@ -2326,6 +2387,7 @@ mod tests {
         let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
             component_owner: None,
             component_owner_unresolved: false,
+            history_only: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,

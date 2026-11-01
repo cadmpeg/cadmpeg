@@ -128,6 +128,8 @@ pub(crate) enum F3dLossCode {
     HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
     DesignBodyBindingUnresolved,
+    /// Design body-map pairs name a body outside the current model.
+    HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
     /// Decal timeline objects retain native image and mapping records.
@@ -466,6 +468,7 @@ impl F3dLossCode {
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
+        Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
@@ -659,6 +662,7 @@ impl F3dLossCode {
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
+            Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
@@ -882,6 +886,7 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
+            | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
@@ -1113,7 +1118,8 @@ impl F3dLossCode {
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentAmbiguous
-            | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyRootPathIdentitiesNative
+            | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
@@ -1274,6 +1280,7 @@ mod tests {
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
+                "design.history-only-body-omitted",
                 "appearance.reference-image-native",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",

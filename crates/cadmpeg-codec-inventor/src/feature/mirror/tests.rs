@@ -170,7 +170,7 @@ fn mirror_projection_keeps_resource_refusals() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        fixture.index().project(&ctx, &source, &fixture.label, seed),
+        fixture.index().project(&ctx, &source, &fixture.label, seed, |_| {}),
         Some(Err(CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::Entities
     ));
@@ -279,7 +279,7 @@ fn generated_instance_maps_remain_native() {
             None
         })
         .is_none());
-    let losses = native_losses(&[pattern(25, true, &[], &[(8, 150)])], &[]);
+    let losses = native_losses(&[pattern(25, true, &[], &[(8, 150)])], &[], &[]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
@@ -330,7 +330,7 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (mut feature, mut result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     assert!(fixture
@@ -372,7 +372,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     let mut changed_result = result.clone();
@@ -495,21 +495,113 @@ fn mirrors_refuse_nonzero_variables_and_boolean_options() {
 #[test]
 fn every_unresolved_mirror_operand_has_a_pinned_loss() {
     for (name, fixture, source) in crate::test_support::mirror::refusal_cases() {
+        let mut refusal = None;
         assert!(
             fixture
                 .index()
-                .resolve(&source, &fixture.label, seed)
+                .resolve_with_refusal(&source, &fixture.label, seed, |value| refusal = Some(value))
                 .is_none(),
             "{name}"
         );
-        let losses = native_losses(&[source], &[]);
+        let losses = native_losses(&[source], &[], &[refusal]);
         assert_eq!(losses.len(), 1, "{name}");
         assert_eq!(
             losses[0].code.local_code(),
-            "feature.mirror-operands-native",
+            crate::test_support::mirror::refusal_code(&name),
             "{name}"
         );
     }
+}
+
+#[test]
+fn mirror_boolean_losses_report_the_first_failed_control() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    for version in [19, 21, 29] {
+        for (slot7, slot11, first) in [
+            (true, None, 7),
+            (true, Some(false), 7),
+            (true, Some(true), 7),
+            (false, Some(true), 11),
+        ] {
+            let (fixture, source) =
+                crate::test_support::mirror::body_boolean_form(version, slot7, slot11);
+            let mut refusal = None;
+            assert!(fixture
+                .index()
+                .project(&ctx, &source, &fixture.label, seed, |value| {
+                    assert!(refusal.is_none());
+                    refusal = Some(value);
+                })
+                .is_none());
+            let losses = native_losses(&[source], &[], &[refusal]);
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "feature.mirror-boolean-native");
+            assert_eq!(
+                losses[0].message,
+                format!(
+                    "Mirror slot {first} has a true Boolean with an unresolved construction role."
+                )
+            );
+        }
+        let (fixture, source) =
+            crate::test_support::mirror::body_boolean_form(version, false, Some(false));
+        let mut refusal = None;
+        let (feature, _) = fixture
+            .index()
+            .project(&ctx, &source, &fixture.label, seed, |value| {
+                refusal = Some(value);
+            })
+            .expect("false controls")
+            .expect("body projection");
+        assert!(refusal.is_none());
+        assert!(native_losses(&[source], &[feature], &[refusal]).is_empty());
+    }
+    let (mut fixture, source) =
+        crate::test_support::mirror::body_boolean_form(19, true, Some(true));
+    fixture.properties[7] = property(
+        112,
+        PmDcFeaturePropertyKind::Mirror {
+            definition: Property::Options {
+                bytes: [1; 9].into(),
+            },
+        },
+    );
+    let mut refusal = None;
+    assert!(fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, seed, |value| {
+            refusal = Some(value);
+        })
+        .is_none());
+    assert!(refusal.is_none());
+    let losses = native_losses(&[source], &[], &[refusal]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.mirror-operands-native"
+    );
+}
+
+#[test]
+fn mirror_refusal_indices_include_other_pattern_families() {
+    let source = pattern(19, true, &[], &[]);
+    let mut payload = (*source).clone();
+    payload.family = PmDcPatternFamily::Rectangular;
+    let rectangular = Located::new(
+        payload,
+        RecordTypeId::from_bytes(crate::feature::RECTANGULAR_PATTERN_FEATURE_TYPE),
+        segment(),
+        19,
+    );
+    let losses = native_losses(&[rectangular, source], &[], &[None, Some(Refusal::Slot11)]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.mirror-boolean-native");
+    assert_eq!(
+        losses[0].message,
+        "Mirror slot 11 has a true Boolean with an unresolved construction role."
+    );
 }
 
 #[test]
@@ -589,10 +681,10 @@ fn a_neutral_mirror_has_no_native_operand_loss() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, _) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
-    assert!(native_losses(&[source], &[feature]).is_empty());
+    assert!(native_losses(&[source], &[feature], &[]).is_empty());
 }
 
 #[test]
@@ -633,7 +725,7 @@ fn an_unknown_selection_tail_stays_native_with_the_pinned_mirror_loss() {
         .index()
         .resolve(&source, &fixture.label, seed)
         .is_none());
-    let losses = native_losses(&[source], &[]);
+    let losses = native_losses(&[source], &[], &[]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
@@ -651,7 +743,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     let mut history = History::default();
@@ -682,9 +774,13 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
         };
         assert!(fixture
             .index()
-            .project(&ctx, &source, &fixture.label, |_| seed_feature_id(
-                &history, 20, &parent
-            ))
+            .project(
+                &ctx,
+                &source,
+                &fixture.label,
+                |_| seed_feature_id(&history, 20, &parent),
+                |_| {},
+            )
             .is_none());
         assert!(!fixture.index().matches_projection(
             &source,
@@ -693,7 +789,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
             &result,
             |_| seed_feature_id(&history, 20, &parent)
         ));
-        let losses = native_losses(std::slice::from_ref(&source), &[]);
+        let losses = native_losses(std::slice::from_ref(&source), &[], &[]);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),

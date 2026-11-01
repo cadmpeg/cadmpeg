@@ -595,11 +595,23 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
+### DR-163. Body-map entity with no membership and no browser node
+
+**Question.** Is a body-map pair outside the current model when complete Body-container memberships omit its entity and the entity has no browser node?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" removes such a pair from the current model only when its browser node stores hidden flag `1`. A Combine tool hidden before the Combine has no list entry and no browser node, and it is consumed. No live body with this form is known.
+
+**Need.** Designs where a live body has no browser node, and designs that hide, show, and consume one body in each order.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps this pair in `model.bodies` until this item is settled.
+
 ### DR-119. Entity-cluster component-ownership fallback
 
 **Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
 
-**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding in the current model without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
 
 **Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component, before neutral ownership can rely on the fallback.
 
@@ -950,6 +962,18 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+
+### DR-170. Unresolved DeleteFace operand bindings
+
+**Question.** Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
+
+**Known.** Seven of sixteen DeleteFace groups in one public local file retain native selections. Two groups contain five operands with ten opener-framed nodes whose second prelude scalar is `1`; the two-clause structure parser retains their raw programs. Two groups contain three unresolved operands whose referenced prefix ordinal has an empty face lane in the preceding topology. Two groups contain five operands with multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching; repeated fan patterns leave two edge matches for a node. One group contains one operand whose prefix lanes repeat a face fragment while its boundary endpoint fans require another face. Two members of a partially resolved group have complete face proofs; its third member has the empty prefix lane. The complete-boundary admission rule is defined in `f3d.md` §3.1.
+
+**Need.** The complete single-clause grammar and its relation to closed-edge endpoints; the binding of an empty prefix lane to a preceding face; the directional or topology-entry rule that distinguishes repeated edge matches; and the ordinal and fragment rule for the mismatched prefix fan. Independent selections that vary these controls must distinguish the possible bindings.
+
+**Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
+
+**Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
 
 ### DR-172. Paired-locus dimension owner binding
 

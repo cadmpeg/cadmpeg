@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod base;
+mod kernel;
 mod mirror;
 mod motion;
 

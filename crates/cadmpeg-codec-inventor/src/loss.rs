@@ -124,6 +124,10 @@ pub(crate) enum InventorLossCode {
     FeatureChamferOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// Mirror Boolean construction roles remain unresolved.
+    FeatureMirrorBooleanNative,
+    /// Mirror instance maps or generated result operands remain native.
+    FeatureMirrorInstanceMapNative,
     /// Split construction operands or result topology remain native.
     FeatureSplitOperandsNative,
     /// Split mode 1 retains its side and body-revision operands.
@@ -275,6 +279,8 @@ impl InventorLossCode {
         Self::FeatureFilletOperandsNative,
         Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureMirrorBooleanNative,
+        Self::FeatureMirrorInstanceMapNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureSplitModeOneNative,
         Self::FeatureSplitModeTwoNative,
@@ -389,6 +395,8 @@ impl InventorLossCode {
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
+            Self::FeatureMirrorInstanceMapNative => "feature.mirror-instance-map-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureSplitModeOneNative => "feature.split-mode-one-native",
             Self::FeatureSplitModeTwoNative => "feature.split-mode-two-native",
@@ -499,6 +507,8 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalPlateRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureMirrorBooleanNative
+            | Self::FeatureMirrorInstanceMapNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureSplitModeOneNative
             | Self::FeatureSplitModeTwoNative
@@ -639,6 +649,8 @@ mod tests {
                 "feature.fillet-operands-native",
                 "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
+                "feature.mirror-boolean-native",
+                "feature.mirror-instance-map-native",
                 "feature.split-operands-native",
                 "feature.split-mode-one-native",
                 "feature.split-mode-two-native",

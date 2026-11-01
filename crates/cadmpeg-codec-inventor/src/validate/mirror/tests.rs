@@ -39,7 +39,7 @@ fn feature() -> Feature {
 }
 
 #[test]
-fn mirror_construction_requires_mirror_pattern_transform() {
+fn mirror_construction_recognizes_patterns_and_shapes() {
     let mut feature = feature();
     let source = crate::test_support::mirror::pattern(19, false, &[3], &[]);
     assert!(!requires_mirror_validation(&feature, Some(&source)));
@@ -83,6 +83,18 @@ fn mirror_construction_requires_mirror_pattern_transform() {
         source.identity.record_ordinal,
     );
     assert!(requires_mirror_validation(&feature, Some(&changed)));
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::MirrorShape {
+            source: cadmpeg_ir::features::BodySelection::Native("source-body".into()),
+            plane_origin: FinitePoint3::ZERO,
+            plane_normal: cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
+                .expect("normal"),
+            plane_reference: None,
+        },
+    ));
+    assert!(is_mirror_construction(&feature));
+    assert!(requires_mirror_validation(&feature, Some(&source)));
+    assert!(requires_mirror_validation(&feature, None));
 }
 
 #[test]
@@ -162,7 +174,7 @@ fn validator_uses_all_mirror_operand_and_suffix_gates() {
             let source = pattern(version, body, if body { &[] } else { &[3] }, &[]);
             let (feature, result) = fixture
                 .index()
-                .project(&ctx, &source, &fixture.label, seed)
+                .project(&ctx, &source, &fixture.label, seed, |_| {})
                 .expect("mirror form")
                 .expect("projection");
             assert!(fixture.index().matches_projection(
@@ -178,7 +190,7 @@ fn validator_uses_all_mirror_operand_and_suffix_gates() {
     let source = pattern(19, false, &[3], &[]);
     let (feature, result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     for (name, changed, source) in crate::test_support::mirror::refusal_cases() {
@@ -188,6 +200,46 @@ fn validator_uses_all_mirror_operand_and_suffix_gates() {
                 .matches_projection(&source, &changed.label, &feature, &result, seed),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn validator_rejects_body_mirror_boolean_controls_against_a_body_projection() {
+    use crate::test_support::mirror::{body_boolean_form, body_boolean_refusal_cases, seed};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    for version in [19, 21, 29] {
+        let (fixture, source) = body_boolean_form(version, false, Some(false));
+        let (feature, result) = fixture
+            .index()
+            .project(&ctx, &source, &fixture.label, seed, |_| {})
+            .expect("body mirror")
+            .expect("projection");
+        assert!(fixture.index().matches_projection(
+            &source,
+            &fixture.label,
+            &feature,
+            &result,
+            seed
+        ));
+        for (name, changed, source) in body_boolean_refusal_cases()
+            .into_iter()
+            .filter(|(_, _, source)| source.save_version_major == version)
+        {
+            assert!(
+                !changed.index().matches_projection(
+                    &source,
+                    &changed.label,
+                    &feature,
+                    &result,
+                    seed
+                ),
+                "{name}"
+            );
+        }
     }
 }
 
@@ -231,7 +283,7 @@ fn validator_checks_each_auxiliary_payload_length_against_the_versioned_header()
         let source = pattern(version, false, &[3], &[]);
         let (feature, result) = fixture
             .index()
-            .project(&ctx, &source, &fixture.label, seed)
+            .project(&ctx, &source, &fixture.label, seed, |_| {})
             .expect("mirror")
             .expect("projection");
         let token = fixture.properties[0].identity.segment_token.as_str();
@@ -255,5 +307,162 @@ fn validator_checks_each_auxiliary_payload_length_against_the_versioned_header()
             .index()
             .with_record_lengths([(token, 111, selection)].into_iter());
         assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, seed));
+    }
+}
+
+#[test]
+fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
+    use crate::test_support::mirror::new_body_form;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (fixture, source) = new_body_form();
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+        .expect("body copy")
+        .expect("projection");
+    assert!(is_mirror_construction(&feature));
+    assert!(requires_mirror_validation(&feature, None));
+    let token = source.identity.segment_token.as_str();
+    let index = fixture.index().with_record_lengths(
+        [
+            (token, 111, 30),
+            (token, 112, 31),
+            (token, 113, 78),
+            (token, 200, 66),
+        ]
+        .into_iter(),
+    );
+    assert!(index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    for length in [0, 77, 79, 82] {
+        let index = fixture.index().with_record_lengths(
+            [
+                (token, 111, 30),
+                (token, 112, 31),
+                (token, 113, length),
+                (token, 200, 66),
+            ]
+            .into_iter(),
+        );
+        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    }
+    let index = fixture
+        .index()
+        .with_record_lengths([(token, 111, 30), (token, 112, 31)].into_iter());
+    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    for length in [0, 65, 67, 80] {
+        let index = fixture.index().with_record_lengths(
+            [
+                (token, 111, 30),
+                (token, 112, 31),
+                (token, 113, 78),
+                (token, 200, length),
+            ]
+            .into_iter(),
+        );
+        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    }
+    let index = fixture
+        .index()
+        .with_record_lengths([(token, 111, 30), (token, 112, 31), (token, 113, 78)].into_iter());
+    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    let mut changed = feature.clone();
+    let mut definition = changed.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        source: selection, ..
+    }) = &mut definition
+    else {
+        panic!("mirror shape")
+    };
+    *selection = cadmpeg_ir::features::BodySelection::Native("other-source".into());
+    changed.evaluation.set_definition(definition);
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &changed,
+        &result,
+        |_| None
+    ));
+}
+
+#[test]
+fn validator_rejects_each_unresolved_body_copy_operand() {
+    use crate::test_support::mirror::{body_copy_refusal_cases, new_body_form};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (fixture, source) = new_body_form();
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+        .expect("body copy")
+        .expect("projection");
+    for (name, changed, source) in body_copy_refusal_cases() {
+        assert!(
+            !changed
+                .index()
+                .matches_projection(&source, &changed.label, &feature, &result, |_| None),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn validator_admits_each_measured_body_copy_outline() {
+    use crate::test_support::mirror::new_body_form;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    for outline in [3, 9, 15] {
+        let (mut fixture, source) = new_body_form();
+        let mut node = serde_json::to_value(&fixture.generated_features[0]).expect("node");
+        node["outline_value"] = serde_json::json!(outline);
+        fixture.generated_features[0] = serde_json::from_value(node).expect("outline form");
+        let (feature, result) = fixture
+            .index()
+            .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+            .expect("body copy")
+            .expect("projection");
+        assert!(fixture.index().matches_projection(
+            &source,
+            &fixture.label,
+            &feature,
+            &result,
+            |_| None
+        ));
+    }
+}
+
+#[test]
+fn validator_checks_the_replacement_form_and_each_neighbouring_refusal() {
+    use crate::test_support::mirror::{replacement_form, replacement_refusal_cases};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (fixture, source) = replacement_form();
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+        .expect("replacement")
+        .expect("projection");
+    assert!(fixture
+        .index()
+        .matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    for (name, changed, source) in replacement_refusal_cases() {
+        assert!(
+            !changed
+                .index()
+                .matches_projection(&source, &changed.label, &feature, &result, |_| None),
+            "{name}"
+        );
     }
 }
