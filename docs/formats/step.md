@@ -2221,10 +2221,15 @@ The measure item names distinguish the quantities:
 Names are case-insensitive. Area and volume values use their explicit measure
 units; point coordinates use the representation context's length unit. Derived
 unit factors have total length exponents two for area and three for volume.
-Inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
-`MEASURE_WITH_UNIT` partials carry the same attributes as their simple forms.
-Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes carry their inherited
-`DERIVED_UNIT_ELEMENT` factors.
+Simple instances list inherited attributes in schema order. Complex
+instances place each attribute in its declaring partial. `REPRESENTATION`
+carries items and context; `REPRESENTATION_ITEM` carries the item name;
+`MEASURE_WITH_UNIT` carries the value and unit; `CARTESIAN_POINT` carries only
+its coordinate list. In a complex `GEOMETRIC_ITEM_SPECIFIC_USAGE`,
+`ITEM_IDENTIFIED_REPRESENTATION_USAGE` carries the definition, used
+representation, and identified items. In a complex
+`SHAPE_DEFINITION_REPRESENTATION`, `PROPERTY_DEFINITION_REPRESENTATION`
+carries the definition and used representation.
 
 `representation.items` is a `SET[1:?]`. One representation can combine
 validation properties with the same property name and definition. Its name is

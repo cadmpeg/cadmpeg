@@ -88,7 +88,7 @@ fn a_value_beyond_the_measured_error_terms_disagrees() {
     assert_eq!(severities(&found), [Severity::Error; 3], "{found:#?}");
     let body = format!("step:data:body#{}", part.items[0]);
     for finding in &found {
-        assert_eq!(finding.related, [body.clone()]);
+        assert_eq!(finding.related.as_slice(), std::slice::from_ref(&body));
     }
 }
 

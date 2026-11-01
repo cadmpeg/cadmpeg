@@ -427,11 +427,92 @@ fn validation_unit_conversion_refuses_nonfinite_quantities() {
         .replace("AREA_MEASURE(50.)", "AREA_MEASURE(1.E308)");
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect_err("area overflows cubic document scaling");
+        .expect_err("area overflows its unit conversion");
     assert!(
         error
             .to_string()
             .contains("not finite after unit conversion"),
         "{error}"
     );
+}
+
+#[test]
+fn complex_geometric_usage_reads_the_inherited_representation_usage_fields() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=(GEOMETRIC_ITEM_SPECIFIC_USAGE() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','shape for validation properties',#900,#{},(#{})));\n",
+            part.representation, part.items[0]
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn complex_centroid_reads_coordinates_and_name_from_their_own_partials() {
+    let part = part(&[CUBE]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[Item::Point("centre point", [5.0, 5.0, 5.0])],
+    );
+    let simple = "#1007=CARTESIAN_POINT('centre point',(5.0,5.0,5.0));";
+    assert!(validation.contains(simple));
+    let complex = "#1007=(CARTESIAN_POINT((5.,5.,5.)) GEOMETRIC_REPRESENTATION_ITEM() POINT() REPRESENTATION_ITEM('centre point'));";
+    let result = decode_inline(&format!(
+        "{}{}",
+        part.records,
+        validation.replace(simple, complex)
+    ));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 1000)),
+        [DeclaredQuantity::SolidCentroid {
+            value: point(5.0, 5.0, 5.0)
+        }]
+    );
+    assert!(unsupported_items(&result).is_empty());
+}
+
+#[test]
+fn complex_shape_definition_representation_reads_its_property_representation_partial() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=PROPERTY_DEFINITION('','shape for validation properties',#900);\n\
+             #902=SHAPE_REPRESENTATION('',(#{}),#{});\n\
+             #903=(PROPERTY_DEFINITION_REPRESENTATION(#901,#902) SHAPE_DEFINITION_REPRESENTATION());\n",
+            part.items[0], part.context
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn tessellated_input_keeps_the_stated_quantities_without_a_decode_time_comparison() {
+    let result = decode_source(&tessellation_fixture());
+    let actual: Vec<_> = [41, 46, 50, 57]
+        .into_iter()
+        .flat_map(|property| quantities(&of_property(result.ir(), property)))
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            DeclaredQuantity::SolidArea {
+                value: scalar(50.0)
+            },
+            DeclaredQuantity::SolidCentroid {
+                value: point(3.333333333333333, 3.333333333333333, 0.0)
+            },
+            DeclaredQuantity::Volume { value: scalar(0.0) },
+            DeclaredQuantity::SolidArea {
+                value: scalar(51.0)
+            },
+        ]
+    );
+    assert!(!result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("tessellation approximation")));
 }

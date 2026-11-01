@@ -170,21 +170,6 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
             binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
         )));
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note
-            == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"));
-    assert!(result.report().notes.iter().any(|note| note.starts_with(
-        "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), tessellation approximation distance"
-    )));
-    assert!(result.report().notes.iter().any(
-        |note| note == "geometric validation volume open sheet volume: expected 0, tessellation approximation 0"
-    ));
-    assert!(!result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("does not match transferred tessellation")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

@@ -234,7 +234,10 @@ fn aspect_items(
 ) -> BTreeMap<u64, BTreeSet<u64>> {
     let mut items = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
-        let Some(relation) = record.partial("SHAPE_DEFINITION_REPRESENTATION") else {
+        let Some(relation) = record
+            .partial("PROPERTY_DEFINITION_REPRESENTATION")
+            .or_else(|| record.partial("SHAPE_DEFINITION_REPRESENTATION"))
+        else {
             continue;
         };
         let Some(aspect) = relation
@@ -259,19 +262,12 @@ fn aspect_items(
             .extend(representation.iter().copied());
     }
     for record in exchange.records().values() {
-        let Some(usage) = record.partials.iter().find(|partial| {
-            partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE"
-                || partial.name == "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
-        }) else {
+        let Some(usage) = record
+            .partial("ITEM_IDENTIFIED_REPRESENTATION_USAGE")
+            .or_else(|| record.partial("GEOMETRIC_ITEM_SPECIFIC_USAGE"))
+        else {
             continue;
         };
-        let plain = record.partials.iter().all(|partial| {
-            partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE"
-                || partial.name == "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
-        });
-        if !plain {
-            continue;
-        }
         let Some(aspect) = usage.parameters.get(2).and_then(ValueExt::reference) else {
             continue;
         };
@@ -353,7 +349,12 @@ fn stated(
         })?
         .to_ascii_lowercase();
     if let Some(point) = record.partial("CARTESIAN_POINT") {
-        let values = point.parameters.get(1).and_then(ValueExt::list)?;
+        let coordinates = if record.simple_name() == Some("CARTESIAN_POINT") {
+            point.parameters.get(1)
+        } else {
+            point.parameters.first()
+        };
+        let values = coordinates.and_then(ValueExt::list)?;
         let [x, y, z] = values else {
             return None;
         };

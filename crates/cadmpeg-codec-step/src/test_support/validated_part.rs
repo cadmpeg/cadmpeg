@@ -145,9 +145,8 @@ pub(crate) fn validation_property(
          #{volume_element}=DERIVED_UNIT_ELEMENT(#{length_unit},3.);\n",
         relation = first + 2,
     );
-    let mut next = first + 7;
     let mut listed = Vec::new();
-    for item in items {
+    for (next, item) in (first + 7..).zip(items) {
         let body = match *item {
             Item::Area(name, value) => {
                 format!(
@@ -166,7 +165,6 @@ pub(crate) fn validation_property(
         };
         writeln!(records, "#{next}={body};").expect("write to a String");
         listed.push(format!("#{next}"));
-        next += 1;
     }
     writeln!(
         records,
