@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints` | none | spatial sketches | `CadSketch` types with a 3D placement and 3D points |
 | `parameters` | `CadParameter` prims (`usd.md` §18.6) | the owning feature; PMI semantics | `rel cad:parameter:owner` to a `CadFeature` prim; `CadPmi` |
 | `configurations` | none | configurations, their parameter values and overrides, bodies, and feature evaluations | `CadConfiguration` prims, written with `CadFeature` because each holds the evaluated definition of each feature; a variant set over parameter values and feature suppression for viewers |
-| `features`, `feature_input_topologies`, `feature_result_topologies` | none | the neutral feature history and its topology references | `CadFeature` types: one prim per feature, its definition, inputs, outputs, and ordinal |
+| `features`, `feature_input_topologies`, `feature_result_topologies` | `CadFeature` prims (`usd.md` §18.7): typed identity, order, suppression, dependencies, outputs, and properties; the definition and topologies as CADIR wire JSON | typed operation properties | `CadFeature` subtypes for each operation family, which replace the payload family by family |
 | `spreadsheets` | none | spreadsheet cells | `CadSpreadsheet` prim, or an asset |
 | `pmi`, `semantic_annotations` | none | product manufacturing information on topology | `CadPmi` types that target `BrepArray` faces and edges through `CadBrepIdentityAPI` identities |
 | `attributes` | none | user attributes on entities | `customData` dictionary `cad:attributes` on the prim of the entity, or keyed by entity identity on a `BrepArray` |
@@ -56,7 +56,7 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 
 - `CadSketch` and its entity and constraint types (`usd.md` §18.2), extended for spatial sketches.
 - `CadParameter` (`usd.md` §18.6): name, expression, typed value, display, dependencies, product definition, and properties.
-- `CadFeature`: one typed prim for each CADIR feature definition family, with relationships to its sketch, inputs, and outputs.
+- `CadFeature` (`usd.md` §18.7): one prim for each feature, with typed common properties and the operation as CADIR wire JSON; typed subtypes for the operation families follow.
 
 ## 3. Changes outside the USD codec
 

@@ -448,6 +448,7 @@ dependencies = [
  "cadmpeg-tessellate",
  "cadmpeg-test-support",
  "crc32fast",
+ "serde",
  "serde_json",
  "unicode-ident",
 ]

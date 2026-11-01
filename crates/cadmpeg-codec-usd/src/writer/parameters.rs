@@ -89,6 +89,13 @@ impl Writer<'_> {
             );
         }
         if let Some(path) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| self.feature_path(owner))
+        {
+            line(format!("rel cad:parameter:owner = <{path}>"), &mut self.out);
+        }
+        if let Some(path) = parameter
             .product_definition
             .as_ref()
             .and_then(|definition| self.definition_path(definition))
@@ -118,7 +125,10 @@ impl Writer<'_> {
     }
 
     /// The prim path of the first written occurrence of `definition`.
-    fn definition_path(&self, definition: &cadmpeg_ir::ids::ProductDefinitionId) -> Option<&str> {
+    pub(super) fn definition_path(
+        &self,
+        definition: &cadmpeg_ir::ids::ProductDefinitionId,
+    ) -> Option<&str> {
         self.ir
             .model
             .occurrences

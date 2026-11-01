@@ -118,29 +118,23 @@ impl super::Builder<'_, '_, '_, '_> {
             .collect::<Result<Vec<_>, String>>()?;
         let dependencies = DistinctMembers::try_from(dependencies)
             .map_err(|_| "a dependency is named twice".to_owned())?;
-        let product_definition = match prim
-            .relationship_targets("cad:parameter:definition")
-            .as_slice()
-        {
+        let product_definition = self.definition_target(prim, "cad:parameter:definition")?;
+        let owner = match prim.relationship_targets("cad:parameter:owner").as_slice() {
             [] => None,
-            [target] => {
-                let stage = self.stage;
-                let holder = stage
-                    .find(target)
-                    .ok_or_else(|| format!("definition <{target}> is not a prim"))?;
-                let definition = crate::ids::definition(&self.definition_key(holder));
-                if !self
-                    .ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .any(|candidate| candidate.id == definition)
-                {
-                    return Err(format!("<{target}> defines no product definition"));
-                }
-                Some(definition)
-            }
-            _ => return Err("cad:parameter:definition has more than one target".to_owned()),
+            [target] => Some(
+                self.feature_ids
+                    .get(target)
+                    .filter(|id| {
+                        self.ir
+                            .model
+                            .features
+                            .iter()
+                            .any(|feature| &feature.id == *id)
+                    })
+                    .cloned()
+                    .ok_or_else(|| format!("cad:parameter:owner: <{target}> is no feature"))?,
+            ),
+            _ => return Err("cad:parameter:owner has more than one target".to_owned()),
         };
         let names = text_array(self, prim, "cad:parameter:propertyNames");
         let property_values = text_array(self, prim, "cad:parameter:propertyValues");
@@ -156,7 +150,7 @@ impl super::Builder<'_, '_, '_, '_> {
         Ok(DesignParameter {
             product_definition,
             id,
-            owner: None,
+            owner,
             ordinal: integer(prim, "cad:parameter:ordinal", &mut self.issues)
                 .and_then(|value| u32::try_from(value).ok())
                 .unwrap_or(0),

@@ -1,0 +1,76 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# cadFeature schema: construction features.
+# Codeless; cadmpeg reads and writes it (docs/formats/usd.md §18.7). The typed
+# properties state what every feature has; cad:feature:payload holds the
+# operation in the CADIR wire form until typed operation schemas replace it.
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadFeature"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+class CadFeature "CadFeature" (
+    inherits = </Typed>
+    doc = """One construction feature of a source history."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the feature."""
+    )
+    uniform string cad:feature:name (
+        doc = """The source display name."""
+    )
+    uniform uint64 cad:feature:ordinal = 0 (
+        doc = """The construction order in the source history."""
+    )
+    uniform bool cad:feature:suppressed (
+        doc = """The evaluation is disabled. Unauthored, the source states no value."""
+    )
+    uniform token cad:feature:operation (
+        doc = """The definition tag of the CADIR feature definition, for example 'extrude'."""
+    )
+    rel cad:feature:dependencies (
+        doc = """The CadFeature prims that regeneration consumes, in source operand order."""
+    )
+    rel cad:feature:regenerationParent (
+        doc = """One target, the regeneration predecessor of a feature that no tree node
+                 holds."""
+    )
+    rel cad:feature:definition (
+        doc = """One target, a prim of the product definition whose frame holds the
+                 feature."""
+    )
+    uniform string[] cad:feature:outputs (
+        doc = """The CADIR identities of the bodies that the evaluation produces."""
+    )
+    uniform string[] cad:feature:propertyNames (
+        doc = """The names of the source operation attributes."""
+    )
+    uniform string[] cad:feature:propertyValues (
+        doc = """The values of the source operation attributes, parallel to propertyNames."""
+    )
+    uniform string cad:feature:payload (
+        doc = """A JSON object: the CADIR wire form of the feature without the typed
+                 properties."""
+    )
+    uniform string cad:feature:inputTopologies (
+        doc = """A JSON array of the CADIR feature input topologies of the feature."""
+    )
+    uniform string cad:feature:resultTopologies (
+        doc = """A JSON array of the CADIR feature result topologies of the feature."""
+    )
+}

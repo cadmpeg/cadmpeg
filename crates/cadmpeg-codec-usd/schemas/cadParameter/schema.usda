@@ -64,6 +64,10 @@ class CadParameter "CadParameter" (
     rel cad:parameter:dependencies (
         doc = """The CadParameter prims that the expression names, in expression order."""
     )
+    rel cad:parameter:owner (
+        doc = """One target, the CadFeature prim of the feature that consumes the
+                 parameter."""
+    )
     rel cad:parameter:definition (
         doc = """One target, a prim of the product definition whose frame holds the
                  parameter."""

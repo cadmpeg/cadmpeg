@@ -303,6 +303,14 @@ pub(crate) fn solver_settings(path: &str, schema: &str) -> cadmpeg_ir::ids::Solv
     )
 }
 
+/// The feature of the `CadFeature` prim at `path`.
+pub(crate) fn feature(path: &str) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "feature"),
+        key(path),
+    )
+}
+
 /// The identities of the records of a sketch (spec §18.2).
 pub(crate) mod sketch {
     use super::key;

@@ -17,6 +17,7 @@
 
 mod brep;
 mod brep_array;
+mod features;
 mod mates;
 mod parameters;
 mod physics;
@@ -92,9 +93,9 @@ const COVERAGE: ArenaDispositions = {
         procedural_surfaces: Omitted,
         procedural_curves: Omitted,
         assets: Written,
-        features: Omitted,
-        feature_input_topologies: Omitted,
-        feature_result_topologies: Omitted,
+        features: Written,
+        feature_input_topologies: Written,
+        feature_result_topologies: Written,
         configurations: Omitted,
         parameters: Written,
         sketches: Written,
@@ -179,6 +180,8 @@ struct Unwritten {
     /// Sketch constraints with no constraint type, or whose targets or
     /// values are not written.
     sketch_constraints: usize,
+    /// Features whose wire form does not serialize.
+    features: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -316,6 +319,8 @@ struct Writer<'ir> {
     connector_queue: Vec<(String, mates::ConnectorPlan)>,
     /// The `CadParameter` prim path of each design parameter.
     parameter_paths: BTreeMap<cadmpeg_ir::features::ParameterId, String>,
+    /// The `CadFeature` prim path of each feature.
+    feature_paths: BTreeMap<cadmpeg_ir::features::FeatureId, String>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -408,6 +413,7 @@ impl<'ir> Writer<'ir> {
             exported: BTreeMap::new(),
             brep_paths: BTreeMap::new(),
             parameter_paths: BTreeMap::new(),
+            feature_paths: BTreeMap::new(),
             connector_queue: Vec::new(),
             assets: None,
         }
@@ -503,6 +509,7 @@ impl<'ir> Writer<'ir> {
                 }
                 self.free_geometry(&mut names);
                 self.joints(&mut names);
+                self.features(&mut names);
                 self.parameters(&mut names);
                 self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
@@ -713,6 +720,7 @@ impl<'ir> Writer<'ir> {
         }
         if root.is_some() {
             self.joints(&mut child_names);
+            self.features(&mut child_names);
             self.parameters(&mut child_names);
             self.sketches(&mut child_names, Some(&occurrence.id));
         }
@@ -1587,12 +1595,18 @@ impl<'ir> Writer<'ir> {
         let owned = model
             .parameters
             .iter()
-            .filter(|parameter| parameter.owner.is_some() || parameter.pmi.is_some())
+            .filter(|parameter| parameter.pmi.is_some())
             .count();
         if owned > 0 {
             losses.push(UsdLossCode::ExportParameterPropertyNotWritten.note(format!(
-                "the owning feature or the PMI semantics of {owned} design parameters have no \
-                 CadParameter attribute and were not written"
+                "the PMI semantics of {owned} design parameters have no CadParameter \
+                 attribute and were not written"
+            )));
+        }
+        if unwritten.features > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} features have no wire form and were not written",
+                unwritten.features
             )));
         }
         if unwritten.solver_properties > 0 {

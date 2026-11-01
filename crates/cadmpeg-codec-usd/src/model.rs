@@ -57,6 +57,7 @@ use crate::stage::{Prim, Stage};
 use crate::text::syntax::{Layer, MetaValue, Value};
 
 mod brep;
+mod features;
 mod mates;
 mod parameters;
 mod physics;
@@ -199,6 +200,8 @@ struct Tallies {
     rejected_sketch_elements: Vec<String>,
     sketch_properties: Vec<String>,
     rejected_parameters: Vec<String>,
+    rejected_features: Vec<String>,
+    feature_properties: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -307,6 +310,8 @@ struct Builder<'s, 'l, 'c, 'a> {
     pending_joints: Vec<physics::PendingJoint>,
     /// Mate prims, resolved after every occurrence exists.
     pending_mates: Vec<usize>,
+    /// The IR identity of each `CadFeature` prim, by path.
+    feature_ids: BTreeMap<String, cadmpeg_ir::features::FeatureId>,
     /// The IR identity of each `CadParameter` prim, by path.
     parameter_ids: BTreeMap<String, cadmpeg_ir::features::ParameterId>,
     /// The `BrepArray` faces of each definition key.
@@ -347,12 +352,14 @@ pub(crate) fn build<'a>(
         pending_joints: Vec::new(),
         pending_mates: Vec::new(),
         parameter_ids: BTreeMap::new(),
+        feature_ids: BTreeMap::new(),
         brep_entries: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
     };
     let mut ordinal = 0_u32;
+    builder.feature_ids();
     builder.parameter_ids();
     for root in stage.roots.clone() {
         if builder.prim(root, None, &IDENTITY, ordinal)? {
@@ -361,6 +368,7 @@ pub(crate) fn build<'a>(
                 .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
         }
     }
+    builder.features()?;
     builder.parameters()?;
     let mates = std::mem::take(&mut builder.pending_mates);
     builder.mates(mates)?;
@@ -459,7 +467,7 @@ impl Builder<'_, '_, '_, '_> {
         if crate::schema::sketch::is_sketch_type(prim.type_name())
             || matches!(
                 prim.type_name(),
-                Some("CadConnector" | parameters::PARAMETER_TYPE)
+                Some("CadConnector" | parameters::PARAMETER_TYPE | features::FEATURE_TYPE)
             )
         {
             return Ok(false);
@@ -1441,7 +1449,7 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     || mates::is_mate_type(child.type_name())
                     || matches!(
                         child.type_name(),
-                        Some("CadConnector" | parameters::PARAMETER_TYPE)
+                        Some("CadConnector" | parameters::PARAMETER_TYPE | features::FEATURE_TYPE)
                     )
                     || match role(child.type_name()) {
                         Role::Consumed => true,
@@ -1725,6 +1733,26 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
              no neutral form, and were not transferred: {}",
             tallies.rejected_sketch_elements.len(),
             joined(tallies.rejected_sketch_elements.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::FeatureRejected,
+        !tallies.rejected_features.is_empty(),
+        format!(
+            "{} CadFeature prims do not satisfy their schema, or name records the stage does \
+             not hold, and were not transferred: {}",
+            tallies.rejected_features.len(),
+            joined(tallies.rejected_features.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::FeaturePropertyNotTransferred,
+        !tallies.feature_properties.is_empty(),
+        format!(
+            "properties of {} features name records the stage does not hold and were not \
+             transferred: {}",
+            tallies.feature_properties.len(),
+            joined(tallies.feature_properties.iter().cloned())
         ),
     );
     push(

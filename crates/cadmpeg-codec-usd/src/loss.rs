@@ -110,6 +110,12 @@ pub(crate) enum UsdLossCode {
     /// A `CadParameter` prim that does not satisfy its schema was not
     /// transferred.
     ParameterRejected,
+    /// A `CadFeature` prim that does not satisfy its schema, or names a
+    /// record the stage does not hold, was not transferred.
+    FeatureRejected,
+    /// Feature properties that name records the stage does not hold were
+    /// not transferred.
+    FeaturePropertyNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -140,6 +146,8 @@ pub(crate) enum UsdLossCode {
     /// A design parameter property with no `CadParameter` form was not
     /// written.
     ExportParameterPropertyNotWritten,
+    /// A feature with no `CadFeature` form was not written.
+    ExportFeatureNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,
     /// A `BrepArray` prim has no trim curves.
@@ -194,6 +202,8 @@ impl UsdLossCode {
         Self::SketchElementRejected,
         Self::SketchPropertyNotTransferred,
         Self::ParameterRejected,
+        Self::FeatureRejected,
+        Self::FeaturePropertyNotTransferred,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -207,6 +217,7 @@ impl UsdLossCode {
         Self::ExportTopologyTessellated,
         Self::ExportSketchElementNotWritten,
         Self::ExportParameterPropertyNotWritten,
+        Self::ExportFeatureNotWritten,
         Self::ExportBrepNotWritten,
         Self::ExportBrepUntrimmed,
         Self::ExportCarrierNotWritten,
@@ -363,6 +374,12 @@ impl UsdLossCode {
                 T::ParametricRecordOmitted,
             ),
             Self::ParameterRejected => ("parameter.rejected", Warning, T::ParametricRecordOmitted),
+            Self::FeatureRejected => ("feature.rejected", Warning, T::ParametricRecordOmitted),
+            Self::FeaturePropertyNotTransferred => (
+                "feature.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
             Self::SketchPropertyNotTransferred => (
                 "sketch.property-not-transferred",
                 Info,
@@ -424,6 +441,11 @@ impl UsdLossCode {
             ),
             Self::ExportParameterPropertyNotWritten => (
                 "export.parameter-property-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::ExportFeatureNotWritten => (
+                "export.feature-not-written",
                 Warning,
                 T::ParametricRecordOmitted,
             ),

@@ -1528,6 +1528,31 @@ A `CadParameter` prim states one design parameter. A writer puts the parameters 
 | `cad:parameter:display` | uniform token | `diameter` or `radius` |
 | `cad:parameter:dependencies` | rel | the `CadParameter` prims that the expression names, in expression order |
 | `cad:parameter:definition` | rel | one target, a prim of the product definition whose frame holds the parameter |
+| `cad:parameter:owner` | rel | one target, the `CadFeature` prim of the feature that consumes the parameter (§18.7) |
 | `cad:parameter:propertyNames`, `cad:parameter:propertyValues` | uniform `string[]` | source properties, as parallel arrays |
 
 A parameter has at most one value attribute; with none, the parameter has no evaluated value. A sketch dimension constraint names the parameter that it states with `rel sketch:constraint:parameter` (§18.2). Its `sketch:constraint:value` is the value of that parameter.
+
+### 18.7 CadFeature
+
+A `CadFeature` prim states one construction feature. A writer puts the features in a `Features` scope, in feature order. A reader reads each `CadFeature` prim of the stage, in stage order.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the feature |
+| `cad:feature:name` | uniform string | the source display name |
+| `cad:feature:ordinal` | uniform uint64 | the construction order in the source history |
+| `cad:feature:suppressed` | uniform bool | the evaluation is disabled; unauthored, the source states no value |
+| `cad:feature:operation` | uniform token | the definition tag of the CADIR feature definition, for example `extrude` |
+| `cad:feature:dependencies` | rel | the `CadFeature` prims that regeneration consumes, in source operand order |
+| `cad:feature:regenerationParent` | rel | one target, the regeneration predecessor of a feature that no tree node holds |
+| `cad:feature:definition` | rel | one target, a prim of the product definition whose frame holds the feature |
+| `cad:feature:outputs` | uniform `string[]` | the CADIR identities of the bodies that the evaluation produces |
+| `cad:feature:propertyNames`, `cad:feature:propertyValues` | uniform `string[]` | source operation attributes, as parallel arrays |
+| `cad:feature:payload` | uniform string | a JSON object: the CADIR wire form of the feature without the fields above |
+| `cad:feature:inputTopologies` | uniform string | a JSON array of the CADIR feature input topologies of the feature |
+| `cad:feature:resultTopologies` | uniform string | a JSON array of the CADIR feature result topologies of the feature |
+
+The payload holds `definition`, and, when the source states them, `source_tag`, `source_text`, and `source_content`, in the wire form of the CADIR version of the writer. Identities in the payload are CADIR identities, which `cad:id` and `CadBrepIdentityAPI` (§18.1) keep through a stage.
+
+A reader gives a feature the typed properties over the payload. A reader does not add a feature whose payload does not deserialize, or that names a feature that it does not add: a dependency, the regeneration predecessor, or an identity in the payload. A `CadParameter` names the feature that owns it with `rel cad:parameter:owner` (§18.6).
