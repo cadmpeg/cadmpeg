@@ -1360,6 +1360,76 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 9 | `options` | `bytes[9]` | little | spec | Mirror auxiliary payloads follow the versioned content header and stamps. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
+## `pm_dc_mirror_instance_map_single_tail_v19`
+
+Spec §13 · layout: byte offsets · size: 56 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror/instance_map.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | the single-entry Mirror instance map has type · value `-1` |
+| 4 | 2 | `map_marker` | `u16` | little | spec | the single-entry Mirror instance map has type · value `6` |
+| 6 | 2 | `map_signature` | `u16` | little | spec | the single-entry Mirror instance map has type · value `12288` |
+| 8 | 4 | `map_count` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
+| 12 | 4 | `map_value` | `u32` | little | spec | the single-entry Mirror instance map has type · value `0` |
+| 16 | 4 | `source_tag` | `u32` | little | spec | the single-entry Mirror instance map has type · value `805306370` |
+| 20 | 4 | `source` | `u32` | little | spec | the single-entry Mirror instance map has type |
+| 24 | 2 | `result_marker` | `u16` | little | spec | the single-entry Mirror instance map has type · value `2` |
+| 26 | 2 | `result_signature` | `u16` | little | spec | the single-entry Mirror instance map has type · value `12288` |
+| 28 | 4 | `result_count` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
+| 32 | 4 | `result_metadata0` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
+| 36 | 4 | `result_metadata1` | `u32` | little | spec | the single-entry Mirror instance map has type · value `0` |
+| 40 | 4 | `result` | `u32` | little | spec | the single-entry Mirror instance map has type |
+| 44 | 4 | `terminal_value` | `u32` | little | spec | the single-entry Mirror instance map has type · value `2` |
+| 48 | 4 | `owner_count` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
+| 52 | 4 | `owner` | `u32` | little | spec | the single-entry Mirror instance map has type |
+
+## `pm_dc_mirror_generated_body_feature_v19`
+
+Spec §13 · layout: byte offsets · size: 66 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | The generated body node has label class |
+| 4 | 2 | `header_id` | `u16` | little | spec | The generated body node has label class |
+| 6 | 4 | `next` | `u32` | little | spec | The generated body node has label class |
+| 10 | 4 | `flags` | `u32` | little | spec | The generated body node has label class · value `25088` |
+| 14 | 4 | `context` | `u32` | little | spec | The generated body node has label class |
+| 18 | 4 | `source_index` | `u32` | little | spec | The generated body node has label class |
+| 22 | 4 | `state` | `i32` | little | spec | The generated body node has label class |
+| 26 | 4 | `outline_value` | `u32` | little | spec | The generated body node has label class |
+| 30 | 2 | `marker` | `u16` | little | spec | The generated body node has label class · value `2` |
+| 32 | 2 | `signature` | `u16` | little | spec | The generated body node has label class · value `12288` |
+| 34 | 4 | `count` | `u32` | little | spec | The generated body node has label class · value `4` |
+| 38 | 4 | `metadata0` | `u32` | little | spec | The generated body node has label class · value `4` |
+| 42 | 4 | `metadata1` | `u32` | little | spec | The generated body node has label class · value `0` |
+| 46 | 4 | `mode` | `u32` | little | spec | The generated body node has label class |
+| 50 | 4 | `input_index` | `u32` | little | spec | The generated body node has label class |
+| 54 | 4 | `owner_index` | `u32` | little | spec | The generated body node has label class |
+| 58 | 4 | `result_body` | `u32` | little | spec | The generated body node has label class |
+| 62 | 4 | `value` | `u32` | little | spec | The generated body node has label class · value `0` |
+
+## `pm_dc_mirror_generated_body_properties`
+
+Spec §13 · layout: ordered slots (no stated byte offsets) · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `mode` | `u32` | little | spec | Slot 0 has nominal and model values 2. |
+| 1 | `source_index` | `u32` | little | spec | Slot 1 has nominal and model values equal to the source wrapper's |
+| 2 | `owner_index` | `u32` | little | spec | Slot 2 has nominal and model values equal to the owning Mirror's |
+| 3 | `result_body` | `u32` | little | spec | Slot 3 selects the result surface-body wrapper. |
+
 ## `pm_dc_body_motion_properties`
 
 Spec §13 · layout: ordered slots (no stated byte offsets) · size: 12 B
