@@ -37,12 +37,13 @@ SCOPE = """
 def select(root, paths, base_lock=None):
     rust = any(path.startswith("crates/") for path in paths)
     schema = any(path.startswith("crates/cadmpeg-ir/") for path in paths)
-    return {"rust": rust, "full": False, "schema": schema,
+    return {"rust": rust, "full": False, "schema": schema, "codec_scope": ["sat"] if not schema else [],
             "packages": ["cadmpeg-codec-sat", "cadmpeg-ir"] if schema else ["cadmpeg-codec-sat"]}
 """
 CARGO = """import os, sys
 print("lint over", os.environ["CI_PACKAGES"])
-sys.exit(1 if os.path.exists("lint-fails") else 0)
+print("features", os.environ["CI_CODEC_FEATURES"])
+sys.exit(1 if os.path.exists("lint-fails") or "CI_CODEC_FEATURES" not in os.environ else 0)
 """
 
 
@@ -70,6 +71,7 @@ class ClippyCheck(harness.FixtureCase):
         results = harness.run_check(check, self.repo.context())
         self.assertEqual(harness.statuses(results), ["SKIP"])
         self.assertIn("CI_PACKAGES='[\"cadmpeg-codec-sat\"]'", results[0].details[0])
+        self.assertIn("CI_CODEC_FEATURES='[\"sat\"]'", results[0].details[0])
 
     def test_full_runs_the_gate(self) -> None:
         self.repo.commit({"crates/cadmpeg-codec-sat/src/lib.rs": "\n"})

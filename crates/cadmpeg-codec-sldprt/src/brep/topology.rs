@@ -767,6 +767,34 @@ fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize
         .then_some(p + len)
 }
 
+/// Framing window for the stated text length of a string node in the scope
+/// pass.
+const MAX_STRING_NODE_BYTES: usize = 4096;
+
+/// The end of a `00 4f` KEY or `00 54` `CHAR_VALUES` node whose body starts at
+/// `p` (spec §5): a u32 BE byte length, a u16 transmit index, and that many
+/// printable bytes, before the next node's tag or the stream end.
+fn string_node_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
+    if tag != 0x4f && tag != 0x54 {
+        return None;
+    }
+    let len = usize::try_from(View::u32_be_at(buf, p)?).ok()?;
+    if len == 0 || len > MAX_STRING_NODE_BYTES {
+        return None;
+    }
+    let index = View::u16_be_at(buf, p + 4)?;
+    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&index) {
+        return None;
+    }
+    let start = p.checked_add(6)?;
+    let end = start.checked_add(len)?;
+    let text = buf.get(start..end)?;
+    if !text.iter().all(|byte| (0x20..0x7f).contains(byte)) {
+        return None;
+    }
+    buf.get(end).is_none_or(|next| *next == 0).then_some(end)
+}
+
 /// The record tag of an intersection composite.
 const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
 
@@ -892,6 +920,10 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
         if let Some(end) = end.filter(|end| *end <= buf.len()) {
             scopes.payloads.push(off..end);
             scopes.excluded_starts.push(off..end);
+            off = end;
+        } else if let Some(end) = string_node_end(buf, p, tag) {
+            // A string node's length and text hold no record header.
+            scopes.excluded_starts.push(off + 1..end);
             off = end;
         } else if let Some(end) = intersection_composite_end(buf, p, tag)
             .or_else(|| edited_intersection_composite_end(buf, off))

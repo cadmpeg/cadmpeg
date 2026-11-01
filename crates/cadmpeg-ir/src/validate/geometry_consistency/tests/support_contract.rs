@@ -7,16 +7,22 @@ use crate::geometry::FitTolerance;
 use crate::topology::{CoedgeUseCurve, ParameterInterval};
 
 fn support_curve(miss: f64, fit: Option<f64>) -> CadIr {
+    support_curve_with_heights([miss, 0.0], fit)
+}
+
+/// A support pcurve at `ends` over the construction ends and `middle` over
+/// the interior of the interval.
+fn support_curve_with_heights([ends, middle]: [f64; 2], fit: Option<f64>) -> CadIr {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::new(
             1,
             vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
             PcurveNurbsPoles::Polynomial {
                 points: vec![
-                    Point2::new(2.0, miss),
-                    Point2::new(2.25, 0.0),
-                    Point2::new(2.75, 0.0),
-                    Point2::new(3.0, miss),
+                    Point2::new(2.0, ends),
+                    Point2::new(2.25, middle),
+                    Point2::new(2.75, middle),
+                    Point2::new(3.0, ends),
                 ],
             },
             false,
@@ -128,6 +134,99 @@ fn used_hull_keeps_the_context_pcurve_parameter_map() {
     let mut ir = mapped_surface_curve([2.0, 3.0]);
     using_edge(&mut ir, [0.25, 0.75]);
     assert_support_failure(&ir, false);
+}
+
+/// A curve that runs against its construction parameter, as a reversed
+/// record does: the cache at `t` is the construction at `-t`.
+fn reversed_support_curve(miss: f64) -> CadIr {
+    let mut ir = support_curve(miss, None);
+    *ir.model.curves[0]
+        .geometry
+        .solved_cache_mut()
+        .expect("solved cache") = SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(2.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    ir
+}
+
+#[test]
+fn reversed_curve_reads_its_support_at_the_negated_hull() {
+    let mut ir = reversed_support_curve(0.2);
+    using_edge(&mut ir, [-0.75, -0.25]);
+    assert_support_failure(&ir, false);
+}
+
+#[test]
+fn reversed_curve_reports_a_miss_inside_its_hull() {
+    let mut ir = reversed_support_curve(0.2);
+    using_edge(&mut ir, [-0.875, -0.25]);
+    assert_support_failure(&ir, true);
+}
+
+#[test]
+fn reversed_curve_on_a_symmetric_interval_meets_its_contract() {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![-1.0, -1.0, 1.0, 1.0],
+            PcurveNurbsPoles::Polynomial {
+                points: vec![Point2::new(1.0, 0.0), Point2::new(3.0, 0.0)],
+            },
+            false,
+        )
+        .unwrap(),
+    };
+    let mut ir = mapped_surface_curve_with_pcurve(pcurve.clone(), [0.0, 1.0]);
+    *ir.model.curves[0]
+        .geometry
+        .solved_cache_mut()
+        .expect("solved cache") = SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(2.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let context = IntcurveSupportContext::try_new(
+        [
+            IntcurveSupportSide {
+                surface: Some(ir.model.surfaces[0].id.clone()),
+                pcurve: Some(SupportPcurve::new(pcurve, None)),
+            },
+            IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            },
+        ],
+        [-1.0, 1.0],
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .unwrap();
+    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag: false,
+        cache: None,
+    });
+    using_edge(&mut ir, [-1.0, 1.0]);
+    assert_support_failure(&ir, false);
+}
+
+#[test]
+fn construction_ends_answer_an_interior_hull_miss() {
+    let mut ir = support_curve_with_heights([0.0, 0.2], None);
+    using_edge(&mut ir, [0.25, 0.75]);
+    assert_support_failure(&ir, false);
+}
+
+#[test]
+fn hull_on_neither_interval_keeps_the_full_construction_interval() {
+    let mut ir = support_curve(0.2, None);
+    using_edge(&mut ir, [5.0, 6.0]);
+    assert_support_failure(&ir, true);
 }
 
 #[test]
