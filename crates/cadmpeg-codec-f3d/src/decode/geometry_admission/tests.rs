@@ -305,7 +305,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
             .unwrap();
             let mut ir = CadIr::empty();
             ir.model.procedural_curves.push(ProceduralCurve::new(
-                ProceduralCurveId::mint("test:construction#0").unwrap(),
+                ProceduralCurveId::mint("test:model:construction#0").unwrap(),
                 ProceduralCurveDefinition::Intersection {
                     context,
                     discontinuity_flag: false,
