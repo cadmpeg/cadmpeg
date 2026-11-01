@@ -5024,16 +5024,15 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             | DesignOperandRole::BODIES_B
                     ) && group.extrude_role().is_none()
                 }
-                Some(design::DesignFeatureFamily::CircularPattern) => {
+                Some(
+                    design::DesignFeatureFamily::CircularPattern
+                    | design::DesignFeatureFamily::RectangularPattern,
+                ) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                    ) && group.extrude_role().is_none()
-                }
-                Some(design::DesignFeatureFamily::RectangularPattern) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::BODIES_B
+                            | DesignOperandRole::ROLE_0X10
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Mirror) => {
