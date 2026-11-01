@@ -23,7 +23,7 @@ fn stream() -> StreamHandle {
     StreamHandle::new(cadmpeg_ir::stream_name!("test"))
 }
 
-fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
+fn fin(attr: u32, partner: u32, edge: u32, curve: u32) -> (u32, Coedge) {
     let coedge = Coedge {
         attr,
         refs: [1, 0, 0, 0, 0, partner, edge, curve, 1],
@@ -33,7 +33,7 @@ fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
     (attr, coedge)
 }
 
-fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
+fn bounded(attr: u32, surface: u32) -> SurfaceCurveCarrier {
     SurfaceCurveCarrier {
         attr,
         offset: 0,
@@ -51,7 +51,7 @@ fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
 
 /// Attach `carrier` as curve 31 of `out`, its support 200 emitted as the
 /// face surfaces of `emitted`.
-fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, u16>) {
+fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u32, u32>) {
     attach_surface_curve(
         &ctx(),
         out,
@@ -67,7 +67,7 @@ fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, 
 #[test]
 fn a_tolerant_edge_reads_a_decoded_curve_of_a_fin_on_it() {
     // Curve 31 is the one that decodes.
-    let decoded = |curve: u16| curve == 31;
+    let decoded = |curve: u32| curve == 31;
     let coedges = HashMap::from([
         fin(10, 11, 5, 30),
         fin(11, 10, 5, 31),
@@ -88,8 +88,8 @@ fn a_tolerant_edge_takes_a_stated_fin_curve_before_a_fitted_one() {
     // Curve 30, the canonical fin's, only decodes (a fitted curve on a
     // sweep); its partner's, 31, is stated on a surface.
     let coedges = HashMap::from([fin(10, 11, 5, 30), fin(11, 10, 5, 31)]);
-    let stated = |curve: u16| curve == 31;
-    let decodes = |curve: u16| curve == 30 || curve == 31;
+    let stated = |curve: u32| curve == 31;
+    let decodes = |curve: u32| curve == 30 || curve == 31;
     assert_eq!(
         super::tolerant_fin_curve(10, &coedges, stated, decodes),
         Some(31)

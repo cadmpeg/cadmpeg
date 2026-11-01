@@ -39,11 +39,11 @@ pub(super) const SPUN_RING_KNOTS: usize = 12;
 #[derive(Debug, Clone)]
 pub(super) struct SweepCarrier {
     /// Stream-local attribute id of the record.
-    attr: u16,
+    attr: u32,
     /// Tag-byte offset in the stream.
     pub(super) offset: usize,
     /// Attribute of the profile curve carrier.
-    pub(super) profile_attr: u16,
+    pub(super) profile_attr: u32,
     /// Construction-specific fields.
     pub(super) kind: SweepKind,
 }
@@ -95,14 +95,14 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let attr = View::u16_be_at(bytes, p)?;
+    let attr = super::word_at(bytes, p)?;
     if attr == 0 {
         return None;
     }
     if !matches!(bytes.get(p + 16), Some(0x2b | 0x2d)) {
         return None;
     }
-    let profile_attr = View::u16_be_at(bytes, p + 17)?;
+    let profile_attr = super::word_at(bytes, p + 17)?;
     if profile_attr == 0 {
         return None;
     }
@@ -126,7 +126,7 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 }
 
 /// Scan a stream for swept/spun surface carriers, keyed by attribute.
-pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u32, SweepCarrier> {
     let mut out = HashMap::new();
     let Some(last_offset) = bytes.len().checked_sub(20) else {
         return out;

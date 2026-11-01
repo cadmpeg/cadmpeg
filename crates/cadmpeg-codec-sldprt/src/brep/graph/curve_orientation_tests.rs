@@ -570,8 +570,8 @@ fn a_closed_chart_starts_a_ring_edge_at_its_seam() {
 /// The boundary a blend face on one ring edge sees, with the closed edge's
 /// `span` and `start`.
 fn ring_edge_boundary(span: Option<[f64; 2]>, start: Option<Point3>) -> (Vec<Point3>, Vec<Point3>) {
-    const COEDGE: u16 = 70;
-    const EDGE: u16 = 71;
+    const COEDGE: u32 = 70;
+    const EDGE: u32 = 71;
     let mut ring = SQUARE.to_vec();
     ring.push(SQUARE[0]);
     let closed = chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]);

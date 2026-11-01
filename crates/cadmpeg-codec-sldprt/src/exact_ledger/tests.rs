@@ -62,7 +62,7 @@ fn triangle_topology_spans_name_every_record_family() {
             "missing topology tag {tag:#04x}"
         );
     }
-    let records: std::collections::BTreeSet<u16> =
+    let records: std::collections::BTreeSet<u32> =
         ledger.spans.iter().map(|span| span.record).collect();
     for attr in [10, 20, 30, 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62, 100] {
         assert!(records.contains(&attr), "missing record {attr}");
