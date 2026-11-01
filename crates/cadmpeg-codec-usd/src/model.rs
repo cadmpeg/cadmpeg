@@ -64,6 +64,7 @@ mod parameters;
 mod physics;
 mod physx;
 mod pmi;
+mod presentation;
 mod sketch;
 
 /// Millimetres per metre.
@@ -253,6 +254,8 @@ struct Tallies {
     feature_properties: Vec<String>,
     rejected_pmi: Vec<String>,
     pmi_properties: Vec<String>,
+    rejected_presentation: Vec<String>,
+    presentation_properties: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -446,6 +449,7 @@ pub(crate) fn build<'a>(
     builder.parameters()?;
     builder.configurations()?;
     builder.pmi()?;
+    builder.presentation()?;
     let mates = std::mem::take(&mut builder.pending_mates);
     builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
@@ -562,6 +566,8 @@ impl Builder<'_, '_, '_, '_> {
                         | features::FEATURE_TYPE
                         | configurations::CONFIGURATION_TYPE
                         | pmi::PMI_TYPE
+                        | presentation::LAYER_TYPE
+                        | presentation::ATTRIBUTES_TYPE
                 )
             )
         {
@@ -1647,6 +1653,8 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                                 | features::FEATURE_TYPE
                                 | configurations::CONFIGURATION_TYPE
                                 | pmi::PMI_TYPE
+                                | presentation::LAYER_TYPE
+                                | presentation::ATTRIBUTES_TYPE
                         )
                     )
                     || match role(child.type_name()) {
@@ -1971,6 +1979,25 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
              transferred: {}",
             tallies.pmi_properties.len(),
             joined(tallies.pmi_properties.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PresentationRejected,
+        !tallies.rejected_presentation.is_empty(),
+        format!(
+            "{} CadLayer or CadAttributes prims do not satisfy their schema and were not \
+             transferred: {}",
+            tallies.rejected_presentation.len(),
+            joined(tallies.rejected_presentation.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PresentationPropertyNotTransferred,
+        !tallies.presentation_properties.is_empty(),
+        format!(
+            "layer items and attributes that name records the stage does not hold were not \
+             transferred: {}",
+            joined(tallies.presentation_properties.iter().cloned())
         ),
     );
     push(

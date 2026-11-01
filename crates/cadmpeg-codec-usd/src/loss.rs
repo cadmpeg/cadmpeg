@@ -122,6 +122,12 @@ pub(crate) enum UsdLossCode {
     /// Annotation targets that name records the stage does not hold were not
     /// transferred.
     PmiPropertyNotTransferred,
+    /// A `CadLayer` or `CadAttributes` prim that does not satisfy its schema
+    /// was not transferred.
+    PresentationRejected,
+    /// Layer items and attributes that name records the stage does not hold
+    /// were not transferred.
+    PresentationPropertyNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -152,8 +158,7 @@ pub(crate) enum UsdLossCode {
     /// A design parameter property with no `CadParameter` form was not
     /// written.
     ExportParameterPropertyNotWritten,
-    /// A feature, configuration, or PMI annotation with no `CadFeature`,
-    /// `CadConfiguration`, or `CadPmi` form was not written.
+    /// A design or presentation record with no `Cad*` form was not written.
     ExportFeatureNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,
@@ -213,6 +218,8 @@ impl UsdLossCode {
         Self::FeaturePropertyNotTransferred,
         Self::PmiRejected,
         Self::PmiPropertyNotTransferred,
+        Self::PresentationRejected,
+        Self::PresentationPropertyNotTransferred,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -390,6 +397,14 @@ impl UsdLossCode {
                 T::ParametricRecordOmitted,
             ),
             Self::PmiRejected => ("pmi.rejected", Warning, T::ParametricRecordOmitted),
+            Self::PresentationRejected => {
+                ("presentation.rejected", Warning, T::ParametricRecordOmitted)
+            }
+            Self::PresentationPropertyNotTransferred => (
+                "presentation.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
             Self::PmiPropertyNotTransferred => (
                 "pmi.property-not-transferred",
                 Warning,

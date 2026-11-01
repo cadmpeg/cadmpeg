@@ -31,9 +31,9 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `configurations` | `CadConfiguration` prims (`usd.md` §18.8): typed identity, order, name, material, and properties; overrides, values, bodies, and feature states as CADIR wire JSON | a variant set that selects the parameter values and feature suppression of each configuration for viewers | typed configuration properties; a `configuration` variant set |
 | `features`, `feature_input_topologies`, `feature_result_topologies` | `CadFeature` prims (`usd.md` §18.7): typed identity, order, suppression, dependencies, outputs, and properties; the definition and topologies as CADIR wire JSON | typed operation properties | `CadFeature` subtypes for each operation family, which replace the payload family by family |
 | `spreadsheets` | none | spreadsheet cells | `CadSpreadsheet` prim, or an asset |
-| `pmi`, `semantic_annotations` | `CadPmi` prims (`usd.md` §18.9) with targets and definition as CADIR wire JSON | semantic annotations; the PMI semantics of a design parameter, which name a native record | `CadAnnotation` prims |
-| `attributes` | none | user attributes on entities | `customData` dictionary `cad:attributes` on the prim of the entity, or keyed by entity identity on a `BrepArray` |
-| `presentation_layers` | none | layers and their members and visibility | `UsdCollectionAPI` instances (official) |
+| `pmi`, `semantic_annotations` | `CadPmi` prims (`usd.md` §18.9) with targets and definition as CADIR wire JSON | semantic annotations and the PMI semantics of a design parameter: each names native records (`object`, `native_ref`, assets) that the IR requires to resolve, and a stage holds no native records | an IR change that makes those native links optional, or a native-record form in USD |
+| `attributes` | one `CadAttributes` prim (`usd.md` §18.11) | attributes on records the stage does not write | none |
+| `presentation_layers` | `CadLayer` prims with `CollectionAPI:members` (`usd.md` §18.10) | items on records the stage does not write | none |
 | `drawings`, `presentation_documents`, `view_presentations` | none | drawing sheets and views | out of scope; keep as assets |
 | `native` | none | format-specific namespaces | out of scope; a CADIR document beside the layer |
 

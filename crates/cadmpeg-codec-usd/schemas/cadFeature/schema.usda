@@ -134,3 +134,46 @@ class CadPmi "CadPmi" (
                  properties: its targets and definition."""
     )
 }
+
+class CadLayer "CadLayer" (
+    inherits = </Typed>
+    doc = """One presentation layer (docs/formats/usd.md §18.10). A layer with occurrence
+             or product definition items also applies CollectionAPI:members."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the layer."""
+    )
+    uniform string cad:layer:name (
+        doc = """The layer name. Unauthored, the prim name."""
+    )
+    uniform string cad:layer:description (
+        doc = """The layer description."""
+    )
+    uniform bool cad:layer:visible (
+        doc = """The layer is shown. Unauthored, the source states no value."""
+    )
+    uniform string cad:layer:items (
+        doc = """A JSON array of the CADIR presentation items of the layer."""
+    )
+}
+
+class CadAttributes "CadAttributes" (
+    inherits = </Typed>
+    doc = """The source attributes of the stage, as parallel arrays
+             (docs/formats/usd.md §18.11)."""
+)
+{
+    uniform string[] cad:attribute:ids (
+        doc = """The CADIR identity of each attribute."""
+    )
+    uniform string[] cad:attribute:targets (
+        doc = """A JSON object for each attribute: its CADIR attribute target."""
+    )
+    uniform string[] cad:attribute:names (
+        doc = """The source attribute name of each attribute."""
+    )
+    uniform string[] cad:attribute:values (
+        doc = """A JSON array for each attribute: its typed values."""
+    )
+}

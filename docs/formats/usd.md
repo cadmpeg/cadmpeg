@@ -1322,7 +1322,7 @@ A geometry prim that states `customData = { string brepArray = "N" }` is a fallb
 
 The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
 
-A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, `CadConfiguration`, and `CadPmi` have `cad:id`.
+A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, `CadConfiguration`, `CadPmi`, and `CadLayer` have `cad:id`.
 
 A prim that states an occurrence has `cad:id`, the CADIR identity of the occurrence. The prim that defines a product definition has `uniform string cad:definition:id`, the CADIR identity of the definition: the occurrence prim, or the prototype prim that instances of a shared definition reference. Prims with one `cad:definition:id` are occurrences of one definition; the first of them in stage order defines it.
 
@@ -1638,3 +1638,30 @@ A `CadPmi` prim states one product-manufacturing information annotation. A write
 | `cad:pmi:payload` | uniform string | a JSON object: the CADIR wire form of the annotation without the fields above |
 
 The payload holds the targets and the definition. A target names a body, face, edge, vertex, point, curve, product definition, or occurrence by its CADIR identity, or a shape aspect by its source identity. A reader drops a target whose record the stage does not hold.
+
+### 18.10 CadLayer
+
+A `CadLayer` prim states one presentation layer. A writer puts the layers in a `Presentation` scope.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the layer |
+| `cad:layer:name` | uniform string | the layer name; unauthored, the prim name |
+| `cad:layer:description` | uniform string | the layer description |
+| `cad:layer:visible` | uniform bool | the layer is shown; unauthored, the source states no value |
+| `cad:layer:items` | uniform string | a JSON array of the CADIR presentation items of the layer |
+
+An item names a body, face, edge, vertex, point, curve, surface, product definition, occurrence, PMI annotation, or tessellation by its CADIR identity, or a source item by its source identity. A reader drops an item whose record the stage does not hold. A layer with occurrence or product definition items also applies `CollectionAPI:members`, whose `includes` are the prims of those items.
+
+### 18.11 CadAttributes
+
+One `CadAttributes` prim states the source attributes of the stage, as parallel arrays:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:attribute:ids` | uniform `string[]` | the CADIR identity of each attribute |
+| `cad:attribute:targets` | uniform `string[]` | a JSON object for each attribute: the CADIR attribute target, the document or a body, face, shell, loop, coedge, edge, or vertex |
+| `cad:attribute:names` | uniform `string[]` | the source attribute name |
+| `cad:attribute:values` | uniform `string[]` | a JSON array for each attribute: its typed values |
+
+A reader drops an attribute whose target record the stage does not hold.

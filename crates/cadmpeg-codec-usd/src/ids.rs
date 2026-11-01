@@ -311,6 +311,12 @@ pub(crate) fn configuration(path: &str) -> cadmpeg_ir::features::ConfigurationId
     )
 }
 
+/// The layer of the `CadLayer` prim at `path`, when the encoded path is a
+/// valid key.
+pub(crate) fn layer(path: &str) -> Option<cadmpeg_ir::ids::LayerId> {
+    cadmpeg_ir::ids::LayerId::mint(format!("usd:stage:layer#{}", key(path).as_str())).ok()
+}
+
 /// The annotation of the `CadPmi` prim at `path`.
 pub(crate) fn pmi(path: &str) -> cadmpeg_ir::ids::PmiId {
     cadmpeg_ir::ids::PmiId::compose(

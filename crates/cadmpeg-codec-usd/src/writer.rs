@@ -24,6 +24,7 @@ mod parameters;
 mod physics;
 mod physx;
 mod pmi;
+mod presentation;
 mod records;
 mod shading;
 mod sketch;
@@ -119,9 +120,9 @@ const COVERAGE: ArenaDispositions = {
         tessellations: Reported,
         appearances: Reported,
         appearance_bindings: Reported,
-        attributes: Omitted,
+        attributes: Written,
         pmi: Written,
-        presentation_layers: Omitted,
+        presentation_layers: Written,
         physical_materials: Written,
         mass_properties: Written,
         rigid_bodies: Written,
@@ -190,6 +191,8 @@ struct Unwritten {
     configurations: usize,
     /// Annotations whose wire form does not serialize.
     pmi: usize,
+    /// Layers and attributes whose wire form does not serialize.
+    presentation: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -538,6 +541,7 @@ impl<'ir> Writer<'ir> {
                 self.parameters(&mut names);
                 self.configurations(&mut names);
                 self.pmi(&mut names);
+                self.presentation(&mut names);
                 self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
@@ -775,6 +779,7 @@ impl<'ir> Writer<'ir> {
             self.parameters(&mut child_names);
             self.configurations(&mut child_names);
             self.pmi(&mut child_names);
+            self.presentation(&mut child_names);
             self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
@@ -1705,6 +1710,12 @@ impl<'ir> Writer<'ir> {
             losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
                 "{} PMI annotations have no wire form and were not written",
                 unwritten.pmi
+            )));
+        }
+        if unwritten.presentation > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} layers or attributes have no wire form and were not written",
+                unwritten.presentation
             )));
         }
         if unwritten.solver_properties > 0 {
