@@ -161,7 +161,7 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
                     form.native_tail_flags,
                     offset,
                     form.fit_tolerance(),
-                )
+                );
             }
             PcurveMetadata::General { form } => form.uv_offset = Some(offset),
         }

@@ -374,9 +374,7 @@ pub(crate) fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> 
     bytes
 }
 
-pub(crate) fn synthetic_periodic_pcurve_with_uv_offset_smbh(offset: [f64; 2]) -> Vec<u8> {
-    use crate::test_support::tokens_test::{t_pos, t_vec};
-    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+pub(crate) fn with_pcurve_uv_offset(mut bytes: Vec<u8>, offset: [f64; 2]) -> Vec<u8> {
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
@@ -398,6 +396,19 @@ pub(crate) fn synthetic_periodic_pcurve_with_uv_offset_smbh(offset: [f64; 2]) ->
     for (at, value) in doubles.iter().rev().take(2).rev().zip(offset) {
         bytes[at + 1..at + 9].copy_from_slice(&value.to_le_bytes());
     }
+    bytes
+}
+
+pub(crate) fn synthetic_periodic_pcurve_with_uv_offset_smbh(offset: [f64; 2]) -> Vec<u8> {
+    use crate::test_support::tokens_test::{t_pos, t_vec};
+    let mut bytes = with_pcurve_uv_offset(synthetic_geometry_with_pcurve_smbh(), offset);
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let plane = records
         .iter()
         .find(|record| record.head() == "plane")
