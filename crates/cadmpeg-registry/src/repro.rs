@@ -80,7 +80,17 @@ pub fn cut(
             replacements.extend(codec.repro_redactions(document)?);
         }
     }
-    cadmpeg_ir::repro::cut_with_native(document, finding, options, &fields, &replacements)
+    let mut bundle =
+        cadmpeg_ir::repro::cut_with_native(document, finding, options, &fields, &replacements)?;
+    if bundle.incomplete_reason.is_none()
+        && !check(&bundle)
+            .iter()
+            .any(|finding| bundle.signature.reproduces(finding))
+    {
+        bundle.incomplete_reason =
+            Some("selected finding does not reproduce from retained context".into());
+    }
+    Ok(bundle)
 }
 
 /// Check a fragment with the same composed validators as the CLI.
@@ -100,7 +110,7 @@ pub fn check(bundle: &Bundle) -> Vec<Finding> {
             &bundle.document,
             None,
             Vec::new(),
-            WorkProfile::Service,
+            WorkProfile::Desktop,
         )?;
         ctx.finish_session()?;
         let mut findings = report.findings;

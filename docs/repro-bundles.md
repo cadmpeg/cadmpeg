@@ -74,7 +74,7 @@ Shrinking removes row groups and their incoming dependents. Retained native
 context stays together during removal. Each accepted candidate reproduces the signature.
 The manifest is rebuilt after each accepted reduction. The budget and cancel
 callback are checked between candidate operations. One composed validation pass
-uses the service resource policy. Cancellation returns the last accepted bundle.
+uses the service resource policy and the default CLI measurement work profile. Cancellation returns the last accepted bundle.
 
 Write a check report before cutting its zero-based finding index:
 
@@ -85,8 +85,11 @@ cadmpeg check --fragment bundle.json --json
 ```
 
 A persisted check report with findings includes the absolute `input_path`. Keep the input
-available and unchanged until the cut completes. The repro command verifies a complete cut against its selected signature.
-An incomplete cut records its reason in `repro.incomplete_reason`. The CLI writes compact JSON. The output path must
+available and unchanged until the cut completes. The library verifies each complete cut against its selected signature. A failed
+verification retains the selected rows and records the reason.
+An incomplete cut records its reason in `repro.incomplete_reason`. The CLI writes every returned bundle as compact JSON. It reports an incomplete
+reason on standard error and succeeds. Add `--require-reproduction` to return an
+error after writing an incomplete bundle. The output path must
 be new. Report and bundle input files have a 256 MiB limit. Check exits with its
 usual error status when the fragment reproduces an
 error finding.
@@ -94,3 +97,9 @@ error finding.
 Native discriminator classification uses codec-owned typed readers. It permits
 100,000 probes and 512 MiB of cumulative probe input. A probe operates on a copy
 of one native record. A resource cap produces an incomplete bundle with its reason.
+
+Native privacy preserves strings whose replacement fails codec-owned typed
+admission, including custom feature kinds and parameter source kinds. Identity
+rewrites run before token preservation. Private field rules remove source names
+and member names from keys and values. Fragment native readers list refused rows
+as `fragment_skipped` and validate the admitted rows in each retained stream.

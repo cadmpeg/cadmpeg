@@ -46,7 +46,7 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     document.model.bodies[0].name = Some("PLANTED_NAME".into());
     let mut value = serde_json::to_value(&document).unwrap();
     value["source"] = serde_json::json!({"identity": {"classification":"unclassified","format":"f3d"},
-        "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/source.cad"}});
+        "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/secret-source.f3d", "private-member.f3z":"member-source.f3d"}});
     value["model"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
         "name":"PLANTED_OBJECT_NAME", "layer":"PLANTED_LAYER", "instance_path":["PLANTED_MEMBER_PATH/member.cad"]});
 
@@ -72,7 +72,9 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
         "PLANTED_METADATA_KEY",
         "PLANTED_METADATA_VALUE",
         "PLANTED_FILE",
-        "source.cad",
+        "secret-source.f3d",
+        "private-member.f3z",
+        "member-source.f3d",
         "PLANTED_SOURCE_NAME",
         "PLANTED_OBJECT_NAME",
         "PLANTED_LAYER",
@@ -132,7 +134,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: [(
             cadmpeg_core::text::NonBlankString::new("PLANTED_PROPERTY_PATH/member.cad").unwrap(),
             "PLANTED_PROPERTY_VALUE".into(),
@@ -140,12 +142,12 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         .into(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
         evaluation: crate::features::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(
                 crate::features::FeatureOperation::Native {
                     kind: "scope".into(),
-                    parameters: Default::default(),
+                    parameters: std::collections::BTreeMap::default(),
                 },
             ),
         ),
@@ -328,7 +330,7 @@ fn repro_classified_source_keeps_codec_and_strips_declarations() {
         );
     document.source = Some(crate::document::SourceMeta::classified(
         DialectLayers::of(matched),
-        Default::default(),
+        std::collections::BTreeMap::default(),
     ));
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert_eq!(bundle.document.source.as_ref().unwrap().format(), "f3d");

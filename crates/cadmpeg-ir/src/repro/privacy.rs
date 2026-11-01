@@ -340,6 +340,17 @@ fn sanitize_native(
     let private = private || private_field(key);
     match value {
         Value::String(text) => {
+            if crate::ids::is_valid_identity(text)
+                || matches!(
+                    key,
+                    "stream" | "source_namespace" | "blob_name" | "source_brep"
+                )
+            {
+                if let Some(replacement) = replacements.get(text) {
+                    *text = replacement.clone();
+                    return;
+                }
+            }
             if text.is_empty()
                 || (!private
                     && (enum_fields.contains(path)
@@ -350,20 +361,16 @@ fn sanitize_native(
             }
             if let Some(replacement) = replacements.get(text) {
                 *text = replacement.clone();
-            } else {
-                let ordinal = replacements.len();
-                let replacement = if text.len() == 36
-                    && text
-                        .chars()
-                        .all(|character| character.is_ascii_hexdigit() || character == '-')
-                {
-                    format!("00000000-0000-0000-0000-{ordinal:012x}")
-                } else {
-                    format!("redacted{ordinal}")
-                };
-                replacements.insert(text.clone(), replacement.clone());
-                *text = replacement;
+                return;
             }
+            let ordinal = replacements.len();
+            let replacement = if is_guid(text) {
+                format!("00000000-0000-0000-0000-{ordinal:012x}")
+            } else {
+                format!("redacted{ordinal}")
+            };
+            replacements.insert(text.clone(), replacement.clone());
+            *text = replacement;
         }
         Value::Array(values) => {
             for (index, value) in values.iter_mut().enumerate() {
@@ -422,3 +429,6 @@ fn is_guid(text: &str) -> bool {
             }
         })
 }
+
+#[cfg(test)]
+mod tests;

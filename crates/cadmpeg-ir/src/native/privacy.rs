@@ -8,7 +8,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-/// Enum-valued JSON pointers, indexed by native record identity.
+/// Codec-constrained string pointers, indexed by native record identity.
 pub type EnumFields = BTreeMap<String, BTreeSet<String>>;
 
 struct Capture {
@@ -32,7 +32,7 @@ impl Drop for Restore {
     }
 }
 
-/// Collect finite enum fields while codec-owned readers admit native records.
+/// Collect constrained strings while codec-owned readers admit native records.
 pub fn collect<T>(
     limit: usize,
     operation: impl FnOnce() -> Result<T, CodecError>,
@@ -92,18 +92,7 @@ pub(super) fn observe<T: DeserializeOwned>(id: &str, json: &str) {
                     continue;
                 };
                 *target = Value::String("__cadmpeg_repro_probe__".into());
-                if serde_json::from_value::<T>(probe)
-                    .err()
-                    .is_some_and(|error| {
-                        error
-                            .to_string()
-                            .contains("unknown variant `__cadmpeg_repro_probe__`")
-                            || error.to_string().contains("invalid base64 byte payload")
-                            || error
-                                .to_string()
-                                .contains("native bytes must be an even-length hexadecimal string")
-                    })
-                {
+                if serde_json::from_value::<T>(probe).is_err() {
                     CAPTURE.with(|capture| {
                         if let Some(capture) = capture.borrow_mut().as_mut() {
                             capture.fields.entry(id.into()).or_default().insert(path);

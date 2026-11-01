@@ -42,3 +42,21 @@ fn repro_fragment_skips_external_body_keys_and_checks_local_binding_frames() {
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
 }
+
+#[test]
+fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace.set_arena(&ctx, "design_record_headers", &[
+        serde_json::json!({"id":"f3d:design:design-record-header#1", "byte_offset":1, "class_tag":"257", "record_index":1}),
+        serde_json::json!({"id":"f3d:design:design-record-header#2"}),
+    ]).unwrap();
+    assert!(crate::native::F3dNative::load_inner(&ctx, &namespace).is_err());
+    let (native, skipped) = crate::native::F3dNative::load_fragment(&ctx, &namespace).unwrap();
+    assert_eq!(native.design_record_headers.len(), 1);
+    assert_eq!(native.design_record_headers[0].record_index, 1);
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0].starts_with("design_record_headers:"));
+}

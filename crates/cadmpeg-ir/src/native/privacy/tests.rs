@@ -58,3 +58,42 @@ fn repro_native_privacy_limits_work_and_restores_collector() {
     })
     .is_ok());
 }
+
+#[derive(serde::Deserialize)]
+#[serde(try_from = "SemanticWire")]
+struct SemanticRecord;
+
+#[derive(serde::Deserialize)]
+struct SemanticWire {
+    source_kind: String,
+    kind: String,
+    name: String,
+}
+
+impl TryFrom<SemanticWire> for SemanticRecord {
+    type Error = &'static str;
+
+    fn try_from(wire: SemanticWire) -> Result<Self, Self::Error> {
+        if wire.source_kind != "Dimension" || wire.kind != "dimension" {
+            return Err("kind disagrees with source_kind");
+        }
+        if wire.name.is_empty() {
+            return Err("name is empty");
+        }
+        Ok(Self)
+    }
+}
+
+#[test]
+fn repro_native_privacy_preserves_custom_admission_tokens() {
+    let json = r#"{"source_kind":"Dimension","kind":"dimension","name":"private-member.f3d"}"#;
+    let fields = collect(20, || {
+        observe::<SemanticRecord>("synthetic:s:record#1", json);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        fields["synthetic:s:record#1"],
+        BTreeSet::from(["/source_kind".into(), "/kind".into()])
+    );
+}

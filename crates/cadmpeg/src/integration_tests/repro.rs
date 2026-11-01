@@ -70,3 +70,48 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
     assert_eq!(envelope["refusal"]["code"], "check_failed");
     assert!(crate::repro::run(&InputCatalog::with_builtins(), &args).is_err());
 }
+
+#[test]
+fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("model.json");
+    let report = directory.path().join("report.json");
+    let document = cadmpeg_ir::examples::unit_cube().unwrap();
+    std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+    let finding = cadmpeg_ir::report::check::Finding {
+        check: Check::GeometricConsistency,
+        severity: cadmpeg_ir::report::Severity::Error,
+        entity: Some(document.model.bodies[0].id.to_string()),
+        related: Vec::new(),
+        message: "synthetic finding requiring additional context".into(),
+    };
+    let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
+    std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
+    for strict in [false, true] {
+        let output = directory.path().join(format!("bundle-{strict}.json"));
+        let mut argv = vec![
+            "cadmpeg",
+            "repro",
+            "--from",
+            report.to_str().unwrap(),
+            "--finding",
+            "0",
+            "-o",
+            output.to_str().unwrap(),
+        ];
+        if strict {
+            argv.push("--require-reproduction");
+        }
+        let cli = crate::Cli::try_parse_from(argv).unwrap();
+        let crate::Command::Repro(args) = cli.command else {
+            panic!("repro command expected");
+        };
+        assert_eq!(
+            crate::repro::run(&InputCatalog::with_builtins(), &args).is_err(),
+            strict
+        );
+        let bundle: Bundle = serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert!(bundle.incomplete_reason.is_some());
+        assert_eq!(bundle.document.model.bodies.len(), 1);
+    }
+}

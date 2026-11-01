@@ -28,6 +28,9 @@ pub(crate) struct ReproArgs {
     /// Bundle destination.
     #[arg(short, long)]
     output: PathBuf,
+    /// Return an error after writing a bundle that needs more context.
+    #[arg(long)]
+    require_reproduction: bool,
 }
 
 pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
@@ -50,19 +53,18 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
         None,
     )?;
     let bundle = cut(&document.ir, &finding, &CutOptions::default())?;
-    if bundle.incomplete_reason.is_none()
-        && !check(&bundle)
-            .iter()
-            .any(|finding| bundle.signature.reproduces(finding))
-    {
-        bail!("the cut does not reproduce the selected finding");
-    }
     let bytes = serde_json::to_vec(&bundle)?;
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&args.output)?;
     output.write_all(&bytes)?;
+    if let Some(reason) = &bundle.incomplete_reason {
+        eprintln!("bundle written; incomplete: {reason}");
+        if args.require_reproduction {
+            bail!("bundle requires more context to reproduce its selected finding");
+        }
+    }
     Ok(())
 }
 

@@ -728,9 +728,24 @@ fn reload_native_arena<T: serde::de::DeserializeOwned>(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    namespace
-        .arena_as_for_decode(decode, name)
-        .map_err(Into::into)
+    if !ir.fragment {
+        return namespace
+            .arena_as_for_decode(decode, name)
+            .map_err(Into::into);
+    }
+    let mut records = Vec::new();
+    for record in namespace.arena_iter_as_for_decode(decode, name) {
+        match record {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                let error = CodecError::from(error);
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    Ok(records)
 }
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -946,7 +961,12 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    let native = match native::F3dNative::load_inner(decode, namespace).map_err(CodecError::from) {
+    let loaded = if ir.fragment {
+        native::F3dNative::load_fragment(decode, namespace)
+    } else {
+        native::F3dNative::load_inner(decode, namespace).map(|native| (native, Vec::new()))
+    };
+    let (native, skipped) = match loaded.map_err(CodecError::from) {
         Ok(native) => native,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -959,7 +979,15 @@ pub(crate) fn validate_native(
             }]);
         }
     };
-    validate_loaded(decode, ir, &native)
+    let mut findings = validate_loaded(decode, ir, &native)?;
+    findings.extend(skipped.into_iter().map(|reason| Finding {
+        check: Check::FragmentSkipped,
+        severity: Severity::Info,
+        entity: None,
+        related: Vec::new(),
+        message: format!("skipped native arena row: {reason}"),
+    }));
+    Ok(findings)
 }
 
 fn validate_loaded(
