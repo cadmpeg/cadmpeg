@@ -266,9 +266,9 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-11. Derived-part source construction
 
-**Question.** Which fields select the external source document and revision and define source update dependencies? Which component fields extend the version-19 form?
+**Question.** Which fields select the external source document and revision and define source update dependencies? Which component fields extend the version-19 and version-23 forms?
 
-**Known.** Section 13.4 defines the version-19 derived stored-body form, its source and result wrappers, its component references, and its transform reference. The stored-body Base family includes this derived form. Its result uses the current-model body join independently of the component transform.
+**Known.** Section 13.4 defines the version-19 and version-23 derived stored-body forms, their source and result wrappers, their component references, and their transform reference. The stored-body Base family includes this derived form. Its result uses the current-model body join independently of the component transform.
 
 **Need.** Component references outside the transform require complete record grammars and source-document joins. Source revision selection and update dependencies require exact operands before external construction can replay. The additional component fields in other segment versions, and nonempty component lists, require their construction roles.
 

@@ -641,8 +641,9 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
+    let mut stored_body_losses = Vec::new();
     if !body_keys.is_empty() {
-        let transferred = crate::feature::base::project(
+        let projection = crate::feature::base::project(
             ctx,
             &container.rse,
             &feature_inventory,
@@ -653,10 +654,11 @@ fn decode_container<'a>(
         )?;
         unresolved.features = unresolved
             .features
-            .checked_sub(transferred)
+            .checked_sub(projection.transferred)
             .ok_or_else(|| {
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
+        stored_body_losses = projection.losses;
     }
     let composite_links = if delivered == DecodeDepth::Full {
         crate::feature::composite::links(
@@ -908,6 +910,7 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(stored_body_losses);
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));

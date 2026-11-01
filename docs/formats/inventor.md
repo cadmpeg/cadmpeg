@@ -853,9 +853,9 @@ This current-model join applies to every surface-body wrapper. A nonzero unquali
 
 A feature result collection lists persistent surface-body wrapper identities in member order. Each wrapper with a current-body join identifies the produced or modified current body. Combine retains its target wrapper in its result. Move, MoveBody, and Rotate retain the selected wrapper identities. A solid Split names its result wrappers separately from its target wrapper. A selected-face Split or surface-tool body trim retains its slot-7 body wrapper. A selection has a complete current-body join only when each selected wrapper names one current body and those body identities are distinct.
 
-The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major version 19 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major version 19 contains the content header followed by one qualified component reference, then ends.
+The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major versions 19 and 23 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major versions 19 and 23 contains the content header followed by one qualified component reference, then ends. In segment major version 23, the source header includes one stamp.
 
-In segment major version 19, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
+In segment major versions 19 and 23, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
 
 ```text
 state i32 = -1
@@ -865,7 +865,7 @@ count u32 = 0
 terminal u32
 ```
 
-The component ends after `terminal`. The four references and the terminal reference are non-null qualified references in the same segment. Their target types, in order, are `9f34363fd31191b5c0000385e89c6b4f`, `604d8790d011f8d10008cabc0663dc09`, `184d8790d011f8d10008cabc0663dc09`, `d77e5d25d311f2b5c0000385e89c6b4f`, and `a7fbcb1db64f16cfe979019eae94a4df`. The third reference selects a transform record. The result-body wrapper selects the current-model body independently of that reference.
+The version-19 component ends after `terminal`. In segment major version 23, the component has a four-byte suffix, `suffix_state:u32 = 0`, after `terminal`, then ends. The four references and the terminal reference are non-null qualified references in the same segment. Their target types, in order, are `9f34363fd31191b5c0000385e89c6b4f`, `604d8790d011f8d10008cabc0663dc09`, `184d8790d011f8d10008cabc0663dc09`, `d77e5d25d311f2b5c0000385e89c6b4f`, and `a7fbcb1db64f16cfe979019eae94a4df`. The third reference selects a transform record. The result-body wrapper selects the current-model body independently of that reference.
 
 ### 13.5 Attached plates and bend properties
 
