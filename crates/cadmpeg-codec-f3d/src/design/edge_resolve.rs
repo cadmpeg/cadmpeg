@@ -1016,7 +1016,16 @@ fn resolved_edge_group_with_transition_chain(
             return lost_selection();
         }
         if has_standard_recipe_operands {
-            return Ok(native_edge_selection(group));
+            return Ok(partial_historical_edge_selection(
+                matched_operands
+                    .iter()
+                    .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand))),
+                previous_state_id,
+                feature_id,
+                state,
+                &group.id,
+            )
+            .unwrap_or_else(|| native_edge_selection(group)));
         }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {
