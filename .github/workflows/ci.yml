@@ -423,17 +423,22 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fuzz targets compile
-        run: |
-          python3 scripts/ci_fuzz.py check
+        run: python3 scripts/ci_fuzz.py
 
       - name: Fuzz crate tests
-        run: python3 scripts/ci_fuzz.py test
+        # These tests cover the seed generators. The nightly run catches a
+        # reader change that stops a seed reaching its decoder.
+        if: github.event_name != 'pull_request'
+        run: cargo test -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
+  # Clippy's `incompatible_msrv` rejects newer standard library items in every
+  # Rust change. This job runs for manifest, lockfile, and toolchain changes,
+  # and the nightly full gate catches newer language syntax.
   msrv:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.full == 'true' || needs.changes.outputs.audit == 'true') && github.event.pull_request.draft != true)) }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
     timeout-minutes: 20
