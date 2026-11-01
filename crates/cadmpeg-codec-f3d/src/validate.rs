@@ -5270,7 +5270,7 @@ fn is_path_seed_group(
             .frame
             .auxiliary_paths()
             .iter()
-            .map(|path| path.record_index())
+            .map(records::topology::construction::DesignConstructionOperandPath::record_index)
             .eq(group
                 .frame
                 .auxiliary_records
