@@ -70,6 +70,7 @@ fn assert_support_failure(ir: &CadIr, fails: bool) {
     let context = match ir.model.procedural_curves[0].definition() {
         ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
         ProceduralCurveDefinition::Intersection { context, .. } => context,
+        ProceduralCurveDefinition::Spring(payload) => payload.support_context(),
         _ => panic!("support context"),
     };
     let sides = super::super::cache_support_endpoint_failures(
@@ -83,6 +84,57 @@ fn assert_support_failure(ir: &CadIr, fails: bool) {
     )
     .unwrap();
     assert_eq!(sides, if fails { vec![0] } else { Vec::new() });
+}
+
+#[test]
+fn cache_first_spring_support_contract_tracks_the_reversed_cache() {
+    use crate::geometry::curve_payloads::SpringCurvePayload;
+    use crate::geometry::{CacheFirstCurveForm, RevisionCacheForm, SpringLayout};
+    use crate::scalar::PositiveI64;
+
+    for reversed in [false, true] {
+        for miss in [0.0, 0.2] {
+            let mut ir = support_curve(miss, None);
+            let ProceduralCurveDefinition::SurfaceCurve { family } =
+                ir.model.procedural_curves[0].definition()
+            else {
+                panic!("surface curve")
+            };
+            let mut definition = ProceduralCurveDefinition::Spring(
+                SpringCurvePayload::try_new(
+                    SpringLayout::CacheFirst {
+                        context: family.context().clone(),
+                        form: CacheFirstCurveForm {
+                            revision: PositiveI64::new(23_100).unwrap(),
+                            cache: RevisionCacheForm::SolvedCache {
+                                fit_tolerance: FitTolerance::try_new(0.0).unwrap(),
+                            },
+                            support_bounds: [[None; 4]; 2],
+                            solved_range: [None; 2],
+                            extension: 0,
+                        },
+                    },
+                    0,
+                )
+                .unwrap(),
+            );
+            if reversed {
+                definition.reverse_support_contexts().unwrap();
+                *ir.model.curves[0]
+                    .geometry
+                    .solved_cache_mut()
+                    .expect("solved cache") = SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(2.0, 0.0, 0.0),
+                        Vector3::new(-1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                );
+            }
+            ir.model.procedural_curves[0].replace_definition(definition);
+            assert_support_failure(&ir, miss > 0.0);
+        }
+    }
 }
 
 #[test]

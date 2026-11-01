@@ -105,6 +105,23 @@ pub(super) struct ShellNode {
     pub(super) end: usize,
 }
 
+/// The stored type byte of a REGION node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RegionKind {
+    Solid,
+    Void,
+}
+
+impl RegionKind {
+    fn from_byte(byte: Option<&u8>) -> Option<Self> {
+        match byte {
+            Some(b'S') => Some(Self::Solid),
+            Some(b'V') => Some(Self::Void),
+            _ => None,
+        }
+    }
+}
+
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RegionNode {
@@ -114,6 +131,8 @@ pub(super) struct RegionNode {
     pub(super) node_id: u32,
     /// `[attribute_chain, body, next, previous, shell_head]`.
     pub(super) refs: [u32; 5],
+    /// Stored region type.
+    pub(super) kind: RegionKind,
     /// Byte offset of the node tag.
     pub(super) offset: usize,
     /// First byte after the complete node.
@@ -757,12 +776,13 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
     // A schema edit may retain one additional reference before the semantic
     // kind byte.  It is not part of the ownership tuple, but it must be
     // consumed so the node boundary remains correct.
-    if !matches!(bytes.get(at), Some(b'S' | b'V')) {
-        read_ref(bytes, &mut at)?;
-        if !matches!(bytes.get(at), Some(b'S' | b'V')) {
-            return None;
+    let kind = match RegionKind::from_byte(bytes.get(at)) {
+        Some(kind) => kind,
+        None => {
+            read_ref(bytes, &mut at)?;
+            RegionKind::from_byte(bytes.get(at))?
         }
-    }
+    };
     if refs[1] <= 1 {
         return None;
     }
@@ -770,6 +790,7 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
         attr,
         node_id,
         refs,
+        kind,
         offset,
         end: at + 1,
     })
@@ -1031,8 +1052,8 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
 #[cfg(test)]
 mod tests {
     use super::{
-        read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG,
-        FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
+        read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionKind, RegionNode, ShellNode,
+        BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
@@ -1560,6 +1581,7 @@ mod tests {
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
+        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1632,6 +1654,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1688,6 +1711,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1725,6 +1749,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1788,6 +1813,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1831,6 +1857,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1858,6 +1885,7 @@ mod tests {
                 attr: 35,
                 node_id: 52,
                 refs: [1, 3, 1, 10, 7],
+                kind: RegionKind::Solid,
                 offset: 3,
                 end: 4,
             },
