@@ -404,7 +404,9 @@ pub(crate) fn write_report_text(
         return Ok(());
     };
     let mut value: serde_json::Value = serde_json::from_str(text)?;
-    let mut bytes = if value["command"].as_str() == Some("check") {
+    let mut bytes = if value["command"].as_str() == Some("check")
+        && value["check_report"]["findings"].is_array()
+    {
         value["input_path"] = serde_json::to_value(std::fs::canonicalize(input)?)?;
         serde_json::to_vec_pretty(&value)?
     } else {

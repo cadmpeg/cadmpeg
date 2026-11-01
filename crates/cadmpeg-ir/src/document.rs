@@ -549,6 +549,34 @@ macro_rules! declare_model {
                 None
             }
 
+            pub(crate) fn repro_graph(&self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'_>, CodecError> {
+                use crate::schema::EntitySchema;
+                let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
+                let mut found = false;
+                $(found |= self.$field.iter().any(|entity| roots.contains(entity.identity()));)*
+                let mut graph = crate::repro::selection::Graph::default();
+                $(for entity in &self.$field {
+                    graph.add(stringify!($field), entity.identity());
+                })*
+                graph.index();
+                if !found { return Ok(graph); }
+                $(for entity in &self.$field {
+                    graph.references(entity)?;
+                })*
+                Ok(graph)
+            }
+
+            pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
+                use crate::schema::EntitySchema;
+                let mut selected = Self::default();
+                $(selected.$field = self.$field.iter()
+                    .filter(|entity| ids.contains(entity.identity())).cloned().collect();)*
+                selected.feature_regeneration_parents.0 = self.feature_regeneration_parents.0.iter()
+                    .filter(|(child, parent)| ids.contains(child.as_str()) && ids.contains(parent.as_str()))
+                    .map(|(child, parent)| (child.clone(), parent.clone())).collect();
+                selected
+            }
+
             /// Total number of admitted neutral entities across all arenas.
             pub fn entity_count(&self) -> usize {
                 0 $(+ self.$field.len())*
@@ -1485,7 +1513,7 @@ pub struct DesignBelowFullDepth {
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     repro: Option<&'a crate::repro::BundleMetadata>,
@@ -1882,6 +1910,12 @@ pub struct SourceMeta {
 }
 
 impl SourceMeta {
+    pub(crate) fn repro_header(&self) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(self.format()),
+            attributes: BTreeMap::new(),
+        }
+    }
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
     pub fn classified(

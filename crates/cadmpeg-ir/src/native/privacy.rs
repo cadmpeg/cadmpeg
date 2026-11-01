@@ -48,7 +48,7 @@ pub fn collect<T>(
     });
     let _restore = Restore(preceding);
     operation()?;
-    let capture = CAPTURE.with(|capture| capture.take());
+    let capture = CAPTURE.with(RefCell::take);
     let Some(capture) = capture else {
         return Err(CodecError::InvalidInput(
             "native privacy capture is absent".into(),

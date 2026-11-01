@@ -18,7 +18,10 @@ pub fn shrink(bundle: &Bundle, signature: &Signature, budget: Duration,
 `Document` is `cadmpeg_ir::CadIr`. `Finding` is the existing check finding.
 `CutOptions::context` is a JSON object. Its values pass through unchanged. The
 caller controls the information in that object. Row and serialized-byte limits
-bound cut projection. The defaults admit 1,000,000 rows and 64 MiB of compact
+bound the selected closure. The source document can exceed these limits. A cut
+that exceeds its bound carries `incomplete_reason` and a bounded header document.
+A finding with global context carries the same explicit incomplete-cut marker.
+The defaults admit 1,000,000 rows and 64 MiB of compact
 JSON. The registry enables the IR schema feature used by the privacy projection.
 
 The registry composes neutral validation, source-fidelity validation when a
@@ -27,11 +30,18 @@ The CLI calls this composition. The IR owns closure and signature operations
 because these operations use the CADIR graph and finding contract. The reference
 visitor also serves `query graph`.
 
-The cut starts at the finding entity and related identities. It follows model
-and native references to a fixed point. Incoming coedges, loops, faces, shells,
-regions, and bodies retain topology context. A native root, or a feature that
-reaches a native scope, retains the native namespace and linked neutral
-features. This keeps numeric record-index joins and type-table rows together.
+The cut starts at the finding entity and related identities. A sparse index
+selects rows before document serialization. Topology context follows structural
+owners through coedges, loops, faces, shells, regions, and the owning body.
+Source instance paths and product occurrence trees stay outside a topology cut.
+Shared geometry retains its carrier rows. The cut retains the faces of the
+selected shell and restricts parent child lists to the retained topology.
+
+Native findings use stream retention to preserve ordered numeric references and
+type-table joins. The cut retains the addressed native stream and its companion
+MetaStream type table. It also follows explicit references into neutral geometry.
+This stream fallback keeps the record classes and their ordered lookup context
+together. Other assembly-member streams stay outside the cut.
 The header retains the wire version, units, tolerances, and source codec id.
 Codec-owned replacements retain fixed stream-member suffixes in anonymous
 addresses. Native type GUIDs and encoded numeric payloads retain their values.
@@ -55,10 +65,13 @@ hash. Matching requires the hash and every numeric band to agree.
 Fragment validation emits `fragment_skipped` information findings for checks
 that require complete document context. Carrier reachability and Fusion ACT root
 cardinality and ordinal coverage use this rule. Local identity uniqueness,
-reference resolution, geometry, and topology checks remain active.
+reference resolution, geometry, and topology checks remain active. A Design
+stream fragment lists source BREP key resolution and cited ASM history checks
+as skipped when those records are outside the retained stream. Ordered Design
+maps, scope references, recipe frames, and parameter joins remain active.
 
-Shrinking removes row groups and their incoming dependents. Native namespaces
-stay together during removal. Each accepted candidate reproduces the signature.
+Shrinking removes row groups and their incoming dependents. Retained native
+context stays together during removal. Each accepted candidate reproduces the signature.
 The manifest is rebuilt after each accepted reduction. The budget and cancel
 callback are checked between candidate operations. One composed validation pass
 uses the service resource policy. Cancellation returns the last accepted bundle.
@@ -71,13 +84,13 @@ cadmpeg repro --from report.json --finding 0 -o bundle.json
 cadmpeg check --fragment bundle.json --json
 ```
 
-A persisted check report includes the absolute `input_path`. Keep the input
-available and unchanged until the cut completes. The repro command refuses to
-write a cut that fails to reproduce its selected signature. The output path must
+A persisted check report with findings includes the absolute `input_path`. Keep the input
+available and unchanged until the cut completes. The repro command verifies a complete cut against its selected signature.
+An incomplete cut records its reason in `repro.incomplete_reason`. The CLI writes compact JSON. The output path must
 be new. Report and bundle input files have a 256 MiB limit. Check exits with its
 usual error status when the fragment reproduces an
 error finding.
 
 Native discriminator classification uses codec-owned typed readers. It permits
 100,000 probes and 512 MiB of cumulative probe input. A probe operates on a copy
-of one native record. A cap refusal returns `CodecError` before bundle delivery.
+of one native record. A resource cap produces an incomplete bundle with its reason.

@@ -1910,7 +1910,19 @@ fn validate_body_bindings(
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(binding.id());
-        let resolved_valid = if let Some(body) = &binding.body {
+        let source_outside_fragment = ctx.ir.fragment
+            && binding.body.is_some()
+            && !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+            });
+        if source_outside_fragment {
+            findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+                entity: Some(binding.id().to_owned()), related: Vec::new(),
+                message: "skipped f3d.body_binding_source_resolution: source BREP keys are outside this fragment".into() });
+        }
+        let resolved_valid = if source_outside_fragment {
+            true
+        } else if let Some(body) = &binding.body {
             let has_named_source = native.body_native_keys.iter().any(|key| {
                 ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
                     && key.source_brep.as_deref() == Some(binding.blob_name())
@@ -7185,7 +7197,8 @@ fn validate_edge_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
@@ -7297,7 +7310,8 @@ fn validate_edge_operands<'a>(
             )? == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && (historical_candidates_retained || expected_faces == operand.candidate_faces)
-            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand);
+            && (ctx.ir.fragment && native.asm_histories.is_empty()
+                || expected_edge_operands.get(operand.id.as_str()) == Some(&operand));
         let valid = valid
             && edge_operand_slots.insert((
                 native_stream,
@@ -7332,6 +7346,19 @@ fn validate_face_boundaries<'a>(
 ) {
     use records::topology::historical_context::AsmFaceBoundary;
     let native = ctx.native;
+    if ctx.ir.fragment && native.asm_histories.is_empty() && !native.design_edge_operands.is_empty()
+    {
+        findings.push(Finding {
+            check: Check::FragmentSkipped,
+            severity: Severity::Info,
+            entity: None,
+            related: Vec::new(),
+            message:
+                "skipped f3d.historical_face_boundaries: cited ASM states are outside this fragment"
+                    .into(),
+        });
+        return;
+    }
     let mut states = HashMap::new();
     for history in &native.asm_histories {
         for state in history.states() {
@@ -7582,7 +7609,8 @@ fn validate_face_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let face_groups_by_index = native
         .design_construction_operand_groups
         .iter()
@@ -7943,11 +7971,11 @@ fn validate_face_operands<'a>(
                 || face_ids_match_refs(&operand.unreferenced_candidate_faces, &expected_unreferenced_faces))
             && (historical_candidates_retained
                 || face_ids_match_refs(&operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces))
-            && expected_history.is_some_and(|expected| {
+            && (ctx.ir.fragment && native.asm_histories.is_empty() || expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
                     && operand.historical_support_contexts == expected.historical_support_contexts
-            })
+            }))
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind
@@ -9524,6 +9552,17 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 /// Validate each ASM history graph as a coherent state chain.
 fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
+    if ctx.ir.fragment
+        && native.asm_histories.is_empty()
+        && native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.history_state_id().is_some())
+    {
+        findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+            entity: None, related: Vec::new(),
+            message: "skipped f3d.history_state_links and f3d.historical_candidates: cited ASM states are outside this fragment".into() });
+    }
     for history in &native.asm_histories {
         if let Err(error) = history.check_transitions() {
             findings.push(Finding {

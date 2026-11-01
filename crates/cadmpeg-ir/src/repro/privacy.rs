@@ -21,8 +21,24 @@ pub(super) fn strip(
     let tokens = tokens(&value)?;
     let mut replacements = lexical.clone();
     let mut scopes = BTreeMap::new();
-    for (index, row) in rows(&value).iter().enumerate() {
-        if let Some(id) = record(&value, row)["id"].as_str() {
+    let mut row_ids: Vec<String> = rows(&value)
+        .iter()
+        .filter_map(|row| record(&value, row)["id"].as_str().map(str::to_owned))
+        .chain(roots.iter().cloned())
+        .collect();
+    let mut pending = vec![&value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::String(text) if crate::ids::is_valid_identity(text) => {
+                row_ids.push(text.clone())
+            }
+            Value::Array(values) => pending.extend(values),
+            Value::Object(fields) => pending.extend(fields.values()),
+            _ => {}
+        }
+    }
+    for (index, id) in row_ids.iter().enumerate() {
+        {
             let parts: Vec<&str> = id.splitn(3, ':').collect();
             if let [codec, scope, tail] = parts.as_slice() {
                 let scope_index = scopes.len();

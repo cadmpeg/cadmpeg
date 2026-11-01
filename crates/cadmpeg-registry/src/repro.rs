@@ -22,16 +22,58 @@ pub fn cut(
     finding: &Finding,
     options: &CutOptions,
 ) -> Result<Bundle, cadmpeg_core::CodecError> {
+    let Some(selected) = cadmpeg_ir::repro::selection::select(document, finding, options)? else {
+        return Ok(Bundle::incomplete(
+            document,
+            finding,
+            options,
+            "required closure exceeds the cut resource bound",
+        ));
+    };
+    if finding.entity.is_none() && finding.related.is_empty() {
+        return Ok(Bundle::incomplete(
+            document,
+            finding,
+            options,
+            "finding requires complete-document context",
+        ));
+    }
+    let document = &selected;
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let bytes = cadmpeg_core::decode::u64_from_index(cadmpeg_ir::repro::projection_size(
         document, options,
     )?);
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, bytes)?;
-    let fields = cadmpeg_ir::native::privacy::collect(100_000, || {
+    let fields = match cadmpeg_ir::native::privacy::collect(100_000, || {
         crate::validate_native(&ctx, &InputCatalog::with_builtins(), document, None)
-    })?;
-    ctx.finish_session()?;
+    }) {
+        Ok(fields) => fields,
+        Err(error) => {
+            if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(_))
+                || matches!(&error, cadmpeg_core::CodecError::InvalidInput(message) if message == "native privacy probe limit exceeded")
+            {
+                return Ok(Bundle::incomplete(
+                    document,
+                    finding,
+                    options,
+                    "native closure classification exceeds the cut resource bound",
+                ));
+            }
+            return Err(error);
+        }
+    };
+    if let Err(error) = ctx.finish_session() {
+        if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(_)) {
+            return Ok(Bundle::incomplete(
+                document,
+                finding,
+                options,
+                "native closure validation exceeds the cut resource bound",
+            ));
+        }
+        return Err(error);
+    }
     let mut replacements = std::collections::BTreeMap::new();
     for descriptor in InputCatalog::with_builtins().descriptors() {
         if let Some(codec) = descriptor.codec() {
@@ -61,7 +103,17 @@ pub fn check(bundle: &Bundle) -> Vec<Finding> {
             WorkProfile::Service,
         )?;
         ctx.finish_session()?;
-        Ok::<_, cadmpeg_core::CodecError>(report.findings)
+        let mut findings = report.findings;
+        if let Some(reason) = &bundle.incomplete_reason {
+            findings.push(Finding {
+                check: Check::FragmentSkipped,
+                severity: Severity::Info,
+                entity: None,
+                related: Vec::new(),
+                message: format!("cut incomplete: {reason}"),
+            });
+        }
+        Ok::<_, cadmpeg_core::CodecError>(findings)
     })();
     result.unwrap_or_else(|error| {
         vec![Finding {

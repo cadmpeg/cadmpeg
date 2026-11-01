@@ -49,13 +49,14 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
         None,
     )?;
     let bundle = cut(&document.ir, &finding, &CutOptions::default())?;
-    if !check(&bundle)
-        .iter()
-        .any(|finding| bundle.signature.reproduces(finding))
+    if bundle.incomplete_reason.is_none()
+        && !check(&bundle)
+            .iter()
+            .any(|finding| bundle.signature.reproduces(finding))
     {
         bail!("the cut does not reproduce the selected finding");
     }
-    let bytes = serde_json::to_vec_pretty(&bundle)?;
+    let bytes = serde_json::to_vec(&bundle)?;
     use std::io::Write;
     let mut output = std::fs::OpenOptions::new()
         .write(true)

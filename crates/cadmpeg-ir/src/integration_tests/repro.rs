@@ -186,6 +186,9 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         1
     );
     assert_eq!(model_bundle.document.model.features.len(), 1);
+    assert!(!serde_json::to_string(&model_bundle)
+        .unwrap()
+        .contains("PLANTED"));
     let parsed: CadIr = serde_json::from_slice(&serde_json::to_vec(&bundle).unwrap()).unwrap();
     assert!(parsed.fragment);
     assert_eq!(parsed.repro.unwrap().context, bundle.context);
@@ -202,7 +205,9 @@ fn repro_cut_caps_rows_and_serialized_bytes() {
             ..CutOptions::default()
         }
     )
-    .is_err());
+    .unwrap()
+    .incomplete_reason
+    .is_some());
     assert!(cut(
         &document,
         &finding,
@@ -211,7 +216,9 @@ fn repro_cut_caps_rows_and_serialized_bytes() {
             ..CutOptions::default()
         }
     )
-    .is_err());
+    .unwrap()
+    .incomplete_reason
+    .is_some());
 }
 
 #[test]
@@ -329,4 +336,103 @@ fn repro_classified_source_keeps_codec_and_strips_declarations() {
     assert!(!serde_json::to_string(&bundle)
         .unwrap()
         .contains("PLANTED_MEMBER"));
+}
+
+fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
+    let (document, finding) = failing_cube();
+    let mut value = serde_json::to_value(&document).unwrap();
+    let sibling: serde_json::Value = serde_json::from_str(
+        &serde_json::to_string(&document)
+            .unwrap()
+            .replace("synthetic:cube:", "synthetic:sibling:"),
+    )
+    .unwrap();
+    let first_body = value["model"]["bodies"][0]["id"].clone();
+    let second_body = sibling["model"]["bodies"][0]["id"].clone();
+    let surface = value["model"]["faces"][0]["surface"].clone();
+    let model = value["model"].as_object_mut().unwrap();
+    for (arena, rows) in sibling["model"].as_object().unwrap() {
+        if let (Some(target), Some(source)) = (
+            model
+                .get_mut(arena)
+                .and_then(serde_json::Value::as_array_mut),
+            rows.as_array(),
+        ) {
+            target.extend(source.iter().cloned());
+        }
+    }
+    value["model"]["faces"][6]["surface"] = surface;
+    value["model"]["product_definitions"] = serde_json::json!([
+        {"id":"synthetic:assembly:definition#1", "kind":"part", "bodies":[first_body]},
+        {"id":"synthetic:assembly:definition#2", "kind":"part", "bodies":[second_body]}
+    ]);
+    value["model"]["points"][0]["source_object"] = serde_json::json!({
+        "format":"f3d", "object_id":"synthetic:assembly:definition#1",
+        "instance_path":["synthetic:assembly:definition#2"]
+    });
+    (serde_json::from_value(value).unwrap(), finding)
+}
+
+#[test]
+fn repro_closure_stops_before_a_sibling_body_with_a_shared_surface() {
+    let (document, finding) = assembly_boundary_document();
+    let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
+    assert_eq!(bundle.document.model.bodies.len(), 1);
+    assert_eq!(bundle.document.model.faces.len(), 6);
+    assert_eq!(bundle.document.model.shells.len(), 1);
+    assert!(crate::validate_neutral(&bundle.document, Vec::new())
+        .unwrap()
+        .findings
+        .iter()
+        .all(|finding| finding.check != Check::ReferentialIntegrity));
+}
+
+#[test]
+fn repro_closure_stops_before_sibling_definitions_in_source_instance_paths() {
+    let (document, finding) = assembly_boundary_document();
+    let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
+    assert!(bundle.document.model.product_definitions.is_empty());
+    assert!(bundle.document.model.occurrences.is_empty());
+    assert_eq!(bundle.document.model.bodies.len(), 1);
+}
+
+#[test]
+fn repro_document_size_does_not_consume_the_closure_limit() {
+    let (mut document, finding) = failing_cube();
+    let limit = serde_json::to_vec(&document).unwrap().len() + 4096;
+    let rows = document.model.entity_count() + 10;
+    let point = document.model.points[0].clone();
+    for ordinal in 0..200 {
+        let mut unrelated = point.clone();
+        unrelated.id =
+            crate::ids::PointId::mint(format!("synthetic:unrelated:point#{ordinal}")).unwrap();
+        document.model.points.push(unrelated);
+    }
+    assert!(serde_json::to_vec(&document).unwrap().len() > limit);
+    let options = CutOptions {
+        max_rows: rows,
+        max_serialized_bytes: limit,
+        ..CutOptions::default()
+    };
+    let bundle = cut(&document, &finding, &options).unwrap();
+    assert!(bundle.incomplete_reason.is_none());
+    assert_eq!(bundle.document.model.points.len(), 8);
+}
+
+#[test]
+fn repro_global_finding_returns_an_explicit_incomplete_bundle() {
+    let finding = crate::report::check::Finding {
+        check: Check::MeasurementIncomplete,
+        severity: crate::report::Severity::Info,
+        entity: None,
+        related: Vec::new(),
+        message: "measurement checks require complete-document context".into(),
+    };
+    let document = crate::examples::unit_cube().unwrap();
+    let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
+    assert!(bundle.document.fragment);
+    assert!(bundle.incomplete_reason.is_some());
+    assert_eq!(bundle.document.model.entity_count(), 0);
+    let parsed: Bundle = serde_json::from_value(serde_json::to_value(&bundle).unwrap()).unwrap();
+    assert_eq!(parsed, bundle);
 }

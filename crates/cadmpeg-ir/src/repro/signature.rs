@@ -61,6 +61,7 @@ pub struct Signature {
 }
 
 const NUMBER_BAND_FRACTION: f64 = 0.1;
+const HEX: &[u8; 16] = b"0123456789abcdef";
 
 impl Signature {
     /// Normalize an existing check finding.
@@ -103,7 +104,6 @@ impl Signature {
         ]);
         let digest = Sha256::digest(fields.to_string().as_bytes());
         let mut hash = String::new();
-        const HEX: &[u8; 16] = b"0123456789abcdef";
         for byte in &digest[..8] {
             hash.push(char::from(HEX[usize::from(byte >> 4)]));
             hash.push(char::from(HEX[usize::from(byte & 15)]));

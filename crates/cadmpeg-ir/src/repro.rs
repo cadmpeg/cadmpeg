@@ -12,6 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod signature;
 pub use signature::{NumberBand, Signature, Stage};
 mod privacy;
+#[doc(hidden)]
+pub mod selection;
 
 /// The document consumed by fragment mappers.
 pub type Document = CadIr;
@@ -65,6 +67,8 @@ pub struct Bundle {
     pub context: Map<String, Value>,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,
+    /// Reason this bounded cut requires more context to reproduce.
+    pub incomplete_reason: Option<String>,
 }
 
 /// Reproduction metadata stored in a normal CADIR document.
@@ -80,6 +84,13 @@ pub struct BundleMetadata {
     pub context: Map<String, Value>,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,
+    /// Reason this cut exceeds its resource bound or requires global context.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_incomplete_reason"
+    )]
+    pub incomplete_reason: Option<String>,
 }
 
 impl Serialize for Bundle {
@@ -90,6 +101,7 @@ impl Serialize for Bundle {
             roots: self.roots.clone(),
             context: self.context.clone(),
             manifest: self.manifest.clone(),
+            incomplete_reason: self.incomplete_reason.clone(),
         }));
         document.serialize(serializer)
     }
@@ -97,7 +109,7 @@ impl Serialize for Bundle {
 
 impl<'de> Deserialize<'de> for Bundle {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut document = Document::deserialize(deserializer)?;
+        let mut document = crate::document::CadIr::deserialize(deserializer)?;
         if !document.fragment {
             return Err(serde::de::Error::custom("bundle requires fragment=true"));
         }
@@ -111,6 +123,7 @@ impl<'de> Deserialize<'de> for Bundle {
             roots: metadata.roots,
             context: metadata.context,
             manifest: metadata.manifest,
+            incomplete_reason: metadata.incomplete_reason,
         })
     }
 }
@@ -129,14 +142,14 @@ pub fn rows(value: &Value) -> Vec<Row> {
     let mut rows = Vec::new();
     if let Some(model) = value["model"].as_object() {
         for (name, arena) in model {
-            add_rows(&mut rows, format!("/model/{name}"), arena);
+            add_rows(&mut rows, &format!("/model/{name}"), arena);
         }
     }
     if let Some(native) = value["native"].as_object() {
         for (codec, namespace) in native {
             if let Some(namespace) = namespace.as_object() {
                 for (name, arena) in namespace {
-                    add_rows(&mut rows, format!("/native/{codec}/{name}"), arena);
+                    add_rows(&mut rows, &format!("/native/{codec}/{name}"), arena);
                 }
             }
         }
@@ -144,10 +157,10 @@ pub fn rows(value: &Value) -> Vec<Row> {
     rows
 }
 
-fn add_rows(rows: &mut Vec<Row>, arena: String, value: &Value) {
+fn add_rows(rows: &mut Vec<Row>, arena: &str, value: &Value) {
     if let Some(values) = value.as_array() {
         rows.extend((0..values.len()).map(|index| Row {
-            arena: arena.clone(),
+            arena: arena.to_owned(),
             index,
         }));
     }
@@ -239,8 +252,16 @@ pub fn cut(
     finding: &Finding,
     options: &CutOptions,
 ) -> Result<Bundle, CodecError> {
+    let Some(selected) = selection::select(document, finding, options)? else {
+        return Ok(Bundle::incomplete(
+            document,
+            finding,
+            options,
+            "required closure exceeds the cut resource bound",
+        ));
+    };
     cut_with_native(
-        document,
+        &selected,
         finding,
         options,
         &BTreeMap::new(),
@@ -258,97 +279,22 @@ pub fn cut_with_native(
     native_text_replacements: &BTreeMap<String, String>,
 ) -> Result<Bundle, CodecError> {
     let projection = project(document, options)?;
-    let mut value = serde_json::from_slice(&projection.bytes).map_err(CodecError::malformed)?;
-    let rows = rows(&value);
-    let edges = edges(&value, &rows);
+    let mut value: Value =
+        serde_json::from_slice(&projection.bytes).map_err(CodecError::malformed)?;
     let roots: Vec<String> = finding
         .entity
         .iter()
         .chain(&finding.related)
         .cloned()
         .collect();
-    let mut keep: BTreeSet<usize> = rows
-        .iter()
-        .enumerate()
-        .filter_map(|(index, row)| {
-            record(&value, row)["id"]
-                .as_str()
-                .filter(|id| roots.iter().any(|root| root == id))
-                .map(|_| index)
-        })
-        .collect();
-    let feature_context = keep.iter().any(|index| {
-        rows[*index].arena == "/model/features" || rows[*index].arena.starts_with("/native/")
-    });
-    let mut native_roots: BTreeSet<String> = keep
-        .iter()
-        .filter_map(|index| {
-            let arena = &rows[*index].arena;
-            arena
-                .strip_prefix("/native/")
-                .and_then(|path| path.split('/').next())
-                .map(str::to_owned)
-        })
-        .collect();
-    for (index, row) in rows.iter().enumerate() {
-        if row
-            .arena
-            .strip_prefix("/native/")
-            .and_then(|path| path.split('/').next())
-            .is_some_and(|codec| native_roots.contains(codec))
-        {
-            keep.insert(index);
-        }
-    }
-    if keep.is_empty() {
-        return Err(CodecError::InvalidInput(
-            "finding roots do not resolve".into(),
+    if roots.is_empty() {
+        return Ok(Bundle::incomplete(
+            document,
+            finding,
+            options,
+            "finding requires complete-document context",
         ));
     }
-    loop {
-        let before = keep.len();
-        for index in keep.clone() {
-            keep.extend(&edges[index]);
-        }
-        if feature_context {
-            for index in &keep {
-                if let Some(codec) = rows[*index]
-                    .arena
-                    .strip_prefix("/native/")
-                    .and_then(|path| path.split('/').next())
-                {
-                    native_roots.insert(codec.into());
-                }
-            }
-        }
-        for (index, row) in rows.iter().enumerate() {
-            if row
-                .arena
-                .strip_prefix("/native/")
-                .and_then(|path| path.split('/').next())
-                .is_some_and(|codec| native_roots.contains(codec))
-            {
-                keep.insert(index);
-            }
-            let family_context = (feature_context && row.arena == "/model/features")
-                || matches!(
-                    row.arena.as_str(),
-                    "/model/coedges"
-                        | "/model/loops"
-                        | "/model/faces"
-                        | "/model/shells"
-                        | "/model/regions"
-                        | "/model/bodies"
-                );
-            if family_context && edges[index].iter().any(|target| keep.contains(target)) {
-                keep.insert(index);
-            }
-        }
-        if before == keep.len() {
-            break;
-        }
-    }
-    retain(&mut value, &rows, &keep);
     value["fragment"] = Value::Bool(true);
     if let Some(object) = value.as_object_mut() {
         object.remove("repro");
@@ -378,12 +324,41 @@ pub fn cut_with_native(
         roots,
         context: options.context.clone(),
         manifest: Vec::new(),
+        incomplete_reason: None,
     };
     bundle.refresh_manifest()?;
     Ok(bundle)
 }
 
 impl Bundle {
+    /// Return a bounded document with an explicit incomplete-cut reason.
+    pub fn incomplete(
+        document: &Document,
+        finding: &Finding,
+        options: &CutOptions,
+        reason: &str,
+    ) -> Self {
+        let mut fragment = Document::empty();
+        fragment.fragment = true;
+        fragment.tolerances = document.tolerances;
+        fragment.source = document
+            .source
+            .as_ref()
+            .map(crate::document::SourceMeta::repro_header);
+        let codec = document
+            .source
+            .as_ref()
+            .map_or("cadir", |source| source.format());
+        Self {
+            document: fragment,
+            signature: Signature::new(finding, codec, Stage::Check),
+            roots: Vec::new(),
+            context: options.context.clone(),
+            manifest: Vec::new(),
+            incomplete_reason: Some(reason.into()),
+        }
+    }
+
     /// Recalculate the inventory after row removal.
     pub fn refresh_manifest(&mut self) -> Result<(), CodecError> {
         let value = serde_json::to_value(&self.document).map_err(CodecError::malformed)?;
@@ -430,3 +405,5 @@ impl std::io::Write for LimitedProjection {
         Ok(())
     }
 }
+
+cadmpeg_core::named_optional_field!(deserialize_incomplete_reason, String, "incomplete_reason");
