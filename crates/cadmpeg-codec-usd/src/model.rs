@@ -57,6 +57,7 @@ use crate::stage::{Prim, Stage};
 use crate::text::syntax::{Layer, MetaValue, Value};
 
 mod brep;
+mod configurations;
 mod features;
 mod mates;
 mod parameters;
@@ -370,6 +371,7 @@ pub(crate) fn build<'a>(
     }
     builder.features()?;
     builder.parameters()?;
+    builder.configurations()?;
     let mates = std::mem::take(&mut builder.pending_mates);
     builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
@@ -467,7 +469,12 @@ impl Builder<'_, '_, '_, '_> {
         if crate::schema::sketch::is_sketch_type(prim.type_name())
             || matches!(
                 prim.type_name(),
-                Some("CadConnector" | parameters::PARAMETER_TYPE | features::FEATURE_TYPE)
+                Some(
+                    "CadConnector"
+                        | parameters::PARAMETER_TYPE
+                        | features::FEATURE_TYPE
+                        | configurations::CONFIGURATION_TYPE
+                )
             )
         {
             return Ok(false);
@@ -1449,7 +1456,12 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     || mates::is_mate_type(child.type_name())
                     || matches!(
                         child.type_name(),
-                        Some("CadConnector" | parameters::PARAMETER_TYPE | features::FEATURE_TYPE)
+                        Some(
+                            "CadConnector"
+                                | parameters::PARAMETER_TYPE
+                                | features::FEATURE_TYPE
+                                | configurations::CONFIGURATION_TYPE
+                        )
                     )
                     || match role(child.type_name()) {
                         Role::Consumed => true,
@@ -1739,8 +1751,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::FeatureRejected,
         !tallies.rejected_features.is_empty(),
         format!(
-            "{} CadFeature prims do not satisfy their schema, or name records the stage does \
-             not hold, and were not transferred: {}",
+            "{} CadFeature or CadConfiguration prims do not satisfy their schema, or name \
+             records the stage does not hold, and were not transferred: {}",
             tallies.rejected_features.len(),
             joined(tallies.rejected_features.iter().cloned())
         ),
@@ -1749,8 +1761,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::FeaturePropertyNotTransferred,
         !tallies.feature_properties.is_empty(),
         format!(
-            "properties of {} features name records the stage does not hold and were not \
-             transferred: {}",
+            "properties of {} features or configurations name records the stage does not \
+             hold and were not transferred: {}",
             tallies.feature_properties.len(),
             joined(tallies.feature_properties.iter().cloned())
         ),

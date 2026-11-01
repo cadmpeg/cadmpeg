@@ -74,3 +74,40 @@ class CadFeature "CadFeature" (
         doc = """A JSON array of the CADIR feature result topologies of the feature."""
     )
 }
+
+class CadConfiguration "CadConfiguration" (
+    inherits = </Typed>
+    doc = """One design configuration: a named variant of the parametric model
+             (docs/formats/usd.md §18.8)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the configuration."""
+    )
+    uniform uint cad:configuration:ordinal = 0 (
+        doc = """The position in the configuration list."""
+    )
+    uniform bool cad:configuration:active = false (
+        doc = """The configuration supplies the active model state."""
+    )
+    uniform uint cad:configuration:sourceIndex (
+        doc = """The source configuration slot, when it differs from list order."""
+    )
+    uniform string cad:configuration:name (
+        doc = """The source display name."""
+    )
+    uniform string cad:configuration:material (
+        doc = """The material override."""
+    )
+    uniform string[] cad:configuration:propertyNames (
+        doc = """The names of the configuration-local values."""
+    )
+    uniform string[] cad:configuration:propertyValues (
+        doc = """The configuration-local values, parallel to propertyNames."""
+    )
+    uniform string cad:configuration:payload (
+        doc = """A JSON object: the CADIR wire form of the configuration without the
+                 typed properties: parameter overrides, bodies present, evaluated
+                 parameter values, and the evaluated state of each feature."""
+    )
+}

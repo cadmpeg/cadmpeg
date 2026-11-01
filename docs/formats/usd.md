@@ -1322,7 +1322,7 @@ A geometry prim that states `customData = { string brepArray = "N" }` is a fallb
 
 The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
 
-A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, and `CadFeature` have `cad:id`.
+A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, and `CadConfiguration` have `cad:id`.
 
 ### 18.1 CadBrepIdentityAPI
 
@@ -1556,3 +1556,20 @@ A `CadFeature` prim states one construction feature. A writer puts the features 
 The payload holds `definition`, and, when the source states them, `source_tag`, `source_text`, and `source_content`, in the wire form of the CADIR version of the writer. Identities in the payload are CADIR identities, which `cad:id` and `CadBrepIdentityAPI` (§18.1) keep through a stage.
 
 A reader gives a feature the typed properties over the payload. A reader does not add a feature whose payload does not deserialize, or that names a feature that it does not add: a dependency, the regeneration predecessor, or an identity in the payload. A `CadParameter` names the feature that owns it with `rel cad:parameter:owner` (§18.6).
+
+### 18.8 CadConfiguration
+
+A `CadConfiguration` prim states one design configuration. A writer puts the configurations in a `Configurations` scope, in configuration order. A reader reads each `CadConfiguration` prim of the stage, in stage order, after the features and parameters.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the configuration |
+| `cad:configuration:ordinal` | uniform uint | the position in the configuration list |
+| `cad:configuration:active` | uniform bool | the configuration supplies the active model state; unauthored, `false` |
+| `cad:configuration:sourceIndex` | uniform uint | the source configuration slot, when it differs from list order |
+| `cad:configuration:name` | uniform string | the source display name |
+| `cad:configuration:material` | uniform string | the material override |
+| `cad:configuration:propertyNames`, `cad:configuration:propertyValues` | uniform `string[]` | configuration-local named values, as parallel arrays |
+| `cad:configuration:payload` | uniform string | a JSON object: the CADIR wire form of the configuration without the fields above |
+
+The payload holds the parameter overrides, the bodies present, the evaluated parameter values, and the evaluated state of each feature, when the source states them. A reader does not add a configuration whose payload does not deserialize, or that names a feature or parameter that it does not add. It drops a body that the stage does not hold from the bodies present.

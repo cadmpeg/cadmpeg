@@ -110,11 +110,12 @@ pub(crate) enum UsdLossCode {
     /// A `CadParameter` prim that does not satisfy its schema was not
     /// transferred.
     ParameterRejected,
-    /// A `CadFeature` prim that does not satisfy its schema, or names a
-    /// record the stage does not hold, was not transferred.
+    /// A `CadFeature` or `CadConfiguration` prim that does not satisfy its
+    /// schema, or names a record the stage does not hold, was not
+    /// transferred.
     FeatureRejected,
-    /// Feature properties that name records the stage does not hold were
-    /// not transferred.
+    /// Feature or configuration properties that name records the stage
+    /// does not hold were not transferred.
     FeaturePropertyNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
@@ -146,7 +147,8 @@ pub(crate) enum UsdLossCode {
     /// A design parameter property with no `CadParameter` form was not
     /// written.
     ExportParameterPropertyNotWritten,
-    /// A feature with no `CadFeature` form was not written.
+    /// A feature or configuration with no `CadFeature` or
+    /// `CadConfiguration` form was not written.
     ExportFeatureNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,

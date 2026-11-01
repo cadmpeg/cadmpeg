@@ -17,6 +17,7 @@
 
 mod brep;
 mod brep_array;
+mod configurations;
 mod features;
 mod mates;
 mod parameters;
@@ -96,7 +97,7 @@ const COVERAGE: ArenaDispositions = {
         features: Written,
         feature_input_topologies: Written,
         feature_result_topologies: Written,
-        configurations: Omitted,
+        configurations: Written,
         parameters: Written,
         sketches: Written,
         sketch_entities: Reported,
@@ -182,6 +183,8 @@ struct Unwritten {
     sketch_constraints: usize,
     /// Features whose wire form does not serialize.
     features: usize,
+    /// Configurations whose wire form does not serialize.
+    configurations: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -511,6 +514,7 @@ impl<'ir> Writer<'ir> {
                 self.joints(&mut names);
                 self.features(&mut names);
                 self.parameters(&mut names);
+                self.configurations(&mut names);
                 self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
@@ -722,6 +726,7 @@ impl<'ir> Writer<'ir> {
             self.joints(&mut child_names);
             self.features(&mut child_names);
             self.parameters(&mut child_names);
+            self.configurations(&mut child_names);
             self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
@@ -1607,6 +1612,12 @@ impl<'ir> Writer<'ir> {
             losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
                 "{} features have no wire form and were not written",
                 unwritten.features
+            )));
+        }
+        if unwritten.configurations > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} configurations have no wire form and were not written",
+                unwritten.configurations
             )));
         }
         if unwritten.solver_properties > 0 {

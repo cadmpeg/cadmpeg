@@ -303,6 +303,14 @@ pub(crate) fn solver_settings(path: &str, schema: &str) -> cadmpeg_ir::ids::Solv
     )
 }
 
+/// The configuration of the `CadConfiguration` prim at `path`.
+pub(crate) fn configuration(path: &str) -> cadmpeg_ir::features::ConfigurationId {
+    cadmpeg_ir::features::ConfigurationId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "configuration"),
+        key(path),
+    )
+}
+
 /// The feature of the `CadFeature` prim at `path`.
 pub(crate) fn feature(path: &str) -> cadmpeg_ir::features::FeatureId {
     cadmpeg_ir::features::FeatureId::compose(

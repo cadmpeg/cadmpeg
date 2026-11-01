@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Features survive a write as `CadFeature` prims (spec §18.7).
 
-use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::{DesignConfiguration, Feature};
 
 use crate::test_support::{decode, encode};
 
@@ -75,6 +75,47 @@ fn model() -> cadmpeg_ir::CadIr {
     {
         parameter.owner = Some(ir.model.features[2].id.clone());
     }
+    let configuration = |key: &str, value: serde_json::Value| {
+        let mut wire = serde_json::json!({"id": format!("test:design:configuration#{key}")});
+        if let (serde_json::Value::Object(wire), serde_json::Value::Object(value)) =
+            (&mut wire, value)
+        {
+            wire.extend(value);
+        }
+        serde_json::from_value::<DesignConfiguration>(wire).expect("a configuration")
+    };
+    ir.model.configurations = vec![
+        configuration(
+            "Default",
+            serde_json::json!({"ordinal": 0, "active": true, "name": "Default"}),
+        ),
+        configuration(
+            "Long",
+            serde_json::json!({
+                "ordinal": 1,
+                "name": "Long",
+                "source_index": 4,
+                "material": "6061-T6",
+                "properties": {"Description": "long variant"},
+                "parameter_overrides": {owned.to_string(): "= 40mm"},
+                "parameter_values": {owned.to_string(): {"kind": "length", "value": 40.0}},
+                "feature_states": {
+                    "test:design:feature#Plane": {
+                        "evaluation": {"kind": "suppressed"},
+                        "dependencies": [],
+                        "definition": {
+                            "definition": "datum_plane",
+                            "frame": {
+                                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                                "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
+                                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+                            }
+                        }
+                    }
+                }
+            }),
+        ),
+    ];
     ir
 }
 
@@ -92,6 +133,7 @@ fn features_survive_a_write() {
     let read = decode(&text);
     let after = &read.ir().model;
     assert_eq!(after.features, ir.model.features);
+    assert_eq!(after.configurations, ir.model.configurations);
     let owner = |model: &cadmpeg_ir::document::Model| {
         model
             .parameters
