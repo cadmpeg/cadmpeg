@@ -266,7 +266,7 @@ fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
             super::super::cache_support_endpoint_failures(
                 &ctx,
                 &index,
-                &ir.model.curves[0].geometry,
+                &ir.model.curves[0],
                 family.context(),
                 fit,
             )

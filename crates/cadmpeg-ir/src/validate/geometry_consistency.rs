@@ -119,7 +119,7 @@ fn procedural_support_allowance(
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
-/// they constrain at both ends of the construction interval.
+/// they constrain at both ends of the used parameter hull.
 pub(super) fn check_procedural_support_consistency(
     ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
@@ -199,11 +199,16 @@ pub(super) fn check_procedural_support_consistency(
             let base = definition_payload.base();
             let base_endpoints = definition_payload.base_endpoints();
             let offset = definition_payload.distance().get();
-            let Some(solved) = curves.get(owner.as_str()) else {
+            let Some(solved_curve) = curves.get(owner.as_str()) else {
                 continue;
             };
-            let solved = context.parameter_range().endpoints().map(|parameter| {
-                measured_point(crate::eval::decode::curve_point(ctx, solved, parameter))
+            let parameters = support_contract_parameters(index, owner.as_str(), context);
+            let solved = parameters.map(|parameter| {
+                measured_point(crate::eval::decode::curve_point(
+                    ctx,
+                    solved_curve,
+                    parameter,
+                ))
             });
             let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
                 continue;
@@ -226,7 +231,7 @@ pub(super) fn check_procedural_support_consistency(
             let [Some(base_start), Some(base_end)] = [base[0]?, base[1]?] else {
                 check_support_sides(
                     ctx,
-                    (context, None),
+                    (context, None, parameters),
                     SupportEndpointContract::Offset {
                         endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
@@ -238,9 +243,25 @@ pub(super) fn check_procedural_support_consistency(
                 )?;
                 continue;
             };
+            let construction = context.parameter_range().endpoints();
+            let [witness_start, witness_end] = if parameters == construction {
+                [solved_start, solved_end]
+            } else {
+                let witnesses = construction.map(|parameter| {
+                    measured_point(crate::eval::decode::curve_point(
+                        ctx,
+                        solved_curve,
+                        parameter,
+                    ))
+                });
+                let [Some(start), Some(end)] = [witnesses[0]?, witnesses[1]?] else {
+                    continue;
+                };
+                [start, end]
+            };
             let offset_mismatch = worse_mismatch(
-                (Point3::distance(solved_start, base_start) - offset.abs()).abs(),
-                (Point3::distance(solved_end, base_end) - offset.abs()).abs(),
+                (Point3::distance(witness_start, base_start) - offset.abs()).abs(),
+                (Point3::distance(witness_end, base_end) - offset.abs()).abs(),
             );
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
                 super::record_finding(
@@ -256,8 +277,15 @@ pub(super) fn check_procedural_support_consistency(
             }
             check_support_sides(
                 ctx,
-                (context, None),
-                SupportEndpointContract::Coincident([base_start, base_end]),
+                (context, None, parameters),
+                if parameters == construction {
+                    SupportEndpointContract::Coincident([base_start, base_end])
+                } else {
+                    SupportEndpointContract::Offset {
+                        endpoints: [solved_start, solved_end],
+                        distance: offset.abs(),
+                    }
+                },
                 model,
                 bound,
                 procedural.id.as_str(),
@@ -306,7 +334,8 @@ pub(super) fn check_procedural_support_consistency(
         let Some(curve) = curves.get(owner.as_str()) else {
             continue;
         };
-        let solved = context.parameter_range().endpoints().map(|parameter| {
+        let parameters = support_contract_parameters(index, owner.as_str(), &context);
+        let solved = parameters.map(|parameter| {
             measured_point(crate::eval::decode::curve_point(ctx, curve, parameter))
         });
         let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
@@ -320,7 +349,7 @@ pub(super) fn check_procedural_support_consistency(
         );
         check_support_sides(
             ctx,
-            (&context, third),
+            (&context, third, parameters),
             SupportEndpointContract::Coincident([solved_start, solved_end]),
             model,
             bound,
@@ -345,6 +374,7 @@ fn check_support_sides(
     supports: (
         &crate::geometry::IntcurveSupportContext,
         Option<&crate::geometry::IntcurveSupportSide>,
+        [f64; 2],
     ),
     contract: SupportEndpointContract,
     model: PassEvaluator<'_, '_>,
@@ -380,14 +410,18 @@ fn check_support_sides(
 pub fn cache_support_endpoint_failures(
     ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
-    curve: &crate::geometry::CurveGeometry,
+    curve: &crate::geometry::Curve,
     context: &crate::geometry::IntcurveSupportContext,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<Vec<usize>, CodecError> {
-    let solved = context
-        .parameter_range()
-        .endpoints()
-        .map(|parameter| measured_point(crate::eval::decode::curve_point(ctx, curve, parameter)));
+    let parameters = support_contract_parameters(index, curve.id.as_str(), context);
+    let solved = parameters.map(|parameter| {
+        measured_point(crate::eval::decode::curve_point(
+            ctx,
+            &curve.geometry,
+            parameter,
+        ))
+    });
     let [Some(start), Some(end)] = [solved[0]?, solved[1]?] else {
         return Ok(Vec::new());
     };
@@ -395,7 +429,7 @@ pub fn cache_support_endpoint_failures(
     let mut sides = Vec::new();
     visit_support_failures(
         ctx,
-        (context, None),
+        (context, None, parameters),
         SupportEndpointContract::Coincident([start, end]),
         PassEvaluator {
             index,
@@ -412,13 +446,14 @@ fn visit_support_failures(
     supports: (
         &crate::geometry::IntcurveSupportContext,
         Option<&crate::geometry::IntcurveSupportSide>,
+        [f64; 2],
     ),
     contract: SupportEndpointContract,
     model: PassEvaluator<'_, '_>,
     bound: f64,
     mut failure: impl FnMut(usize, f64),
 ) -> Result<(), CodecError> {
-    let (context, third) = supports;
+    let (context, third, parameters) = supports;
     let (constrained, expected_distance) = match contract {
         SupportEndpointContract::Coincident(endpoints) => (endpoints, None),
         SupportEndpointContract::Offset {
@@ -430,30 +465,47 @@ fn visit_support_failures(
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
+        let support_fit = model
+            .index
+            .procedural_surface_for_surface(surface_id.as_str(), crate::index::StandardIndex)
+            .and_then(crate::geometry::ProceduralSurface::cache_fit_tolerance)
+            .or_else(|| {
+                model
+                    .index
+                    .surfaces(surface_id.as_str(), crate::index::StandardIndex)
+                    .and_then(|surface| surface.geometry.solved())
+                    .and_then(|surface| match surface {
+                        crate::geometry::SolvedSurfaceGeometry::Nurbs(surface) => {
+                            surface.cache_fit_tolerance()
+                        }
+                        _ => None,
+                    })
+            });
+        let bound = bound.max(procedural_support_allowance(
+            model.index.ir().tolerances.linear,
+            support_fit.map(crate::geometry::FitTolerance::get),
+        ));
         // A non-finite pcurve or support point is measured as a finite one
         // is: the mismatch it produces is the finding's measure.
-        let support = context.parameter_range().endpoints().map(
-            |parameter| -> Result<Option<Point3>, ResourceLimit> {
-                let Some(parameter) = side.pcurve_parameter(context.parameter_range(), parameter)
-                else {
-                    return Ok(None);
-                };
-                let uv =
-                    match crate::eval::decode::pcurve_uv(ctx, &pcurve.geometry, parameter.get()) {
-                        Ok(uv) => uv.get(),
-                        Err(failure) => {
-                            let Some(uv) = failure.non_finite()? else {
-                                return Ok(None);
-                            };
-                            uv
-                        }
+        let support = parameters.map(|parameter| -> Result<Option<Point3>, ResourceLimit> {
+            let Some(parameter) = side.pcurve_parameter(context.parameter_range(), parameter)
+            else {
+                return Ok(None);
+            };
+            let uv = match crate::eval::decode::pcurve_uv(ctx, &pcurve.geometry, parameter.get()) {
+                Ok(uv) => uv.get(),
+                Err(failure) => {
+                    let Some(uv) = failure.non_finite()? else {
+                        return Ok(None);
                     };
-                match model.surface_point(ctx, surface_id, uv.u, uv.v) {
-                    Ok(point) => Ok(Some(point.get())),
-                    Err(failure) => failure.non_finite(),
+                    uv
                 }
-            },
-        );
+            };
+            match model.surface_point(ctx, surface_id, uv.u, uv.v) {
+                Ok(point) => Ok(Some(point.get())),
+                Err(failure) => failure.non_finite(),
+            }
+        });
         let [Some(support_start), Some(support_end)] = [support[0]?, support[1]?] else {
             continue;
         };
@@ -470,6 +522,16 @@ fn visit_support_failures(
         }
     }
     Ok(())
+}
+
+fn support_contract_parameters(
+    index: &crate::index::ModelIndex<'_>,
+    owner: &str,
+    context: &crate::geometry::IntcurveSupportContext,
+) -> [f64; 2] {
+    index
+        .curve_use_hull(owner)
+        .unwrap_or_else(|| context.parameter_range().endpoints())
 }
 
 fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {

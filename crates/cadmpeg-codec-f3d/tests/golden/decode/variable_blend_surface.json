@@ -356,7 +356,8 @@
               ]
             },
             "u_periodic": false,
-            "v_periodic": false
+            "v_periodic": false,
+            "cache_fit_tolerance": 0.04
           }
         },
         {
