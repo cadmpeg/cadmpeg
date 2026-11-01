@@ -27,7 +27,7 @@ class CadParameter "CadParameter" (
              parameter has at most one value attribute."""
 )
 {
-    uniform string cad:parameter:id (
+    uniform string cad:id (
         doc = """The CADIR identity of the parameter."""
     )
     uniform string cad:parameter:name (

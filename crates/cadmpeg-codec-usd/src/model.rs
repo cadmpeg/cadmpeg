@@ -848,6 +848,19 @@ impl Builder<'_, '_, '_, '_> {
         });
     }
 
+    /// The CADIR identity that `cad:id` of the prim at `path` states, when
+    /// `mint` admits it and no record holds it yet (spec §18).
+    fn cad_id<T>(&mut self, path: &str, mint: impl Fn(String) -> Option<T>) -> Option<T> {
+        let stage = self.stage;
+        let text = crate::schema::token(stage.find(path)?, "cad:id", &mut self.issues)?;
+        if self.used_ids.contains(&text) {
+            return None;
+        }
+        let id = mint(text.clone())?;
+        self.used_ids.insert(text);
+        Some(id)
+    }
+
     /// The body of definition key `key`.
     fn body_id(&self, key: &str) -> cadmpeg_ir::ids::BodyId {
         self.body_ids

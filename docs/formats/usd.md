@@ -1322,6 +1322,8 @@ A geometry prim that states `customData = { string brepArray = "N" }` is a fallb
 
 The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
 
+A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, and `CadFeature` have `cad:id`.
+
 ### 18.1 CadBrepIdentityAPI
 
 `CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex, and the name of each B-rep and face:
@@ -1514,7 +1516,6 @@ A `CadParameter` prim states one design parameter. A writer puts the parameters 
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `cad:parameter:id` | uniform string | the CADIR identity of the parameter |
 | `cad:parameter:name` | uniform string | the source name; unauthored, the prim name |
 | `cad:parameter:expression` | uniform string | the literal or expression text of the source |
 | `cad:parameter:ordinal` | uniform uint | the position among the parameters of one owner |

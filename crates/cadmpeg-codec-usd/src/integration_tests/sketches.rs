@@ -105,3 +105,34 @@ fn a_sketch_keeps_its_entities_and_constraints_through_a_write() {
         assert!((one.x - two.x).abs() <= COORDINATE_TOLERANCE, "{name}");
     }
 }
+
+#[test]
+fn a_sketch_keeps_the_identities_of_its_records_through_a_write() {
+    for name in ["sketch_curved", "sketch_spline_closed"] {
+        let first = decode(&fixture(name));
+        let (text, _) = encode(first.ir());
+        let second = decode(&text);
+        let ids = |model: &cadmpeg_ir::document::Model| {
+            let mut out: Vec<String> = model
+                .sketches
+                .iter()
+                .map(|sketch| sketch.id.to_string())
+                .chain(
+                    model
+                        .sketch_entities
+                        .iter()
+                        .map(|entity| entity.id().to_string()),
+                )
+                .chain(
+                    model
+                        .sketch_constraints
+                        .iter()
+                        .map(|constraint| constraint.id.to_string()),
+                )
+                .collect();
+            out.sort();
+            out
+        };
+        assert_eq!(ids(&first.ir().model), ids(&second.ir().model), "{name}");
+    }
+}

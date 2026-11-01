@@ -16,8 +16,8 @@ pub(super) const PARAMETER_TYPE: &str = "CadParameter";
 
 impl super::Builder<'_, '_, '_, '_> {
     /// Assigns the IR identity of each `CadParameter` prim of the stage: its
-    /// `cad:parameter:id` when that is valid and unused, and otherwise the
-    /// identity of its path.
+    /// `cad:id` when that is valid and unused, and otherwise the identity of
+    /// its path.
     pub(super) fn parameter_ids(&mut self) {
         let stage = self.stage;
         for prim in stage
@@ -25,11 +25,9 @@ impl super::Builder<'_, '_, '_, '_> {
             .iter()
             .filter(|prim| prim.type_name() == Some(PARAMETER_TYPE))
         {
-            let id = token(prim, "cad:parameter:id", &mut self.issues)
-                .filter(|text| !self.used_ids.contains(text))
-                .and_then(|text| ParameterId::mint(text).ok())
+            let id = self
+                .cad_id(&prim.path, |text| ParameterId::mint(text).ok())
                 .unwrap_or_else(|| crate::ids::sketch::parameter(&prim.path));
-            self.used_ids.insert(id.to_string());
             self.parameter_ids.insert(prim.path.clone(), id);
         }
     }

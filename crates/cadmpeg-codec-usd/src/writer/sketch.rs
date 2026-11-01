@@ -210,6 +210,7 @@ impl Writer<'_> {
                 let name = names.unique("line");
                 curve_head("line", &mut flag);
                 let mut lines = vec![
+                    format!("uniform string cad:id = {}", quoted(id.as_str())),
                     format!("rel sketch:line:startPoint = <{{sketch}}/{start}>"),
                     format!("rel sketch:line:endPoint = <{{sketch}}/{end}>"),
                 ];
@@ -236,6 +237,7 @@ impl Writer<'_> {
                 let name = names.unique("arc");
                 curve_head("arc", &mut flag);
                 let mut lines = vec![
+                    format!("uniform string cad:id = {}", quoted(id.as_str())),
                     format!("rel sketch:arc:startPoint = <{{sketch}}/{start}>"),
                     format!("rel sketch:arc:endPoint = <{{sketch}}/{end}>"),
                     format!("rel sketch:arc:centerPoint = <{{sketch}}/{middle}>"),
@@ -258,6 +260,7 @@ impl Writer<'_> {
                 let name = names.unique("circle");
                 curve_head("circle", &mut flag);
                 let mut lines = vec![
+                    format!("uniform string cad:id = {}", quoted(id.as_str())),
                     format!("rel sketch:circle:centerPoint = <{{sketch}}/{middle}>"),
                     format!(
                         "uniform double sketch:circle:radius = {}",
@@ -296,6 +299,7 @@ impl Writer<'_> {
                 let name = names.unique("spline");
                 curve_head("spline", &mut flag);
                 let mut lines = vec![
+                    format!("uniform string cad:id = {}", quoted(id.as_str())),
                     format!("uniform token sketch:spline:form = {}", quoted(form)),
                     format!("uniform int sketch:spline:degree = {degree}"),
                     format!(
@@ -546,6 +550,10 @@ impl Writer<'_> {
         self.prim_head("def CadSketch", &name, &[]);
         self.out.open();
         let path = self.out.path();
+        self.out.line(&format!(
+            "uniform string cad:id = {}",
+            quoted(sketch.id.as_str())
+        ));
         self.placement(&Placement {
             transform: frame.as_ref(),
             ..Placement::default()
@@ -574,6 +582,10 @@ impl Writer<'_> {
         for (name, position, construction) in &prims.points {
             self.prim_head("def CadSketchPoint", name, &[]);
             self.out.open();
+            if let Some((id, _)) = prims.entity.iter().find(|(_, prim)| *prim == name) {
+                self.out
+                    .line(&format!("uniform string cad:id = {}", quoted(id.as_str())));
+            }
             self.out.line(&format!(
                 "uniform double2 sketch:point:position = {}",
                 tuple(position)
@@ -606,6 +618,10 @@ impl Writer<'_> {
             let name = constraint_names.unique(constraint.name.as_deref().unwrap_or("constraint"));
             self.prim_head(&format!("def {kind}"), &name, &[]);
             self.out.open();
+            self.out.line(&format!(
+                "uniform string cad:id = {}",
+                quoted(constraint.id.as_str())
+            ));
             let targets = |targets: &[String]| {
                 targets
                     .iter()

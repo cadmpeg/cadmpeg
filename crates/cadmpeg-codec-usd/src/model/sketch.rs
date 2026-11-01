@@ -15,9 +15,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-    SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement, SketchProfiles,
-    SketchSameCoordinate,
+    SketchConstraintId, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
+    SketchProfiles, SketchSameCoordinate,
 };
 use cadmpeg_ir::units::FinitePoint2;
 
@@ -55,7 +55,9 @@ impl super::Builder<'_, '_, '_, '_> {
         self.tallies
             .rejected_sketch_elements
             .extend(data.rejected.iter().cloned());
-        let id = sketch_id(&prim.path);
+        let id = self
+            .cad_id(&prim.path, |text| SketchId::mint(text).ok())
+            .unwrap_or_else(|| sketch_id(&prim.path));
         let column = |axis: usize| [world[0][axis], world[1][axis], world[2][axis]];
         let (u_axis, v_axis) = (column(0), column(1));
         // The normal is u × v, so that a reflected placement keeps each
@@ -86,7 +88,9 @@ impl super::Builder<'_, '_, '_, '_> {
         let mut ends: Vec<Ends> = Vec::new();
         let tolerance = self.ir.tolerances.linear.get();
         for curve in &data.curves {
-            let entity = entity_id(&curve.path);
+            let entity = self
+                .cad_id(&curve.path, |text| SketchEntityId::mint(text).ok())
+                .unwrap_or_else(|| entity_id(&curve.path));
             let mut locate = |path: &str, locus: SketchLocus| {
                 loci.entry(path.to_owned()).or_insert(locus);
             };
@@ -240,7 +244,9 @@ impl super::Builder<'_, '_, '_, '_> {
             if loci.contains_key(&point.path) {
                 continue;
             }
-            let entity = entity_id(&point.path);
+            let entity = self
+                .cad_id(&point.path, |text| SketchEntityId::mint(text).ok())
+                .unwrap_or_else(|| entity_id(&point.path));
             let Some(position) = self.sketch_point(point.position) else {
                 continue;
             };
@@ -445,8 +451,11 @@ impl super::Builder<'_, '_, '_, '_> {
                 .push(constraint.path.clone());
             return Ok(());
         };
+        let id = self
+            .cad_id(&constraint.path, |text| SketchConstraintId::mint(text).ok())
+            .unwrap_or_else(|| constraint_id(&constraint.path));
         self.ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id(&constraint.path),
+            id,
             sketch: sketch.clone(),
             definition,
             name: constraint.path.rsplit('/').next().map(str::to_owned),

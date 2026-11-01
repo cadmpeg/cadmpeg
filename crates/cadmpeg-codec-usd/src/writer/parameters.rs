@@ -42,10 +42,7 @@ impl Writer<'_> {
         self.out.open();
         let line = |text: String, out: &mut super::Emitter| out.line(&text);
         line(
-            format!(
-                "uniform string cad:parameter:id = {}",
-                quoted(parameter.id.as_str())
-            ),
+            format!("uniform string cad:id = {}", quoted(parameter.id.as_str())),
             &mut self.out,
         );
         line(

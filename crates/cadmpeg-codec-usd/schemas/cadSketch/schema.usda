@@ -101,6 +101,9 @@ class CadSketch "CadSketch" (
              geometry by mirroring the 2D coordinates rather than the placement."""
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     uniform double sketch:tolerance = 0.000000001 (
         doc = """SCALE-RELATIVE constraint-satisfaction tolerance (dimensionless). The
                  authored geometry satisfies a constraint when |residual| <=
@@ -128,6 +131,9 @@ class CadSketchPoint "CadSketchPoint" (
     doc = "A 2D point in the owning CadSketch's local XY plane."
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     uniform double2 sketch:point:position = (0, 0) (
         doc = """Solved 2D position (u, v) in the sketch plane. AUTHORITATIVE (the ISO
                  108 current result). `uniform` in v1 (a single solved sample; animated
@@ -160,6 +166,9 @@ class CadSketchLine "CadSketchLine" (
     doc = "A 2D line segment between its startPoint and endPoint (both CadSketchPoint)."
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     rel sketch:line:startPoint (
         doc = "Relationship to the start CadSketchPoint (exactly one target)."
     )
@@ -216,6 +225,9 @@ class CadSketchArc "CadSketchArc" (
              joining them is meant."""
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     uniform double sketch:arc:radius = 1 (
         doc = """Arc radius in sketch units. MUST be strictly positive (R-RADIUS,
                  proposal.md §6a). Authored rather than derived so that it is a solver
@@ -274,6 +286,9 @@ class CadSketchCircle "CadSketchCircle" (
              radius. Forms a complete profile loop by itself."""
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     rel sketch:circle:centerPoint (
         doc = "Relationship to the centre CadSketchPoint (exactly one target)."
     )
@@ -336,6 +351,9 @@ class CadSketchSpline "CadSketchSpline" (
              implicit constraints A-POLE and A-FITRULE (proposal.md §6b)."""
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     uniform token sketch:spline:form = "open" (
         allowedTokens = ["open", "closed"]
         doc = """"open" = clamped: the curve begins at the first pole and ends at the
@@ -455,6 +473,9 @@ class "CadSketchConstraint" (
              doc). Models ISO 10303-108 explicit_geometric_constraint (cl. 7)."""
 )
 {
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
     rel sketch:constraint:constrained (
         doc = """Relationships to the CONSTRAINED geometry prims (CadSketchPoint /
                  CadSketchLine of the owning sketch). Arity and per-target meaning are
