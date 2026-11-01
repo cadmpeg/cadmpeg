@@ -219,9 +219,16 @@ impl DecodeResult {
     /// The caller must close the context with `finish_session`, including on error.
     pub fn from_decoded(
         ctx: &DecodeContext<'_>,
-        decoded: Decoded,
+        mut decoded: Decoded,
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
+        crate::validate::evaluation_cycles::give_up_evaluation_cycles(
+            ctx,
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            &mut decoded.source_fidelity,
+            format.as_str(),
+        )?;
         let result = DecodeResult::new(decoded, format, ctx.depth())?;
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
@@ -231,7 +238,6 @@ impl DecodeResult {
             ))
             .into());
         }
-        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
         {
             result
