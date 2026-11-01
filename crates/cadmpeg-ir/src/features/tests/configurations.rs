@@ -27,6 +27,7 @@ fn configuration() -> DesignConfiguration {
         native_ref: None,
     }
 }
+
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
         id: FeatureId::mint(id).unwrap(),

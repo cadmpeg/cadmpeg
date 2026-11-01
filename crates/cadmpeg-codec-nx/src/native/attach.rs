@@ -1238,6 +1238,7 @@ fn attach_initial_segment_bodies(
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
+        product_definition: None,
     });
     Ok(Some(id))
 }
@@ -4098,6 +4099,7 @@ fn attach_feature_operations(
                 DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
             native_ref: Some(label.id.clone()),
+            product_definition: None,
         });
         if !deletes_body && !operation_body_writes.is_empty() {
             let key = label

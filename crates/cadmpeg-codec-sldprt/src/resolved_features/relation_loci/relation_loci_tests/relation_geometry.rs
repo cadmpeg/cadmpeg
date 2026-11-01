@@ -511,6 +511,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         )
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -572,6 +573,7 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second = point("synthetic:test:id#second", 5.0, 20.0);
     let unrelated = point("synthetic:test:id#unrelated", 100.0, 100.0);
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -640,6 +642,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -766,6 +769,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#angle").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -896,6 +900,7 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(100.0, 30.0),
     );
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),

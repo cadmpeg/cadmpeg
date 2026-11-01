@@ -128,6 +128,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
 
         let features = (0..6)
             .map(|ordinal| Feature {
+                product_definition: None,
                 id: FeatureId::mint(format!("synthetic:test:id#feature-{}", next(4)))
                     .expect("identity grammar"),
                 ordinal,
@@ -158,6 +159,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 }
                 let reference = next(3) != 0;
                 DesignParameter {
+                    product_definition: None,
                     driving: !reference,
                     id: ParameterId::mint(format!("synthetic:test:id#parameter-{}", next(20)))
                         .expect("identity grammar"),

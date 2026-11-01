@@ -11,6 +11,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,

@@ -126,6 +126,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
     let local_owner = FeatureId::mint("synthetic:test:id#local").expect("identity grammar");
     let parameters = [
         DesignParameter {
+            product_definition: None,
             driving: true,
             id: ParameterId::mint("synthetic:test:id#global-id").expect("identity grammar"),
             owner: Some(global_owner.clone()),
@@ -139,6 +140,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             native_ref: None,
         },
         DesignParameter {
+            product_definition: None,
             driving: true,
             id: ParameterId::mint("synthetic:test:id#local-id").expect("identity grammar"),
             owner: Some(local_owner.clone()),

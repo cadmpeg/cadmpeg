@@ -108,6 +108,7 @@ pub(in crate::native) fn attach_expression_parameters(
         }
         let ordinal = base_ordinal + cadmpeg_core::decode::u64_from_index(table_ordinal);
         ir.model.features.push(Feature {
+            product_definition: None,
             id: feature_id.clone(),
             ordinal,
             name: Some("NX expressions".to_string()),
@@ -235,6 +236,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 ))
             })?;
             ir.model.parameters.push(DesignParameter {
+                product_definition: None,
                 id,
                 owner: Some(feature_id.clone()),
                 ordinal,

@@ -199,6 +199,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ],
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -360,6 +361,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
 #[test]
 fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -378,6 +380,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
@@ -880,6 +883,7 @@ struct DimensionedCircleFixture {
 fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -970,6 +974,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         sketch_entities: vec![horizontal, vertical, center],
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
@@ -1336,6 +1341,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         features: vec![native_feature],
     };
     let mut features = vec![Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1354,6 +1360,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
         owner: Some(features[0].id.clone()),

@@ -281,6 +281,7 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         },
     });
     let mut feature = Feature {
+        product_definition: None,
         id: feature_id("insert"),
         ordinal: 0,
         name: None,

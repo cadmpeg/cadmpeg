@@ -93,6 +93,7 @@ fn explicit_point_circle_input() -> (
         }],
     };
     let feature = Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -111,6 +112,7 @@ fn explicit_point_circle_input() -> (
         native_ref: Some("feature".into()),
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),

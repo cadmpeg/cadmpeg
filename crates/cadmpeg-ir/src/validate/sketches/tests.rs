@@ -887,6 +887,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -926,6 +927,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
     });
     for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
         ir.model.features.push(Feature {
+            product_definition: None,
             needs_recompute: false,
             id: FeatureId::mint(format!("synthetic:test:feature#{suffix}"))
                 .expect("identity grammar"),
@@ -982,6 +984,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         native_ref: None,
     });
     let feature = |suffix: &str, ordinal, profile| Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:feature#{suffix}")).expect("identity grammar"),
         ordinal,
@@ -1076,6 +1079,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#spatial-sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1147,6 +1151,7 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
     }
     let parameter = ParameterId::mint("test:model:parameter#distance").unwrap();
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,
@@ -1293,6 +1298,7 @@ fn diameter_constraints_check_the_bound_circular_radius() {
     ));
     let parameter = ParameterId::mint("test:model:parameter#diameter").unwrap();
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,

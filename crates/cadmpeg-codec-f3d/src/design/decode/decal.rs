@@ -450,6 +450,7 @@ mod tests {
         )
         .unwrap();
         let feature = || Feature {
+            product_definition: None,
             needs_recompute: false,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,

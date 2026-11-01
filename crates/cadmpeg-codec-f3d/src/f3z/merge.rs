@@ -986,8 +986,17 @@ fn define_member(
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    ctx.charge_entities(1, "F3Z member product definition")?;
     let id = crate::ids::archive_product_definition_id();
+    if let Some(definition) = model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id == id)
+    {
+        definition.bodies.extend(bodies);
+        definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
+        return Ok(id);
+    }
+    ctx.charge_entities(1, "F3Z member product definition")?;
     model.product_definitions.push(ProductDefinition {
         id: id.clone(),
         kind: ProductDefinitionKind::Part,
@@ -1057,12 +1066,22 @@ fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Resu
             .and_then(|ordinal| ordinal.checked_add(1))
             .ok_or_else(|| CodecError::malformed("merged F3Z feature ordinal exceeds u64::MAX"))?;
     }
+    let mut product_owners = model
+        .parameters
+        .iter()
+        .filter(|row| row.owner.is_none())
+        .map(|row| row.product_definition.clone());
+    let product_definition = product_owners
+        .next()
+        .flatten()
+        .filter(|owner| product_owners.all(|other| other.as_ref() == Some(owner)));
     for parameter in &mut model.parameters {
         if parameter.owner.is_none() {
             parameter.owner = Some(owner.clone());
         }
     }
     model.features.push(Feature {
+        product_definition,
         id: owner,
         ordinal: 0,
         name: None,
