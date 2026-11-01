@@ -54,7 +54,7 @@ fn actual_global_callback_preserves_values_losses_and_independent_framing() {
     let scan = card::scan_source(root).expect("the fixture scans into cards");
     let (expected, expected_losses) =
         crate::global::parse(&scan).expect("the partless global parse succeeds");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let (actual, losses) =
         parse(&scan, &ctx, &mut output).expect("the part callbacks parse the global section");
     assert_eq!(actual.sender_product(), Some("product"));
@@ -88,7 +88,7 @@ fn cross_card_metadata_reads_use_actual_composite_value_bytes_only() {
         .child(3, bytes.len() - 4)
         .expect("the source window lies inside the root");
     let scan = card::scan_source(source).expect("the source window scans into cards");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let (global, _) =
         parse(&scan, &ctx, &mut output).expect("the part callbacks parse the global section");
     assert_eq!(
@@ -110,7 +110,7 @@ fn discarded_descriptive_and_unadmitted_metadata_get_no_projection_credit() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("the fixture fits the service policy");
     let scan = card::scan_source(root).expect("the fixture scans into cards");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let (global, _) = parse(&scan, &ctx, &mut output)
         .expect("an inadmissible descriptive field does not refuse the global section");
     assert_eq!(global.sender_product(), None);
@@ -126,7 +126,7 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     let scan = card::scan_source(root).expect("the fixture scans into cards");
     let original_error = crate::global::parse(&scan)
         .expect_err("the partless parse refuses an undelimited global section");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     // #222 C.5: the delimiter declarations frame the section, so the section
     // is given up. Every Global value is absent and the delimiters are the
     // IGES 5.3 §2.2.4.3.1-2 defaults.
@@ -182,7 +182,7 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
     let scan = card::scan_source(root).expect("the fixture scans into cards");
     let (expected, expected_losses) =
         crate::global::parse(&scan).expect("the partless parse keeps an unreadable suffix");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let (actual, losses) = parse(&scan, &ctx, &mut output)
         .expect("an unreadable suffix does not refuse the part parse");
     assert_eq!(actual.sender_product(), Some("product"));
@@ -247,7 +247,7 @@ fn detached_source_and_fatal_session_budget_never_fabricate_global_parts() {
     let scan = card::scan_source(root).expect("the fixture scans into cards");
     ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
         .expect("the caller allowance can be consumed in full");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     assert!(matches!(
         parse(&scan, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))

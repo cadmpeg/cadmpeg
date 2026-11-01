@@ -6375,7 +6375,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "a400bd78da98bf5df3cee4e11ad617df8ad1a3b84b3a65f18d67500ea1c79cb6",
+    "decode_digest": "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8",
     "retained_records": {
       "fcstd:native:entry#Angle.SavedGeometry.0.brp": {
         "bytes": {

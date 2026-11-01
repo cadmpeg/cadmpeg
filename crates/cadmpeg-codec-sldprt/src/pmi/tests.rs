@@ -1611,7 +1611,7 @@ fn assert_untyped_candidate_maps(
 }
 
 #[test]
-fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+fn duplicate_member_identity_synthesizes_but_refuses_semantic_edit() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1651,9 +1651,13 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
     .unwrap();
     assert!(matches!(
         path,
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    assert_eq!(unchanged, source);
+    let reparsed = SldprtCodec
+        .decode(&mut Cursor::new(unchanged), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(sldprt_native(reparsed.ir()).pmi_dimensions.len(), 2);
+    assert_eq!(reparsed.ir().model.parameters.len(), 1);
     {
         let mut ir = decoded.ir_mut();
         let parameter = &mut ir.model.parameters[0];

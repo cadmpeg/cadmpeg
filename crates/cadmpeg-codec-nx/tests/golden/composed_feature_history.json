@@ -5147,6 +5147,7 @@
           }
         }
       },
+      "decode_digest": "af297f9d01a582b6a4a23835fb95346885065faa094a5524077554ed4905ebb5",
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {

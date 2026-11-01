@@ -889,6 +889,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "d00e6c96b2f9b1819d8cd432746ac3b96bdebbc3f19d491e2604aa4439ffbc0a",
     "retained_records": {
       "step:data:presentation_style_assignment#42": {
         "bytes": {

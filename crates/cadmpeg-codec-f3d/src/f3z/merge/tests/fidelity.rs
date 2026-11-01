@@ -5,12 +5,16 @@ use cadmpeg_ir::source_fidelity::{RetainedSourceRecord, SourceFidelity};
 
 const ID: &str = "f3d:native:record#one";
 
+fn digest() -> cadmpeg_ir::hash::digest::Sha256Digest {
+    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"f3z member source")
+}
+
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
     annotations.note(ID, &handle, 7, Some("retained"));
     annotations.derived(ID, "geometry").unwrap();
-    let mut fidelity = SourceFidelity::with_annotations(annotations.build());
+    let mut fidelity = SourceFidelity::with_annotations(annotations.build(), digest());
     fidelity
         .insert_retained_record(
             cadmpeg_ir::ids::UnknownId::mint(ID).unwrap(),
@@ -73,8 +77,11 @@ fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
     builder.note(ID, &stream, 7, None);
-    let output =
-        rescope_fidelity(SourceFidelity::with_annotations(builder.build()), "part").unwrap();
+    let output = rescope_fidelity(
+        SourceFidelity::with_annotations(builder.build(), digest()),
+        "part",
+    )
+    .unwrap();
     assert_eq!(
         output.annotations.provenance["f3d:xref/part/native:record#one"].tag,
         None

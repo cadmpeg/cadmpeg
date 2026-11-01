@@ -92,9 +92,12 @@ fn compose(
         fidelity.insert_retained_record(id, root_image)?;
     }
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
-    if session.archive.members.values().any(|member| {
-        matches!(member, archive::ClassifiedMember::Unreadable(_))
-    }) {
+    if session
+        .archive
+        .members
+        .values()
+        .any(|member| matches!(member, archive::ClassifiedMember::Unreadable(_)))
+    {
         fidelity.mark_untyped(
             crate::ids::FILE_SOURCE_IMAGE_ID,
             [
@@ -124,8 +127,7 @@ fn compose(
         let mut untyped = cadmpeg_ir::document::ArenaClasses::default();
         for member in session.members() {
             match member.kind() {
-                session::F3zMemberKind::Design
-                | session::F3zMemberKind::Skipped(_) => {
+                session::F3zMemberKind::Design | session::F3zMemberKind::Skipped(_) => {
                     untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
                     untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
                 }
@@ -144,7 +146,7 @@ fn compose(
         )?;
         members.clear();
         report.losses.append(&mut outer_losses);
-        return finalize_result(ctx, ir, source, report, fidelity);
+        return finalize_result(ir, source, report, fidelity);
     }
 
     let merged = merge::merge_archive(
@@ -171,30 +173,20 @@ fn compose(
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     report.losses.append(&mut outer_losses);
-    finalize_result(ctx, ir, source, report, fidelity)
+    finalize_result(ir, source, report, fidelity)
 }
 
 fn finalize_result(
-    ctx: &DecodeContext<'_>,
     mut ir: cadmpeg_ir::CadIr,
     source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
-    mut source_fidelity: cadmpeg_ir::SourceFidelity,
+    source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
     body.transfer.scope = ir.scope;
     crate::design::owners::release_unbound(&mut ir.model);
     ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        &ir,
-        Some(&source),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    source_fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
-            .map_err(CodecError::malformed)?,
-    );
+    // The decode wrapper stamps the archive digest on the normal path; the
+    // archive session stamps the same bytes on the session path.
     ir.source = Some(source);
     Ok(Decoded {
         ir,

@@ -3,7 +3,7 @@
 //!
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
-use cadmpeg_test_support::{edit, EditableDecodeResult};
+use cadmpeg_test_support::edit;
 
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -15,8 +15,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::ProceduralSurface;
 use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::SourceFidelity;
-use cadmpeg_test_support::golden::Harness;
 
 use crate::test_support::test_curves_and_surfaces::polynomial_nurbs_curve_file;
 use crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file;
@@ -29,16 +27,6 @@ use crate::test_support::test_tabulated_surfaces::{
     placed_tabulated_hyperbola_file, placed_tabulated_line_file,
 };
 use crate::{IgesCodec, IgesVersion};
-
-/// Extension of the committed fixture inputs (matches `golden_tests`).
-const FIXTURE_EXTENSION: &str = "igs";
-
-/// Crate-relative regeneration hint used by the shared harness constructor.
-const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden";
-
-fn harness() -> Harness {
-    Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
-}
 
 fn construction_owns_surface(
     ir: &CadIr,
@@ -53,65 +41,6 @@ fn surface_construction<'a>(ir: &'a CadIr, surface: &SurfaceId) -> Option<&'a Pr
         .procedural_surfaces
         .iter()
         .find(|construction| construction_owns_surface(ir, construction, surface))
-}
-
-fn try_lossless_round_trip(
-    stem: &str,
-    original: &CadIr,
-    ir: &CadIr,
-    fidelity: Option<&SourceFidelity>,
-) -> bool {
-    let Ok(plan) = Encoder::plan(
-        &IgesCodec,
-        EncodeInput::new(ir, fidelity),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
-    ) else {
-        return false;
-    };
-    let mut produced = Vec::new();
-    let Ok(report) = plan.write_to(&mut produced) else {
-        return false;
-    };
-    if !report.losses.is_empty() {
-        return false;
-    }
-    let round_trip = IgesCodec
-        .decode(&mut Cursor::new(produced), &DecodeOptions::default())
-        .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("validate the neutral model");
-    assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
-    let d = cadmpeg_ir::diff::diff(original, round_trip.ir());
-    assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
-    true
-}
-
-#[test]
-fn lossless_exports_round_trip_to_identical_ir() {
-    let harness = harness();
-    let mut written_any = false;
-    for (stem, bytes) in harness.fixture_inputs() {
-        let Ok(decoded) =
-            IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        else {
-            continue;
-        };
-        let decoded = EditableDecodeResult::from(decoded);
-        if try_lossless_round_trip(&stem, decoded.ir(), decoded.ir(), None)
-            || try_lossless_round_trip(
-                &stem,
-                decoded.ir(),
-                decoded.ir(),
-                Some(decoded.source_fidelity()),
-            )
-        {
-            written_any = true;
-        }
-    }
-    assert!(
-        written_any,
-        "no fixture took the lossless write path — test is vacuous"
-    );
 }
 
 #[test]

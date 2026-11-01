@@ -171,12 +171,11 @@ impl SldprtCodec {
     /// Replay the retained source image when the document is untouched since the
     /// decode that recorded its baseline, and write it semantically otherwise.
     ///
-    /// The `document_local_sha256` baseline answers only "was this edited since
-    /// it was decoded?", bitwise and on this machine; see
-    /// [`decode::document_local_sha256`]. An absent baseline means the question
-    /// cannot be answered, so the document takes the semantic write path — the
-    /// conservative branch, which reproduces the document from the IR instead of
-    /// replaying bytes that may no longer describe it.
+    /// The comparison below is against the required source digest, so the
+    /// document takes the semantic write path — the conservative branch,
+    /// which reproduces the document from the IR instead of replaying bytes
+    /// that may no longer describe it — until a document baseline is
+    /// re-established.
     ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
@@ -189,27 +188,8 @@ impl SldprtCodec {
         source_fidelity: &cadmpeg_ir::SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let expected = source_fidelity.decode_digest.as_ref();
-        let Some(expected) = expected else {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                Some(source_fidelity),
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::BaselineMissing),
-                writer,
-            );
-        };
-        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                Some(source_fidelity),
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
-                writer,
-            );
-        }
+        // A missing source image is reported before the digest comparison:
+        // replay needs the bytes whatever the document holds.
         let Some(record) = records
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
@@ -233,6 +213,20 @@ impl SldprtCodec {
                 writer,
             );
         };
+        // The digest is the source baseline, so the document comparison
+        // below takes the semantic path until a document baseline is
+        // re-established.
+        let expected = &source_fidelity.decode_digest;
+        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
+            return Self::write_semantic(
+                ir,
+                annotations,
+                records,
+                Some(source_fidelity),
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
+                writer,
+            );
+        }
         writer.write_all(data)?;
         Ok(Written::Replayed)
     }
@@ -271,7 +265,6 @@ impl SldprtCodec {
 /// Why an eligible retained-image replay took the semantic path instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReplaySkipped {
-    BaselineMissing,
     DigestMismatch,
     ImageMissing,
 }
@@ -280,7 +273,6 @@ impl ReplaySkipped {
     fn consumption(self) -> Consumption {
         Consumption::Degraded {
             reason: match self {
-                Self::BaselineMissing => "preserved SLDPRT source digest baseline is unavailable",
                 Self::DigestMismatch => {
                     "decoded model no longer matches the preserved SLDPRT source digest"
                 }
@@ -462,7 +454,10 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+            cadmpeg_ir::Annotations::default(),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&payload),
+        );
         let id: cadmpeg_ir::ids::UnknownId = SOURCE_IMAGE_ID
             .to_owned()
             .try_into()

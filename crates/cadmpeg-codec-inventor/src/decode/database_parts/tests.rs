@@ -17,7 +17,7 @@ fn actual_database_values_and_record_reads_share_the_source_stage() {
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
     let inventory = RseInventory::build(&ctx, &snapshot).expect("the rse inventory builds");
     let descriptor = &inventory.databases[0];
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(super::stage(&ctx, &mut output, descriptor).expect("the database stage succeeds"));
     let (_, native, fidelity, losses) = output.into_parts();
     let records = native
@@ -82,7 +82,7 @@ fn unreadable_database_note_drops_its_actual_record_and_keeps_the_exact_peer() {
         DatabaseState::Unframed { .. }
     ));
     assert_eq!(peer.databases[0].band.value(), 2);
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(!super::stage(&ctx, &mut output, &failed.databases[0])
         .expect("the failed database stage succeeds"));
     assert!(super::stage(&ctx, &mut output, &peer.databases[0])
@@ -123,7 +123,7 @@ fn cached_unreadable_state_cannot_replace_actual_database_fields() {
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
     let mut inventory = RseInventory::build(&ctx, &snapshot).expect("the rse inventory builds");
     inventory.databases[0].state = DatabaseState::Unreadable("stale failure cue".into());
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(super::stage(&ctx, &mut output, &inventory.databases[0])
         .expect("the database stage succeeds"));
     let (_, native, _, losses) = output.into_parts();

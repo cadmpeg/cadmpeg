@@ -3192,9 +3192,12 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(std::mem::take(&mut prereqs.parameter_state_parts.losses));
-        let parameter_state_fidelity = std::mem::take(&mut prereqs.parameter_state_parts.fidelity);
-        let scan = self.scan;
         let ctx = self.ctx;
+        let parameter_state_fidelity = std::mem::replace(
+            &mut prereqs.parameter_state_parts.fidelity,
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+        );
+        let scan = self.scan;
         let geometry = match path {
             FinalizePath::Geometry(index) => {
                 if let DesignState::Projected(design) = &design {
@@ -3321,7 +3324,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir,
                     self.report,
                     RetainedArtifacts {
-                        native_fidelity: self.native.retained_fidelity()?,
+                        native_fidelity: self.native.retained_fidelity(ctx)?,
                         annotations,
                         parameter_state_fidelity,
                         native_layout: Some(self.native),
@@ -3362,7 +3365,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir,
             self.report,
             RetainedArtifacts {
-                native_fidelity: self.native.retained_fidelity()?,
+                native_fidelity: self.native.retained_fidelity(ctx)?,
                 annotations,
                 parameter_state_fidelity,
                 native_layout: Some(self.native),
@@ -3428,17 +3431,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             )?;
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
-            let hash = cadmpeg_ir::hash::document_local_sha256(
-                ctx,
-                &decoded.ir,
-                Some(&decoded.source),
-                "f3d",
-                crate::ids::FILE_SOURCE_IMAGE_ID,
-            )?;
-            decoded.source_fidelity.decode_digest = Some(
-                cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
-                    .map_err(CodecError::malformed)?,
-            );
+            // The decode wrapper stamps the source digest from its root view.
             Ok(decoded.into_decoded())
         }
     }
@@ -3534,8 +3527,14 @@ fn decode_scanned_document<'a>(
             report,
             RetainedArtifacts {
                 annotations,
-                native_fidelity: cadmpeg_ir::SourceFidelity::default(),
-                parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
+                native_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                parameter_state_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
                 native_layout: None,
                 primary_model_brep_name: container::select_fallback_brep(scan)
                     .map(|brep| brep.name.clone()),
@@ -4535,7 +4534,7 @@ fn decode_result(
         "admit F3D entities",
     )?;
     report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
@@ -4608,20 +4607,8 @@ fn decode_result(
         crate::ids::FILE_SOURCE_IMAGE_ID,
         untyped,
     )?;
-    // Stamped on the finalized, classified document, so the write path
-    // compares against the exact document the sealed wrapper returns.
+    // The decode wrapper stamps the source digest from its root view.
     ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        &ir,
-        Some(&source),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    source_fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
-            .map_err(CodecError::malformed)?,
-    );
     Ok(AuthoredDecoded {
         native_layout: retained.native_layout,
         primary_model_brep_name: retained.primary_model_brep_name,
@@ -5126,7 +5113,8 @@ fn source_attributes_and_tolerances(
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
-    let mut tolerances = Tolerances::default();    if let Some(h) = primary_model_brep
+    let mut tolerances = Tolerances::default();
+    if let Some(h) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::model_metadata)

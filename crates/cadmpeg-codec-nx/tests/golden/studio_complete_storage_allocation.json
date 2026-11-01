@@ -1390,6 +1390,7 @@
           }
         }
       },
+      "decode_digest": "0b77384b39d3536fcb4e9e593224c95a98e888bd51e2d60f0d5a53844083e205",
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {

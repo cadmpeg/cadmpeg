@@ -170,11 +170,10 @@ fn admit_unedited(
         }
     }
 
-    let expected = fidelity.decode_digest.as_ref().ok_or_else(|| {
-        CodecError::UnsupportedContent(
-            "the retained typed-layout fingerprint is unavailable".into(),
-        )
-    })?;
+    // The digest is the source baseline, so the fingerprint comparison
+    // below declines retained-layout optimization until a document
+    // baseline is re-established.
+    let expected = &fidelity.decode_digest;
     let current = document_local_sha256(ctx, ir)?;
     if current.as_str() != expected.as_str() {
         return Err(CodecError::UnsupportedContent(

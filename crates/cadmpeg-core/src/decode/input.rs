@@ -3,6 +3,7 @@
 
 use std::io::Read;
 
+use super::context::admission_sha256;
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
@@ -83,6 +84,7 @@ impl DecodeContext<'_> {
         if reader.read(&mut [0_u8; 1])? != 0 {
             return Err(self.refuse_input_limit(1, "complete input"));
         }
+        self.source_digest.set(Some(admission_sha256(bytes)));
         Ok(())
     }
 

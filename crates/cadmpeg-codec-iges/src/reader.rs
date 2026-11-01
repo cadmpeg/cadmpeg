@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartSpec};
 use cadmpeg_ir::ContainerSummary;
@@ -30,9 +29,9 @@ struct ParsingState<'a> {
 }
 
 impl ParsingState<'_> {
-    fn new() -> Self {
+    fn new(ctx: &DecodeContext<'_>) -> Self {
         Self {
-            parts: PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+            parts: PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx),
             binary_identities: None,
             binary_admission: None,
             compressed: None,
@@ -170,7 +169,7 @@ fn source_fidelity(
         .map_err(|_| CodecError::Malformed("IGES source image id is invalid".into()))?;
     let owner = "iges".to_owned();
 
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
     fidelity.insert_retained_record(id, RetainedSourceRecord::whole(owner, retained_source))?;
     Ok(fidelity)
 }
@@ -420,7 +419,7 @@ pub(crate) fn inspect(
         source.window(),
         source,
         representation,
-        ParsingState::new(),
+        ParsingState::new(ctx),
     )
 }
 
@@ -476,7 +475,7 @@ fn inspect_with_parsing(
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
     let parts = std::mem::replace(
         &mut parse.parts,
-        PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+        PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx),
     );
     let (_, _, _, mut part_losses) = parts.into_parts();
     let primary = crate::dialect::classify(representation, &parse.global);
@@ -512,7 +511,7 @@ pub(crate) fn decode(
         source,
         representation,
         ctx,
-        ParsingState::new(),
+        ParsingState::new(ctx),
     )
 }
 
@@ -593,7 +592,7 @@ fn decode_with_occurrence_limits(
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
     let parts = std::mem::replace(
         &mut parse.parts,
-        PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+        PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx),
     );
     let (part_model, _, part_fidelity, mut part_losses) = parts.into_parts();
     let length_context = parse.global.length_context();
@@ -812,12 +811,7 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let document_digest =
-        document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
-    source_fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_digest)
-            .map_err(CodecError::malformed)?,
-    );
+    // The decode wrapper stamps the source digest from its root view.
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::container(),
@@ -926,7 +920,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
                 self.output_limit,
                 self.depth_limit,
                 ctx,
-                ParsingState::new(),
+                ParsingState::new(ctx),
             )
         }
     }

@@ -16460,7 +16460,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "8e0914a9d30f3a6f4cba315641854e7cc417f61edb52883baa88e4296ea0a45e",
+    "decode_digest": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

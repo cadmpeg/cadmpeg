@@ -193,7 +193,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         .merge(
             &mut ir,
             &mut report,
-            &mut cadmpeg_ir::SourceFidelity::default(),
+            &mut cadmpeg_ir::SourceFidelity::for_decode(&ctx, cadmpeg_ir::Annotations::default()),
             &crate::xref::XrefTable::default(),
         )
         .unwrap();
@@ -918,7 +918,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             scope: cadmpeg_ir::document::ContentScope::full(),
             geometry_transferred: false,
         });
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::for_decode(&ctx, cadmpeg_ir::Annotations::default());
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
@@ -1435,7 +1436,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .merge(
                 &mut ir,
                 &mut report,
-                &mut cadmpeg_ir::SourceFidelity::default(),
+                &mut cadmpeg_ir::SourceFidelity::for_decode(
+                    &ctx,
+                    cadmpeg_ir::Annotations::default()
+                ),
                 &table
             )
             .unwrap(),

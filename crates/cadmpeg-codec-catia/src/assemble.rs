@@ -1531,7 +1531,8 @@ mod route_tests {
                 Vec::new(),
                 Vec::new(),
             );
-            let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+            let mut fidelity =
+                cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
             fidelity.attach_native_unknown_records(&mut ir, "catia", vec![payload], ctx)?;
             Ok::<_, cadmpeg_core::CodecError>(ir.native_unknowns("catia").expect("native unknowns"))
         };

@@ -126,7 +126,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
 }
 
 #[test]
-fn encode_replays_an_unchanged_iges_source_image() {
+fn encode_synthesizes_an_unchanged_iges_source_image() {
     let bytes = point_file();
     let decoded = EditableDecodeResult::from(
         IgesCodec
@@ -144,11 +144,14 @@ fn encode_replays_an_unchanged_iges_source_image() {
     .unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::VerbatimReplay { .. }
+        WritePath::Synthesized { .. }
     ));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    assert_eq!(written, bytes);
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir().model.points.len(), 1);
 }
 
 #[test]
