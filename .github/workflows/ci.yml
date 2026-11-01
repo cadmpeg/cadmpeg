@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "13 2 * * *"
   workflow_dispatch:
+    inputs:
+      cache_benchmark:
+        description: Run the isolated compiler-cache benchmark
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,6 +75,7 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
+          CACHE_BENCHMARK: ${{ inputs.cache_benchmark }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
           QUEUE_REF: ${{ github.event.merge_group.head_ref }}
@@ -79,6 +85,10 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ] && [ "$CACHE_BENCHMARK" = true ]; then
+            python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
+            exit 0
+          fi
           mode=()
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
@@ -125,6 +135,45 @@ jobs:
           else
             python3 scripts/ci_scope.py --full --github-output "$GITHUB_OUTPUT"
           fi
+
+  cache-benchmark:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_benchmark }}
+    name: compiler cache benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/pinned-rust
+      - uses: ./.github/actions/cargo-job-count
+      - id: profiles
+        uses: ./.github/actions/cargo-profile-key
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: stable
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
+          save-if: false
+      - uses: taiki-e/install-action@v2.87.32
+        with:
+          tool: cargo-nextest,sccache@0.16.0
+      - id: benchmark
+        run: python3 scripts/benchmark_ci_cache.py
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.benchmark.outputs.cache_path }}
+          key: ci-compiler-benchmark-${{ github.run_id }}
+
+  cache-benchmark-restore:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_benchmark }}
+    needs: cache-benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/benchmark-cache
+          key: ci-compiler-benchmark-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - run: du -sh "$RUNNER_TEMP/benchmark-cache"
 
   # Python policy checks need no Rust build and run beside clippy.
   static:
