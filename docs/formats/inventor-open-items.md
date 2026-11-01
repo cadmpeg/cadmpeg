@@ -110,7 +110,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 Pre-schema-15 level-of-detail records are framed, but their member semantics are not transferred: kind 1 members and the kind 2 subassembly level-of-detail selection are retained natively. Which members a level of detail suppresses, and how the active level of detail is chosen, is unproven.
 
-Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. The suffix length of an assembly model-state record at section-version entry 2 value 17 is not established, and those records are refused. The schema-15 header grammar of an assembly with more than the default model state or level of detail is unknown. The u16 state before the design-view count and the u16 pair after the active design-view name have no known meaning.
+Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. The schema-15 header grammar of an assembly with more than the default model state or level of detail is unknown. The u16 state before the design-view count and the u16 pair after the active design-view name have no known meaning.
 
 The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
