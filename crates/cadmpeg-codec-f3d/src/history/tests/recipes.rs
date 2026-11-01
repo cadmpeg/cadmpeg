@@ -994,7 +994,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     )
     .unwrap();
     let body = Body {
-        native_ref: None,
+        native_ref: Some("f3d:asm:body-native-key#1".to_owned()),
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],
@@ -1073,7 +1073,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     let link = crate::records::sketch_links::PersistentDesignLink {
         id: "link".into(),
-        target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#1".to_owned(),
+        ),
+        target_coedge: None,
         design_id: "301".to_owned().try_into().unwrap(),
 
         design_reference: 9,
@@ -1141,8 +1144,12 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
     let mut second_body = body.clone();
     second_body.id = BodyId::mint("f3d:brep:body#2").unwrap();
+    second_body.native_ref = Some("f3d:asm:body-native-key#2".to_owned());
     let mut second_link = link.clone();
-    second_link.target = cadmpeg_ir::attributes::AttributeTarget::Body(second_body.id.clone());
+    second_link.target = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "f3d:asm:body-native-key#2".to_owned(),
+    );
+    second_link.target_coedge = None;
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             &[body.clone(), second_body],

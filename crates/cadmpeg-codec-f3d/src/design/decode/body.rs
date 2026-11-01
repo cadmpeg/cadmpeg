@@ -1130,10 +1130,13 @@ pub(crate) fn decode_design_body_bindings(
                 }
             }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
-                let body = crate::brep::resolve_body_selector(
+                let body = crate::brep::resolve_body_key_row(
                     source_bodies.iter().copied(),
                     binding.asm_key,
-                )?;
+                )?
+                .map(|key| {
+                    cadmpeg_asm::brep::records::identity::NativeRowId::from(key.id())
+                });
                 let id = design_record_id(
                     &entry.name,
                     ":design-body-binding#",
@@ -1152,7 +1155,7 @@ pub(crate) fn decode_design_body_bindings(
                         entity_suffix_offset: u64_from_index(binding.entity_suffix_offset()),
                         blob_name: record.blob_name.clone(),
                         blob_name_offset: u64_from_index(record.blob_name_offset),
-                        body: body.cloned(),
+                        body,
                         component_owner: owners
                             .get(&binding.entity_suffix)
                             .and_then(super::component_bodies::OwnerResolution::admitted)

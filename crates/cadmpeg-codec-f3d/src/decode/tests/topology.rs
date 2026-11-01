@@ -63,9 +63,9 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index.code())
+            .map(|metadata| metadata.endpoint_index.map(cadmpeg_asm::brep::records::EndpointSlot::code))
             .collect::<Vec<_>>(),
-        [0, 1, 0]
+        [Some(0), Some(1), Some(0)]
     );
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(result.ir().model.surfaces.len(), 1);
@@ -238,12 +238,16 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
-    assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
+    assert_eq!(f3d_native(result.ir()).vertex_ownerships.len(), 1);
+    assert!(f3d_native(result.ir()).vertex_ownerships[0]
+        .owner
+        .is_none());
     let wire = &f3d_native(result.ir()).wire_topologies[0];
     assert!(wire.members.edges().is_empty());
+    let member = wire.members.free_vertex().expect("wire vertex");
     assert_eq!(
-        wire.members.free_vertex().cloned(),
-        Some(result.ir().model.vertices[0].id.clone())
+        Some(member.as_str()),
+        result.ir().model.vertices[0].native_ref.as_deref()
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
@@ -633,12 +637,16 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         round_trip.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
-    assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());
+    assert_eq!(f3d_native(round_trip.ir()).vertex_ownerships.len(), 1);
+    assert!(f3d_native(round_trip.ir()).vertex_ownerships[0]
+        .owner
+        .is_none());
     let wire = &f3d_native(round_trip.ir()).wire_topologies[0];
     assert!(wire.members.edges().is_empty());
+    let member = wire.members.free_vertex().expect("wire vertex");
     assert_eq!(
-        wire.members.free_vertex().cloned(),
-        Some(round_trip.ir().model.vertices[0].id.clone())
+        Some(member.as_str()),
+        round_trip.ir().model.vertices[0].native_ref.as_deref()
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
@@ -736,9 +744,49 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
-        .replace("f3d:brep:", "generated:wire_two:");
+        .replace("f3d:brep:", "generated:wire_two:")
+        .replace("f3d:asm:", "f3d:wire_two_asm:");
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire IR");
+    // Native linkage resolves through `native_ref` strings, so the renamed
+    // companion keeps its own native rows: merge its renamed arenas, giving
+    // its wire rows fresh native indices.
+    {
+        let context = cadmpeg_test_support::service_decode_context();
+        let offset = source_less
+            .native
+            .namespace("f3d")
+            .map(|namespace| {
+                crate::native::F3dNative::load(namespace)
+                    .expect("decoded wire native")
+                    .wire_topologies
+                    .iter()
+                    .map(|wire| wire.record_index)
+                    .max()
+                    .map_or(1, |max| max + 1)
+            })
+            .unwrap_or(0);
+        let mut companion = crate::native::F3dNative::load(
+            second.native.namespace("f3d").expect("renamed wire native"),
+        )
+        .expect("typed renamed wire native");
+        for wire in &mut companion.wire_topologies {
+            wire.record_index += offset;
+        }
+        companion
+            .store(&context, second.native.namespace_mut("f3d"))
+            .expect("store renumbered wire native");
+    }
+    if let Some(mut second_f3d) = second.native.0.remove("f3d") {
+        let target = source_less.native.namespace_mut("f3d");
+        for (arena, records) in second_f3d.arenas_mut() {
+            target
+                .arenas_mut()
+                .entry(arena.clone())
+                .or_default()
+                .extend(std::mem::take(records));
+        }
+    }
     second.model.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 25.0],

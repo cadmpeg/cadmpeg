@@ -593,7 +593,7 @@ pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<DecodedMaterials, CodecError> {
-    decode_with_body_bindings(ctx, scan, &[])
+    decode_with_body_bindings(ctx, scan, &[], &[])
 }
 
 /// Decode appearance assets and resolve body bindings through the ordered,
@@ -603,6 +603,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
     body_bindings: &[DesignBodyBinding],
+    bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
     let mut notes = Vec::new();
@@ -728,8 +729,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
         &act_channels,
         &object_types,
         body_bindings,
+        bodies,
     )?;
-    let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
+    let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings, bodies)?;
     for over in &body_overrides {
         if bindings.iter().any(
             |binding| matches!(&binding.target, AppearanceTarget::Body(body) if body == &over.body),
@@ -1052,6 +1054,7 @@ fn decode_body_appearance_overrides(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     body_bindings: &[DesignBodyBinding],
+    bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -1089,6 +1092,7 @@ fn decode_body_appearance_overrides(
             };
             let Some(body) = resolved_body_for_map_pair(
                 body_bindings,
+                bodies,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
                 u64_from_index(map_pair.asm_key_offset),
@@ -1536,6 +1540,7 @@ fn bind_bodies(
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
     object_types: &std::collections::HashMap<u64, String>,
     body_bindings: &[DesignBodyBinding],
+    bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<Vec<AppearanceBinding>, CodecError> {
     let mut out = Vec::new();
     for assignment in assignments {
@@ -1559,7 +1564,12 @@ fn bind_bodies(
                 assignment.id
             )));
         }
-        let Some(body) = binding.body.clone() else {
+        let Some(body) = binding.body.as_ref().and_then(|row| {
+            bodies
+                .iter()
+                .find(|body| body.native_ref.as_deref() == Some(row.as_str()))
+                .map(|body| body.id.clone())
+        }) else {
             continue;
         };
         let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
@@ -1667,6 +1677,7 @@ fn unique_appearance<'a>(
 /// ASM keys are local to the pair's BREP basename.
 fn resolved_body_for_map_pair(
     body_bindings: &[DesignBodyBinding],
+    bodies: &[cadmpeg_ir::topology::Body],
     owner_id: &str,
     asm_body_key: u64,
     asm_body_key_offset: u64,
@@ -1693,7 +1704,15 @@ fn resolved_body_for_map_pair(
             "F3D material owner {owner_id} matches multiple exact body-map pairs"
         )));
     }
-    Ok(binding.body.clone())
+    Ok(binding
+        .body
+        .as_ref()
+        .and_then(|row| {
+            bodies
+                .iter()
+                .find(|body| body.native_ref.as_deref() == Some(row.as_str()))
+        })
+        .map(|body| body.id.clone()))
 }
 
 fn decode_design_object_types(

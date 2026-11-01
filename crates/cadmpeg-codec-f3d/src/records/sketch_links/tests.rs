@@ -5,7 +5,8 @@ use super::{PersistentDesignLink, PersistentDesignLinkWire, PERSISTENT_DESIGN_LI
 fn link() -> PersistentDesignLink {
     PersistentDesignLink {
         id: "f3d:native:persistent-link#0".into(),
-        target: cadmpeg_ir::attributes::AttributeTarget::Document,
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:asm:body-native-key#0".to_string()),
+        target_coedge: None,
         design_id: "00123".to_owned().try_into().unwrap(),
         design_reference: -4,
         ordinal: 2,

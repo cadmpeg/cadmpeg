@@ -4,8 +4,6 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{BodyId, FaceId};
 
 #[test]
 fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() {
@@ -14,7 +12,8 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
         assert_eq!(design_id.as_str(), text);
         let link = PersistentDesignLink {
             id: "link".into(),
-            target: AttributeTarget::Body(BodyId::mint("test:model:body#1").unwrap()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:body#1-row".to_owned()),
+            target_coedge: None,
             design_id,
             design_reference: 1,
             ordinal: 0,
@@ -44,7 +43,8 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
     for text in ["-1", "0003", " a ", "named-token", "面"] {
         let tag = PersistentSubentityTag {
             id: "tag".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#1").unwrap()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#1-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: NonBlankString::new(text).unwrap(),
             design_references: vec![],

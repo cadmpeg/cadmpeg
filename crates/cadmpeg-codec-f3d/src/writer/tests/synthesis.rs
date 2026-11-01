@@ -473,7 +473,7 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
 fn independent_body_keys_and_browser_suffixes_are_reminted_without_geometry_loss() {
     use crate::records::bodies::{BodyVisibility, BodyVisibilityWire};
     use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-    use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, BodyNativeKey};
+    use cadmpeg_asm::brep::records::BodyNativeKey;
     let first = cadmpeg_ir::examples::unit_cube().expect("cube");
     let text = first
         .to_canonical_json()
@@ -491,34 +491,50 @@ fn independent_body_keys_and_browser_suffixes_are_reminted_without_geometry_loss
         let mut ir = original.clone();
         {
             let bodies = ir.model.bodies.clone();
+            let namespace =
+                cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    cadmpeg_asm::asm_format!("f3d"),
+                );
+            for ordinal in 0..bodies.len() {
+                if !missing_first || ordinal == 1 {
+                    let row_id =
+                        cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+                            &namespace,
+                            "body-native-key",
+                            u32::try_from(ordinal).expect("ordinal"),
+                        );
+                    ir.model.bodies[ordinal].native_ref = Some(row_id.to_string());
+                }
+            }
             let mut native = f3d_native_mut(&mut ir);
             for (ordinal, body) in bodies.iter().enumerate() {
                 let key = if missing_first { 1 } else { 42 };
                 if !missing_first || ordinal == 1 {
                     native.body_native_keys.push(BodyNativeKey {
-                        source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!(
-                            "f3d"
-                        )),
+                        source_namespace: namespace.clone(),
                         record_index: u32::try_from(ordinal).expect("ordinal"),
-                        body: body.id.clone(),
                         body_ordinal: u32::try_from(ordinal).expect("ordinal"),
                         source_brep: None,
                         asm_body_key: Some(key),
                     });
+                    native.body_visibilities.push(
+                        BodyVisibility::try_from(BodyVisibilityWire {
+                            id: format!("f3d:part{ordinal}/BulkStream.dat:body-visibility#{key}"),
+                            body: cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+                                &namespace,
+                                "body-native-key",
+                                u32::try_from(ordinal).expect("ordinal"),
+                            ),
+                            stream: format!("part{ordinal}/BulkStream.dat"),
+                            byte_offset: 0,
+                            asm_body_key_offset: 0,
+                            asm_body_key: key,
+                            entity_suffix: 84,
+                            visible: body.visible.expect("visibility"),
+                        })
+                        .expect("typed browser visibility"),
+                    );
                 }
-                native.body_visibilities.push(
-                    BodyVisibility::try_from(BodyVisibilityWire {
-                        id: format!("f3d:part{ordinal}/BulkStream.dat:body-visibility#{key}"),
-                        body: body.id.clone(),
-                        stream: format!("part{ordinal}/BulkStream.dat"),
-                        byte_offset: 0,
-                        asm_body_key_offset: 0,
-                        asm_body_key: key,
-                        entity_suffix: 84,
-                        visible: body.visible.expect("visibility"),
-                    })
-                    .expect("typed browser visibility"),
-                );
             }
         }
         let (output, _) = super::source_less_analytic::synthesize_document(&ir, None);

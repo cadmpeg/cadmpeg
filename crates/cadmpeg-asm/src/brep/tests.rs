@@ -1322,13 +1322,6 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
     let key = |source: &str| BodyNativeKey {
         source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
         record_index: 17,
-        body: if source == "first" {
-            "f3d:brep:entity#17"
-        } else {
-            "f3d:brep:entity#18"
-        }
-        .try_into()
-        .expect("valid identity"),
         body_ordinal: 0,
         source_brep: Some(source.into()),
         asm_body_key: Some(23),

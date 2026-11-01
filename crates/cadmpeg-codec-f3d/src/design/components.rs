@@ -41,6 +41,8 @@ pub(crate) struct LocalComponentSources<'a> {
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     /// Solved model bodies, or `None` when bodies are projected after product structure.
     pub(crate) bodies: Option<&'a BTreeSet<BodyId>>,
+    /// Neutral body per body key row id, linking map pairs to solved bodies.
+    pub(crate) body_key_bodies: Option<&'a std::collections::BTreeMap<String, BodyId>>,
     pub(crate) hidden_bodies: Option<&'a BTreeSet<BodyId>>,
     /// First free ordinal among root occurrences already in the model.
     pub(crate) root_ordinal_start: usize,
@@ -886,7 +888,14 @@ impl<'a> Projector<'a> {
                         }
                     }
             })
-            .filter_map(|binding| binding.body.clone())
+            .filter_map(|binding| {
+                binding.body.as_ref().and_then(|row| {
+                    self.sources
+                        .body_key_bodies
+                        .and_then(|bodies| bodies.get(row.as_str()))
+                        .cloned()
+                })
+            })
             .filter(|body| {
                 self.sources
                     .bodies
@@ -1263,6 +1272,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
+            body_key_bodies: None,
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -1322,7 +1332,17 @@ mod tests {
         bytes
     }
 
-    fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
+    const COMPONENT_KEY: &str = "f3d:asm:body-native-key#1";
+    const ROOT_KEY: &str = "f3d:asm:body-native-key#2";
+
+    fn body_key_map(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, BodyId> {
+        pairs
+            .iter()
+            .map(|(row, body)| ((*row).to_owned(), BodyId::mint(*body).unwrap()))
+            .collect()
+    }
+
+    fn binding(offset: u64, entity_suffix: u64, row: &str) -> DesignBodyBinding {
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
             id: format!("{STREAM}:design-body-binding#{offset}"),
             stream: "Design/BulkStream.dat".into(),
@@ -1335,7 +1355,9 @@ mod tests {
             entity_suffix_offset: offset + 8,
             blob_name: "BREP.".into(),
             blob_name_offset: offset + 32,
-            body: Some(body.try_into().unwrap()),
+            body: Some(
+                cadmpeg_asm::brep::records::identity::NativeRowId::from(row.to_owned()),
+            ),
             component_owner: Some(
                 crate::records::body_ownership::membership(&ownership_layout(
                     entity_suffix,
@@ -1388,13 +1410,14 @@ mod tests {
         bodies: &[&str],
     ) -> super::LocalComponentProjection {
         let bindings = [
-            binding(1000, 194, COMPONENT_BODY),
-            binding(2000, 300, ROOT_BODY),
+            binding(1000, 194, COMPONENT_KEY),
+            binding(2000, 300, ROOT_KEY),
         ];
         let bodies = bodies
             .iter()
             .map(|body| BodyId::mint(*body).unwrap())
             .collect::<BTreeSet<_>>();
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY), (ROOT_KEY, ROOT_BODY)]);
         super::project_local_components(&super::LocalComponentSources {
             hidden_bodies: None,
             scopes: &[],
@@ -1402,6 +1425,7 @@ mod tests {
             components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -1471,6 +1495,7 @@ mod tests {
                 components: &components,
                 body_bindings: &[],
                 bodies: Some(&bodies),
+                body_key_bodies: None,
                 root_ordinal_start: 1,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             };
@@ -1569,6 +1594,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
+            body_key_bodies: None,
             root_ordinal_start: 1,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
@@ -1606,7 +1632,7 @@ mod tests {
         let components = two_component_stream(Some(276));
         let body = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([body.clone()]);
-        let mut binding = binding(1000, 900, COMPONENT_BODY);
+        let mut binding = binding(1000, 900, COMPONENT_KEY);
         binding.component_owner = Some(
             crate::records::body_ownership::membership(&ownership_layout(900, 159))
                 .unwrap()
@@ -1614,6 +1640,7 @@ mod tests {
                 .unwrap(),
         );
         let bindings = [binding];
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY)]);
         let carriers = [carrier(
             100,
             "00000000-0000-4000-8000-000000000001",
@@ -1635,6 +1662,7 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -1680,9 +1708,10 @@ mod tests {
         let components = two_component_stream(Some(276));
         let body = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([body]);
-        let mut binding = binding(1000, 194, COMPONENT_BODY);
+        let mut binding = binding(1000, 194, COMPONENT_KEY);
         binding.component_owner = None;
         let bindings = [binding];
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY)]);
         let carriers = [carrier(
             100,
             "00000000-0000-4000-8000-000000000001",
@@ -1696,6 +1725,7 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -1724,9 +1754,10 @@ mod tests {
         let components = two_component_stream(Some(276));
         let body = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([body]);
-        let mut binding = binding(1000, 194, COMPONENT_BODY);
+        let mut binding = binding(1000, 194, COMPONENT_KEY);
         binding.component_owner = None;
         let bindings = [binding];
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY)]);
         let carriers = [carrier(
             100,
             "00000000-0000-4000-8000-000000000001",
@@ -1740,6 +1771,7 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -1766,16 +1798,17 @@ mod tests {
     #[test]
     fn explicit_membership_and_cluster_fallback_share_one_stream() {
         let components = two_component_stream(Some(276));
-        let mut explicit = binding(1000, 901, COMPONENT_BODY);
+        let mut explicit = binding(1000, 901, COMPONENT_KEY);
         explicit.component_owner = Some(
             crate::records::body_ownership::membership(&ownership_layout(901, 159))
                 .unwrap()
                 .proof(900, 0, 0)
                 .unwrap(),
         );
-        let mut fallback = binding(1100, 900, ROOT_BODY);
+        let mut fallback = binding(1100, 900, ROOT_KEY);
         fallback.component_owner = None;
         let bindings = [explicit, fallback];
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY), (ROOT_KEY, ROOT_BODY)]);
         let sources = super::LocalComponentSources {
             hidden_bodies: None,
             scopes: &[],
@@ -1783,6 +1816,7 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: None,
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
@@ -1802,7 +1836,8 @@ mod tests {
         let components = two_component_stream(Some(276));
         let id = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([id.clone()]);
-        let bindings = [binding(1000, 194, COMPONENT_BODY)];
+        let bindings = [binding(1000, 194, COMPONENT_KEY)];
+        let keyed = body_key_map(&[(COMPONENT_KEY, COMPONENT_BODY)]);
         let sources = super::LocalComponentSources {
             hidden_bodies: None,
             scopes: &[],
@@ -1810,6 +1845,7 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
+            body_key_bodies: Some(&keyed),
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
@@ -2154,6 +2190,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&empty),
+            body_key_bodies: None,
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
@@ -2212,6 +2249,7 @@ mod tests {
                 components: &components,
                 body_bindings: &[],
                 bodies,
+                body_key_bodies: None,
                 root_ordinal_start: 0,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             })
@@ -2393,6 +2431,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
+            body_key_bodies: None,
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits {
                 max_entities: 4,
@@ -2508,6 +2547,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
+            body_key_bodies: None,
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits {
                 max_entities: 3,
@@ -2814,6 +2854,7 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
+            body_key_bodies: None,
             root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };

@@ -576,17 +576,25 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         )),
         source_object: None,
     });
-    let tolerant_coedge = source_less.model.coedges[0].id.clone();
+    let paired = crate::test_support::native_test::pair_cube_coedge_with_native_record(
+        &mut source_less,
+        &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            cadmpeg_asm::asm_format!("generated"),
+        ),
+        0,
+        0,
+    );
+    let tolerant_coedge = paired;
     source_less.model.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: generated_curve_id,
         parameter_range: cadmpeg_ir::topology::ParameterInterval::new([-2.0, 3.0]).unwrap(),
     });
+    assert_eq!(source_less.model.coedges[0].id, tolerant_coedge);
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 cadmpeg_asm::asm_format!("generated"),
             ),
-            coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
                 .expect("finite interval"),

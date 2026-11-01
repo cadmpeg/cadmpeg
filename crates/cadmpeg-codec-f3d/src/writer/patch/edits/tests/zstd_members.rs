@@ -7,7 +7,6 @@
 
 use std::io::{Cursor, Read};
 
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
@@ -58,10 +57,13 @@ fn stored_members(archive: &[u8]) -> Vec<(String, CompressionMethod, Vec<u8>)> {
 #[test]
 fn a_retained_f3d_with_zstandard_members_patches() {
     let mut source = cadmpeg_ir::examples::unit_cube().unwrap();
-    let body = source.model.bodies[0].id.clone();
+    source.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#7".into());
     f3d_native_mut(&mut source).creation_timestamps = vec![CreationTimestamp {
         id: "f3d:generated:creation-timestamp#0".into(),
-        target: AttributeTarget::Body(body),
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#7".to_owned(),
+        ),
+        target_coedge: None,
         record_index: 0,
         unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_001.0).unwrap(),
     }];

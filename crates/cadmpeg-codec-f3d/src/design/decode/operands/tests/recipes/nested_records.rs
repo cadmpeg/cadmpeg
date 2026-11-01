@@ -25,9 +25,21 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceRecipeNode;
 use crate::records::topology::face::DesignFaceRecipeStructure;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::ids::FaceId;
+
+fn tagged_faces(ids: &[&str]) -> Vec<cadmpeg_ir::topology::Face> {
+    let model = cadmpeg_ir::examples::unit_cube().expect("synthetic cube").model;
+    ids.iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let mut face = model.faces[index % model.faces.len()].clone();
+            face.id = (*id).try_into().expect("face id");
+            face.native_ref = Some(format!("{id}-row"));
+            face
+        })
+        .collect()
+}
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
@@ -1138,15 +1150,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(zero_delimited_face, face);
     assert_eq!(edge_operand.next_record_index, 104);
     assert_eq!(edge_operand.next_byte_offset(), next_at);
+    let faces = tagged_faces(&["f3d:brep:entity#50", "f3d:brep:entity#xref"]);
+    let bodies: Vec<cadmpeg_ir::topology::Body> = Vec::new();
+    let edges: Vec<cadmpeg_ir::topology::Edge> = Vec::new();
+    let vertices: Vec<cadmpeg_ir::topology::Vertex> = Vec::new();
+    let coedges: Vec<cadmpeg_ir::topology::Coedge> = Vec::new();
     bind_edge_operand_candidates(
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&recipe),
         &[
             PersistentSubentityTag {
                 id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
                 design_references: vec![303],
@@ -1154,15 +1170,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#xref-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
                 design_references: vec![303],
                 ordinal: 0,
             },
         ],
+        &bodies,
+        &faces,
+        &edges,
+        &vertices,
+        &coedges,
     );
     assert_eq!(
         edge_operand.candidate_faces,
@@ -1181,14 +1201,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&local_recipe),
         &[PersistentSubentityTag {
             id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
             design_references: vec![303],
             ordinal: 0,
         }],
+        &bodies,
+        &faces,
+        &edges,
+        &vertices,
+        &coedges,
     );
     assert!(edge_operand.candidate_faces.is_empty());
     let mut embedded_program = vec![99];
@@ -1477,15 +1501,23 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     });
+    let faces = tagged_faces(&[
+        "f3d:brep:entity#50",
+        "f3d:brep:entity#51",
+        "f3d:brep:entity#xref",
+    ]);
+    let bodies: Vec<cadmpeg_ir::topology::Body> = Vec::new();
+    let edges: Vec<cadmpeg_ir::topology::Edge> = Vec::new();
+    let vertices: Vec<cadmpeg_ir::topology::Vertex> = Vec::new();
+    let coedges: Vec<cadmpeg_ir::topology::Coedge> = Vec::new();
     bind_face_operand_candidates(
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&face_recipe),
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
                 design_references: vec![303],
@@ -1493,9 +1525,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#51-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("4").unwrap(),
                 design_references: vec![303],
@@ -1503,15 +1534,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#xref-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
                 design_references: vec![303],
                 ordinal: 0,
             },
         ],
+        &bodies,
+        &faces,
+        &edges,
+        &vertices,
+        &coedges,
     );
     assert_eq!(
         operand.candidate_faces,

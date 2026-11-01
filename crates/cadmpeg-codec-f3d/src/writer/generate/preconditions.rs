@@ -14,7 +14,6 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -142,7 +141,12 @@ pub(super) fn validate_source_less_topology_tolerances(
                 }
             )
         })
-        .map(|parameters| parameters.coedge.as_str())
+        .filter_map(|parameters| {
+            cadmpeg_asm::brep::records::native_entity_id(
+                &parameters.source_namespace,
+                parameters.record_index,
+            )
+        })
         .collect::<std::collections::HashSet<_>>();
     if let Some(coedge) = target
         .model
@@ -775,57 +779,92 @@ pub(super) fn validate_source_less_design_links(
         .model
         .coedges
         .iter()
-        .map(|coedge| (&coedge.id, coedge))
+        .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<HashMap<_, _>>();
     let mut linked_coedges = BTreeSet::new();
     for link in &native.sketch_curve_links {
         // Only a coedge-owned link is regenerated; a link on any other owner is
         // reported as a source-fidelity loss instead of refusing the write.
-        let AttributeTarget::Coedge(coedge) = &link.target else {
+        if link.target_coedge.is_none() {
+            continue;
+        }
+        let Some(id) = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &link.target,
+            link.target_coedge,
+        ) else {
             continue;
         };
-        if !coedges.contains_key(coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch-curve link {} targets a missing coedge {}",
-                link.id,
-                coedge.as_str()
-            )));
-        }
-        if !linked_coedges.insert(coedge) {
+        coedges.get(id.as_str()).copied().ok_or_else(|| {
+            CodecError::InvalidInput(format!(
+                "F3D sketch-curve link {} targets a missing coedge {id}",
+                link.id
+            ))
+        })?;
+        if !linked_coedges.insert(id.clone()) {
             return Err(CodecError::UnsupportedContent(format!(
-                "source-less F3D generation supports one sketch-curve link per coedge: {}",
-                coedge.as_str()
+                "source-less F3D generation supports one sketch-curve link per coedge: {id}"
             )));
         }
     }
 
+    // Canonical native row id to the neutral entity linked from it.
+    let mut owners = HashMap::new();
+    for body in &target.model.bodies {
+        if let Some(native_ref) = body.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(body.id.as_str());
+        }
+    }
+    for face in &target.model.faces {
+        if let Some(native_ref) = face.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(face.id.as_str());
+        }
+    }
+    for edge in &target.model.edges {
+        if let Some(native_ref) = edge.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(edge.id.as_str());
+        }
+    }
+    for vertex in &target.model.vertices {
+        if let Some(native_ref) = vertex.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(vertex.id.as_str());
+        }
+    }
     let bodies = target
         .model
         .bodies
         .iter()
         .enumerate()
-        .map(|(ordinal, body)| (&body.id, (ordinal, body)))
+        .map(|(ordinal, body)| (body.id.as_str(), (ordinal, body)))
         .collect::<HashMap<_, _>>();
     let faces = target
         .model
         .faces
         .iter()
-        .map(|face| (&face.id, face))
+        .map(|face| (face.id.as_str(), face))
         .collect::<HashMap<_, _>>();
     let edges = target
         .model
         .edges
         .iter()
-        .map(|edge| (&edge.id, edge))
+        .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
-    let mut groups: BTreeMap<AttributeTarget, Vec<&PersistentDesignLink>> = BTreeMap::new();
+    let mut groups: BTreeMap<String, Vec<&PersistentDesignLink>> = BTreeMap::new();
     for link in &native.persistent_design_links {
-        let target_key = match &link.target {
-            cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains_key(id) => {
-                Some(link.target.clone())
-            }
-            _ => None,
-        };
+        let target_key = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &link.target,
+            link.target_coedge,
+        )
+        .filter(|id| bodies.contains_key(id.as_str()));
         let Some(target_key) = target_key else {
             return Err(CodecError::InvalidInput(format!(
                 "F3D persistent design link {} has an unsupported or missing target",
@@ -838,13 +877,18 @@ pub(super) fn validate_source_less_design_links(
     let mut subentity_groups: BTreeMap<(u8, String), Vec<&PersistentSubentityTag>> =
         BTreeMap::new();
     for tag in &native.persistent_subentity_tags {
-        let target_key = match &tag.target {
-            cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains_key(id) => {
-                Some((2, id.as_str().to_owned()))
-            }
-            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains_key(id) => {
-                Some((1, id.as_str().to_owned()))
-            }
+        let neutral = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &tag.target,
+            tag.target_coedge,
+        );
+        let target_key = match neutral.as_deref() {
+            Some(id) if faces.contains_key(id) => Some((2, id.to_owned())),
+            Some(id) if edges.contains_key(id) => Some((1, id.to_owned())),
             _ => None,
         };
         let Some(target_key) = target_key else {
@@ -885,17 +929,25 @@ pub(super) fn validate_source_less_design_links(
         .collect::<std::collections::HashMap<_, _>>();
     let mut tolerant_coedges = BTreeSet::new();
     for parameters in &native.tolerant_coedge_parameters {
-        let coedge = coedges.get(&parameters.coedge).copied().ok_or_else(|| {
+        let Some(entity) = cadmpeg_asm::brep::records::native_entity_id(
+            &parameters.source_namespace,
+            parameters.record_index,
+        ) else {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D tolerant-coedge metadata {} has no source record",
+                parameters.id()
+            )));
+        };
+        let coedge = coedges.get(entity.as_str()).copied().ok_or_else(|| {
             CodecError::InvalidInput(format!(
-                "F3D tolerant-coedge metadata {} targets missing coedge {}",
+                "F3D tolerant-coedge metadata {} targets missing coedge {entity}",
                 parameters.id(),
-                parameters.coedge
             ))
         })?;
-        if !tolerant_coedges.insert(&parameters.coedge) {
+        if !tolerant_coedges.insert(entity) {
             return Err(CodecError::InvalidInput(format!(
                 "multiple F3D tolerant-coedge records target {}",
-                parameters.coedge
+                coedge.id
             )));
         }
         match &parameters.extension {
@@ -957,42 +1009,52 @@ pub(super) fn validate_source_less_design_links(
         .model
         .vertices
         .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect::<HashMap<_, _>>();
-    let shells = target
-        .model
-        .shells
-        .iter()
-        .map(|shell| (&shell.id, shell))
+        .map(|vertex| (vertex.id.as_str(), vertex))
         .collect::<HashMap<_, _>>();
     macro_rules! validate_unique_targets {
-        ($items:expr, $field:ident, $valid:expr, $label:literal) => {
-            validate_unique_targets!($items, $field, $valid, $label, [id()], |item, _target| {});
+        ($items:expr, $resolve:expr, $valid:expr, $label:literal) => {
+            validate_unique_targets!($items, $resolve, $valid, $label, [id()], |_item, _target| {})
         };
-        ($items:expr, $field:ident, $valid:expr, $label:literal,
+        ($items:expr, $resolve:expr, $valid:expr, $label:literal,
          [$($id:tt)+], |$item:ident, $target:pat_param| $validate:block) => {{
             let mut seen = BTreeSet::new();
             for $item in $items {
-                let $target = $valid.get(&$item.$field).copied().ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
-                        "F3D {} metadata {} targets missing entity {}",
-                        $label, $item.$($id)+, $item.$field
-                    ))
-                })?;
-                if !seen.insert(&$item.$field) {
+                let resolved: Option<String> = $resolve($item);
+                if resolved
+                    .as_ref()
+                    .is_some_and(|id| !seen.insert(id.clone()))
+                {
                     return Err(CodecError::InvalidInput(format!(
-                        "multiple F3D {} records target {}",
-                        $label, $item.$field
+                        "multiple F3D {} records target the same entity",
+                        $label
                     )));
                 }
+                let $target = resolved
+                    .as_deref()
+                    .and_then(|id| $valid.get(id).copied())
+                    .ok_or_else(|| {
+                        CodecError::InvalidInput(format!(
+                            "F3D {} metadata {} targets missing entity",
+                            $label, $item.$($id)+
+                        ))
+                    })?;
                 $validate
             }
         }};
     }
-    validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
+    validate_unique_targets!(
+        &native.body_native_keys,
+        |row: &cadmpeg_asm::brep::records::BodyNativeKey| owners
+            .get(row.id().as_str())
+            .map(|id| id.to_string()),
+        bodies,
+        "body-native-key"
+    );
     validate_unique_targets!(
         &native.body_visibilities,
-        body,
+        |row: &crate::records::bodies::BodyVisibility| owners
+            .get(row.body.as_str())
+            .map(|id| id.to_string()),
         bodies,
         "body-visibility",
         [id()],
@@ -1016,7 +1078,9 @@ pub(super) fn validate_source_less_design_links(
     );
     validate_unique_targets!(
         &native.transform_hints,
-        body,
+        |row: &cadmpeg_asm::brep::records::TransformHints| owners
+            .get(row.owner.as_str())
+            .map(|id| id.to_string()),
         bodies,
         "transform-hint",
         [id()],
@@ -1029,11 +1093,27 @@ pub(super) fn validate_source_less_design_links(
             }
         }
     );
-    validate_unique_targets!(&native.edge_continuities, edge, edges, "edge-continuity");
-    validate_unique_targets!(&native.edge_ownerships, edge, edges, "edge-ownership");
+    validate_unique_targets!(
+        &native.edge_continuities,
+        |row: &cadmpeg_asm::brep::records::EdgeContinuity| owners
+            .get(row.owner.as_str())
+            .map(|id| id.to_string()),
+        edges,
+        "edge-continuity"
+    );
+    validate_unique_targets!(
+        &native.edge_ownerships,
+        |row: &cadmpeg_asm::brep::records::EdgeOwnership| owners
+            .get(row.id().as_str())
+            .map(|id| id.to_string()),
+        edges,
+        "edge-ownership"
+    );
     validate_unique_targets!(
         &native.vertex_ownerships,
-        vertex,
+        |row: &cadmpeg_asm::brep::records::VertexOwnership| owners
+            .get(row.id().as_str())
+            .map(|id| id.to_string()),
         vertices,
         "vertex-ownership"
     );
@@ -1066,7 +1146,9 @@ pub(super) fn validate_source_less_design_links(
     }
     validate_unique_targets!(
         &native.tolerant_edge_tails,
-        edge,
+        |row: &cadmpeg_asm::brep::records::TolerantEdgeTail| owners
+            .get(row.owner.as_str())
+            .map(|id| id.to_string()),
         edges,
         "tolerant-edge",
         [id()],
@@ -1081,7 +1163,9 @@ pub(super) fn validate_source_less_design_links(
     );
     validate_unique_targets!(
         &native.tolerant_vertex_tails,
-        vertex,
+        |row: &cadmpeg_asm::brep::records::TolerantVertexTail| owners
+            .get(row.owner.as_str())
+            .map(|id| id.to_string()),
         vertices,
         "tolerant-vertex",
         [id()],
@@ -1101,13 +1185,36 @@ pub(super) fn validate_source_less_design_links(
     );
     let mut wire_record_indices = BTreeSet::new();
     for wire in &native.wire_topologies {
-        let shell = shells.get(&wire.shell).copied().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D wire-topology metadata {} targets missing entity {}",
-                wire.id(),
-                wire.shell
-            ))
-        })?;
+        let member_neutrals = wire
+            .members
+            .edges()
+            .iter()
+            .map(|member| member.as_str())
+            .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+            .filter_map(|member| owners.get(member).copied())
+            .collect::<Vec<_>>();
+        let shell = target
+            .model
+            .shells
+            .iter()
+            .find(|shell| {
+                member_neutrals.iter().any(|neutral| {
+                    shell
+                        .wire_edges()
+                        .iter()
+                        .any(|edge| edge.as_str() == *neutral)
+                        || shell
+                            .free_vertices()
+                            .iter()
+                            .any(|vertex| vertex.as_str() == *neutral)
+                })
+            })
+            .ok_or_else(|| {
+                CodecError::InvalidInput(format!(
+                    "F3D wire-topology metadata {} targets missing shell",
+                    wire.id()
+                ))
+            })?;
         if !wire_record_indices.insert(wire.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "multiple F3D wire-topology records use native index {}",
@@ -1116,11 +1223,23 @@ pub(super) fn validate_source_less_design_links(
         }
         let member_form_is_valid = match &wire.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
-                !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges().contains(edge))
+                !edges.is_empty()
+                    && edges.iter().all(|edge| {
+                        owners
+                            .get(edge.as_str())
+                            .is_some_and(|neutral| {
+                                shell.wire_edges().iter().any(|candidate| &candidate.as_str() == neutral)
+                            })
+                    })
             }
-            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
-                shell.free_vertices().contains(vertex)
-            }
+            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => owners
+                .get(vertex.as_str())
+                .is_some_and(|neutral| {
+                    shell
+                        .free_vertices()
+                        .iter()
+                        .any(|candidate| &candidate.as_str() == neutral)
+                }),
         };
         if !member_form_is_valid {
             return Err(CodecError::InvalidInput(format!(
@@ -1388,11 +1507,15 @@ mod tests {
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
+        let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:vertex-ownership#0".to_string(),
+        );
+        target.model.vertices[0].native_ref = Some(row.to_string());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
                 record_index: 0,
-                vertex: target.model.vertices[0].id.clone(),
+                owner: row,
                 leading_tolerances: [
                     cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
                     cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),

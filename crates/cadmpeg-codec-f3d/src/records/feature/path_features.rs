@@ -23,6 +23,7 @@ cadmpeg_core::named_optional_field!(
     DesignRevolveSecondSideWire,
     "second_side"
 );
+cadmpeg_core::named_optional_field!(deserialize_angle_offset, u64, "angle_offset");
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -82,7 +83,11 @@ struct DesignRevolveSecondSideWire {
     symmetric: bool,
     angle: f64,
     angle_record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_angle_offset"
+    )]
     angle_offset: Option<u64>,
 }
 

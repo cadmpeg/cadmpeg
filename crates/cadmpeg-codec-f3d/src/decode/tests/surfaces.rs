@@ -81,8 +81,12 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     let native = f3d_native(result.ir());
     assert_eq!(native.mesh_surface_sentinels.len(), 1);
     assert_eq!(
-        native.mesh_surface_sentinels[0].surface,
-        result.ir().model.surfaces[0].id
+        cadmpeg_asm::brep::records::native_entity_id(
+            &native.mesh_surface_sentinels[0].source_namespace,
+            native.mesh_surface_sentinels[0].record_index
+        )
+        .as_deref(),
+        Some(result.ir().model.surfaces[0].id.as_str())
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.severity == cadmpeg_ir::report::Severity::Info

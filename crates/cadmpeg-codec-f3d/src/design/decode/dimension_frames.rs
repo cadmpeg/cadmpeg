@@ -713,10 +713,24 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
 pub(crate) fn bind_dimension_recipe_reference_candidates(
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
     for record in records {
         for reference in &mut record.references {
-            bind_recipe_reference_candidates(reference, tags, Some(&record.id));
+            bind_recipe_reference_candidates(
+                reference,
+                tags,
+                Some(&record.id),
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+            );
         }
     }
 }
@@ -725,9 +739,12 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::dimensions::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
@@ -738,16 +755,30 @@ pub(crate) fn bind_recipe_reference_candidates(
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {
         let matching_selector = tag.selector == reference.selector;
-        match (&tag.target, matching_selector) {
-            (AttributeTarget::Face(face), true) => reference.candidate_faces.push(face.clone()),
-            (AttributeTarget::Edge(edge), true) => reference.candidate_edges.push(edge.clone()),
-            (AttributeTarget::Face(face), false) => {
-                reference.alternate_selector_faces.push(face.clone());
+        let Some(neutral) = crate::brep::link_neutral_id(
+            bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+        ) else {
+            continue;
+        };
+        let neutral = neutral.as_str();
+        if let Some(face) = faces
+            .iter()
+            .find(|face| face.id.as_str() == neutral)
+        {
+            if matching_selector {
+                reference.candidate_faces.push(face.id.clone());
+            } else {
+                reference.alternate_selector_faces.push(face.id.clone());
             }
-            (AttributeTarget::Edge(edge), false) => {
-                reference.alternate_selector_edges.push(edge.clone());
+        } else if let Some(edge) = edges
+            .iter()
+            .find(|edge| edge.id.as_str() == neutral)
+        {
+            if matching_selector {
+                reference.candidate_edges.push(edge.id.clone());
+            } else {
+                reference.alternate_selector_edges.push(edge.id.clone());
             }
-            _ => {}
         }
     }
     reference
