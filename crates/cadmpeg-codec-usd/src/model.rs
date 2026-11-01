@@ -54,11 +54,18 @@ use crate::schema::texture::SlotKind;
 use crate::schema::xform::{compose, invert, local_transform, Affine, IDENTITY};
 use crate::schema::Issues;
 use crate::stage::{Prim, Stage};
-use crate::text::syntax::{Layer, MetaValue, Value};
+use crate::text::syntax::{Dictionary, DictionaryValue, Layer, MetaValue, Value};
 
 mod brep;
+mod configurations;
+mod features;
+mod mates;
+mod parameters;
 mod physics;
 mod physx;
+mod pmi;
+mod presentation;
+mod sketch;
 
 /// Millimetres per metre.
 const MILLIMETRES_PER_METRE: f64 = 1000.0;
@@ -91,6 +98,47 @@ pub(crate) struct Metrics {
     pub(crate) malformed_mass_units: bool,
     /// `upAxis` is authored and is not the token `Y` or `Z`.
     pub(crate) malformed_up_axis: bool,
+    /// The document tolerances of `customLayerData`: linear, in scene
+    /// units, and angular, in degrees (spec §18).
+    pub(crate) tolerances: Option<[f64; 2]>,
+}
+
+/// The `cad` dictionary of the `customLayerData` of `layer`.
+fn cad_layer_data(layer: &Layer) -> Option<&Dictionary> {
+    layer
+        .metadata
+        .iter()
+        .rev()
+        .find_map(|item| match &item.value {
+            MetaValue::Dictionary(data) if item.key == "customLayerData" => {
+                data.entries.iter().find_map(|entry| match &entry.value {
+                    DictionaryValue::Dictionary(cad) if entry.key == "cad" => Some(cad),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+}
+
+/// The number that entry `key` of `data` states.
+fn dictionary_number(data: &Dictionary, key: &str) -> Option<f64> {
+    data.entries.iter().find_map(|entry| match &entry.value {
+        DictionaryValue::Typed {
+            value: Value::Number(number),
+            ..
+        } if entry.key == key => Some(number.float),
+        _ => None,
+    })
+}
+
+/// Whether `customLayerData` holds entries other than `cad`.
+fn foreign_layer_data(layer: &Layer) -> bool {
+    layer.metadata.iter().any(|item| match &item.value {
+        MetaValue::Dictionary(data) if item.key == "customLayerData" => {
+            data.entries.iter().any(|entry| entry.key != "cad")
+        }
+        _ => false,
+    })
 }
 
 fn layer_value<'l>(layer: &'l Layer, key: &str) -> Option<&'l Value> {
@@ -141,6 +189,12 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         malformed_units,
         malformed_mass_units,
         malformed_up_axis,
+        tolerances: cad_layer_data(layer).and_then(|cad| {
+            Some([
+                dictionary_number(cad, "linearTolerance")?,
+                dictionary_number(cad, "angularTolerance")?,
+            ])
+        }),
     }
 }
 
@@ -193,6 +247,15 @@ struct Tallies {
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
+    rejected_sketch_elements: Vec<String>,
+    sketch_properties: Vec<String>,
+    rejected_parameters: Vec<String>,
+    rejected_features: Vec<String>,
+    feature_properties: Vec<String>,
+    rejected_pmi: Vec<String>,
+    pmi_properties: Vec<String>,
+    rejected_presentation: Vec<String>,
+    presentation_properties: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -263,6 +326,15 @@ const PRIM_KEYS_READ: &[&str] = &[
     "displayName",
 ];
 
+/// The faces of the `BrepArray` bodies of one definition, for the
+/// connectors that name them.
+struct BrepEntry {
+    /// The IR face of each array face.
+    faces: BTreeMap<i64, cadmpeg_ir::ids::FaceId>,
+    /// The placement of the `BrepArray` prim in its definition.
+    body_transform: Option<Transform>,
+}
+
 struct Builder<'s, 'l, 'c, 'a> {
     ctx: &'c DecodeContext<'a>,
     layers: &'s crate::layers::Layers<'a>,
@@ -277,6 +349,10 @@ struct Builder<'s, 'l, 'c, 'a> {
     /// Group prims folded into the B-rep of one `BrepArray` child, with the
     /// child, by path.
     folded: BTreeMap<String, usize>,
+    /// The body of each definition key whose body keeps its CADIR identity.
+    body_ids: BTreeMap<String, cadmpeg_ir::ids::BodyId>,
+    /// The entity identities taken from `CadBrepIdentityAPI` so far.
+    used_ids: BTreeSet<String>,
     /// Prototype ordinals by instance key.
     prototypes: BTreeMap<String, usize>,
     appearances: BTreeSet<String>,
@@ -286,6 +362,25 @@ struct Builder<'s, 'l, 'c, 'a> {
     bodied: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
+    /// Mate prims, resolved after every occurrence exists.
+    pending_mates: Vec<usize>,
+    /// The `CadSketch` prim and the sketch of each sketch read.
+    sketch_prims: Vec<(String, cadmpeg_ir::sketches::SketchId)>,
+    /// The IR identity of each mate and joint prim, by path.
+    joint_ids: BTreeMap<String, cadmpeg_ir::products::JointId>,
+    /// The IR identity of each occurrence, by prim path.
+    occurrence_ids: BTreeMap<String, cadmpeg_ir::ids::OccurrenceId>,
+    /// The definition key of each `cad:definition:id`: the path of the first
+    /// prim that states it.
+    identified_definitions: BTreeMap<String, String>,
+    /// The IR identity of each product definition, by definition key.
+    definition_ids: BTreeMap<String, cadmpeg_ir::ids::ProductDefinitionId>,
+    /// The IR identity of each `CadFeature` prim, by path.
+    feature_ids: BTreeMap<String, cadmpeg_ir::features::FeatureId>,
+    /// The IR identity of each `CadParameter` prim, by path.
+    parameter_ids: BTreeMap<String, cadmpeg_ir::features::ParameterId>,
+    /// The `BrepArray` faces of each definition key.
+    brep_entries: BTreeMap<String, BrepEntry>,
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
@@ -301,6 +396,11 @@ pub(crate) fn build<'a>(
     losses: &mut Vec<LossNote>,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
+    if let Some(tolerances) = metrics.tolerances.and_then(|[linear, angular]| {
+        cadmpeg_ir::units::Tolerances::new(linear * metrics.scale, angular.to_radians()).ok()
+    }) {
+        ir.tolerances = tolerances;
+    }
     let admitted = u64_from_index(ir.model.entity_count());
     let mut builder = Builder {
         ctx,
@@ -313,16 +413,30 @@ pub(crate) fn build<'a>(
         tallies: Tallies::default(),
         definitions: BTreeSet::new(),
         folded: BTreeMap::new(),
+        body_ids: BTreeMap::new(),
+        used_ids: BTreeSet::new(),
         prototypes: BTreeMap::new(),
         appearances: BTreeSet::new(),
         physical_materials: BTreeSet::new(),
         bodied: BTreeSet::new(),
         pending_joints: Vec::new(),
+        pending_mates: Vec::new(),
+        parameter_ids: BTreeMap::new(),
+        feature_ids: BTreeMap::new(),
+        occurrence_ids: BTreeMap::new(),
+        joint_ids: BTreeMap::new(),
+        sketch_prims: Vec::new(),
+        definition_ids: BTreeMap::new(),
+        identified_definitions: BTreeMap::new(),
+        brep_entries: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
     };
     let mut ordinal = 0_u32;
+    builder.joint_ids();
+    builder.feature_ids();
+    builder.parameter_ids();
     for root in stage.roots.clone() {
         if builder.prim(root, None, &IDENTITY, ordinal)? {
             ordinal = ordinal
@@ -330,8 +444,17 @@ pub(crate) fn build<'a>(
                 .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
         }
     }
+    builder.sketch_owners();
+    builder.features()?;
+    builder.parameters()?;
+    builder.configurations()?;
+    builder.pmi()?;
+    builder.presentation()?;
+    let mates = std::mem::take(&mut builder.pending_mates);
+    builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
     builder.joints(pending)?;
+    builder.couplings();
     builder.finish_physx()?;
     let transferred = builder.transferred;
     let issues = std::mem::take(&mut builder.issues);
@@ -343,6 +466,7 @@ pub(crate) fn build<'a>(
         .iter()
         .map(|item| item.key.as_str())
         .filter(|key| !LAYER_KEYS_READ.contains(key))
+        .filter(|key| *key != "customLayerData" || foreign_layer_data(layers.root()))
         .collect();
     if !layer_keys.is_empty() {
         losses.push(UsdLossCode::MetadataNotTransferred.note(format!(
@@ -391,7 +515,18 @@ impl Builder<'_, '_, '_, '_> {
                 Some(relative.as_str()),
             ),
             (None, Some(key)) if places_only(prim) => (key.clone(), None),
-            _ => return prim.path.clone(),
+            // Prims with one `cad:definition:id` are occurrences of one
+            // definition, keyed by the first of them (spec §18).
+            _ => {
+                return match crate::schema::token(prim, "cad:definition:id", &mut self.issues) {
+                    Some(identity) => self
+                        .identified_definitions
+                        .entry(identity)
+                        .or_insert_with(|| prim.path.clone())
+                        .clone(),
+                    None => prim.path.clone(),
+                }
+            }
         };
         let next = self.prototypes.len();
         let ordinal = *self.prototypes.entry(key).or_insert(next);
@@ -414,6 +549,34 @@ impl Builder<'_, '_, '_, '_> {
         let Some(prim) = stage.prims.get(index) else {
             return Ok(false);
         };
+        if prim.type_name() == Some("CadSketch") {
+            if self.ctx.depth() == cadmpeg_core::decode::DecodeDepth::Full {
+                let local =
+                    local_transform(prim, &mut self.issues).map_or(IDENTITY, |local| local.matrix);
+                self.sketch(prim, &compose(parent_world, &local))?;
+            }
+            return Ok(false);
+        }
+        if crate::schema::sketch::is_sketch_type(prim.type_name())
+            || features::is_feature_type(prim.type_name())
+            || matches!(
+                prim.type_name(),
+                Some(
+                    "CadConnector"
+                        | parameters::PARAMETER_TYPE
+                        | configurations::CONFIGURATION_TYPE
+                        | pmi::PMI_TYPE
+                        | presentation::LAYER_TYPE
+                        | presentation::ATTRIBUTES_TYPE
+                )
+            )
+        {
+            return Ok(false);
+        }
+        if mates::is_mate_type(prim.type_name()) {
+            self.pending_mates.push(index);
+            return Ok(false);
+        }
         if physx::is_scene_type(prim.type_name()) {
             self.scene(prim)?;
             return Ok(false);
@@ -510,6 +673,13 @@ impl Builder<'_, '_, '_, '_> {
         let visible = (visibility.as_deref() == Some("invisible")
             || matches!(purpose.as_deref(), Some("guide" | "proxy")))
         .then_some(false);
+        let occurrence_id = self
+            .cad_id(&prim.path, |text| {
+                cadmpeg_ir::ids::OccurrenceId::mint(text).ok()
+            })
+            .unwrap_or_else(|| crate::ids::occurrence(&prim.path));
+        self.occurrence_ids
+            .insert(prim.path.clone(), occurrence_id.clone());
         if self.definitions.insert(definition.clone()) {
             self.definition(prim, role, &definition)?;
         }
@@ -517,14 +687,14 @@ impl Builder<'_, '_, '_, '_> {
         self.ctx
             .retain_bytes(u64_from_index(prim.name.len()), RETAIN_NAME)?;
         self.ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(&prim.path),
+            id: occurrence_id,
             prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(&definition),
+                definition: self.definition_id(&definition),
             },
             parent: match parent {
                 None => OccurrenceParent::Root {},
                 Some(parent) => OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(parent),
+                    occurrence: self.occurrence_id(parent),
                 },
             },
             ordinal,
@@ -552,7 +722,7 @@ impl Builder<'_, '_, '_, '_> {
                     object: external.prim_path.clone(),
                 },
                 parent: OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
+                    occurrence: self.occurrence_id(&prim.path),
                 },
                 ordinal: child_ordinal,
                 transform: Transform::identity(),
@@ -606,6 +776,12 @@ impl Builder<'_, '_, '_, '_> {
 
     /// Writes the definition of `prim` and its geometry.
     fn definition(&mut self, prim: &Prim<'_>, role: Role, key: &str) -> Result<(), CodecError> {
+        let id = self
+            .cad_identity(&prim.path, "cad:definition:id", |text| {
+                cadmpeg_ir::ids::ProductDefinitionId::mint(text).ok()
+            })
+            .unwrap_or_else(|| crate::ids::definition(key));
+        self.definition_ids.insert(key.to_owned(), id);
         let kind = match role {
             Role::Mesh
             | Role::BasisCurves
@@ -641,7 +817,14 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            // A `cad:brep:name` name stays; the prim name
+                            // of the `BrepArray` gives way to the group's.
+                            if body.name.as_deref() == Some(source_prim.name.as_str()) {
+                                body.name = Some(prim.name.clone());
+                            }
+                        }
+                        if let Some(entry) = self.brep_entries.get_mut(key) {
+                            entry.body_transform = local;
                         }
                         bodies
                     }
@@ -663,14 +846,42 @@ impl Builder<'_, '_, '_, '_> {
         if !bodies.is_empty() {
             self.bodied.insert(key.to_owned());
         }
+        let mut text = |name: &str| {
+            crate::schema::token(prim, name, &mut self.issues).filter(|value| !value.is_empty())
+        };
+        let (source_name, label, part_number) = (
+            text("cad:definition:sourceName"),
+            text("cad:definition:label"),
+            text("cad:definition:partNumber"),
+        );
+        let bom_names = crate::schema::tokens(prim, "cad:definition:bomNames", &mut self.issues)
+            .unwrap_or_default();
+        let bom_values = crate::schema::tokens(prim, "cad:definition:bomValues", &mut self.issues)
+            .unwrap_or_default();
+        let bom_properties = if bom_names.len() == bom_values.len() {
+            bom_names
+                .into_iter()
+                .zip(bom_values)
+                .filter_map(|(name, value)| {
+                    Some((cadmpeg_core::text::NonBlankString::new(name)?, value))
+                })
+                .collect()
+        } else {
+            self.issues.malformed(
+                prim,
+                "cad:definition:bomValues",
+                "the bill-of-materials names and values differ in length",
+            );
+            BTreeMap::new()
+        };
         self.ir.model.product_definitions.push(ProductDefinition {
-            id: crate::ids::definition(key),
+            id: self.definition_id(key),
             kind,
-            source_name: Some(definition_name(prim, key).to_owned()),
-            label: None,
+            source_name: Some(source_name.unwrap_or_else(|| definition_name(prim, key).to_owned())),
+            label,
             description: prim.metadata_text("documentation").map(str::to_owned),
-            part_number: None,
-            bom_properties: BTreeMap::new(),
+            part_number,
+            bom_properties,
             bodies,
             sketches: Vec::new(),
             native_ref: Some(prim.path.clone()),
@@ -698,7 +909,7 @@ impl Builder<'_, '_, '_, '_> {
             Role::NurbsPatch => self.patch(prim, key)?,
             Role::Intrinsic => match crate::schema::intrinsic::records(prim, &mut self.issues) {
                 Ok(records) => match self.brep_body(prim, key, &records)? {
-                    Ok(body) => Some(body),
+                    Ok((body, _)) => Some(body),
                     Err(reason) => {
                         let name = format!("{}: {reason}", prim.path);
                         *self.tallies.intrinsic.entry(name).or_default() += 1;
@@ -777,7 +988,7 @@ impl Builder<'_, '_, '_, '_> {
     ) {
         let color = self.display_color(prim);
         self.ir.model.bodies.push(Body {
-            id: crate::ids::body(key),
+            id: self.body_id(key),
             kind,
             regions,
             transform: None,
@@ -785,6 +996,83 @@ impl Builder<'_, '_, '_, '_> {
             color,
             visible: None,
         });
+    }
+
+    /// The CADIR identity that `cad:id` of the prim at `path` states, when
+    /// `mint` admits it and no record holds it yet (spec §18).
+    fn cad_id<T>(&mut self, path: &str, mint: impl Fn(String) -> Option<T>) -> Option<T> {
+        self.cad_identity(path, "cad:id", mint)
+    }
+
+    /// The CADIR identity that attribute `name` of the prim at `path`
+    /// states, when `mint` admits it and no record holds it yet.
+    fn cad_identity<T>(
+        &mut self,
+        path: &str,
+        name: &str,
+        mint: impl Fn(String) -> Option<T>,
+    ) -> Option<T> {
+        let stage = self.stage;
+        let text = crate::schema::token(stage.find(path)?, name, &mut self.issues)?;
+        if self.used_ids.contains(&text) {
+            return None;
+        }
+        let id = mint(text.clone())?;
+        self.used_ids.insert(text);
+        Some(id)
+    }
+
+    /// Assigns the IR identity of each mate and `UsdPhysics` joint prim of
+    /// the stage: its `cad:id` when valid and unused, otherwise the identity
+    /// of its path.
+    fn joint_ids(&mut self) {
+        let stage = self.stage;
+        for prim in stage.prims.iter().filter(|prim| {
+            mates::is_mate_type(prim.type_name())
+                || prim
+                    .type_name()
+                    .and_then(crate::schema::physics::JointType::of)
+                    .is_some()
+        }) {
+            let id = self
+                .cad_id(&prim.path, |text| {
+                    cadmpeg_ir::products::JointId::mint(text).ok()
+                })
+                .unwrap_or_else(|| crate::ids::joint(&prim.path));
+            self.joint_ids.insert(prim.path.clone(), id);
+        }
+    }
+
+    /// The joint of the mate or joint prim at `path`.
+    fn joint_id(&self, path: &str) -> cadmpeg_ir::products::JointId {
+        self.joint_ids
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::joint(path))
+    }
+
+    /// The occurrence of the prim at `path`.
+    fn occurrence_id(&self, path: &str) -> cadmpeg_ir::ids::OccurrenceId {
+        self.occurrence_ids
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::occurrence(path))
+    }
+
+    /// The product definition of definition key `key`.
+    fn definition_id(&self, key: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
+        self.definition_ids
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::definition(key))
+    }
+
+    /// The body of definition key `key`.
+    fn body_id(&self, key: &str) -> cadmpeg_ir::ids::BodyId {
+        self.body_ids
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::body(key))
     }
 
     fn mesh(
@@ -1355,6 +1643,20 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     .and_then(crate::schema::physics::JointType::of)
                     .is_some()
                     || physx::is_scene_type(child.type_name())
+                    || crate::schema::sketch::is_sketch_type(child.type_name())
+                    || mates::is_mate_type(child.type_name())
+                    || features::is_feature_type(child.type_name())
+                    || matches!(
+                        child.type_name(),
+                        Some(
+                            "CadConnector"
+                                | parameters::PARAMETER_TYPE
+                                | configurations::CONFIGURATION_TYPE
+                                | pmi::PMI_TYPE
+                                | presentation::LAYER_TYPE
+                                | presentation::ATTRIBUTES_TYPE
+                        )
+                    )
                     || match role(child.type_name()) {
                         Role::Consumed => true,
                         Role::Group => holds_only_shading(stage, child),
@@ -1369,7 +1671,8 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
 /// carried `PhysX` schemas.
 fn group_property_read(prim: &Prim<'_>, name: &str) -> bool {
     name.starts_with("xformOp")
-        || matches!(name, "visibility" | "purpose")
+        || matches!(name, "visibility" | "purpose" | "cad:id")
+        || name.starts_with("cad:definition:")
         || name.starts_with("material:binding")
         || name.starts_with("physics:")
         || name.starts_with("drive:")
@@ -1383,7 +1686,7 @@ fn group_property_read(prim: &Prim<'_>, name: &str) -> bool {
 }
 
 /// Whether the prim's own specifications state only placement properties:
-/// transform ops, visibility, and purpose.
+/// transform ops, visibility, purpose, and the occurrence identity.
 fn places_only(prim: &Prim<'_>) -> bool {
     prim.sites
         .iter()
@@ -1391,7 +1694,7 @@ fn places_only(prim: &Prim<'_>) -> bool {
         .flat_map(|site| site.body.properties.iter())
         .all(|property| {
             let name = property.name();
-            name.starts_with("xformOp") || matches!(name, "visibility" | "purpose")
+            name.starts_with("xformOp") || matches!(name, "visibility" | "purpose" | "cad:id")
         })
 }
 
@@ -1627,6 +1930,92 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
              transferred: {}",
             tallies.rejected_breps.len(),
             joined(tallies.rejected_breps.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::SketchElementRejected,
+        !tallies.rejected_sketch_elements.is_empty(),
+        format!(
+            "{} sketch points, curves, or constraints do not satisfy their schema, or have \
+             no neutral form, and were not transferred: {}",
+            tallies.rejected_sketch_elements.len(),
+            joined(tallies.rejected_sketch_elements.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::FeatureRejected,
+        !tallies.rejected_features.is_empty(),
+        format!(
+            "{} CadFeature or CadConfiguration prims do not satisfy their schema, or name \
+             records the stage does not hold, and were not transferred: {}",
+            tallies.rejected_features.len(),
+            joined(tallies.rejected_features.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::FeaturePropertyNotTransferred,
+        !tallies.feature_properties.is_empty(),
+        format!(
+            "properties of {} features or configurations name records the stage does not \
+             hold and were not transferred: {}",
+            tallies.feature_properties.len(),
+            joined(tallies.feature_properties.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PmiRejected,
+        !tallies.rejected_pmi.is_empty(),
+        format!(
+            "{} CadPmi prims do not satisfy their schema and were not transferred: {}",
+            tallies.rejected_pmi.len(),
+            joined(tallies.rejected_pmi.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PmiPropertyNotTransferred,
+        !tallies.pmi_properties.is_empty(),
+        format!(
+            "targets of {} annotations name records the stage does not hold and were not \
+             transferred: {}",
+            tallies.pmi_properties.len(),
+            joined(tallies.pmi_properties.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PresentationRejected,
+        !tallies.rejected_presentation.is_empty(),
+        format!(
+            "{} CadLayer or CadAttributes prims do not satisfy their schema and were not \
+             transferred: {}",
+            tallies.rejected_presentation.len(),
+            joined(tallies.rejected_presentation.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PresentationPropertyNotTransferred,
+        !tallies.presentation_properties.is_empty(),
+        format!(
+            "layer items and attributes that name records the stage does not hold were not \
+             transferred: {}",
+            joined(tallies.presentation_properties.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::ParameterRejected,
+        !tallies.rejected_parameters.is_empty(),
+        format!(
+            "{} CadParameter prims do not satisfy their schema and were not transferred: {}",
+            tallies.rejected_parameters.len(),
+            joined(tallies.rejected_parameters.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::SketchPropertyNotTransferred,
+        !tallies.sketch_properties.is_empty(),
+        format!(
+            "{} sketch properties were not transferred: {}",
+            tallies.sketch_properties.len(),
+            joined(tallies.sketch_properties.iter().cloned())
         ),
     );
     push(

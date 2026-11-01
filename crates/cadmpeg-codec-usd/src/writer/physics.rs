@@ -637,6 +637,10 @@ impl Writer<'_> {
         metadata.extend(settings_schemas);
         self.prim_head(&format!("def {joint_type}"), &name, &metadata);
         self.out.open();
+        self.out.line(&format!(
+            "uniform string cad:id = {}",
+            quoted(joint.id.as_str())
+        ));
         if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
             joint: joint.id.clone(),
         }) {
@@ -917,11 +921,16 @@ impl Writer<'_> {
             }
             self.out.close();
         }
+        children.reserve(super::mates::CONNECTORS);
+        let mut connectors = Names::default();
         for joint in &model.assembly_joints {
-            if !self.joint(joint, &mut children, None) {
+            if !self.mate(joint, &mut children, &mut connectors)
+                && !self.joint(joint, &mut children, None)
+            {
                 self.unwritten.joints += 1;
             }
         }
+        self.connectors();
         self.out.close();
     }
 }

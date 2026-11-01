@@ -16,6 +16,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, SurfaceId, VertexId};
+use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -592,6 +593,7 @@ fn solved_surface(geometry: &SolvedSurfaceGeometry) -> Option<(SurfaceRecord, Ch
 /// Writer state for one body.
 struct Exporter<'t, 'ir> {
     ir: &'ir CadIr,
+    index: &'t ModelIndex<'ir>,
     tessellator: &'t mut Tessellator<'ir>,
     /// Every face needs a mesh: the body has no tessellation of its own.
     meshes_wanted: bool,
@@ -607,6 +609,8 @@ struct Exporter<'t, 'ir> {
     surfaces: BTreeMap<SurfaceId, Option<(Reference, Chart)>>,
     /// The face ids in record order.
     faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    traced: Vec<usize>,
     unwritten: Unwritten,
 }
 
@@ -630,13 +634,21 @@ pub(super) struct Exported {
     pub(super) brep: Brep,
     /// The IR face of each face record.
     pub(super) faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    pub(super) traced: Vec<usize>,
     pub(super) unwritten: Unwritten,
 }
 
 impl<'t, 'ir> Exporter<'t, 'ir> {
-    fn new(ir: &'ir CadIr, tessellator: &'t mut Tessellator<'ir>, meshes_wanted: bool) -> Self {
+    fn new(
+        ir: &'ir CadIr,
+        index: &'t ModelIndex<'ir>,
+        tessellator: &'t mut Tessellator<'ir>,
+        meshes_wanted: bool,
+    ) -> Self {
         Self {
             ir,
+            index,
             tessellator,
             meshes_wanted,
             meshes: Vec::new(),
@@ -652,6 +664,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             faces: Vec::new(),
+            traced: Vec::new(),
             unwritten: Unwritten::default(),
         }
     }
@@ -674,11 +687,8 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             return *found;
         }
         let record = self
-            .ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| &curve.id == id)
+            .index
+            .curves(id.as_str(), StandardIndex)
             .and_then(|curve| curve_record(&curve.geometry));
         let out = record.map(|(record, map)| (self.add_curve(record), map));
         self.curves.insert(id.clone(), out);
@@ -689,12 +699,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(found) = self.surfaces.get(id) {
             return *found;
         }
-        let surface = self
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == id);
+        let surface = self.index.surfaces(id.as_str(), StandardIndex);
         let record = match surface.map(|surface| &surface.geometry) {
             Some(SurfaceGeometry::Solved(solved)) => solved_surface(solved),
             Some(SurfaceGeometry::Procedural {
@@ -787,12 +792,10 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(index) = self.vertices.get(id) {
             return Some(*index);
         }
-        let model = &self.ir.model;
-        let vertex = model.vertices.iter().find(|vertex| &vertex.id == id)?;
-        let position = model
-            .points
-            .iter()
-            .find(|candidate| candidate.id == vertex.point)?
+        let vertex = self.index.vertices(id.as_str(), StandardIndex)?;
+        let position = self
+            .index
+            .points(vertex.point.as_str(), StandardIndex)?
             .position()
             .get();
         self.brep.vertices.push(point(position));
@@ -807,7 +810,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(index) = self.edges.get(id) {
             return Some(*index);
         }
-        let edge = self.ir.model.edges.iter().find(|edge| &edge.id == id)?;
+        let edge = self.index.edges(id.as_str(), StandardIndex)?;
         let vertices = [self.vertex(&edge.start)?, self.vertex(&edge.end)?];
         let curve = edge.curve().and_then(|curve| self.curve(curve));
         let range = edge
@@ -946,12 +949,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         let [use_] = coedge.pcurves.as_slice() else {
             return None;
         };
-        let pcurve = self
-            .ir
-            .model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == use_.pcurve)?;
+        let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
         // A use with no range runs on the edge's parameter range, in the
         // coedge direction.
         let range = use_
@@ -1036,8 +1034,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
     }
 
     fn face(&mut self, face_id: &FaceId) {
-        let model = &self.ir.model;
-        let Some(face) = model.faces.iter().find(|face| &face.id == face_id) else {
+        let Some(face) = self.index.faces(face_id.as_str(), StandardIndex) else {
             return;
         };
         let Some((surface, chart)) = self.surface(&face.surface) else {
@@ -1062,7 +1059,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let mut loops = Vec::new();
         for loop_id in &face.loops {
-            let Some(loop_) = model.loops.iter().find(|loop_| &loop_.id == loop_id) else {
+            let Some(loop_) = self.index.loops(loop_id.as_str(), StandardIndex) else {
                 continue;
             };
             match &loop_.boundary {
@@ -1079,8 +1076,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     }
                     let mut oriented = Vec::new();
                     for coedge_id in ring.coedges() {
-                        let Some(coedge) =
-                            model.coedges.iter().find(|coedge| &coedge.id == coedge_id)
+                        let Some(coedge) = self.index.coedges(coedge_id.as_str(), StandardIndex)
                         else {
                             continue;
                         };
@@ -1093,15 +1089,19 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                         // A pcurve that the tessellator found off its edge is
                         // replaced by the traced one.
                         let trusted = trace.is_none_or(|trace| trace.from_pcurve);
-                        let pcurve = trusted
+                        let given = trusted
                             .then(|| self.pcurve(coedge, chart, planar))
-                            .flatten()
-                            .or_else(|| {
-                                if planar {
-                                    return None;
-                                }
-                                self.derived_pcurve(trace?, chart)
-                            });
+                            .flatten();
+                        let traced = given.is_none() && !planar;
+                        let pcurve = given.or_else(|| {
+                            if planar {
+                                return None;
+                            }
+                            self.derived_pcurve(trace?, chart)
+                        });
+                        if traced && pcurve.is_some() {
+                            self.traced.push(self.brep.oriented_edges.len());
+                        }
                         if pcurve.is_none() && !planar {
                             self.unwritten.pcurves += 1;
                         }
@@ -1346,19 +1346,19 @@ fn analytic_pcurve(
 /// derived pcurves.
 pub(super) fn export<'ir>(
     ir: &'ir CadIr,
+    index: &ModelIndex<'ir>,
     body: &Body,
     tessellator: &mut Tessellator<'ir>,
     meshes_wanted: bool,
 ) -> Option<Exported> {
-    let model = &ir.model;
-    let mut exporter = Exporter::new(ir, tessellator, meshes_wanted);
+    let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
     for region_id in &body.regions {
-        let Some(region) = model.regions.iter().find(|region| &region.id == region_id) else {
+        let Some(region) = index.regions(region_id.as_str(), StandardIndex) else {
             continue;
         };
         let mut region_shells = Vec::new();
         for shell_id in &region.shells {
-            let Some(shell) = model.shells.iter().find(|shell| &shell.id == shell_id) else {
+            let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
             if shell.faces().is_empty() {
@@ -1392,32 +1392,49 @@ pub(super) fn export<'ir>(
     }
     // `brep:tolerance` bounds every vertex-on-face and edge-on-face
     // deviation, so it is the largest entity tolerance of the body.
-    let model = &ir.model;
+    let face_records: Vec<Option<&cadmpeg_ir::topology::Face>> = exporter
+        .faces
+        .iter()
+        .map(|face| index.faces(face.as_str(), StandardIndex))
+        .collect();
+    let mut tolerances = crate::brep::Tolerances {
+        faces: face_records
+            .iter()
+            .map(|face| {
+                face.and_then(|face| face.tolerance)
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+            })
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+    };
+    for (id, position) in &exporter.edges {
+        if let (Some(slot), Some(value)) = (
+            tolerances.edges.get_mut(*position),
+            index
+                .edges(id.as_str(), StandardIndex)
+                .and_then(|edge| edge.tolerance),
+        ) {
+            *slot = Some(value.get());
+        }
+    }
+    for (id, position) in &exporter.vertices {
+        if let (Some(slot), Some(value)) = (
+            tolerances.vertices.get_mut(*position),
+            index
+                .vertices(id.as_str(), StandardIndex)
+                .and_then(|vertex| vertex.tolerance),
+        ) {
+            *slot = Some(value.get());
+        }
+    }
     let mut tolerance = exporter.brep.tolerance;
-    for face in &exporter.faces {
-        if let Some(value) = model
-            .faces
-            .iter()
-            .find(|candidate| &candidate.id == face)
-            .and_then(|face| face.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for vertex in exporter.vertices.keys() {
-        if let Some(value) = model
-            .vertices
-            .iter()
-            .find(|candidate| &candidate.id == vertex)
-            .and_then(|vertex| vertex.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for edge in &exporter.brep.edges {
-        if let Some(value) = edge.tolerance {
-            tolerance = tolerance.max(value);
-        }
+    for value in [&tolerances.faces, &tolerances.edges, &tolerances.vertices]
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        tolerance = tolerance.max(*value);
     }
     // A source whose vertices and edges lie off their surfaces states that
     // distance as its tolerance.
@@ -1425,12 +1442,45 @@ pub(super) fn export<'ir>(
         tolerance = tolerance.max(mesh.deviation * DEVIATION_MARGIN);
     }
     exporter.brep.tolerance = tolerance;
+    let mut identities = crate::brep::Identities {
+        body: Some(body.id.to_string()),
+        faces: exporter
+            .faces
+            .iter()
+            .map(|face| Some(face.to_string()))
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+        body_name: body.name.clone(),
+        face_names: face_records
+            .iter()
+            .map(|face| face.and_then(|face| face.name.clone()))
+            .collect(),
+    };
+    for (id, index) in &exporter.edges {
+        if let Some(slot) = identities.edges.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    for (id, index) in &exporter.vertices {
+        if let Some(slot) = identities.vertices.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    if identities.faces.len() != exporter.brep.faces.len() {
+        identities.faces = vec![None; exporter.brep.faces.len()];
+        identities.face_names = vec![None; exporter.brep.faces.len()];
+        tolerances.faces = vec![None; exporter.brep.faces.len()];
+    }
+    exporter.brep.identities = identities;
+    exporter.brep.tolerances = tolerances;
     for edge in &mut exporter.brep.edges {
         edge.tolerance = edge.tolerance.filter(|value| *value > tolerance);
     }
     Some(Exported {
         brep: exporter.brep,
         faces: exporter.faces,
+        traced: exporter.traced,
         unwritten: exporter.unwritten,
     })
 }

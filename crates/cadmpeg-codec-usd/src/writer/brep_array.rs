@@ -5,6 +5,7 @@ use cadmpeg_ir::topology::Body;
 
 use super::text::{quoted, real, tuple};
 use super::{records, Placement, Writer, MILLIMETRES_PER_UNIT};
+use crate::brep::solid::exact::{Frames, PackedExact, PcurveFrames, Source};
 use crate::brep::solid::{
     Curves, Packed, EDGE_CURVE_API, SURFACE_API, TRIM_CURVE_API, VERTEX_POINT_API,
 };
@@ -78,7 +79,7 @@ impl Writer<'_> {
     /// The `BrepArray` arrays of `body`, in metres, or `None` when a face or
     /// edge of the body has no NURBS form.
     pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<BrepPrim>> {
-        let exported = records::export(self.ir, body, &mut self.tessellator, false)?;
+        let exported = records::export(self.ir, &self.index, body, &mut self.tessellator, false)?;
         let name = body.name.clone().unwrap_or_else(|| body.id.to_string());
         if exported.unwritten.faces > 0 || exported.unwritten.edges > 0 {
             self.unwritten.breps.push(format!(
@@ -88,6 +89,8 @@ impl Writer<'_> {
             return None;
         }
         let records = exported.brep.divided(MILLIMETRES_PER_UNIT);
+        self.exported
+            .insert(body.id.clone(), (records.clone(), exported.faces.clone()));
         let converted = match crate::brep::convert::nurbs_only(&records) {
             Ok(converted) => converted,
             Err(reason) => {
@@ -98,8 +101,15 @@ impl Writer<'_> {
         if !converted.trimmed {
             self.unwritten.untrimmed_breps.push(name.clone());
         }
+        // A traced pcurve is the form of no pcurve of the IR.
+        let mut exact = records;
+        for oriented in &exported.traced {
+            if let Some(record) = exact.oriented_edges.get_mut(*oriented) {
+                record.pcurve = None;
+            }
+        }
         let mut packed = Packed::default();
-        if let Err(reason) = packed.push(&converted.brep, converted.trimmed) {
+        if let Err(reason) = packed.push(&converted.brep, converted.trimmed, Some(&exact)) {
             self.unwritten.breps.push(format!("{name}: {reason}"));
             return None;
         }
@@ -122,6 +132,15 @@ impl Writer<'_> {
         if packed.trim_curves.is_some() {
             schemas.push(TRIM_CURVE_API);
         }
+        if packed.identities.any() {
+            schemas.push(crate::brep::solid::IDENTITY_API);
+        }
+        if packed.tolerances.any() {
+            schemas.push(crate::brep::solid::TOLERANCE_API);
+        }
+        if packed.exact.any() {
+            schemas.push(crate::brep::solid::exact::ANALYTIC_API);
+        }
         let mut placement = placement.clone();
         placement.metadata.push(format!(
             "prepend apiSchemas = [{}]",
@@ -138,6 +157,7 @@ impl Writer<'_> {
             &placement,
             binding.as_deref(),
         );
+        self.brep_paths.insert(body.id.clone(), self.out.path());
         if let Some([min, max]) = packed.bounds() {
             let low = min.map(|value| outward(value, false));
             let high = max.map(|value| outward(value, true));
@@ -351,9 +371,212 @@ impl Writer<'_> {
         if let Some(trims) = &packed.trim_curves {
             curves(out, "brep:curveUv:nurb", trims, "double2");
         }
+        if packed.identities.any() {
+            let ids = &packed.identities;
+            let strings =
+                |values: &[String]| values.iter().map(|value| quoted(value)).collect::<Vec<_>>();
+            let out = &mut self.out;
+            out.array("uniform string[] cad:brep:id", &strings(&ids.breps), "");
+            out.array("uniform string[] cad:face:id", &strings(&ids.faces), "");
+            out.array("uniform string[] cad:edge:id", &strings(&ids.edges), "");
+            out.array(
+                "uniform string[] cad:vertex:id",
+                &strings(&ids.vertices),
+                "",
+            );
+            for (name, values) in [
+                ("cad:brep:name", &ids.brep_names),
+                ("cad:face:name", &ids.face_names),
+            ] {
+                if values.iter().any(|value| !value.is_empty()) {
+                    out.array(&format!("uniform string[] {name}"), &strings(values), "");
+                }
+            }
+        }
+        if packed.tolerances.any() {
+            let tolerances = &packed.tolerances;
+            let out = &mut self.out;
+            out.array(
+                "uniform double[] cad:face:tolerance",
+                &reals(&tolerances.faces),
+                "",
+            );
+            out.array(
+                "uniform double[] cad:edge:tolerance",
+                &reals(&tolerances.edges),
+                "",
+            );
+            out.array(
+                "uniform double[] cad:vertex:tolerance",
+                &reals(&tolerances.vertices),
+                "",
+            );
+        }
+        if packed.exact.any() {
+            exact_arrays(&mut self.out, &packed.exact);
+        }
         self.face_subsets(&brep.faces);
         self.out.close();
     }
+}
+
+/// Writes the arrays of `CadBrepAnalyticAPI` (spec §18.5).
+fn exact_arrays(out: &mut super::Emitter, exact: &PackedExact) {
+    let words =
+        |values: &mut dyn Iterator<Item = &str>| -> Vec<String> { values.map(quoted).collect() };
+    let forms = |values: &[crate::brep::Form]| -> Vec<String> {
+        values.iter().map(|form| quoted(form.token())).collect()
+    };
+    if !exact.surfaces.kinds.is_empty() {
+        frames(out, "cad:surface:analytic", &exact.surfaces);
+        sources(out, "cad:surface:analytic:profile", &exact.surface_profiles);
+    }
+    if !exact.curves.kinds.is_empty() {
+        frames(out, "cad:curve3d:analytic", &exact.curves);
+    }
+    if !exact.nurbs_curve_forms.is_empty() {
+        curves(out, "cad:curve3d:nurb", &exact.nurbs_curves, "point3d");
+        out.array(
+            "uniform token[] cad:curve3d:nurb:form",
+            &forms(&exact.nurbs_curve_forms),
+            "",
+        );
+    }
+    if !exact.pcurves.kinds.is_empty() {
+        analytic_pcurves(out, &exact.pcurves);
+    }
+    if !exact.nurbs_pcurve_forms.is_empty() {
+        curves(out, "cad:curveUv:nurb", &exact.nurbs_pcurves, "double2");
+        out.array(
+            "uniform token[] cad:curveUv:nurb:form",
+            &forms(&exact.nurbs_pcurve_forms),
+            "",
+        );
+    }
+    sources(out, "cad:face:surface", &exact.face_surfaces);
+    sources(out, "cad:edge:curve", &exact.edge_curves);
+    out.array(
+        "uniform double2[] cad:edge:range",
+        &tuples(&exact.edge_ranges),
+        "",
+    );
+    out.array(
+        "uniform token[] cad:edge:sense",
+        &words(
+            &mut exact
+                .edge_same
+                .iter()
+                .map(|same| if *same { "same" } else { "opposite" }),
+        ),
+        "",
+    );
+    out.array(
+        "uniform token[] cad:loop:direction",
+        &words(
+            &mut exact
+                .loop_directions
+                .iter()
+                .map(|direction| direction.token()),
+        ),
+        "",
+    );
+    sources(out, "cad:edgeuse:pcurve", &exact.edgeuse_pcurves);
+}
+
+/// Writes the `{name}Type` and `{name}Index` arrays of `values`.
+fn sources(out: &mut super::Emitter, name: &str, values: &[Source]) {
+    out.array(
+        &format!("uniform token[] {name}Type"),
+        &values
+            .iter()
+            .map(|source| quoted(source.token()))
+            .collect::<Vec<_>>(),
+        "",
+    );
+    out.array(
+        &format!("uniform int[] {name}Index"),
+        &values
+            .iter()
+            .map(|source| source.index().to_string())
+            .collect::<Vec<_>>(),
+        "",
+    );
+}
+
+/// Writes the frame-positioned analytic records `frames` under `prefix`.
+fn frames(out: &mut super::Emitter, prefix: &str, frames: &Frames) {
+    out.array(
+        &format!("uniform token[] {prefix}:type"),
+        &frames
+            .kinds
+            .iter()
+            .map(|kind| quoted(kind))
+            .collect::<Vec<_>>(),
+        "",
+    );
+    out.array(
+        &format!("uniform point3d[] {prefix}:position"),
+        &tuples(&frames.position),
+        "",
+    );
+    out.array(
+        &format!("uniform vector3d[] {prefix}:axis"),
+        &tuples(&frames.axis),
+        "",
+    );
+    out.array(
+        &format!("uniform vector3d[] {prefix}:refDirection"),
+        &tuples(&frames.ref_direction),
+        "",
+    );
+    out.array(
+        &format!("uniform int[] {prefix}:paramCounts"),
+        &counts(&frames.param_counts),
+        "",
+    );
+    out.array(
+        &format!("uniform double[] {prefix}:params"),
+        &reals(&frames.params),
+        "",
+    );
+}
+
+/// Writes the analytic pcurve catalog of `CadBrepAnalyticAPI`.
+fn analytic_pcurves(out: &mut super::Emitter, pcurves: &PcurveFrames) {
+    out.array(
+        "uniform token[] cad:curveUv:analytic:type",
+        &pcurves
+            .kinds
+            .iter()
+            .map(|kind| quoted(kind))
+            .collect::<Vec<_>>(),
+        "",
+    );
+    out.array(
+        "uniform double2[] cad:curveUv:analytic:position",
+        &tuples(&pcurves.position),
+        "",
+    );
+    out.array(
+        "uniform double2[] cad:curveUv:analytic:refDirection",
+        &tuples(&pcurves.ref_direction),
+        "",
+    );
+    out.array(
+        "uniform int[] cad:curveUv:analytic:paramCounts",
+        &counts(&pcurves.param_counts),
+        "",
+    );
+    out.array(
+        "uniform double[] cad:curveUv:analytic:params",
+        &reals(&pcurves.params),
+        "",
+    );
+    out.array(
+        "uniform double2[] cad:curveUv:analytic:range",
+        &tuples(&pcurves.range),
+        "",
+    );
 }
 
 impl Writer<'_> {

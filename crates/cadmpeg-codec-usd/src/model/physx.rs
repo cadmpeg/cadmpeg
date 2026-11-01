@@ -127,14 +127,14 @@ impl super::Builder<'_, '_, '_, '_> {
             .and_then(crate::schema::physics::JointType::of)
             .is_some()
         {
-            let joint = crate::ids::joint(path);
+            let joint = self.joint_id(path);
             return model
                 .assembly_joints
                 .iter()
                 .any(|record| record.id == joint)
                 .then_some(SolverTarget::Joint { joint });
         }
-        let occurrence = crate::ids::occurrence(path);
+        let occurrence = self.occurrence_id(path);
         model
             .occurrences
             .iter()

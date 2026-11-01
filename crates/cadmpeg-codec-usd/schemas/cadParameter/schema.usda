@@ -1,0 +1,81 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# cadParameter schema: design parameters.
+# Codeless; cadmpeg reads and writes it (docs/formats/usd.md §18.6).
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadParameter"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+class CadParameter "CadParameter" (
+    inherits = </Typed>
+    doc = """One design parameter: its name, its expression, and its evaluated value. A
+             parameter has at most one value attribute."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the parameter."""
+    )
+    uniform string cad:parameter:name (
+        doc = """The source name. Unauthored, the prim name."""
+    )
+    uniform string cad:parameter:expression = "" (
+        doc = """The literal or expression text of the source."""
+    )
+    uniform uint cad:parameter:ordinal = 0 (
+        doc = """The position among the parameters of one owner."""
+    )
+    uniform double cad:parameter:length (
+        doc = """A length value, in the length unit of the stage."""
+    )
+    uniform double cad:parameter:angle (
+        doc = """An angle value, in degrees."""
+    )
+    uniform double cad:parameter:real (
+        doc = """A dimensionless value."""
+    )
+    uniform int64 cad:parameter:integer (
+        doc = """An integer value."""
+    )
+    uniform bool cad:parameter:boolean (
+        doc = """A boolean value."""
+    )
+    uniform string cad:parameter:string (
+        doc = """A text value."""
+    )
+    uniform token cad:parameter:display (
+        allowedTokens = ["diameter", "radius"]
+        doc = """How a dimension shows the value."""
+    )
+    rel cad:parameter:dependencies (
+        doc = """The CadParameter prims that the expression names, in expression order."""
+    )
+    rel cad:parameter:owner (
+        doc = """One target, the CadFeature prim of the feature that consumes the
+                 parameter."""
+    )
+    rel cad:parameter:definition (
+        doc = """One target, a prim of the product definition whose frame holds the
+                 parameter."""
+    )
+    uniform string[] cad:parameter:propertyNames (
+        doc = """The names of the source properties."""
+    )
+    uniform string[] cad:parameter:propertyValues (
+        doc = """The values of the source properties, parallel to propertyNames."""
+    )
+}

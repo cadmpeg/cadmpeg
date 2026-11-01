@@ -89,6 +89,10 @@ impl super::Builder<'_, '_, '_, '_> {
         let Some(prim) = stage.prims.get(index) else {
             return Ok(());
         };
+        if super::mates::is_mate_type(prim.type_name()) {
+            self.pending_mates.push(index);
+            return Ok(());
+        }
         if super::physx::is_scene_type(prim.type_name()) {
             return self.scene(prim);
         }
@@ -103,6 +107,12 @@ impl super::Builder<'_, '_, '_, '_> {
         let local = crate::schema::xform::local_transform(prim, &mut self.issues)
             .map_or(crate::schema::xform::IDENTITY, |local| local.matrix);
         let world = compose(world, &local);
+        if prim.type_name() == Some("CadSketch") {
+            if self.ctx.depth() == cadmpeg_core::decode::DecodeDepth::Full {
+                self.sketch(prim, &world)?;
+            }
+            return Ok(());
+        }
         for child in prim.children.clone() {
             self.collect_unplaced(child, &world)?;
         }
@@ -119,7 +129,7 @@ impl super::Builder<'_, '_, '_, '_> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let schemas = prim.api_schemas();
         let occurrence = PhysicsTarget::Occurrence {
-            occurrence: crate::ids::occurrence(&prim.path),
+            occurrence: self.occurrence_id(&prim.path),
         };
         for name in crate::schema::physics::unread_body_properties(prim) {
             self.tallies
@@ -195,11 +205,11 @@ impl super::Builder<'_, '_, '_, '_> {
         } else {
             let target = if body {
                 SolverTarget::Body {
-                    body: crate::ids::body(key),
+                    body: self.body_id(key),
                 }
             } else {
                 SolverTarget::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
+                    occurrence: self.occurrence_id(&prim.path),
                 }
             };
             self.physx(prim, &[Holder::Collision], &target, None);
@@ -210,7 +220,7 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         } else {
             SolverTarget::Occurrence {
-                occurrence: crate::ids::occurrence(&prim.path),
+                occurrence: self.occurrence_id(&prim.path),
             }
         };
         self.physx(prim, &[Holder::Articulation], &articulation, None);
@@ -218,7 +228,7 @@ impl super::Builder<'_, '_, '_, '_> {
             prim,
             &[Holder::Body],
             &SolverTarget::Occurrence {
-                occurrence: crate::ids::occurrence(&prim.path),
+                occurrence: self.occurrence_id(&prim.path),
             },
             None,
         );
@@ -235,7 +245,7 @@ impl super::Builder<'_, '_, '_, '_> {
         body: bool,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let occurrence = PhysicsTarget::Occurrence {
-            occurrence: crate::ids::occurrence(&prim.path),
+            occurrence: self.occurrence_id(&prim.path),
         };
         let data = crate::schema::physics::collision(prim, &mut self.issues);
         let shape = match data.approximation.as_deref() {
@@ -254,7 +264,7 @@ impl super::Builder<'_, '_, '_, '_> {
             (
                 crate::ids::collider(key),
                 PhysicsTarget::Body {
-                    body: crate::ids::body(key),
+                    body: self.body_id(key),
                 },
             )
         } else {
@@ -292,7 +302,7 @@ impl super::Builder<'_, '_, '_, '_> {
         let ids: Option<Vec<JointId>> = coupled
             .iter()
             .map(|target| {
-                let id = crate::ids::joint(target.as_deref()?);
+                let id = self.joint_id(target.as_deref()?);
                 self.ir
                     .model
                     .assembly_joints
@@ -362,7 +372,7 @@ impl super::Builder<'_, '_, '_, '_> {
 
     /// One drive in IR units, or `None` when the joint type has no degree of
     /// freedom for its instance.
-    fn drive(&self, kind: JointType, drive: &Drive) -> Option<JointDrive> {
+    pub(super) fn drive(&self, kind: JointType, drive: &Drive) -> Option<JointDrive> {
         let axis = match (kind, drive.instance.as_str()) {
             (JointType::Revolute, "angular") => DriveAxis::Rotation { axis: FrameAxis::Z },
             (JointType::Prismatic, "linear") => DriveAxis::Translation { axis: FrameAxis::Z },
@@ -454,7 +464,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 };
                 let operand = match &data.bodies[side] {
                     Some(body) => {
-                        let occurrence = crate::ids::occurrence(body);
+                        let occurrence = self.occurrence_id(body);
                         if !occurrences.contains(occurrence.as_str()) {
                             unresolved = true;
                             break;
@@ -483,7 +493,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 JointLimits::new(lower.map(factor), upper.map(factor))
             };
             let scale = self.scale;
-            let id = crate::ids::joint(&path);
+            let id = self.joint_id(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
                     let (grounded, world): (Vec<_>, Vec<_>) = connectors

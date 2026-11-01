@@ -1317,3 +1317,374 @@ A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects f
 ### 17.5 Fallback prims
 
 A geometry prim that states `customData = { string brepArray = "N" }` is a fallback of the sibling `BrepArray` prim named `N`: a `Mesh` is a tessellation of its B-reps, and a `NurbsPatch` is a face of them. A reader that reads the B-reps of `N` reads a fallback `Mesh` as their tessellation and does not read a fallback `NurbsPatch`.
+
+## 18. Cad schemas
+
+The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
+
+A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, `CadConfiguration`, `CadPmi`, and `CadLayer` have `cad:id`.
+
+A prim that states an occurrence has `cad:id`, the CADIR identity of the occurrence. The prim that defines a product definition has `uniform string cad:definition:id`, the CADIR identity of the definition: the occurrence prim, or the prototype prim that instances of a shared definition reference. Prims with one `cad:definition:id` are occurrences of one definition; the first of them in stage order defines it.
+
+The prim that defines a product definition also states its product data:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:definition:sourceName` | uniform string | the source object name that product and BOM tools use; unauthored, the prim name |
+| `cad:definition:label` | uniform string | the component label, when it differs from the source name |
+| `cad:definition:partNumber` | uniform string | the part or stock number |
+| `cad:definition:bomNames`, `cad:definition:bomValues` | uniform `string[]` | further bill-of-materials fields, as parallel arrays |
+| `documentation` | metadata | the bill-of-materials description |
+
+A `CadSketch` names the product definition that owns it with `rel sketch:definition`, whose one target is a prim of that definition.
+
+The `customLayerData` of the root layer holds the document tolerances in its dictionary `cad`: `double linearTolerance`, in the length unit of the stage, and `double angularTolerance`, in degrees.
+
+### 18.1 CadBrepIdentityAPI
+
+`CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex, and the name of each B-rep and face:
+
+| Attribute | Elements |
+| --- | --- |
+| `uniform string[] cad:brep:id` | the identity of each B-rep |
+| `uniform string[] cad:face:id` | the identity of each face |
+| `uniform string[] cad:edge:id` | the identity of each edge |
+| `uniform string[] cad:vertex:id` | the identity of each vertex |
+| `uniform string[] cad:brep:name` | the name of each B-rep |
+| `uniform string[] cad:face:name` | the name of each face |
+
+Element `i` names the entity at position `i` of its arrays (§17.1). An empty string is no identity or no name. A B-rep name is the body name; it takes precedence over the prim name. An identity has the CADIR grammar `<format>:<scope>:<kind>#<key>`, and each identity occurs once in a stage.
+
+### 18.2 CadSketch
+
+The `CadSketch` type and its element types state a planar sketch. OpenUSD does not register the types. A `CadSketch` prim is boundable: its transform-op stack places the sketch plane, its local `x` and `y` axes are the sketch `u` and `v` axes, and its descendants of the element types are its elements. Lengths are in the sketch prim's local units. The placement is rigid; a reflected placement maps the sketch points as its transform states.
+
+#### Points and curves
+
+| Type | Properties |
+| --- | --- |
+| `CadSketchPoint` | `uniform double2 sketch:point:position`; `uniform bool sketch:point:construction` |
+| `CadSketchLine` | `rel sketch:line:startPoint`, `rel sketch:line:endPoint`; `uniform bool sketch:line:construction` |
+| `CadSketchArc` | `rel sketch:arc:startPoint`, `endPoint`, `centerPoint`; `uniform double sketch:arc:radius`; `uniform token sketch:arc:sweep` (`ccw`, `cw`); `uniform bool sketch:arc:construction` |
+| `CadSketchCircle` | `rel sketch:circle:centerPoint`; `uniform double sketch:circle:radius`; `uniform bool sketch:circle:construction` |
+| `CadSketchSpline` | `uniform token sketch:spline:form` (`open`, `closed`); `uniform int sketch:spline:degree`; `uniform double[] sketch:spline:knots`; `uniform int[] sketch:spline:multiplicities`; `uniform double2[] sketch:spline:poles`; `uniform token sketch:spline:fitRule`; `rel sketch:spline:controlPoints`, `rel sketch:spline:fitPoints`; `uniform bool sketch:spline:construction` |
+
+Each relationship of a curve has one target, a `CadSketchPoint`. Curves that share an endpoint share one point prim. `sketch:arc:sweep = ccw` is the arc from `startPoint` to `endPoint` in the direction of increasing `atan2(v − v_c, u − u_c)` about the center, and `cw` the other arc. `sketch:construction:role` (uniform token, unauthored value `none`) gives a datum role: `axis` is a construction line offered as an axis, directed from its start point to its end point.
+
+`sketch:spline:knots` holds the distinct knots, increasing, and `sketch:spline:multiplicities` the multiplicity of each. An `open` spline is clamped: the first and last multiplicities are `degree + 1`, and the multiplicities sum to `len(poles) + degree + 1`. A `closed` spline is periodic: every multiplicity is at most `degree`, the first and last multiplicities are equal, the multiplicities before the last sum to `len(poles)`, and the period is `knots[k] − knots[0]`. The span of a closed spline that starts at `knots[0]` uses poles `0` to `degree`, and each later span of the flat knot sequence, degenerate spans included, advances the pole window by one, with pole indices modulo `len(poles)`. `controlPoints` names one point prim per pole. With `fitRule` other than `none`, the poles are the rule's function of the `fitPoints` targets.
+
+#### Constraints
+
+A constraint type inherits `CadSketchConstraint` and names its geometry through `rel sketch:constraint:constrained` and `rel sketch:constraint:reference`. A dimensional constraint inherits `CadDimensionalConstraint` and adds `uniform double sketch:constraint:value`, `uniform bool sketch:constraint:driving` (unauthored value `true`), and `rel sketch:constraint:parameter`, with one target, the `CadParameter` prim of its value (§18.6); a driven constraint states a measurement.
+
+| Type | `constrained` | `reference` | Relation |
+| --- | --- | --- | --- |
+| `CadCoincidentConstraint` | 2 points | | the points coincide |
+| `CadHorizontalConstraint` | 1 line, or 2 points | | `Δv = 0` along the line, or between the points |
+| `CadVerticalConstraint` | 1 line, or 2 points | | `Δu = 0` |
+| `CadParallelConstraint`, `CadPerpendicularConstraint` | 2 lines | | the line directions are parallel, or perpendicular |
+| `CadFixedConstraint` | 1 point, or 1 line | | the geometry keeps its position |
+| `CadPointOnCurveConstraint` | 1 point | 1 line, arc, or circle | the point lies on the curve |
+| `CadSymmetricConstraint` | 2 points | 1 line, or 1 point | the points are symmetric about the reference |
+| `CadEqualConstraint` | 2 lines, or 2 arcs or circles | | equal lengths, or equal radii |
+| `CadTangentConstraint` | 2 curves, one an arc, circle, or spline | | the curves are tangent |
+| `CadRadiusConstraint` | 1 arc or circle | | the radius is `value` |
+| `CadDistanceConstraint` | 2 points, or 1 point | the second point, or 1 line | the distance is `value` |
+| `CadAngleConstraint` | 1 line | 1 line | the signed angle from the reference line to the constrained line is `value`, in degrees |
+
+### 18.3 CadConnector and CadMate
+
+The `CadConnector`, `CadMate`, and `CadGroundMate` types state declared assembly joints between faces of `BrepArray` prims (§17). A mate states a relation that the composed placements of its bodies satisfy; it does not move them.
+
+#### Frames
+
+A frame is a row-vector matrix, as `xformOp:transform`: its rows are the `x`, `y`, and `z` axes and the origin. A connector's frame in the space of its `BrepArray` prim is `C = O · G`, with `G` the frame of the origin rule and `O` the rigid offset `cadConnector:offset` in `G`. A point `p` in connector coordinates is `p · O · G` in the space of the prim.
+
+#### Connectors
+
+| Property | Type | Unauthored value | Meaning |
+| --- | --- | --- | --- |
+| `cadConnector:body` | rel | | one target, the `BrepArray` prim of the face |
+| `cadConnector:faceId` | uniform int64 | `-1` | the face, as its position in the face arrays of the prim (§17.1); `-1` is no face |
+| `cadConnector:origin` | uniform token | `faceFrame` | the origin rule: `faceFrame`, `axis`, or `centre` |
+| `cadConnector:axisEnd` | uniform token | `low` | for `axis`: `low` or `high` |
+| `cadConnector:up` | uniform vector3d | `(0, 0, 1)` | the reference for the frame's `y` axis, in the space of the prim |
+| `cadConnector:direction` | uniform vector3d | `(0, 0, 1)` | for `axis`, the sense of `z`; for `centre`, `z` |
+| `cadConnector:tolerance` | uniform double | `0` | the length tolerance of the witness |
+| `cadConnector:offset` | uniform matrix4d | identity | the offset `O` |
+
+`proj(r, n)` is the unit vector `normalize(r − (r·n) n)` of a unit `r`. When `‖r − (r·n) n‖ ≤ √ε`, with `ε = 2⁻⁵²`, it is the same projection of the cyclic partner of `n`: the unit basis vector of index `(k + 2) mod 3`, signed as `n_k`, with `k` the index of the largest-magnitude component of `n` (the lowest such index on a tie). Each rule sets `y = proj(up, z)` and `x = y × z`.
+
+| Rule | Classes | `z` | Origin |
+| --- | --- | --- | --- |
+| `faceFrame` | `plane` | the outward normal of the face | the area centroid of the face region |
+| `axis` | `cylinder`, `cone`, `torus` | the carrier axis, signed so that `z · direction > 0` | `P + t·z`, with `t` the minimum (`low`) or maximum (`high`) of `(q − P)·z` over the face region |
+| `centre` | `sphere` | `normalize(direction)` | the carrier position `P` |
+
+The class of a face is the class of its exact carrier, which `cadConnector:witness:surfaceClass` states.
+
+#### Witness
+
+The witness properties state the frame the producer evaluated. A connector authors all of them.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cadConnector:witness:surfaceClass` | uniform token | `plane`, `cylinder`, `cone`, `sphere`, `torus`, or `other` |
+| `cadConnector:witness:surfaceParams` | uniform `double[]` | cylinder and sphere `[radius]`; cone `[semiAngle]` in radians; torus `[majorRadius, minorRadius]`; plane and other `[]` |
+| `cadConnector:witness:point` | uniform point3d | a point on the face |
+| `cadConnector:witness:frame` | uniform matrix4d | `G`, before the offset |
+
+The `BrepArray` carrier of a face is the NURBS form of its exact carrier, so a reader takes `G` from `witness:frame`.
+
+#### Mates
+
+A mate type inherits `CadMate` and relates two connectors on different bodies through `rel cadMate:connector0` and `rel cadMate:connector1`.
+
+| Property | Type | Unauthored value | Meaning |
+| --- | --- | --- | --- |
+| `cadMate:flip` | uniform bool | `false` | negates the direction sign |
+| `cadMate:enabled` | uniform bool | `true` | the mate applies |
+| `cadMate:tolerance` | uniform double | `1e-6` | relative satisfaction tolerance |
+
+The direction sign `s` is `−1` when both connectors use `faceFrame`, and `+1` otherwise; `cadMate:flip = true` negates it. `F(s)` is the identity for `s = +1` and the half turn about `x` for `s = −1`. The mate holds when `C₁` coincides with `F(s) · C₀` up to the free motions of its type, in `C₀`:
+
+| Type | Free motions |
+| --- | --- |
+| `CadFastenedMate` | none |
+| `CadRevoluteMate` | rotation about `z` |
+| `CadSliderMate` | translation along `z` |
+| `CadCylindricalMate` | rotation about and translation along `z` |
+| `CadPlanarMate` | translation along `x` and `y`, rotation about `z` |
+| `CadBallMate` | rotation about `x`, `y`, and `z` |
+
+These mate types state a relation between the connector frames other than a coincidence up to free motions:
+
+| Type | Relation |
+| --- | --- |
+| `CadDistanceMate` | the connectors are `cadMate:distance` apart |
+| `CadParallelMate` | the `z` axes are parallel |
+| `CadPerpendicularMate` | the `z` axes are perpendicular |
+| `CadAngleMate` | the `z` axes make the angle `cadMate:angle` |
+| `CadConcentricMate` | the `z` axes span one line, in either sense |
+| `CadPointOnAxisMate` | the origin of `C₀` is `cadMate:distance` from the line that the `z` axis of `C₁` spans |
+| `CadInsertMate` | the `z` axes span one line, and the origins are `cadMate:offset` apart along `z₀`, with the direction sign of the mate |
+| `CadTangentMate` | the cylinder of the face of `C₀`, whose axis is `z₀`, touches the plane of `C₁` on the side that `cadMate:contact` (`outside` or `inside`) names |
+| `CadScrewMate` | rotation about and translation along `z` are coupled by the pitch `cadMate:distance` |
+| `CadGearMate` | the rotation of `C₁` is `cadMate:ratio` times the rotation of `C₀`, in magnitude |
+| `CadRackPinionMate` | the rotation of the pinion is `cadMate:ratio` degrees per length unit of rack translation, in magnitude |
+| `CadBeltMate` | two pulley rotations are coupled through a belt |
+| `CadNativeMate` | the source joint family that `cadMate:family` names |
+
+A mate states its values with these attributes, each authored only for the types that have the value:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cadMate:angle` | uniform double | the angular offset, in degrees |
+| `cadMate:distance`, `cadMate:distance2` | uniform double | the primary and secondary linear offsets, in the length unit of the stage |
+| `cadMate:offset` | uniform double | the signed separation of a planar or insert mate along `z₀` |
+| `cadMate:translationOffset` | uniform double3 | the connector-local translation offset of a fastened, slider, or native mate |
+| `cadMate:angularLimits`, `cadMate:linearLimits` | uniform double2 | the lower and upper bounds, in degrees and in length units; `NaN` is an open bound |
+| `cadMate:ratio` | uniform double | the coupling ratio of a gear or rack-and-pinion mate |
+| `cadMate:contact` | uniform token | `outside` or `inside`, for a tangent mate |
+| `cadMate:family` | uniform string | the source family name of a native mate |
+| `cadMate:coupledJoints` | uniform `string[]` | the CADIR identities of the joints that a gear or rack-and-pinion coupling acts on, in order |
+| `cadMate:drivingParameter` | uniform string | the CADIR identity of the design parameter that drives the mate |
+| `cadMate:attachmentOffset0`, `cadMate:attachmentOffset1` | uniform matrix4d | the attachment offset of each connector, as a row-vector matrix with its translation in the length unit of the stage; both or neither are authored |
+
+A mate prim and a `UsdPhysics` joint prim have `cad:id`, the CADIR identity of the joint. A mate prim holds the `UsdPhysics` joint of its family, where one exists; the drives of the mate are the `PhysicsDriveAPI` instances of that joint.
+
+`CadGroundMate` fixes the composed placement of the one target of `rel cadMate:grounded`, with `cadMate:enabled`.
+
+### 18.4 CadBrepToleranceAPI
+
+`CadBrepToleranceAPI` is a single-apply API schema of a `BrepArray` prim. It gives the tolerance of each face, edge, and vertex, in the length unit of the stage:
+
+| Attribute | Elements |
+| --- | --- |
+| `uniform double[] cad:face:tolerance` | one for each face |
+| `uniform double[] cad:edge:tolerance` | one for each edge |
+| `uniform double[] cad:vertex:tolerance` | one for each vertex |
+
+Element `i` is the tolerance of the entity at position `i` of its arrays (§17.1). `NaN` is the tolerance of its B-rep, `brep:intersectTol3d`. `brep:intersectTol3d` of a B-rep is at least each tolerance of its entities.
+
+### 18.5 CadBrepAnalyticAPI
+
+`CadBrepAnalyticAPI` is a single-apply API schema of a `BrepArray` prim. The `BrepArray` carrier of a face, edge, or edgeuse is the NURBS form of an exact carrier. This API holds the exact carriers in catalogs and selects one for each face, edge, and edgeuse. Lengths are in the length unit of the stage and angles in radians.
+
+#### Catalogs
+
+An analytic record has a frame: `position` `P`, `axis` `Z`, and `refDirection` `X`, with `Y = Z × X`. `Z` and `X` are orthogonal unit vectors. `paramCounts[i]` is the number of `params` of record `i`, in record order.
+
+| Catalog | Attributes |
+| --- | --- |
+| analytic surfaces | `cad:surface:analytic:` `type` (token), `position`, `axis`, `refDirection`, `paramCounts`, `params`, `profileType`, `profileIndex` |
+| analytic curves | `cad:curve3d:analytic:` `type`, `position`, `axis`, `refDirection`, `paramCounts`, `params` |
+| NURBS curves | `cad:curve3d:nurb:` `controlVertices`, `vertexCount`, `order`, `knots`, `weights`, `form` |
+| analytic pcurves | `cad:curveUv:analytic:` `type`, `position` (double2), `refDirection` (double2), `paramCounts`, `params`, `range` (double2) |
+| NURBS pcurves | `cad:curveUv:nurb:` `controlVertices` (double2), `vertexCount`, `order`, `knots`, `weights`, `form` |
+
+With `r(u) = cos u·X + sin u·Y`:
+
+| Surface `type` | `params` | `S(u, v)` |
+| --- | --- | --- |
+| `plane` | | `P + u·X + v·Y` |
+| `cylinder` | `R` | `P + R·r(u) + v·Z` |
+| `cone` | `R, α` | `P + (R + v tan α)·r(u) + v·Z`, with `v` the axial distance |
+| `sphere` | `R` | `P + R(cos v·r(u) + sin v·Z)` |
+| `torus` | `R₁, R₂` | `P + (R₁ + R₂ cos v)·r(u) + R₂ sin v·Z` |
+| `extrusion` | | `C(u) + v·Z`, with `C` the profile curve |
+| `revolution` | | `P + Rot(Z, u)·(C(v) − P)`, with `C` the profile curve |
+
+`profileType` is `analytic`, `nurbs`, or `none`, and `profileIndex` is the index of the profile curve in that catalog, or `-1`.
+
+| Curve `type` | `params` | `C(t)` |
+| --- | --- | --- |
+| `line` | | `P + t·Z` |
+| `circle` | `R` | `P + R(cos t·X + sin t·Y)` |
+| `ellipse` | `a, b` | `P + a cos t·X + b sin t·Y` |
+| `parabola` | `f` | `P + f t²·X + 2f t·Y` |
+| `hyperbola` | `a, b` | `P + a cosh t·X + b sinh t·Y` |
+
+With `perp((x, y)) = (−y, x)`, an analytic pcurve is a `circle` with `params` `R`, `c(t) = P + R(cos t·X + sin t·perp(X))`, or an `ellipse` with `params` `a, b`, `c(t) = P + a cos t·X + b sin t·perp(X)`. `range` is `(t0, t1)`, traversed from `t0` to `t1`. The NURBS catalogs have the form of the `BrepArray` NURBS arrays (§17); `form` is `open`, `closed`, or `periodic` for each curve.
+
+#### Selection
+
+| Attribute | Elements | Meaning |
+| --- | --- | --- |
+| `cad:face:surfaceType`, `cad:face:surfaceIndex` | one for each face | `brep`, or `analytic` and its index |
+| `cad:edge:curveType`, `cad:edge:curveIndex` | one for each edge | `brep`, or `analytic` or `nurbs` and its index |
+| `uniform double2[] cad:edge:range` | one for each edge | the parameter range of the exact curve |
+| `uniform token[] cad:edge:sense` | one for each edge | `same` when the exact curve runs from the first vertex of `edge:vertexIndices` to the second, else `opposite` |
+| `uniform token[] cad:loop:direction` | one for each loop | `same`, `reversed`, or `absent` |
+| `cad:edgeuse:pcurveType`, `cad:edgeuse:pcurveIndex` | one for each edgeuse | `brep`, `none`, or `analytic` or `nurbs` and its index |
+
+A type token `brep` selects the `BrepArray` carrier of the entity, with index `-1`. A pcurve type `none` selects no pcurve. An exact pcurve is in the parameters of the exact surface of its face, in the direction of the exact oriented edge.
+
+A loop with direction `reversed` runs against its exact loop: the exact loop has its edgeuses in the opposite order, each with the opposite orientation. A loop with direction `absent` bounds the surface domain of a face whose exact form has no loop; the exact face does not hold it, nor its edgeuses, nor the edges and vertices that only it reaches.
+
+### 18.6 CadParameter
+
+A `CadParameter` prim states one design parameter. A writer puts the parameters in a `Parameters` scope. A reader reads each `CadParameter` prim of the stage.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:parameter:name` | uniform string | the source name; unauthored, the prim name |
+| `cad:parameter:expression` | uniform string | the literal or expression text of the source |
+| `cad:parameter:ordinal` | uniform uint | the position among the parameters of one owner |
+| `cad:parameter:length` | uniform double | a length value, in the length unit of the stage |
+| `cad:parameter:angle` | uniform double | an angle value, in degrees |
+| `cad:parameter:real` | uniform double | a dimensionless value |
+| `cad:parameter:integer` | uniform int64 | an integer value |
+| `cad:parameter:boolean` | uniform bool | a boolean value |
+| `cad:parameter:string` | uniform string | a text value |
+| `cad:parameter:display` | uniform token | `diameter` or `radius` |
+| `cad:parameter:dependencies` | rel | the `CadParameter` prims that the expression names, in expression order |
+| `cad:parameter:definition` | rel | one target, a prim of the product definition whose frame holds the parameter |
+| `cad:parameter:owner` | rel | one target, the `CadFeature` prim of the feature that consumes the parameter (§18.7) |
+| `cad:parameter:propertyNames`, `cad:parameter:propertyValues` | uniform `string[]` | source properties, as parallel arrays |
+
+A parameter has at most one value attribute; with none, the parameter has no evaluated value. A sketch dimension constraint names the parameter that it states with `rel sketch:constraint:parameter` (§18.2). Its `sketch:constraint:value` is the value of that parameter.
+
+### 18.7 CadFeature
+
+A `CadFeature` prim states one construction feature. A writer puts the features in a `Features` scope, in feature order. A reader reads each `CadFeature` prim of the stage, in stage order.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the feature |
+| `cad:feature:name` | uniform string | the source display name |
+| `cad:feature:ordinal` | uniform uint64 | the construction order in the source history |
+| `cad:feature:suppressed` | uniform bool | the evaluation is disabled; unauthored, the source states no value |
+| `cad:feature:operation` | uniform token | the definition tag of the CADIR feature definition, for example `extrude` |
+| `cad:feature:dependencies` | rel | the `CadFeature` prims that regeneration consumes, in source operand order |
+| `cad:feature:regenerationParent` | rel | one target, the regeneration predecessor of a feature that no tree node holds |
+| `cad:feature:definition` | rel | one target, a prim of the product definition whose frame holds the feature |
+| `cad:feature:outputs` | uniform `string[]` | the CADIR identities of the bodies that the evaluation produces |
+| `cad:feature:propertyNames`, `cad:feature:propertyValues` | uniform `string[]` | source operation attributes, as parallel arrays |
+| `cad:feature:payload` | uniform string | a JSON object: the CADIR wire form of the feature without the fields above |
+| `cad:feature:inputTopologies` | uniform string | a JSON array of the CADIR feature input topologies of the feature |
+| `cad:feature:resultTopologies` | uniform string | a JSON array of the CADIR feature result topologies of the feature |
+
+The payload holds `definition`, and, when the source states them, `source_tag`, `source_text`, and `source_content`, in the wire form of the CADIR version of the writer. Identities in the payload are CADIR identities, which `cad:id` and `CadBrepIdentityAPI` (§18.1) keep through a stage.
+
+A feature of a typed family has the prim type of the family, which inherits `CadFeature`, and states the leaves of its definition in the table below as attributes instead of in the payload. The attribute name is the namespace of the family and the path of the leaf in the CADIR wire form of the definition, each segment in camel case: the leaf `extent.side.termination.length` of an extrude is `cad:extrude:extent:side:termination:length`. A token or text leaf is a `token` or `string`; a length is a `double` in the length unit of the stage; an angle is a `double` in degrees; a count is a `uint64`; a flag is a `bool`; a direction is a `vector3d`, and a position a `point3d` in the length unit of the stage; a list of identities, such as the faces of a shell, is a `string[]`. A leaf that names features is a relationship to their `CadFeature` prims. A leaf in each element of an array, such as the radius of each fillet group, is an array attribute with one element for each array element: an empty token or `NaN` where the element has no such leaf. For a post-processed operation, the paths are in the operation. A leaf that does not have the form of its row stays in the payload.
+
+| Prim type | Namespace | Definition tag | Typed leaves |
+| --- | --- | --- | --- |
+| `CadTreeNodeFeature` | `cad:treeNode` | `tree_node` | `role`; `children.active_child` and `children.children`, as relationships to `CadFeature` prims |
+| `CadSketchFeature` | `cad:sketchFeature` | `sketch` | `sketch.sketch`, `sketch.space` |
+| `CadExtrudeFeature` | `cad:extrude` | `extrude` | `op`; `direction.kind`, `direction.vector`, `direction.source.kind`; `start.kind`, `start.offset`; `extent.kind`; for `side`, `first`, and `second`: `termination.kind`, `termination.length`, `draft`; `profile.kind`, `profile.value`; `solid`, `inner_wire_taper`, `length_along_profile_normal`, `allow_multi_profile_faces` |
+| `CadRevolveFeature` | `cad:revolve` | `revolve` | `op`; `construction.state`; `construction.axis.origin`, `construction.axis.direction`; `construction.extent.kind`; for `termination`, `first`, and `second`: `kind`, `angle`; `construction.profile.kind`, `construction.profile.value`; `construction.solid`, `construction.allow_multi_profile_faces` |
+| `CadFilletFeature` | `cad:fillet` | `fillet` | for each group: `radius.kind`, `radius.radius`, `radius.chord_length` |
+| `CadChamferFeature` | `cad:chamfer` | `chamfer` | `flip_direction`; for each group: `spec.kind`, `spec.distance`, `spec.first`, `spec.second`, `spec.angle` |
+| `CadPatternFeature` | `cad:pattern` | `pattern` | for each seed: `kind`, `value`; `pattern.kind`, `pattern.count`, `pattern.spacing`, `pattern.direction`, `pattern.axis_origin`, `pattern.axis_dir`, `pattern.angle` |
+| `CadHoleFeature` | `cad:hole` | `hole` | `profile.kind`, `profile.value`, `profile_filter`, `direction`; `extent.kind`, `extent.length`; `bottom.kind`, `bottom.included_angle`, `bottom.depth_to_tip`; `shape.diameter`; `shape.construction.construction`; `shape.construction.kind.kind`, `.angle`, `.diameter`, `.depth`; `allow_multi_profile_faces` |
+| `CadShellFeature` | `cad:shell` | `shell` | `thickness`, `join`, `mode`, `outward`, `allow_self_intersections`, `resolve_intersections`; `removed_faces.kind`, `removed_faces.value.faces`, `removed_faces.value.native` |
+| `CadDraftFeature` | `cad:draft` | `draft` | `angle`, `outward`; `faces.kind`, `faces.value.faces`, `faces.value.native`; `anchor.kind`, `anchor.pull.direction`, `anchor.plane.kind`, `anchor.plane.value` |
+| `CadMirrorFeature` | `cad:mirror` | `mirror_shape` | `plane_normal`, `plane_origin`; `source.kind`, `source.value` |
+| `CadCombineFeature` | `cad:combine` | `combine` | `op`; `operands.target.kind`, `.value`; `operands.tools.kind`, `.value` |
+| `CadPrimitiveFeature` | `cad:primitive` | `primitive` | `op`; `solid.kind`, `solid.length`, `solid.width`, `solid.height`, `solid.radius`, `solid.radius1`, `solid.radius2`, `solid.angle` |
+| `CadDatumPlaneFeature` | `cad:datumPlane` | `datum_plane` | `frame.origin`, `frame.normal`, `frame.u_axis` |
+| `CadDatumAxisFeature` | `cad:datumAxis` | `datum_axis` | `origin`, `direction` |
+| `CadDatumPointFeature` | `cad:datumPoint` | `datum_point` | `position` |
+| `CadDatumFrameFeature` | `cad:datumFrame` | `datum_coordinate_system` | `frame.origin`, `frame.x_axis`, `frame.y_axis`, `frame.z_axis` |
+
+A reader gives a feature the typed properties over the payload, and sets each typed leaf into the definition before it reads it. A reader does not add a feature whose payload does not deserialize, or that names a feature that it does not add: a dependency, the regeneration predecessor, or an identity in the payload. A `CadParameter` names the feature that owns it with `rel cad:parameter:owner` (§18.6).
+
+### 18.8 CadConfiguration
+
+A `CadConfiguration` prim states one design configuration. A writer puts the configurations in a `Configurations` scope, in configuration order. A reader reads each `CadConfiguration` prim of the stage, in stage order, after the features and parameters.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the configuration |
+| `cad:configuration:ordinal` | uniform uint | the position in the configuration list |
+| `cad:configuration:active` | uniform bool | the configuration supplies the active model state; unauthored, `false` |
+| `cad:configuration:sourceIndex` | uniform uint | the source configuration slot, when it differs from list order |
+| `cad:configuration:name` | uniform string | the source display name |
+| `cad:configuration:material` | uniform string | the material override |
+| `cad:configuration:propertyNames`, `cad:configuration:propertyValues` | uniform `string[]` | configuration-local named values, as parallel arrays |
+| `cad:configuration:payload` | uniform string | a JSON object: the CADIR wire form of the configuration without the fields above |
+
+The payload holds the parameter overrides, the bodies present, the evaluated parameter values, and the evaluated state of each feature, when the source states them. A reader does not add a configuration whose payload does not deserialize, or that names a feature or parameter that it does not add. It drops a body that the stage does not hold from the bodies present.
+
+### 18.9 CadPmi
+
+A `CadPmi` prim states one product-manufacturing information annotation. A writer puts the annotations in a `Pmi` scope. A reader reads each `CadPmi` prim of the stage, in stage order.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the annotation |
+| `cad:pmi:name` | uniform string | the source name |
+| `cad:pmi:visible` | uniform bool | the source shows the annotation; unauthored, the source states no value |
+| `cad:pmi:kind` | uniform token | the kind tag of the CADIR PMI definition, for example `datum` or `geometric_tolerance` |
+| `cad:pmi:payload` | uniform string | a JSON object: the CADIR wire form of the annotation without the fields above |
+
+The payload holds the targets and the definition. A target names a body, face, edge, vertex, point, curve, product definition, or occurrence by its CADIR identity, or a shape aspect by its source identity. A reader drops a target whose record the stage does not hold.
+
+### 18.10 CadLayer
+
+A `CadLayer` prim states one presentation layer. A writer puts the layers in a `Presentation` scope.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the layer |
+| `cad:layer:name` | uniform string | the layer name; unauthored, the prim name |
+| `cad:layer:description` | uniform string | the layer description |
+| `cad:layer:visible` | uniform bool | the layer is shown; unauthored, the source states no value |
+| `cad:layer:items` | uniform string | a JSON array of the CADIR presentation items of the layer |
+
+An item names a body, face, edge, vertex, point, curve, surface, product definition, occurrence, PMI annotation, or tessellation by its CADIR identity, or a source item by its source identity. A reader drops an item whose record the stage does not hold. A layer with occurrence or product definition items also applies `CollectionAPI:members`, whose `includes` are the prims of those items.
+
+### 18.11 CadAttributes
+
+One `CadAttributes` prim states the source attributes of the stage, as parallel arrays:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:attribute:ids` | uniform `string[]` | the CADIR identity of each attribute |
+| `cad:attribute:targets` | uniform `string[]` | a JSON object for each attribute: the CADIR attribute target, the document or a body, face, shell, loop, coedge, edge, or vertex |
+| `cad:attribute:names` | uniform `string[]` | the source attribute name |
+| `cad:attribute:values` | uniform `string[]` | a JSON array for each attribute: its typed values |
+
+A reader drops an attribute whose target record the stage does not hold.

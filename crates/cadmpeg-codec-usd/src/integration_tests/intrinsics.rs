@@ -102,3 +102,51 @@ fn a_capsule_with_unequal_radii_is_reported() {
         .iter()
         .any(|loss| loss.message.contains("unequal radii")));
 }
+
+/// The carrier kind of each face and edge of `model`, and the number of
+/// pcurves of each coedge, by entity identity.
+fn carriers(model: &cadmpeg_ir::document::Model) -> Vec<(String, String)> {
+    let json = serde_json::to_value(model).expect("a model serializes");
+    let kinds = |arena: &str| -> std::collections::BTreeMap<String, String> {
+        json[arena]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|record| {
+                (
+                    record["id"].to_string(),
+                    record["geometry"]["kind"].to_string(),
+                )
+            })
+            .collect()
+    };
+    let (surfaces, curves) = (kinds("surfaces"), kinds("curves"));
+    let mut out: Vec<(String, String)> = Vec::new();
+    let records = |arena: &str| json[arena].as_array().cloned().unwrap_or_default();
+    for face in records("faces") {
+        let kind = surfaces.get(&face["surface"].to_string()).cloned();
+        out.push((face["id"].to_string(), kind.unwrap_or_default()));
+    }
+    for edge in records("edges") {
+        let kind = curves.get(&edge["carrier"]["curve"].to_string()).cloned();
+        out.push((edge["id"].to_string(), kind.unwrap_or_default()));
+    }
+    for coedge in records("coedges") {
+        let pcurves = coedge["pcurves"].as_array().map_or(0, Vec::len);
+        out.push((coedge["id"].to_string(), pcurves.to_string()));
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn analytic_carriers_survive_a_write() {
+    let first = decode(&fixture());
+    let (text, _) = crate::test_support::encode(first.ir());
+    assert!(text.contains("CadBrepAnalyticAPI"), "{text}");
+    let second = decode(&text);
+    let (before, after) = (&first.ir().model, &second.ir().model);
+    assert_eq!(carriers(before), carriers(after));
+    let loops = |model: &cadmpeg_ir::document::Model| model.loops.len();
+    assert_eq!(loops(before), loops(after));
+}

@@ -1,0 +1,170 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# cadBrep schema: CADIR extensions of the preliminary UsdSolid BrepArray.
+# Codeless; cadmpeg reads and writes it (docs/formats/usd.md §18).
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadBrep"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+class "CadBrepIdentityAPI" (
+    inherits = </APISchemaBase>
+    doc = """The CADIR identity of each B-rep, face, edge, and vertex of a BrepArray, and
+             the name of each B-rep and face. Element i names the entity at position i of
+             its BrepArray arrays. An empty string is no identity or no name. An identity
+             has the CADIR grammar <format>:<scope>:<kind>#<key> and occurs once in a
+             stage."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform string[] cad:brep:id (
+        doc = """One for each B-rep."""
+    )
+    uniform string[] cad:face:id (
+        doc = """One for each face."""
+    )
+    uniform string[] cad:edge:id (
+        doc = """One for each edge."""
+    )
+    uniform string[] cad:vertex:id (
+        doc = """One for each vertex."""
+    )
+    uniform string[] cad:brep:name (
+        doc = """The name of each B-rep."""
+    )
+    uniform string[] cad:face:name (
+        doc = """The name of each face."""
+    )
+}
+
+class "CadBrepToleranceAPI" (
+    inherits = </APISchemaBase>
+    doc = """The tolerance of each face, edge, and vertex of a BrepArray, in the length
+             unit of the stage. Element i is the tolerance of the entity at position i of
+             its BrepArray arrays. NaN is the tolerance of its B-rep (brep:intersectTol3d).
+             brep:intersectTol3d is at least each tolerance of its entities."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform double[] cad:face:tolerance (
+        doc = """One for each face."""
+    )
+    uniform double[] cad:edge:tolerance (
+        doc = """One for each edge."""
+    )
+    uniform double[] cad:vertex:tolerance (
+        doc = """One for each vertex."""
+    )
+}
+
+class "CadBrepAnalyticAPI" (
+    inherits = </APISchemaBase>
+    doc = """The exact carriers of the faces, edges, and edgeuses of a BrepArray, whose
+             BrepArray carriers are their NURBS forms (docs/formats/usd.md §18.5). The
+             catalogs hold analytic surfaces, analytic and NURBS curves, and analytic and
+             NURBS pcurves. A type token 'brep' selects the BrepArray carrier of the
+             entity, with index -1."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform token[] cad:surface:analytic:type (
+        allowedTokens = ["plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution"]
+    )
+    uniform point3d[] cad:surface:analytic:position
+    uniform vector3d[] cad:surface:analytic:axis
+    uniform vector3d[] cad:surface:analytic:refDirection
+    uniform int[] cad:surface:analytic:paramCounts
+    uniform double[] cad:surface:analytic:params
+    uniform token[] cad:surface:analytic:profileType (
+        allowedTokens = ["none", "analytic", "nurbs"]
+    )
+    uniform int[] cad:surface:analytic:profileIndex
+
+    uniform token[] cad:curve3d:analytic:type (
+        allowedTokens = ["line", "circle", "ellipse", "parabola", "hyperbola"]
+    )
+    uniform point3d[] cad:curve3d:analytic:position
+    uniform vector3d[] cad:curve3d:analytic:axis
+    uniform vector3d[] cad:curve3d:analytic:refDirection
+    uniform int[] cad:curve3d:analytic:paramCounts
+    uniform double[] cad:curve3d:analytic:params
+
+    uniform point3d[] cad:curve3d:nurb:controlVertices
+    uniform uint[] cad:curve3d:nurb:vertexCount
+    uniform uint[] cad:curve3d:nurb:order
+    uniform double[] cad:curve3d:nurb:knots
+    uniform double[] cad:curve3d:nurb:weights
+    uniform token[] cad:curve3d:nurb:form (
+        allowedTokens = ["open", "closed", "periodic"]
+    )
+
+    uniform token[] cad:curveUv:analytic:type (
+        allowedTokens = ["circle", "ellipse"]
+    )
+    uniform double2[] cad:curveUv:analytic:position
+    uniform double2[] cad:curveUv:analytic:refDirection
+    uniform int[] cad:curveUv:analytic:paramCounts
+    uniform double[] cad:curveUv:analytic:params
+    uniform double2[] cad:curveUv:analytic:range
+
+    uniform double2[] cad:curveUv:nurb:controlVertices
+    uniform uint[] cad:curveUv:nurb:vertexCount
+    uniform uint[] cad:curveUv:nurb:order
+    uniform double[] cad:curveUv:nurb:knots
+    uniform double[] cad:curveUv:nurb:weights
+    uniform token[] cad:curveUv:nurb:form (
+        allowedTokens = ["open", "closed", "periodic"]
+    )
+
+    uniform token[] cad:face:surfaceType (
+        allowedTokens = ["brep", "analytic"]
+        doc = """One for each face."""
+    )
+    uniform int[] cad:face:surfaceIndex
+    uniform token[] cad:edge:curveType (
+        allowedTokens = ["brep", "analytic", "nurbs"]
+        doc = """One for each edge."""
+    )
+    uniform int[] cad:edge:curveIndex
+    uniform double2[] cad:edge:range (
+        doc = """The parameter range of the exact curve of each edge."""
+    )
+    uniform token[] cad:edge:sense (
+        allowedTokens = ["same", "opposite"]
+        doc = """'same' when the exact curve runs from the first vertex of
+                 edge:vertexIndices to the second."""
+    )
+    uniform token[] cad:loop:direction (
+        allowedTokens = ["same", "reversed", "absent"]
+        doc = """How each loop runs against its exact loop. 'absent' marks a loop that bounds
+                 the surface domain of a face with no exact loop."""
+    )
+    uniform token[] cad:edgeuse:pcurveType (
+        allowedTokens = ["brep", "none", "analytic", "nurbs"]
+        doc = """One for each edgeuse."""
+    )
+    uniform int[] cad:edgeuse:pcurveIndex
+}

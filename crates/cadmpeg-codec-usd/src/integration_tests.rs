@@ -274,10 +274,17 @@ fn the_encoder_targets_each_usda_version_a_package_and_a_crate_layer() {
     );
 }
 
+mod features;
+mod identities;
 mod intrinsics;
 mod layers;
 mod losses;
+mod mates;
+mod parameters;
 mod physics;
+mod pmi;
+mod presentation;
+mod sketches;
 mod subsets;
 mod textures;
 mod usdc;

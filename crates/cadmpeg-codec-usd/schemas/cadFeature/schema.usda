@@ -1,0 +1,305 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# cadFeature schema: construction features.
+# Codeless; cadmpeg reads and writes it (docs/formats/usd.md §18.7). The typed
+# properties state what every feature has; cad:feature:payload holds the
+# operation in the CADIR wire form until typed operation schemas replace it.
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadFeature"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+class CadFeature "CadFeature" (
+    inherits = </Typed>
+    doc = """One construction feature of a source history."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the feature."""
+    )
+    uniform string cad:feature:name (
+        doc = """The source display name."""
+    )
+    uniform uint64 cad:feature:ordinal = 0 (
+        doc = """The construction order in the source history."""
+    )
+    uniform bool cad:feature:suppressed (
+        doc = """The evaluation is disabled. Unauthored, the source states no value."""
+    )
+    uniform token cad:feature:operation (
+        doc = """The definition tag of the CADIR feature definition, for example 'extrude'."""
+    )
+    rel cad:feature:dependencies (
+        doc = """The CadFeature prims that regeneration consumes, in source operand order."""
+    )
+    rel cad:feature:regenerationParent (
+        doc = """One target, the regeneration predecessor of a feature that no tree node
+                 holds."""
+    )
+    rel cad:feature:definition (
+        doc = """One target, a prim of the product definition whose frame holds the
+                 feature."""
+    )
+    uniform string[] cad:feature:outputs (
+        doc = """The CADIR identities of the bodies that the evaluation produces."""
+    )
+    uniform string[] cad:feature:propertyNames (
+        doc = """The names of the source operation attributes."""
+    )
+    uniform string[] cad:feature:propertyValues (
+        doc = """The values of the source operation attributes, parallel to propertyNames."""
+    )
+    uniform string cad:feature:payload (
+        doc = """A JSON object: the CADIR wire form of the feature without the typed
+                 properties."""
+    )
+    uniform string cad:feature:inputTopologies (
+        doc = """A JSON array of the CADIR feature input topologies of the feature."""
+    )
+    uniform string cad:feature:resultTopologies (
+        doc = """A JSON array of the CADIR feature result topologies of the feature."""
+    )
+}
+
+class CadExtrudeFeature "CadExtrudeFeature" (
+    inherits = </CadFeature>
+    doc = """An extrude feature; typed leaves under cad:extrude (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadRevolveFeature "CadRevolveFeature" (
+    inherits = </CadFeature>
+    doc = """A revolve feature; typed leaves under cad:revolve."""
+)
+{
+}
+
+class CadFilletFeature "CadFilletFeature" (
+    inherits = </CadFeature>
+    doc = """A fillet feature; typed leaves under cad:fillet, one array element per group."""
+)
+{
+}
+
+class CadChamferFeature "CadChamferFeature" (
+    inherits = </CadFeature>
+    doc = """A chamfer feature; typed leaves under cad:chamfer, one array element per group."""
+)
+{
+}
+
+class CadPatternFeature "CadPatternFeature" (
+    inherits = </CadFeature>
+    doc = """A pattern feature; typed leaves under cad:pattern."""
+)
+{
+}
+
+class CadHoleFeature "CadHoleFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:hole (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadShellFeature "CadShellFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:shell (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDraftFeature "CadDraftFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:draft (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadMirrorFeature "CadMirrorFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:mirror (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadCombineFeature "CadCombineFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:combine (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadPrimitiveFeature "CadPrimitiveFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:primitive (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumPlaneFeature "CadDatumPlaneFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumPlane (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumAxisFeature "CadDatumAxisFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumAxis (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumPointFeature "CadDatumPointFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumPoint (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumFrameFeature "CadDatumFrameFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumFrame (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadTreeNodeFeature "CadTreeNodeFeature" (
+    inherits = </CadFeature>
+    doc = """A tree node; typed leaves under cad:treeNode, with its children as
+             relationships to CadFeature prims (docs/formats/usd.md §18.7)."""
+)
+{
+    rel cad:treeNode:children:activeChild (
+        doc = """One target, the active child feature."""
+    )
+    rel cad:treeNode:children:children (
+        doc = """The child features, in order."""
+    )
+}
+
+class CadSketchFeature "CadSketchFeature" (
+    inherits = </CadFeature>
+    doc = """A sketch feature; typed leaves under cad:sketchFeature."""
+)
+{
+}
+
+class CadConfiguration "CadConfiguration" (
+    inherits = </Typed>
+    doc = """One design configuration: a named variant of the parametric model
+             (docs/formats/usd.md §18.8)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the configuration."""
+    )
+    uniform uint cad:configuration:ordinal = 0 (
+        doc = """The position in the configuration list."""
+    )
+    uniform bool cad:configuration:active = false (
+        doc = """The configuration supplies the active model state."""
+    )
+    uniform uint cad:configuration:sourceIndex (
+        doc = """The source configuration slot, when it differs from list order."""
+    )
+    uniform string cad:configuration:name (
+        doc = """The source display name."""
+    )
+    uniform string cad:configuration:material (
+        doc = """The material override."""
+    )
+    uniform string[] cad:configuration:propertyNames (
+        doc = """The names of the configuration-local values."""
+    )
+    uniform string[] cad:configuration:propertyValues (
+        doc = """The configuration-local values, parallel to propertyNames."""
+    )
+    uniform string cad:configuration:payload (
+        doc = """A JSON object: the CADIR wire form of the configuration without the
+                 typed properties: parameter overrides, bodies present, evaluated
+                 parameter values, and the evaluated state of each feature."""
+    )
+}
+
+class CadPmi "CadPmi" (
+    inherits = </Typed>
+    doc = """One product-manufacturing information annotation (docs/formats/usd.md §18.9)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the annotation."""
+    )
+    uniform string cad:pmi:name (
+        doc = """The source name."""
+    )
+    uniform bool cad:pmi:visible (
+        doc = """The source shows the annotation. Unauthored, the source states no value."""
+    )
+    uniform token cad:pmi:kind (
+        doc = """The kind tag of the CADIR PMI definition, for example 'datum'."""
+    )
+    uniform string cad:pmi:payload (
+        doc = """A JSON object: the CADIR wire form of the annotation without the typed
+                 properties: its targets and definition."""
+    )
+}
+
+class CadLayer "CadLayer" (
+    inherits = </Typed>
+    doc = """One presentation layer (docs/formats/usd.md §18.10). A layer with occurrence
+             or product definition items also applies CollectionAPI:members."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the layer."""
+    )
+    uniform string cad:layer:name (
+        doc = """The layer name. Unauthored, the prim name."""
+    )
+    uniform string cad:layer:description (
+        doc = """The layer description."""
+    )
+    uniform bool cad:layer:visible (
+        doc = """The layer is shown. Unauthored, the source states no value."""
+    )
+    uniform string cad:layer:items (
+        doc = """A JSON array of the CADIR presentation items of the layer."""
+    )
+}
+
+class CadAttributes "CadAttributes" (
+    inherits = </Typed>
+    doc = """The source attributes of the stage, as parallel arrays
+             (docs/formats/usd.md §18.11)."""
+)
+{
+    uniform string[] cad:attribute:ids (
+        doc = """The CADIR identity of each attribute."""
+    )
+    uniform string[] cad:attribute:targets (
+        doc = """A JSON object for each attribute: its CADIR attribute target."""
+    )
+    uniform string[] cad:attribute:names (
+        doc = """The source attribute name of each attribute."""
+    )
+    uniform string[] cad:attribute:values (
+        doc = """A JSON array for each attribute: its typed values."""
+    )
+}
