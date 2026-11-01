@@ -29,7 +29,7 @@ pub struct ExactReadSpan {
     /// use zero.
     pub tag: u8,
     /// Source record id (stream-local attribute id).
-    pub record: u16,
+    pub record: u32,
     /// SHA-256 of the exact span bytes.
     pub sha256: [u8; 32],
 }
