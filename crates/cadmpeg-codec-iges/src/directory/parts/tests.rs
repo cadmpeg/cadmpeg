@@ -57,7 +57,7 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
     let expected = directory::parse(&scan, table, &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = parse(&scan, table, &ctx, &mut output)
         .expect("the part callbacks parse the directory section")
         .entries;
@@ -84,7 +84,7 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
         .expect("the global section parses")
         .0
         .global_table();
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let parsed = parse(&scan, table, &ctx, &mut output)
         .expect("a damaged entry does not refuse the directory section");
     assert_eq!(parsed.given_up, [3]);
@@ -147,7 +147,7 @@ fn a_trailing_single_directory_card_uses_its_actual_known_extent() {
         .expect("the global section parses")
         .0
         .global_table();
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     assert_eq!(
         parse(&scan, table, &ctx, &mut output)
             .expect("a trailing single card does not refuse the directory section")
@@ -195,7 +195,7 @@ fn detached_scans_and_session_entity_refusals_do_not_become_fabricated_parts() {
         .expect("the global section parses")
         .0
         .global_table();
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let error = parse(&scan, table, &ctx, &mut output)
         .expect_err("a zero session entity limit refuses the directory section");
     assert!(

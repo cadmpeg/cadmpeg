@@ -228,7 +228,8 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         )));
     }
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
-    let Some(expected) = fidelity.and_then(|fidelity| fidelity.decode_digest.as_ref()) else {
+    let expected = fidelity.map(|fidelity| &fidelity.decode_digest);
+    let Some(expected) = expected else {
         return Ok(Replay::declined_for_record(
             record,
             "preserved IGES source carries no decode digest baseline; byte replay skipped"

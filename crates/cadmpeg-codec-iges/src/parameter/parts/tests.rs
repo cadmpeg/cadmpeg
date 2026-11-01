@@ -41,7 +41,7 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
         .0;
     let expected = crate::parameter::assemble(&scan, &directory, [], &global)
         .expect("the partless parameter assembly succeeds");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("the part callbacks assemble the parameter section");
     assert_eq!(actual.records, expected.records);
@@ -81,7 +81,7 @@ fn failed_parameter_record_has_one_exact_shared_home_and_preserves_successful_pe
         .0;
     let expected = crate::parameter::assemble(&scan, &directory, [], &global)
         .expect("the partless parameter assembly keeps the peer");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("a mismatched entity type does not refuse the parameter section");
     assert_eq!(actual.records, expected.records);
@@ -150,7 +150,7 @@ fn cross_card_hollerith_token_reads_actual_composite_payload_without_headers_or_
         .0;
     let expected = crate::parameter::assemble(&scan, &directory, [], &global)
         .expect("the partless parameter assembly succeeds");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("the part callbacks assemble the parameter section");
     assert_eq!(actual.records, expected.records);
@@ -178,7 +178,7 @@ fn bounded_macro_record_uses_real_callback_without_invented_child_or_content_rea
         .0;
     let expected = crate::parameter::assemble(&scan, &directory, [], &global)
         .expect("the partless parameter assembly succeeds");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("the part callbacks assemble the macro record");
     assert_eq!(actual.records, expected.records);
@@ -203,7 +203,7 @@ fn missing_parameter_bytes_never_acquire_a_fabricated_source_part() {
         .0;
     let expected = crate::parameter::assemble(&scan, &directory, [], &global)
         .expect("the partless parameter assembly keeps the peer");
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("missing parameter bytes do not refuse the parameter section");
     assert_eq!(actual.records, expected.records);
@@ -228,7 +228,7 @@ fn detached_scan_and_session_budget_refusal_create_no_parameter_failure_home() {
     let directory = crate::directory::parse(&detached, global.global_table(), &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     assert!(assemble(&detached, &directory, [], &global, &ctx, &mut output).is_err());
     let scan = card::scan_source(root).expect("the fixture scans into cards");
     ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
@@ -290,7 +290,7 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("conflicted records do not refuse the parameter section");
     assert_eq!(actual.given_up, std::collections::BTreeSet::from([1, 3]));
@@ -349,7 +349,7 @@ fn unreadable_point_coordinates_give_up_the_actual_part_and_keep_the_semantic_pe
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let records = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("an unreadable coordinate does not refuse the parameter section");
     assert!(records.given_up.is_empty());
@@ -419,7 +419,7 @@ fn failed_coordinate_field_discards_only_its_actual_composite_and_parent_reads()
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let records = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("an unreadable coordinate does not refuse the parameter section");
     assert!(records.given_up.is_empty());
@@ -472,7 +472,7 @@ fn cross_card_numeric_failure_rolls_back_reads_in_each_actual_source_segment() {
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("the directory section parses")
         .0;
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("a cross-card numeric failure does not refuse the parameter section");
     assert_eq!(actual.records.len(), 2);

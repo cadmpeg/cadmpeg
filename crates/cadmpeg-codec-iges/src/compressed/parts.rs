@@ -70,7 +70,7 @@ pub(crate) fn normalize(
         .skip(data_begin)
         .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at))
         .ok_or_else(|| malformed("Terminate section is missing"))?;
-    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx);
     let mut global_cards = Vec::new();
     for line in &lines[global_begin..data_begin] {
         if line.payload.window().len() != CARD_WIDTH {

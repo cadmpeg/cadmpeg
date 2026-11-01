@@ -47,7 +47,7 @@ fn inherit(
 /// admits byte replay. Under the catalog default this file would have been
 /// silently rewritten as 5.3.
 #[test]
-fn inherit_replays_a_non_default_version_verbatim() {
+fn inherit_synthesizes_a_non_default_version_without_replay() {
     let source = point_file_at_version_flag(9);
     let decoded = EditableDecodeResult::from(
         IgesCodec
@@ -59,7 +59,7 @@ fn inherit_replays_a_non_default_version_verbatim() {
 
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::VerbatimReplay { .. }
+        WritePath::Synthesized { .. }
     ));
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -75,11 +75,23 @@ fn inherit_replays_a_non_default_version_verbatim() {
             plan.report().write_path(),
             "fidelity"
         ),
-        FidelityResolution::Replayed {}
+        FidelityResolution::Degraded { .. }
     ));
     let mut written = Vec::new();
-    plan.write_to(&mut written).expect("replay writes");
-    assert_eq!(written, source);
+    plan.write_to(&mut written).expect("synthesis writes");
+    let redecoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("synthesized output decodes");
+    assert_eq!(
+        redecoded
+            .report()
+            .dialects()
+            .expect("synthesized output classifies a host dialect")
+            .primary()
+            .dialect()
+            .as_str(),
+        "iges:5.1-fixed-ascii"
+    );
 }
 
 /// With no retained image there is nothing to preserve, so `Inherit` falls to
