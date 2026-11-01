@@ -146,14 +146,14 @@ pub(super) fn decode(
                 validation_points.insert(item_id);
             }
             let scale = geometry.units.length([item_id, representation_id]).get();
-            let quantity = stated(item_id, item, exchange, &mut losses)
-                .map(|stated| scaled(stated, item_id, item, exchange, scale, &mut losses, ctx))
-                .transpose()?
-                .flatten();
-            let Some(quantity) = quantity else {
+            let Some(stated) = stated(item_id, item, exchange, &mut losses) else {
                 losses.push(StepLossCode::ValidationItemUnsupported.note(format!(
                     "geometric validation property #{property_id} has unsupported item #{item_id}"
                 )));
+                continue;
+            };
+            let Some(quantity) = scaled(stated, item_id, item, exchange, scale, &mut losses, ctx)?
+            else {
                 continue;
             };
             for id in [property_id, relation_id, representation_id, item_id] {
@@ -408,10 +408,22 @@ fn scaled(
             y * length_scale,
             z * length_scale,
         ))
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "validation point #{id} is not finite after unit conversion"
+            ))
+        })
     };
     let mut measure = |value: f64, kind: &str| {
-        measure_scale(id, record, exchange, kind, losses, ctx)
-            .map(|scale| scale.and_then(|scale| FiniteReal::new(value * scale)))
+        measure_scale(id, record, exchange, kind, losses, ctx)?
+            .map(|scale| {
+                FiniteReal::new(value * scale).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "validation measure #{id} is not finite after unit conversion"
+                    ))
+                })
+            })
+            .transpose()
     };
     Ok(match stated {
         Stated::Volume(value) => {
@@ -426,12 +438,12 @@ fn scaled(
         Stated::SheetArea(value) => {
             measure(value, "AREA_MEASURE")?.map(|value| DeclaredQuantity::SheetArea { value })
         }
-        Stated::SolidCentroid(value) => {
-            point(value).map(|value| DeclaredQuantity::SolidCentroid { value })
-        }
-        Stated::SheetCentroid(value) => {
-            point(value).map(|value| DeclaredQuantity::SheetCentroid { value })
-        }
+        Stated::SolidCentroid(value) => Some(DeclaredQuantity::SolidCentroid {
+            value: point(value)?,
+        }),
+        Stated::SheetCentroid(value) => Some(DeclaredQuantity::SheetCentroid {
+            value: point(value)?,
+        }),
     })
 }
 

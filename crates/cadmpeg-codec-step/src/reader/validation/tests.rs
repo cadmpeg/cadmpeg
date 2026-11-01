@@ -406,6 +406,9 @@ fn unresolved_or_dimensionally_incompatible_units_are_not_compared() {
         let source = tessellation_fixture().replace("#44=DERIVED_UNIT((#55));", unit);
         let result = decode_source(&source);
         assert!(of_property(result.ir(), 41).is_empty());
+        assert!(!unsupported_items(&result)
+            .iter()
+            .any(|message| message.ends_with("item #43")));
         assert!(
             result.report().losses.iter().any(|loss| {
                 loss.message
@@ -415,4 +418,20 @@ fn unresolved_or_dimensionally_incompatible_units_are_not_compared() {
             result.report().losses
         );
     }
+}
+
+#[test]
+fn validation_unit_conversion_refuses_nonfinite_quantities() {
+    let source = tessellation_fixture()
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT($,.METRE.)")
+        .replace("AREA_MEASURE(50.)", "AREA_MEASURE(1.E308)");
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("area overflows cubic document scaling");
+    assert!(
+        error
+            .to_string()
+            .contains("not finite after unit conversion"),
+        "{error}"
+    );
 }
