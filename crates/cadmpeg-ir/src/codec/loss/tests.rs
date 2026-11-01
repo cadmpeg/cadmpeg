@@ -3,7 +3,7 @@
 
 use crate::codec::DecodeLossCode;
 use crate::report::{
-    loss::{LossNote, LossTaxonomy},
+    loss::{LossNote, LossTaxonomy, StrictConsequence},
     Severity,
 };
 
@@ -29,4 +29,24 @@ fn stale_sidecar_factory_preserves_fixed_code_and_warning() {
     assert_eq!(missing_depth.code.local_code(), "depth.not-delivered");
     assert_eq!(missing_depth.severity, Severity::Error);
     assert_eq!(missing_depth.code.strict_floor(), Some(Severity::Warning));
+}
+
+#[test]
+fn unreadable_part_factory_carries_a_strict_reject_floor_and_dropped_ids() {
+    let mut note = DecodeLossCode::RecordUnreadable
+        .note("part step.entity stream=\"\" offset=2 length=3: damaged entity; dropped=[]");
+    assert_eq!(note.code.namespace(), "decode");
+    assert_eq!(note.code.local_code(), "record.unreadable");
+    assert_eq!(note.severity, Severity::Error);
+    assert_eq!(
+        note.strict_consequence(),
+        StrictConsequence::Reject,
+        "a given-up part refuses a strict decode (#215 §4.5)"
+    );
+    note.dropped = vec!["step:model:point#dropped".to_owned()];
+    let wire = serde_json::to_string(&note).expect("loss note serializes");
+    assert_eq!(
+        serde_json::from_str::<LossNote>(&wire).expect("loss note round trips"),
+        note
+    );
 }
