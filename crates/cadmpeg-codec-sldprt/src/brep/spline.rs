@@ -285,64 +285,63 @@ fn scan_arrays(
     arrays
 }
 
-fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>> {
-    let mut candidates = Vec::new();
-    if let Some(values) = arrays.f64s.get(&attr) {
-        candidates.push(values.clone());
-    }
-    for compact in arrays.compact.get(&attr).into_iter().flatten() {
-        if compact
-            .count
-            .checked_mul(8)
-            .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
-            .is_none_or(|end| end > bytes.len())
-        {
-            continue;
-        }
-        let Some(values) = (0..compact.count)
-            .map(|index| View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        if !candidates.contains(&values) {
-            candidates.push(values);
-        }
-    }
-    candidates
+/// The f64 arrays that `attr` can name, in scan order, repeats included.
+fn f64_array_candidates<'b>(
+    bytes: &'b [u8],
+    arrays: &'b Arrays,
+    attr: u16,
+) -> impl Iterator<Item = Vec<f64>> + 'b {
+    arrays.f64s.get(&attr).cloned().into_iter().chain(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .filter_map(move |compact| {
+                compact
+                    .count
+                    .checked_mul(8)
+                    .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
+                    .filter(|&end| end <= bytes.len())?;
+                (0..compact.count)
+                    .map(|index| {
+                        View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            }),
+    )
 }
 
-fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>> {
-    let mut candidates = Vec::new();
-    if let Some(values) = arrays.u16s.get(&attr) {
-        candidates.push(values.clone());
-    }
-    for compact in arrays.compact.get(&attr).into_iter().flatten() {
-        if compact
-            .count
-            .checked_mul(2)
-            .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
-            .is_none_or(|end| end > bytes.len())
-        {
-            continue;
-        }
-        let Some(values) = (0..compact.count)
-            .map(|index| View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        if !candidates.contains(&values) {
-            candidates.push(values);
-        }
-    }
-    candidates
+/// The u16 arrays that `attr` can name, in scan order, repeats included.
+fn u16_array_candidates<'b>(
+    bytes: &'b [u8],
+    arrays: &'b Arrays,
+    attr: u16,
+) -> impl Iterator<Item = Vec<u16>> + 'b {
+    arrays.u16s.get(&attr).cloned().into_iter().chain(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .filter_map(move |compact| {
+                compact
+                    .count
+                    .checked_mul(2)
+                    .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
+                    .filter(|&end| end <= bytes.len())?;
+                (0..compact.count)
+                    .map(|index| {
+                        View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            }),
+    )
 }
 
 fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u16, count: usize) -> Option<Vec<f64>> {
-    let mut candidates = compact_f64_arrays(bytes, arrays, attr)
-        .into_iter()
-        .filter(|values| values.len() == count);
+    let mut candidates =
+        f64_array_candidates(bytes, arrays, attr).filter(|values| values.len() == count);
     let selected = candidates.next()?;
     candidates
         .all(|candidate| candidate == selected)
@@ -1100,23 +1099,34 @@ fn surface_knot_arrays<'a>(
     multiplicities: &'a [u16],
     declared_count: usize,
 ) -> Option<(&'a [f64], &'a [u16])> {
-    if declared_count == 0 || unique.len() != multiplicities.len() || unique.len() < declared_count
-    {
+    if unique.len() != multiplicities.len() {
         return None;
     }
-    (multiplicities[..declared_count]
-        .iter()
-        .all(|&value| value != 0)
-        && multiplicities[declared_count..]
-            .iter()
-            .all(|&value| value == 0))
-    .then_some((&unique[..declared_count], &multiplicities[..declared_count]))
+    let declared = declared_multiplicities(multiplicities, declared_count)?;
+    Some((unique.get(..declared_count)?, declared))
+}
+
+/// The first `declared_count` multiplicities, when each is non-zero and every
+/// later one is zero.
+fn declared_multiplicities(multiplicities: &[u16], declared_count: usize) -> Option<&[u16]> {
+    if declared_count == 0 {
+        return None;
+    }
+    let (declared, rest) = multiplicities.split_at_checked(declared_count)?;
+    (declared.iter().all(|&value| value != 0) && rest.iter().all(|&value| value == 0))
+        .then_some(declared)
 }
 
 #[derive(PartialEq)]
 struct SurfaceKnotValues {
     unique: Vec<f64>,
     multiplicities: Vec<u16>,
+}
+
+/// The valid multiplicities of one array length: none, one, or more than one.
+enum Multiplicities {
+    One(Vec<u16>),
+    Many,
 }
 
 fn surface_knot_values(
@@ -1126,34 +1136,46 @@ fn surface_knot_values(
     multiplicity_attr: u16,
     declared_count: usize,
 ) -> Option<SurfaceKnotValues> {
-    let mut resolved = Vec::<SurfaceKnotValues>::new();
-    let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
-    for multiplicities in compact_u16_arrays(bytes, arrays, multiplicity_attr) {
-        multiplicities_by_count
-            .entry(multiplicities.len())
-            .or_default()
-            .push(multiplicities);
-    }
-    for unique in compact_f64_arrays(bytes, arrays, knot_attr) {
-        let Some(multiplicity_candidates) = multiplicities_by_count.get(&unique.len()) else {
+    // The knots resolve only when every candidate pair agrees, so a second
+    // distinct pair ends the search. The valid multiplicities of a length do
+    // not depend on the knot values.
+    let mut by_count = HashMap::<usize, Multiplicities>::new();
+    for multiplicities in u16_array_candidates(bytes, arrays, multiplicity_attr) {
+        let Some(valid) = declared_multiplicities(&multiplicities, declared_count) else {
             continue;
         };
-        for multiplicities in multiplicity_candidates {
-            let Some((unique, multiplicities)) =
-                surface_knot_arrays(&unique, multiplicities, declared_count)
-            else {
-                continue;
-            };
-            let candidate = SurfaceKnotValues {
-                unique: unique.to_vec(),
-                multiplicities: multiplicities.to_vec(),
-            };
-            if !resolved.contains(&candidate) {
-                resolved.push(candidate);
+        let valid = valid.to_vec();
+        match by_count.get(&multiplicities.len()) {
+            None => {
+                by_count.insert(multiplicities.len(), Multiplicities::One(valid));
+            }
+            Some(Multiplicities::One(first)) if *first == valid => {}
+            Some(_) => {
+                by_count.insert(multiplicities.len(), Multiplicities::Many);
             }
         }
     }
-    (resolved.len() == 1).then(|| resolved.pop()).flatten()
+    let mut resolved = None::<SurfaceKnotValues>;
+    for unique in f64_array_candidates(bytes, arrays, knot_attr) {
+        let multiplicities = match by_count.get(&unique.len()) {
+            None => continue,
+            Some(Multiplicities::Many) => return None,
+            Some(Multiplicities::One(multiplicities)) => multiplicities,
+        };
+        let Some(unique) = unique.get(..declared_count) else {
+            continue;
+        };
+        let candidate = SurfaceKnotValues {
+            unique: unique.to_vec(),
+            multiplicities: multiplicities.clone(),
+        };
+        match &resolved {
+            None => resolved = Some(candidate),
+            Some(first) if *first == candidate => {}
+            Some(_) => return None,
+        }
+    }
+    resolved
 }
 
 /// Every compact NURBS surface carrier in `bytes`, keyed by attribute id.
@@ -1890,8 +1912,8 @@ fn surface_knot_records(
 mod tests {
     use super::{
         curve_descriptor, curve_descriptor_link, expanded_knots, scan_arrays, scan_curve_carriers,
-        scan_curve_descriptors, scan_surface_carriers, unique_knots, unique_surface_knot_span,
-        Arrays, CurveDescriptor,
+        scan_curve_descriptors, scan_surface_carriers, surface_knot_values, unique_knots,
+        unique_surface_knot_span, Arrays, CurveDescriptor,
     };
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
@@ -1922,6 +1944,42 @@ mod tests {
         let bytes = b_curve_with_descriptors(fields);
         let descriptors = scan_curve_descriptors(&bytes, CurveDescriptor::spatial);
         curve_descriptor_link(&bytes, 2, &descriptors)
+    }
+
+    /// `copies` compact knot arrays `[0, 1]` under attribute 0x1234 and as
+    /// many compact multiplicity arrays `[2, 2]` under attribute 0x1235.
+    fn repeated_compact_knots(copies: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..copies {
+            bytes.extend_from_slice(&[0, 2, 0x12, 0x34]);
+            bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+            bytes.extend_from_slice(&1.0_f64.to_be_bytes());
+            bytes.extend_from_slice(&[0, 2, 0x12, 0x35]);
+            bytes.extend(be16s(&[2, 2]));
+        }
+        bytes
+    }
+
+    #[test]
+    fn repeated_compact_knot_arrays_resolve_once() {
+        let bytes = repeated_compact_knots(20_000);
+        let attrs = [0x1234, 0x1235].into_iter().collect();
+        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        assert_eq!(arrays.compact.get(&0x1234).map(Vec::len), Some(20_000));
+        let resolved =
+            surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).expect("one knot pair");
+        assert_eq!(resolved.unique, [0.0, 1.0]);
+        assert_eq!(resolved.multiplicities, [2, 2]);
+    }
+
+    #[test]
+    fn two_distinct_multiplicities_of_one_length_resolve_no_knots() {
+        let mut bytes = vec![0, 2, 0x12, 0x35];
+        bytes.extend(be16s(&[1, 3]));
+        bytes.extend(repeated_compact_knots(3));
+        let attrs = [0x1234, 0x1235].into_iter().collect();
+        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        assert!(surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).is_none());
     }
 
     #[test]
