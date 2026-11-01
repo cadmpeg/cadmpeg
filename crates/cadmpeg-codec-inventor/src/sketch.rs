@@ -41,14 +41,62 @@ const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
 /// First save version whose midpoint relation ends with a u32 value.
 const MIDPOINT_VALUE_VERSION: u8 = 20;
-/// Entity-flag bits that the curves of profile wire bodies carry. A curve
-/// with another bit set has a construction state this decoder does not
-/// resolve.
-const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
-const SPLINE_PROFILE_CURVE_FLAGS: u32 = PROFILE_CURVE_FLAGS | 0x4;
+/// Entity-flag bits that every planar curve form carries on curves of profile
+/// wire bodies.
+const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000;
+/// Additional profile-wire flag bit of circles, ellipses, and splines.
+const NON_LINE_PROFILE_FLAG: u32 = 0x8_0000;
+/// Additional profile-wire flag bit of lines and circles.
+const LINE_CIRCLE_PROFILE_FLAG: u32 = 0x200;
 /// Entity-flag bit of a line that a distance dimension measures as an axis:
 /// the dimension parameter is twice the distance between the operands.
+/// Profile wire bodies also use lines with this bit.
 const AXIS_LINE_FLAG: u32 = 0x8000;
+/// Additional profile-wire flag bit of splines.
+const SPLINE_PROFILE_FLAG: u32 = 0x4;
+/// Entity-flag bits that mark a line as construction geometry. No line with
+/// one of these bits bounds a profile loop.
+const LINE_CONSTRUCTION_FLAGS: u32 = 0x8_0000 | 0x20_0000;
+
+/// Entity-flag bits whose meaning is resolved for the curve form of `entity`:
+/// the bits that profile wire bodies carry and the construction bits.
+fn resolved_curve_flags(entity: &PmDcSketchEntity) -> u32 {
+    match entity.kind {
+        PmDcSketchEntityKind::Line { .. } => {
+            PROFILE_CURVE_FLAGS
+                | LINE_CIRCLE_PROFILE_FLAG
+                | AXIS_LINE_FLAG
+                | LINE_CONSTRUCTION_FLAGS
+        }
+        PmDcSketchEntityKind::Circle { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | LINE_CIRCLE_PROFILE_FLAG
+        }
+        PmDcSketchEntityKind::Spline { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | SPLINE_PROFILE_FLAG
+        }
+        _ => PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG,
+    }
+}
+
+/// Whether the record is a line whose entity flags carry a construction bit.
+/// The projection and the validator share this predicate.
+pub(crate) fn marks_construction(entity: &PmDcSketchEntity) -> bool {
+    matches!(entity.kind, PmDcSketchEntityKind::Line { .. })
+        && entity.entity_flags & LINE_CONSTRUCTION_FLAGS != 0
+}
+
+/// Whether the record is a curve whose entity flags carry a bit with an
+/// unresolved construction meaning.
+fn has_unresolved_flags(entity: &PmDcSketchEntity) -> bool {
+    matches!(
+        entity.kind,
+        PmDcSketchEntityKind::Line { .. }
+            | PmDcSketchEntityKind::Circle { .. }
+            | PmDcSketchEntityKind::Ellipse { .. }
+            | PmDcSketchEntityKind::Spline { .. }
+    ) && entity.entity_flags & !resolved_curve_flags(entity) != 0
+}
+
 /// Largest departure of a block-instance placement from a rigid motion.
 const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
@@ -1508,6 +1556,7 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         projected_entities.push(
             SketchEntity::new(entity_id, sketch_id, geometry)
+                .with_construction(marks_construction(entity))
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
         );
@@ -1541,20 +1590,7 @@ pub(crate) fn project(
     let construction_unresolved = inventory
         .entities
         .iter()
-        .filter(|entity| {
-            let profile_flags = if matches!(entity.kind, PmDcSketchEntityKind::Spline { .. }) {
-                SPLINE_PROFILE_CURVE_FLAGS
-            } else {
-                PROFILE_CURVE_FLAGS
-            };
-            matches!(
-                entity.kind,
-                PmDcSketchEntityKind::Line { .. }
-                    | PmDcSketchEntityKind::Circle { .. }
-                    | PmDcSketchEntityKind::Ellipse { .. }
-                    | PmDcSketchEntityKind::Spline { .. }
-            ) && entity.entity_flags & !profile_flags != 0
-        })
+        .filter(|entity| has_unresolved_flags(entity))
         .map(Located::id)
         .collect::<HashSet<_>>();
     let mut sketches = Vec::new();
@@ -3132,6 +3168,7 @@ fn place_block_curves(
                     sketch.clone(),
                     project_placed_geometry(curve, entities, &placement)?,
                 )
+                .with_construction(marks_construction(curve))
                 .with_native_ref(Some(curve.id()))
                 .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
             )
@@ -4273,7 +4310,7 @@ mod tests {
             .position(|entity| matches!(entity.kind, PmDcSketchEntityKind::Line { .. }))
             .expect("square side");
         let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[line]);
-        payload.entity_flags = 0x8000;
+        payload.entity_flags = 0x100;
         let identity = inventory.entities[line].identity.clone();
         inventory.entities[line] = Located::new(
             payload,
@@ -5157,6 +5194,7 @@ mod tests {
     }
 
     mod axis_distance;
+    mod construction_flags;
     mod point_tail_projection;
     mod serialization;
 }
