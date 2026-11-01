@@ -308,7 +308,6 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             cadmpeg_asm::asm_format!("inventor"),
         ),
         record_index: 1,
-        body: body("body:target"),
         body_ordinal: 0,
         source_brep: Some("Bseg:record:0".into()),
         asm_body_key: Some(7),
@@ -321,8 +320,8 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
     };
     let mut model = Model::default();
     model.bodies.push(cadmpeg_ir::topology::Body {
-        id: key.body.clone(),
-        native_ref: None,
+        id: body("body:target"),
+        native_ref: Some(key.id()),
         kind: cadmpeg_ir::topology::BodyKind::default(),
         regions: vec![],
         transform: None,
@@ -352,7 +351,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             &model
         )
         .get(&wrapper.id()),
-        Some(&key.body)
+        Some(&body("body:target"))
     );
     let mut wrong_reference = join.clone();
     wrong_reference.reference = crate::pmdc::PmDcReference::from_packed(2);

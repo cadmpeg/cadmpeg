@@ -210,22 +210,78 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
     let keys = brep
         .body_native_keys
         .iter()
-        .filter_map(|key| Some((key.body.as_str(), key.asm_body_key?)))
+        .filter_map(|key| {
+            let body = brep
+                .bodies
+                .iter()
+                .find(|body| key.owns_native_ref(body.native_ref.as_deref()))?;
+            Some((body.id.as_str(), key.asm_body_key?))
+        })
         .collect::<HashMap<_, _>>();
     let edges = brep
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
+    let mut owners = HashMap::new();
+    for body in &brep.bodies {
+        if let Some(native_ref) = body.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(body.id.as_str());
+        }
+    }
+    for face in &brep.faces {
+        if let Some(native_ref) = face.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(face.id.as_str());
+        }
+    }
+    for edge in &brep.edges {
+        if let Some(native_ref) = edge.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(edge.id.as_str());
+        }
+    }
+    for vertex in &brep.vertices {
+        if let Some(native_ref) = vertex.native_ref.as_deref() {
+            owners.entry(native_ref).or_insert(vertex.id.as_str());
+        }
+    }
     let mut rings = Vec::new();
     for wire in &brep.wire_topologies {
+        let member_neutrals = wire
+            .members
+            .edges()
+            .iter()
+            .map(|member| member.as_str())
+            .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+            .filter_map(|member| owners.get(member).copied())
+            .collect::<Vec<_>>();
+        let Some(shell) = brep.shells.iter().find(|shell| {
+            member_neutrals.iter().any(|neutral| {
+                shell
+                    .wire_edges()
+                    .iter()
+                    .any(|edge| edge.as_str() == *neutral)
+                    || shell
+                        .free_vertices()
+                        .iter()
+                        .any(|vertex| vertex.as_str() == *neutral)
+            })
+        }) else {
+            continue;
+        };
         let Some(key) = shell_bodies
-            .get(wire.shell.as_str())
+            .get(shell.id.as_str())
             .and_then(|body| keys.get(body))
         else {
             continue;
         };
-        rings.push((*key, wire.members.edges().iter().collect::<Vec<_>>()));
+        rings.push((
+            *key,
+            wire.members
+                .edges()
+                .iter()
+                .filter_map(|member| owners.get(member.as_str()).copied())
+                .collect::<Vec<_>>(),
+        ));
     }
     let faces = brep
         .faces
@@ -248,7 +304,11 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         let members = loop_
             .coedges()
             .iter()
-            .map(|id| coedges.get(id.as_str()).map(|coedge| &coedge.edge))
+            .map(|id| {
+                coedges
+                    .get(id.as_str())
+                    .map(|coedge| coedge.edge.as_str())
+            })
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default();
         rings.push((*key, members));
@@ -257,7 +317,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
     for (key, members) in rings {
         let mut wire_edges = Vec::new();
         for id in members {
-            let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
+            let Some((start, end)) = edges.get(id).and_then(|edge| {
                 Some((
                     *vertices.get(edge.start.as_str())?,
                     *vertices.get(edge.end.as_str())?,
@@ -266,11 +326,11 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
                 wire_edges.clear();
                 break;
             };
-            let name = match names.get(id.as_str()).map(Vec::as_slice) {
+            let name = match names.get(id).map(Vec::as_slice) {
                 Some([name]) => *name,
                 _ => None,
             };
-            let middle = match edges.get(id.as_str()).map(|edge| &edge.carrier) {
+            let middle = match edges.get(id).map(|edge| &edge.carrier) {
                 Some(EdgeCarrier::Bounded(curve, interval)) => match curves.get(curve.as_str()) {
                     Some(geometry) => {
                         let [first, last] = interval.endpoints();
@@ -285,7 +345,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
                 },
                 _ => None,
             };
-            let spline = edges.get(id.as_str()).and_then(|edge| {
+            let spline = edges.get(id).and_then(|edge| {
                 let EdgeCarrier::Bounded(curve, interval) = &edge.carrier else {
                     return None;
                 };

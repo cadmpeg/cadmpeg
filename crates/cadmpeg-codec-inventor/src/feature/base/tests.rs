@@ -52,7 +52,6 @@ fn body_key() -> BodyNativeKey {
             cadmpeg_asm::asm_format!("inventor"),
         ),
         record_index: 1,
-        body: cadmpeg_ir::ids::BodyId::mint("inventor:brep:entity#1").expect("synthetic body"),
         body_ordinal: 0,
         source_brep: Some("Bseg:record:0".into()),
         asm_body_key: Some(7),
