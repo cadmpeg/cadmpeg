@@ -2294,26 +2294,34 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
     Color::new(r, g, b, a)
 }
 
+/// Placement a frame-text record's 4×4 transform describes.
+enum FrameTextPlacement {
+    /// A planar rigid placement: an anchor in millimetres and a rotation.
+    Planar(TextPlacement<FinitePoint2>),
+    /// The sketch plane turned over: the text is mirrored in the sketch.
+    Mirrored,
+}
+
 /// Read the row-major 4×4 f64 placement transform a frame-text record stores,
-/// advancing `cursor` past it, and reduce it to the anchor point in millimetres
-/// and the rotation about that point in radians.
+/// advancing `cursor` past it.
 ///
-/// The transform is a planar rigid placement: its third row and column are the
-/// identity's, its bottom row is `(0, 0, 0, 1)`, its translation lives in the
-/// last column, and its 2×2 basis is a rotation of unit determinant carrying no
-/// scale or shear. A run failing any of that is not a placement, so the record
-/// is misframed.
-fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
+/// The transform is a rigid placement with the bottom row `(0, 0, 0, 1)` and
+/// its translation in the last column. Its third row is `(0, 0, 1, 0)` with a
+/// 2×2 rotation basis of determinant `+1`, or `(0, 0, -1, 0)` with a 2×2
+/// reflection basis of determinant `-1`. A run failing that is not a
+/// placement, so the record is misframed.
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<FrameTextPlacement> {
     let elements = f64s_at::<16>(payload, *cursor)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
     let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
+    let normal = at(2, 2);
+    let mirrored = constant(normal, -1.0);
     let planar = [
         (0, 2, 0.0),
         (1, 2, 0.0),
         (2, 0, 0.0),
         (2, 1, 0.0),
-        (2, 2, 1.0),
         (2, 3, 0.0),
         (3, 0, 0.0),
         (3, 1, 0.0),
@@ -2323,13 +2331,17 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     .into_iter()
     .all(|(row, column, expected)| constant(at(row, column), expected));
     let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
-    (planar && constant(determinant, 1.0)).then_some(())?;
+    (planar && (mirrored || constant(normal, 1.0)) && constant(determinant, normal))
+        .then_some(())?;
+    if mirrored {
+        return Some(FrameTextPlacement::Mirrored);
+    }
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
     let anchor = FinitePoint2::new(anchor)?;
-    Some(TextPlacement {
+    Some(FrameTextPlacement::Planar(TextPlacement {
         anchor,
         rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
-    })
+    }))
 }
 
 /// The record index a reference names, absent when the reference is null.
@@ -2556,9 +2568,12 @@ fn decode_sketch_text_tail(
         let text_type = View::u32_le_at(payload, cursor)?;
         (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
         cursor = cursor.checked_add(5)?;
-        let placement = match text_type {
-            0 => Some(read_text_placement(payload, &mut cursor)?),
-            1 => None,
+        let (placement, mirrored) = match text_type {
+            0 => match read_text_placement(payload, &mut cursor)? {
+                FrameTextPlacement::Planar(placement) => (Some(placement), false),
+                FrameTextPlacement::Mirrored => (None, true),
+            },
+            1 => (None, false),
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
@@ -2578,7 +2593,7 @@ fn decode_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
-            neutral_orientation: horizontal_neutral && vertical_neutral,
+            neutral_orientation: horizontal_neutral && vertical_neutral && !mirrored,
         }))
     })()
     .transpose()

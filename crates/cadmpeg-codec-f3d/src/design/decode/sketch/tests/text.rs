@@ -692,6 +692,27 @@ fn frame_sketch_text_record_refuses_a_transform_that_is_not_a_planar_rotation() 
 }
 
 #[test]
+fn frame_sketch_text_record_with_a_turned_over_plane_is_mirrored() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], Some((1.0, 2.0, 0.0)));
+    let at = bytes.len() - 128 - 30 - 11;
+    let mut mirrored = bytes.clone();
+    for element in [5usize, 10] {
+        mirrored[at + element * 8..at + element * 8 + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
+    }
+    let text = decode_sketch_text(&mirrored).expect("mirrored sketch text record");
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        None
+    );
+    assert_eq!(super::super::sketch_text_neutral_state(&text), Some(false));
+
+    // A turned-over plane with a rotation basis is not a rigid placement.
+    let mut turned = bytes;
+    turned[at + 10 * 8..at + 10 * 8 + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
+    assert!(decode_sketch_text(&turned).is_none());
+}
+
+#[test]
 fn sketch_text_record_refuses_a_flag_byte_that_does_not_repeat_the_text_type() {
     let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     // The flag byte sits between the text-type enum and the transform slot,
