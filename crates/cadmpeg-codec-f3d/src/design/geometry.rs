@@ -730,6 +730,20 @@ fn arrangement_edges_meet_only_at_nodes(
     ) {
         return true;
     }
+    if left.boundary.entity == right.boundary.entity
+        && entities.iter().any(|entity| {
+            entity.id() == &left.boundary.entity
+                && matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+                )
+        })
+    {
+        let left = left.boundary.parameter_range.endpoints();
+        let right = right.boundary.parameter_range.endpoints();
+        return left[0].max(left[1]) <= right[0].min(right[1])
+            || right[0].max(right[1]) <= left[0].min(left[1]);
+    }
     let Some(left_segment) = arrangement_analytic_segment(left, entities) else {
         return false;
     };
