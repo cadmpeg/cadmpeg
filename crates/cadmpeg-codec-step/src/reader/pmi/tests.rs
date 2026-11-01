@@ -1488,6 +1488,142 @@ fn complex_datum_reads_identification_from_its_named_partial() {
 }
 
 #[test]
+fn simple_datum_reads_identification_from_its_fifth_attribute() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=DATUM('',$,#5,.F.,'A');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let datum = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("simple datum");
+    assert_eq!(datum.name, None);
+    assert!(matches!(
+        &datum.definition,
+        PmiDefinition::Datum { identification } if identification == "A"
+    ));
+}
+
+#[test]
+fn simple_datum_referenced_tolerance_links_its_datum_system() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('face','',#5,.T.);
+#7=DATUM('',$,#5,.F.,'A');
+#8=DATUM_SYSTEM('system','',#5,.F.,(#20));
+#11=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(1.5),#1) REPRESENTATION_ITEM(''));
+#12=PERPENDICULARITY_TOLERANCE('perpendicular','',#11,#6,(#8));
+#13=POSITION_TOLERANCE('position','',#11,#6);
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,$);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let tolerance = |name: &str| {
+        result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .map(|annotation| annotation.definition.clone())
+            .expect("geometric tolerance")
+    };
+    assert!(matches!(
+        tolerance("perpendicular"),
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Perpendicularity,
+            datum_system: Some(system),
+            ..
+        } if system.as_str() == "step:presentation:pmi#8"
+    ));
+    assert!(matches!(
+        tolerance("position"),
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Position,
+            datum_system: None,
+            ..
+        }
+    ));
+}
+
+use crate::test_support::pmi_limits::LIMIT_DIMENSION;
+
+fn limit_dimension(result: &cadmpeg_ir::codec::DecodeResult) -> (f64, f64, f64) {
+    use cadmpeg_ir::pmi::{DimensionKind, DimensionTolerance, PmiDefinition};
+
+    let relations = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .filter_map(|annotation| match &annotation.definition {
+            PmiDefinition::Dimension(relation) => Some(relation),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [relation] = relations.as_slice() else {
+        panic!("one dimension: {relations:#?}");
+    };
+    assert_eq!(relation.kind(), &DimensionKind::Diameter);
+    let Some(DimensionTolerance::Limits { lower, upper }) = relation.tolerance() else {
+        panic!("limit tolerance: {relation:#?}");
+    };
+    (
+        relation.nominal().expect("nominal").value.get(),
+        lower.value.get(),
+        upper.value.get(),
+    )
+}
+
+fn assert_limit_values(values: (f64, f64, f64)) {
+    let (nominal, lower, upper) = values;
+    assert!((nominal - 35.0).abs() < EPS_PMI_NUMERIC);
+    assert!((lower - 34.8).abs() < EPS_PMI_NUMERIC);
+    assert!((upper - 35.2).abs() < EPS_PMI_NUMERIC);
+}
+
+#[test]
+fn dimensional_limit_measures_decode_as_limits() {
+    let result = decode_inline(LIMIT_DIMENSION);
+    assert_limit_values(limit_dimension(&result));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DimensionalLimitsOmitted.kind()
+            || loss.message.contains("nominal is ambiguous")
+    }));
+}
+
+#[test]
+fn incomplete_dimensional_limits_record_a_loss() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(&LIMIT_DIMENSION.replace("(#12,#11,#13)", "(#12,#11)"));
+    let limits = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::DimensionalLimitsOmitted.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(limits.len(), 1, "{:#?}", result.report().losses);
+    assert!(limits[0]
+        .message
+        .contains("#15 has 0 lower and 1 upper limit measures"));
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension(relation)
+            if relation.tolerance().is_none()
+                && relation.nominal().is_some_and(|value| (value.value.get() - 35.0).abs() < EPS_PMI_NUMERIC)
+    )));
+}
+
+#[test]
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
 
