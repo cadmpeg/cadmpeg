@@ -267,6 +267,8 @@ fn member_bodies<'ir>(
             Ok(found
                 .bodies
                 .iter()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
                 .filter_map(body)
                 .filter(|body| body.kind == class && body.visible != Some(false))
                 .collect())

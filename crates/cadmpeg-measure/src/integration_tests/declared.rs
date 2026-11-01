@@ -99,3 +99,12 @@ fn a_part_property_excludes_hidden_bodies_but_a_body_property_can_address_them()
     };
     assert!(run(&both).is_empty());
 }
+
+#[test]
+fn a_part_target_counts_each_owned_body_once() {
+    let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let body = cube.model.bodies[0].id.clone();
+    let definition = definition(&mut cube, vec![body.clone(), body]);
+    declare(&mut cube, DeclaredTarget::Definition { definition }, 1000.0);
+    assert!(run(&cube).is_empty());
+}
