@@ -236,6 +236,17 @@ pub enum AppearanceTarget {
 }
 
 impl AppearanceTarget {
+    /// Record target for the first neutral record linked to a native owner.
+    ///
+    /// Returns `None` when no neutral record's `native_ref` names the owner;
+    /// the binding then has no neutral home and is not projected.
+    pub fn record_for(model: &crate::document::Model, owner: &str) -> Option<Self> {
+        crate::schema::native_links::linking_record(model, owner).map(|(arena, id)| Self::Record {
+            arena,
+            id,
+        })
+    }
+
     /// Returns the specific geometry target for an addressed neutral geometry record.
     /// Other neutral arenas retain their general `Record` target.
     pub fn typed_record_target(&self, model: &crate::document::Model) -> Option<Self> {
