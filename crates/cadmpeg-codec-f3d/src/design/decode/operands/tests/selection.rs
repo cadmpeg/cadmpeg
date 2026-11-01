@@ -911,3 +911,23 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
 }
 
 mod counted_frames;
+
+#[test]
+fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
+    let (mut bytes, selection_at, _, _) = region_selection_frame();
+    let first_member =
+        selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
+    let incidence = first_member
+        + crate::layout::sketch_profile_region_member::ZERO_WORDS_3
+        + std::mem::size_of::<[u32; 3]>();
+    bytes[incidence + 4..incidence + 8].copy_from_slice(&11u32.to_le_bytes());
+    bytes[incidence + 8..incidence + 12].copy_from_slice(&12u32.to_le_bytes());
+    let selection = parse_sketch_profile_region_selection(&bytes, 100, 0).unwrap();
+    let member = &selection.regions[0].members[0];
+    assert_eq!(member.incidence_values.map(u32::from), [11, 12]);
+    for offset in [incidence + 4, incidence + 8] {
+        let mut invalid = bytes.clone();
+        invalid[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
+    }
+}

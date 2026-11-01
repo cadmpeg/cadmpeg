@@ -771,13 +771,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
 
-### DR-124. Trim operands in typed profile curve entries
+### DR-124. Partial-curve operands in profile selections
 
-**Question.** How do the three u32 operands of a typed profile curve entry select a partial curve when one source loop repeats a curve identity?
+**Question.** How do the three u32 operands of a typed profile curve entry and the incidence words of a counted profile member select a partial curve?
 
-**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. A complete neutral loop match or a unique atomic arrangement boundary program resolves without a partial-curve interpretation.
+**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, one Boolean incidence word, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or a unique boundary multiset resolves the selected region.
 
-**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds.
+**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds. Selections with the same curve-identity multiset must vary the selected portions independently.
 
 **Conflict.** None.
 
@@ -974,6 +974,18 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
 **Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
+
+### DR-171. Sketch support identity
+
+**Question.** Which placement references join a Sketch to its supporting plane or historical face and the feature that produces that support?
+
+**Known.** A Sketch scope references a paired placement record. Placement construction records carry a solved matrix, direct geometry references, and a base-level payload with additional record references. The 329-byte Sketch placement frame stores its origin in centimetres. The neutral Sketch frame origin is in millimetres.
+
+**Need.** Controlled Sketch supports that independently vary the producing feature, selected face, and offset plane. The support identity must follow changes to the producing feature's parameters.
+
+**Conflict.** None.
+
+**Note.** DR-12 tracks placement construction types. Sketch support identity remains in the native placement construction record.
 
 ### DR-172. Paired-locus dimension owner binding
 

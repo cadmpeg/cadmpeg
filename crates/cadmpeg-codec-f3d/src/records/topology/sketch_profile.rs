@@ -280,6 +280,20 @@ pub(crate) struct DesignSketchProfileRegion {
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
 }
 
+impl DesignSketchProfileRegionSelection {
+    pub(crate) fn has_extended_incidence(&self) -> bool {
+        self.regions
+            .iter()
+            .flat_map(|region| &region.members)
+            .any(|member| {
+                member
+                    .incidence_values
+                    .iter()
+                    .any(|value| u32::from(*value) > 2)
+            })
+    }
+}
+
 /// One fixed-width persistent curve member of a selected sketch region.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -295,36 +309,28 @@ pub(crate) struct DesignSketchProfileRegionMember {
     pub(crate) curve_primary_id_offset: u64,
     /// First incidence value, encoded as zero or one.
     pub(crate) incidence_flag: bool,
-    /// Second and third incidence values, in source order.
+    /// Second and third nonzero incidence words, in source order.
     pub(crate) incidence_values: [DesignRegionIncidence; 2],
     /// Byte offset of the first incidence word.
     pub(crate) incidence_words_offset: u64,
 }
 
-/// One of the two admitted nonzero region-incidence values.
+/// Nonzero region-incidence word retained from a boundary member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DesignRegionIncidence {
-    One,
-    Two,
-}
+pub(crate) struct DesignRegionIncidence(std::num::NonZeroU32);
 
 impl TryFrom<u32> for DesignRegionIncidence {
     type Error = String;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            _ => Err("incidence_words second and third values must be 1 or 2".into()),
-        }
+        std::num::NonZeroU32::new(value)
+            .map(Self)
+            .ok_or_else(|| "incidence_words second and third values must be nonzero".into())
     }
 }
 
 impl From<DesignRegionIncidence> for u32 {
     fn from(value: DesignRegionIncidence) -> Self {
-        match value {
-            DesignRegionIncidence::One => 1,
-            DesignRegionIncidence::Two => 2,
-        }
+        value.0.get()
     }
 }
 
