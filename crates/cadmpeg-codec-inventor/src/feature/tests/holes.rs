@@ -452,7 +452,7 @@ fn hole_targets_use_plane_frames_or_native_face_selections() {
     let mut fixture = HoleFixture::new(0, 11, 7);
     let projected = fixture.project(&[(13, 43)]).expect("work-plane target");
     let FeatureDefinition::Operation(FeatureOperation::Hole {
-        extent: Some(LinearTermination::ToPlane { plane, native }),
+        extent: Some(LinearTermination::ToPlane { plane, native, .. }),
         ..
     }) = projected.evaluation.definition()
     else {

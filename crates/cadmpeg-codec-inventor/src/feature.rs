@@ -3615,8 +3615,12 @@ fn extrusion_side(
             if side_has_point(source, slots) {
                 return None;
             }
-            let (plane, native) = extent_target_plane(source, index, 11, 13, 18)?;
-            LinearTermination::ToPlane { plane, native }
+            let (plane, native, source) = extent_target_plane(source, index, 11, 13, 18)?;
+            LinearTermination::ToPlane {
+                plane,
+                native,
+                source: Some(source),
+            }
         }
         _ => return None,
     };
@@ -3703,6 +3707,7 @@ fn extent_target_plane(
 ) -> Option<(
     cadmpeg_ir::features::FeatureSupportPlaneFrame,
     cadmpeg_core::text::NonBlankString,
+    cadmpeg_ir::features::PlaneTargetSource,
 )> {
     let references = source.properties.references();
     let plane = references.get(plane_slot)?.index();
@@ -3717,29 +3722,55 @@ fn extent_target_plane(
             .work_planes
             .get(&(token, plane.checked_sub(1)?))
             .and_then(Option::as_ref)?;
-        return target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id());
+        let (frame, native) = target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id())?;
+        return Some((
+            frame,
+            native,
+            cadmpeg_ir::features::PlaneTargetSource::WorkPlane,
+        ));
     }
-    if !matches!(
-        resolve_property(token, flag, index)?.kind,
-        PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
-    ) {
+    let flag = resolve_property(token, flag, index)?;
+    if flag.identity.type_id.as_str() != type_id_string(TERMINATION_FLAG_TYPE)
+        || !matches!(
+            flag.kind,
+            PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
+        )
+    {
         return None;
     }
     let surface = resolve_property(token, surface, index)?;
+    if surface.identity.type_id.as_str() != type_id_string(SURFACE_TYPE) {
+        return None;
+    }
     let PmDcFeaturePropertyKind::PlaneSurface {
         origin,
         u_axis,
         v_axis,
+        references,
         extension,
-        ..
+        state,
+        surface_form,
+        value,
     } = surface.kind
     else {
         return None;
     };
-    if extension.is_some_and(|value| value != 0) {
+    if !extrusion::plane_surface_controls(
+        surface.save_version_major,
+        references,
+        extension,
+        state,
+        surface_form,
+        value,
+    ) {
         return None;
     }
-    target_plane(origin, u_axis, v_axis, surface.id())
+    let (plane, native) = target_plane(origin, u_axis, v_axis, surface.id())?;
+    Some((
+        plane,
+        native,
+        cadmpeg_ir::features::PlaneTargetSource::FaceSurface,
+    ))
 }
 
 /// Build a model-space plane frame from an origin in centimetres and two
@@ -4924,14 +4955,23 @@ pub(crate) mod tests {
         ordinal: u32,
         kind: PmDcFeaturePropertyKind,
     ) -> PmDcFeatureProperty {
+        let type_id = match &kind {
+            PmDcFeaturePropertyKind::PlaneSurface { .. } => {
+                crate::record_identity::RecordTypeId::from_bytes(super::SURFACE_TYPE)
+            }
+            PmDcFeaturePropertyKind::TerminationFlag { .. } => {
+                crate::record_identity::RecordTypeId::from_bytes(super::TERMINATION_FLAG_TYPE)
+            }
+            _ => crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
+                .expect("test GUID"),
+        };
         Located::new(
             PmDcFeaturePropertyPayload {
                 save_version_major: 16,
                 header: test_header(),
                 kind,
             },
-            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
-                .expect("test GUID"),
+            type_id,
             segment().clone(),
             ordinal,
         )

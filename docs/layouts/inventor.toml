@@ -4521,3 +4521,134 @@ offset = 4
 type = "u32"
 source = "spec"
 anchor = "a parameter reference, then ends"
+
+
+[[record]]
+name = "pm_dc_extrusion_plane_surface_fields"
+kind = "byte"
+section = "13"
+anchor = "In segment major versions 15 through 21, the fixed face-surface fields"
+size = 93
+note = "Offsets start after the versioned content header and stamps. Segment major versions 15 through 21."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three packed references equal to 0"
+
+[[record.field]]
+name = "state"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "form 25"
+value = 25
+
+[[record.field]]
+name = "value"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "value 0"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 21
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "u_axis"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "v_axis"
+offset = 69
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record]]
+name = "pm_dc_extrusion_plane_surface_fields_extended"
+kind = "byte"
+section = "13"
+anchor = "From segment major version 22, the fixed face-surface fields"
+size = 97
+note = "Offsets start after the versioned content header and stamps. Segment major version 22 and later."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three packed references equal to 0"
+
+[[record.field]]
+name = "extension"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "zero extension from version 22"
+value = 0
+
+[[record.field]]
+name = "state"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "form 25"
+value = 25
+
+[[record.field]]
+name = "value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "value 0"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "u_axis"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "v_axis"
+offset = 73
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."

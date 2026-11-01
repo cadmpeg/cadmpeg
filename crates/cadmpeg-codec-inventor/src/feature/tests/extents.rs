@@ -18,7 +18,10 @@ fn assert_to_plane(
     u_axis: [f64; 3],
     native: &str,
 ) {
-    let LinearTermination::ToPlane { plane, native: id } = termination else {
+    let LinearTermination::ToPlane {
+        plane, native: id, ..
+    } = termination
+    else {
         panic!("not a to-plane termination: {termination:?}");
     };
     let close = |actual: cadmpeg_ir::math::Vector3, expected: [f64; 3]| {
@@ -376,6 +379,25 @@ fn placed_extent_extrusion(
     let mut losses = Vec::new();
     let projected = crate::feature::extrusion::project(&ctx, &feature, &label, &index, &mut losses)
         .map(|projected| projected.expect("extrusion projection").0);
+    let face_targets = if projected.is_some() && matches!(extent, 6 | 7) {
+        let slots = feature.properties.references();
+        usize::from(slots[13].index() != 0 && slots[18].index() != 0)
+            + usize::from(extent == 6 && slots[10].index() != 0 && slots[17].index() != 0)
+    } else {
+        0
+    };
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|note| note.code.local_code()
+                == crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.code())
+            .count(),
+        face_targets
+    );
+    losses.retain(|note| {
+        note.code.local_code()
+            != crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.code()
+    });
     if projected.as_ref().is_some_and(|feature| {
         crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
     }) {
@@ -437,7 +459,7 @@ fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
 }
 
 fn plane_surface_with(ordinal: u32, extension: Option<u32>) -> PmDcFeatureProperty {
-    test_property(
+    let mut surface = test_property(
         ordinal,
         PmDcFeaturePropertyKind::PlaneSurface {
             references: [reference(0); 3],
@@ -449,7 +471,9 @@ fn plane_surface_with(ordinal: u32, extension: Option<u32>) -> PmDcFeatureProper
             u_axis: reals([0.0, 1.0, 0.0]),
             v_axis: reals([0.0, 0.0, 1.0]),
         },
-    )
+    );
+    surface.edit(|payload| payload.save_version_major = if extension.is_some() { 22 } else { 19 });
+    surface
 }
 
 fn typed_extent_extrusion(version: u8, type_value: i16) -> Option<Feature> {
@@ -561,7 +585,7 @@ fn extrusion_extent_branches_project_exactly() {
 
     let from_to = extent_extrusion(6, false, &[(8, 41), (11, 40)], Vec::new()).expect("from-to");
     let (extent, start) = extrude_definition(&from_to);
-    let cadmpeg_ir::features::ExtrudeStart::FromPlane { plane, native } = start else {
+    let cadmpeg_ir::features::ExtrudeStart::FromPlane { plane, native, .. } = start else {
         panic!("from-to extrusion starts at a plane: {start:?}");
     };
     assert_eq!(native.as_str(), work_plane(41).id());
@@ -1392,6 +1416,7 @@ fn work_point_extent_ends_at_a_resolved_plane() {
     let LinearTermination::ToPlane {
         plane,
         native: actual,
+        ..
     } = &side.termination
     else {
         panic!("resolved plane termination");
@@ -1646,7 +1671,7 @@ fn work_point_plane_follows_the_placed_profile_and_reversed_travel() {
                 else {
                     panic!("extrusion");
                 };
-                let LinearTermination::ToPlane { plane, native } = &mut side.termination else {
+                let LinearTermination::ToPlane { plane, native, .. } = &mut side.termination else {
                     panic!("plane");
                 };
                 assert_eq!(plane.origin().get(), Point3::new(40.0, 50.0, z * 10.0));
@@ -1925,3 +1950,5 @@ fn work_point_extent_and_validator_refuse_an_indeterminate_travel_distance() {
     )
     .is_none());
 }
+
+mod plane_controls;
