@@ -1,32 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Geometric validation-property decoding and mesh self-checks.
+//! Geometric validation-property decoding into declared measures.
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 
+use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::geometry::GeometryData;
+use super::topology::TopologyData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
-#[derive(Clone, Copy)]
-enum Expected {
-    Area(f64),
+/// The quantity that one validation item states, before unit scaling.
+enum Stated {
     Volume(f64),
-    Centroid(Point3),
+    SolidArea(f64),
+    WettedArea(f64),
+    SolidCentroid([f64; 3]),
+    SheetArea(f64),
+    SheetCentroid([f64; 3]),
 }
 
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
+    topology: &TopologyData,
+    definitions_by_shape: &BTreeMap<u64, ProductDefinitionId>,
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -46,19 +56,21 @@ pub(super) fn decode(
         let Some(representation_items) = super::representation::items(record) else {
             continue;
         };
-        let mut items = BTreeSet::new();
-        for item in representation_items {
-            items.insert(item);
-        }
+        let items: BTreeSet<u64> = representation_items.collect();
         if !items.is_empty() {
             representations.insert(id, items);
         }
     }
     let mut properties = BTreeMap::new();
+    let mut property_definitions = BTreeMap::new();
     for (id, record) in exchange.entities("PROPERTY_DEFINITION") {
         let Some(property) = record.partial("PROPERTY_DEFINITION") else {
             continue;
         };
+        let definition = property.parameters.get(2).and_then(ValueExt::reference);
+        if let Some(definition) = definition {
+            property_definitions.insert(id, definition);
+        }
         let name = property.parameters.first().and_then(|value| {
             decode_text(
                 exchange,
@@ -73,28 +85,25 @@ pub(super) fn decode(
             continue;
         };
         if name.eq_ignore_ascii_case("geometric validation property") {
-            let description = property
-                .parameters
-                .get(1)
-                .and_then(|value| {
-                    decode_text(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "validation property description",
-                        StepLossCode::MetadataStringInvalid,
-                    )
-                })
-                .unwrap_or_default();
-            properties.insert(id, description);
+            let description = property.parameters.get(1).and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "validation property description",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            });
+            properties.insert(id, (description, definition));
         }
     }
-    let computed = mesh_properties(ir);
+    let aspect_items = aspect_items(exchange, &property_definitions, &representations);
+    let mut resolved_targets = BTreeMap::new();
+    let mut measures = BTreeMap::new();
     let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
-    let mut notes = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
@@ -103,7 +112,7 @@ pub(super) fn decode(
         let Some(property_id) = relation.parameters.first().and_then(ValueExt::reference) else {
             continue;
         };
-        let Some(description) = properties.get(&property_id) else {
+        let Some((description, definition)) = properties.get(&property_id) else {
             continue;
         };
         let Some(representation_id) = relation.parameters.get(1).and_then(ValueExt::reference)
@@ -114,57 +123,64 @@ pub(super) fn decode(
             continue;
         };
         validation_representations.insert(representation_id);
+        let target = definition.map_or(DeclaredTarget::Unresolved, |definition| {
+            resolved_targets
+                .entry(definition)
+                .or_insert_with(|| {
+                    resolve_target(
+                        definition,
+                        exchange,
+                        topology,
+                        definitions_by_shape,
+                        &aspect_items,
+                    )
+                })
+                .clone()
+        });
         for &item_id in item_ids {
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
             };
-            let scale = geometry.units.length([item_id, representation_id]).get();
-            let expected = expected_value(item_id, item, exchange, scale, &mut losses, ctx)?;
-            let Some(expected) = expected else {
-                push_validation_loss(
-                    &mut losses,
-                    StepLossCode::DecodeWarning,
-                    format!(
-                        "geometric validation property #{property_id} has unsupported item #{item_id}"
-                    ),
-                );
-                continue;
-            };
-            if matches!(expected, Expected::Centroid(_)) {
+            if item.partial("CARTESIAN_POINT").is_some() {
                 validation_points.insert(item_id);
             }
+            let scale = geometry.units.length([item_id, representation_id]).get();
+            let quantity = stated(item_id, item, exchange, &mut losses)
+                .map(|stated| scaled(stated, item_id, item, exchange, scale, &mut losses, ctx))
+                .transpose()?
+                .flatten();
+            let Some(quantity) = quantity else {
+                losses.push(StepLossCode::ValidationItemUnsupported.note(format!(
+                    "geometric validation property #{property_id} has unsupported item #{item_id}"
+                )));
+                continue;
+            };
             for id in [property_id, relation_id, representation_id, item_id] {
                 typed.insert(id);
             }
             if let Some(unit) = measure_unit(item) {
                 collect_unit_records(unit, exchange, &mut typed);
             }
-            let (kind, expected_text, actual) = match expected {
-                Expected::Area(value) => {
-                    ("surface area", value.to_string(), computed.map(|p| p.area))
-                }
-                Expected::Volume(value) => {
-                    ("volume", value.to_string(), computed.map(|p| p.volume))
-                }
-                Expected::Centroid(value) => (
-                    "centroid",
-                    format!("({},{},{})", value.x, value.y, value.z),
-                    computed.map(|p| p.centroid_distance(value)),
-                ),
-            };
-            if let Some(actual) = actual {
-                let actual_text = match expected {
-                    Expected::Centroid(_) => format!("distance {actual}"),
-                    _ => actual.to_string(),
-                };
-                notes.push(format!("geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"));
-            } else {
-                notes.push(format!(
-                    "geometric validation {kind} {description}: expected {expected_text}"
-                ));
-            }
+            let id = DeclaredMeasureId::from(ids::data(
+                kind!("declared_measure"),
+                IdentityKey::from(property_id).dash(item_id),
+            ));
+            measures.insert(
+                id.clone(),
+                DeclaredMeasure {
+                    id,
+                    target: target.clone(),
+                    quantity,
+                    label: description.clone(),
+                    native_ref: Some(format!("#{item_id}")),
+                },
+            );
         }
     }
+    ir.model.declared_measures.extend(measures.into_values());
+    ir.model
+        .declared_measures
+        .sort_by(|left, right| left.id.cmp(&right.id));
     let mut referenced_validation_points = BTreeSet::new();
     if !validation_points.is_empty() {
         for (&record_id, record) in exchange.records() {
@@ -195,71 +211,239 @@ pub(super) fn decode(
     Ok(StageOutcome {
         value: (),
         claims: typed,
-        notes,
+        notes: Vec::new(),
         losses,
     })
 }
 
-fn expected_value(
+/// The representation items that identify the geometry of each shape
+/// aspect: the items of a `SHAPE_DEFINITION_REPRESENTATION` whose
+/// definition is a property of the aspect, and the identified items of a
+/// `GEOMETRIC_ITEM_SPECIFIC_USAGE` or `ITEM_IDENTIFIED_REPRESENTATION_USAGE`
+/// whose definition is the aspect.
+fn aspect_items(
+    exchange: &Exchange,
+    property_definitions: &BTreeMap<u64, u64>,
+    representations: &BTreeMap<u64, BTreeSet<u64>>,
+) -> BTreeMap<u64, BTreeSet<u64>> {
+    let mut items = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        let Some(relation) = record.partial("SHAPE_DEFINITION_REPRESENTATION") else {
+            continue;
+        };
+        let Some(aspect) = relation
+            .parameters
+            .first()
+            .and_then(ValueExt::reference)
+            .and_then(|property| property_definitions.get(&property))
+        else {
+            continue;
+        };
+        let Some(representation) = relation
+            .parameters
+            .get(1)
+            .and_then(ValueExt::reference)
+            .and_then(|representation| representations.get(&representation))
+        else {
+            continue;
+        };
+        items
+            .entry(*aspect)
+            .or_default()
+            .extend(representation.iter().copied());
+    }
+    for (_, record) in exchange.records() {
+        let Some(usage) = record.partials.iter().find(|partial| {
+            partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE"
+                || partial.name == "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
+        }) else {
+            continue;
+        };
+        let plain = record.partials.iter().all(|partial| {
+            partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE"
+                || partial.name == "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
+        });
+        if !plain {
+            continue;
+        }
+        let Some(aspect) = usage.parameters.get(2).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let identified = match usage.parameters.get(4) {
+            Some(Value::Reference(item)) => vec![*item],
+            Some(Value::List(values)) => values.iter().filter_map(ValueExt::reference).collect(),
+            _ => continue,
+        };
+        items.entry(aspect).or_default().extend(identified);
+    }
+    items
+}
+
+/// The bodies that the property definition `definition` names.
+fn resolve_target(
+    definition: u64,
+    exchange: &Exchange,
+    topology: &TopologyData,
+    definitions_by_shape: &BTreeMap<u64, ProductDefinitionId>,
+    aspect_items: &BTreeMap<u64, BTreeSet<u64>>,
+) -> DeclaredTarget {
+    let Some(record) = exchange.records().get(&definition) else {
+        return DeclaredTarget::Unresolved;
+    };
+    if record.partial("PRODUCT_DEFINITION_SHAPE").is_some() {
+        return definitions_by_shape.get(&definition).map_or(
+            DeclaredTarget::Unresolved,
+            |definition| DeclaredTarget::Definition {
+                definition: definition.clone(),
+            },
+        );
+    }
+    if record.partial("SHAPE_ASPECT").is_none() {
+        return DeclaredTarget::Unresolved;
+    }
+    let Some(items) = aspect_items.get(&definition) else {
+        return DeclaredTarget::Unresolved;
+    };
+    let mut bodies = BTreeSet::new();
+    for item in items {
+        let placement = exchange.records().get(item).is_some_and(|record| {
+            record.partial("AXIS2_PLACEMENT_3D").is_some()
+                || record.partial("AXIS2_PLACEMENT_2D").is_some()
+        });
+        if placement {
+            continue;
+        }
+        let Some(item_bodies) = topology.body_by_root.get(item) else {
+            return DeclaredTarget::Unresolved;
+        };
+        bodies.extend(item_bodies.iter().cloned());
+    }
+    if bodies.is_empty() {
+        return DeclaredTarget::Unresolved;
+    }
+    DeclaredTarget::Bodies {
+        bodies: bodies.into_iter().collect(),
+    }
+}
+
+/// The quantity that the validation item `record` names, before unit
+/// scaling, or `None` when its name and value name no carried quantity.
+fn stated(
     id: u64,
     record: &RawRecord,
     exchange: &Exchange,
-    scale: f64,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Expected>, CodecError> {
+) -> Option<Stated> {
+    let name = item_name(record)
+        .and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                losses,
+                id,
+                "validation item name",
+                StepLossCode::MetadataStringInvalid,
+            )
+        })?
+        .to_ascii_lowercase();
     if let Some(point) = record.partial("CARTESIAN_POINT") {
-        let Some(values) = point.parameters.get(1).and_then(ValueExt::list) else {
-            return Ok(None);
+        let values = point.parameters.get(1).and_then(ValueExt::list)?;
+        let [x, y, z] = values else {
+            return None;
         };
-        if values.len() != 3 {
-            return Ok(None);
-        }
-        let [Some(x), Some(y), Some(z)] =
-            [values[0].number(), values[1].number(), values[2].number()]
-        else {
-            return Ok(None);
+        let coordinates = [x.number()?, y.number()?, z.number()?];
+        return match name.as_str() {
+            "centre point" => Some(Stated::SolidCentroid(coordinates)),
+            "surface centre point" => Some(Stated::SheetCentroid(coordinates)),
+            _ => None,
         };
-        return Ok(Some(Expected::Centroid(Point3::new(
-            x * scale,
-            y * scale,
-            z * scale,
-        ))));
     }
-    if record.partial("MEASURE_REPRESENTATION_ITEM").is_none() {
-        return Ok(None);
-    }
-    let Some((kind, value)) = record
+    record.partial("MEASURE_REPRESENTATION_ITEM")?;
+    let (kind, value) = record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
-        .find_map(area_or_volume_measure)
-    else {
-        return Ok(None);
+        .find_map(area_or_volume_measure)?;
+    match (kind, name.as_str()) {
+        ("VOLUME_MEASURE", "volume measure") => Some(Stated::Volume(value)),
+        ("AREA_MEASURE", "surface area measure") => Some(Stated::SolidArea(value)),
+        ("AREA_MEASURE", "wetted area measure") => Some(Stated::WettedArea(value)),
+        ("AREA_MEASURE", "independent surface area measure") => Some(Stated::SheetArea(value)),
+        _ => None,
+    }
+}
+
+/// The `name` of a representation item, simple or complex.
+fn item_name(record: &RawRecord) -> Option<&Value> {
+    [
+        "REPRESENTATION_ITEM",
+        "MEASURE_REPRESENTATION_ITEM",
+        "CARTESIAN_POINT",
+    ]
+    .into_iter()
+    .find_map(|name| record.partial(name))
+    .and_then(|partial| partial.parameters.first())
+}
+
+/// The quantity in millimetre units: lengths scale by the context length
+/// unit, areas and volumes by their measure unit.
+fn scaled(
+    stated: Stated,
+    id: u64,
+    record: &RawRecord,
+    exchange: &Exchange,
+    length_scale: f64,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<DeclaredQuantity>, CodecError> {
+    let point = |[x, y, z]: [f64; 3]| {
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            x * length_scale,
+            y * length_scale,
+            z * length_scale,
+        ))
     };
-    let scale = measure_scale(id, record, exchange, scale, kind, losses, ctx)?;
-    Ok(Some(match kind {
-        "AREA_MEASURE" => Expected::Area(value * scale),
-        "VOLUME_MEASURE" => Expected::Volume(value * scale),
-        _ => return Ok(None),
-    }))
+    let mut measure = |value: f64, kind: &str| {
+        measure_scale(id, record, exchange, kind, losses, ctx)
+            .map(|scale| scale.and_then(|scale| FiniteReal::new(value * scale)))
+    };
+    Ok(match stated {
+        Stated::Volume(value) => {
+            measure(value, "VOLUME_MEASURE")?.map(|value| DeclaredQuantity::Volume { value })
+        }
+        Stated::SolidArea(value) => {
+            measure(value, "AREA_MEASURE")?.map(|value| DeclaredQuantity::SolidArea { value })
+        }
+        Stated::WettedArea(value) => {
+            measure(value, "AREA_MEASURE")?.map(|value| DeclaredQuantity::WettedArea { value })
+        }
+        Stated::SheetArea(value) => {
+            measure(value, "AREA_MEASURE")?.map(|value| DeclaredQuantity::SheetArea { value })
+        }
+        Stated::SolidCentroid(value) => {
+            point(value).map(|value| DeclaredQuantity::SolidCentroid { value })
+        }
+        Stated::SheetCentroid(value) => {
+            point(value).map(|value| DeclaredQuantity::SheetCentroid { value })
+        }
+    })
 }
 
 fn measure_scale(
     id: u64,
     record: &RawRecord,
     exchange: &Exchange,
-    fallback: f64,
     kind: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<f64, CodecError> {
+) -> Result<Option<f64>, CodecError> {
     let resolved = measure_unit(record)
         .and_then(|unit| exchange.records().get(&unit))
         .and_then(derived_unit_elements)
         .and_then(ValueExt::list);
     let resolved = if let Some(elements) = resolved {
         let mut scale = Some(1.0);
+        let mut dimension = 0.0;
         for element in elements {
             let fields = (|| {
                 let element = exchange.records().get(&element.reference()?)?;
@@ -279,29 +463,26 @@ fn measure_scale(
                 scale = None;
                 break;
             };
+            dimension += exponent;
             scale = scale.map(|scale| scale * base.get().powf(exponent));
         }
-        scale
+        scale.filter(|scale| {
+            dimension == if kind == "AREA_MEASURE" { 2.0 } else { 3.0 }
+                && scale.is_finite()
+                && *scale > 0.0
+        })
     } else {
         None
     };
     match resolved {
-        Some(scale) => Ok(scale),
+        Some(scale) => Ok(Some(scale)),
         None => {
-            push_validation_loss(
-                losses,
-                StepLossCode::ValidationMeasureUnitUnresolved,
-                format!(
-                    "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
-                ),
-            );
-            Ok(fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 }))
+            losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
+                "geometric validation {kind} measure #{id} unit scale did not resolve; the quantity is not compared",
+            )));
+            Ok(None)
         }
     }
-}
-
-fn push_validation_loss(losses: &mut Vec<LossNote>, code: StepLossCode, message: String) {
-    losses.push(code.note(message));
 }
 
 fn area_or_volume_measure(value: &Value) -> Option<(&str, f64)> {
@@ -361,164 +542,6 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) 
             typed.insert(base);
         }
     }
-}
-
-#[derive(Clone, Copy)]
-struct MeshProperties {
-    area: f64,
-    volume: f64,
-    centroid: Point3,
-}
-
-impl MeshProperties {
-    fn centroid_distance(self, expected: Point3) -> f64 {
-        (self.centroid.x - expected.x)
-            .hypot(self.centroid.y - expected.y)
-            .hypot(self.centroid.z - expected.z)
-    }
-}
-
-fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
-    let body = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id)?;
-    let meshes = ir
-        .model
-        .tessellations
-        .iter()
-        .filter(|mesh| mesh.body.as_ref() == Some(body));
-    let origin = meshes.clone().find_map(|mesh| {
-        mesh.triangles().first().and_then(|triangle| {
-            mesh.vertices()
-                .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
-                .copied()
-        })
-    })?;
-    let extent = meshes
-        .clone()
-        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
-        .fold(0.0_f64, |scale, point| {
-            scale
-                .max((point.x - origin.x).abs())
-                .max((point.y - origin.y).abs())
-                .max((point.z - origin.z).abs())
-        });
-    let exponent = cadmpeg_ir::math::power_of_two_bound(extent)?;
-    let mut area = 0.0;
-    let mut area_centroid = [0.0; 3];
-    let mut signed_volume = 0.0;
-    let mut volume_centroid = [0.0; 3];
-    let mut triangles = 0usize;
-    let mut watertight = true;
-    let mut coordinate_scale = 0.0_f64;
-    for mesh in meshes {
-        let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
-        for triangle in mesh.triangles() {
-            let [a, b, c] = triangle.map(|index| {
-                mesh.vertices()
-                    .get(cadmpeg_core::decode::index_from_u32(index))
-                    .copied()
-            });
-            let (Some(a), Some(b), Some(c)) = (a, b, c) else {
-                return None;
-            };
-            for [first, second] in [
-                [triangle[0], triangle[1]],
-                [triangle[1], triangle[2]],
-                [triangle[2], triangle[0]],
-            ] {
-                let edge = (first.min(second), first.max(second));
-
-                match edge_uses.entry(edge) {
-                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-                    Entry::Vacant(entry) => {
-                        entry.insert(1);
-                    }
-                }
-            }
-            let relative = |point: cadmpeg_ir::features::FinitePoint3| {
-                Some(Point3::new(
-                    cadmpeg_ir::math::scale_power_of_two(point.x - origin.x, -exponent)?.get(),
-                    cadmpeg_ir::math::scale_power_of_two(point.y - origin.y, -exponent)?.get(),
-                    cadmpeg_ir::math::scale_power_of_two(point.z - origin.z, -exponent)?.get(),
-                ))
-            };
-            let [Some(a), Some(b), Some(c)] = [a, b, c].map(relative) else {
-                return None;
-            };
-            coordinate_scale = coordinate_scale
-                .max(a.x.abs())
-                .max(a.y.abs())
-                .max(a.z.abs())
-                .max(b.x.abs())
-                .max(b.y.abs())
-                .max(b.z.abs())
-                .max(c.x.abs())
-                .max(c.y.abs())
-                .max(c.z.abs());
-            let ab = [b.x - a.x, b.y - a.y, b.z - a.z];
-            let ac = [c.x - a.x, c.y - a.y, c.z - a.z];
-            let cross = [
-                ab[1] * ac[2] - ab[2] * ac[1],
-                ab[2] * ac[0] - ab[0] * ac[2],
-                ab[0] * ac[1] - ab[1] * ac[0],
-            ];
-            let triangle_area = 0.5 * cross[0].hypot(cross[1]).hypot(cross[2]);
-            area += triangle_area;
-            for axis in 0..3 {
-                area_centroid[axis] +=
-                    triangle_area * [a.x + b.x + c.x, a.y + b.y + c.y, a.z + b.z + c.z][axis] / 3.0;
-            }
-            let tetra_volume = (a.x * (b.y * c.z - b.z * c.y)
-                + a.y * (b.z * c.x - b.x * c.z)
-                + a.z * (b.x * c.y - b.y * c.x))
-                / 6.0;
-            signed_volume += tetra_volume;
-            for axis in 0..3 {
-                volume_centroid[axis] +=
-                    tetra_volume * [a.x + b.x + c.x, a.y + b.y + c.y, a.z + b.z + c.z][axis] / 4.0;
-            }
-            triangles += 1;
-        }
-        watertight &= !edge_uses.is_empty() && edge_uses.values().all(|uses| *uses == 2);
-    }
-    if triangles == 0 || area == 0.0 {
-        return None;
-    }
-    let triangle_count = cadmpeg_core::convert::f64_from_index(triangles)?;
-    let volume_epsilon = f64::EPSILON * coordinate_scale.powi(3) * triangle_count.max(1.0);
-    let centroid = if watertight && signed_volume.abs() > volume_epsilon {
-        Point3::new(
-            volume_centroid[0] / signed_volume,
-            volume_centroid[1] / signed_volume,
-            volume_centroid[2] / signed_volume,
-        )
-    } else {
-        Point3::new(
-            area_centroid[0] / area,
-            area_centroid[1] / area,
-            area_centroid[2] / area,
-        )
-    };
-    let [Some(x), Some(y), Some(z)] = [centroid.x, centroid.y, centroid.z]
-        .map(|component| cadmpeg_ir::math::scale_power_of_two(component, exponent))
-    else {
-        return None;
-    };
-    let centroid = Point3::new(origin.x + x.get(), origin.y + y.get(), origin.z + z.get());
-    if !area.is_finite() || !signed_volume.is_finite() || !centroid.is_finite() {
-        return None;
-    }
-    let area = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent)?;
-    let volume = if signed_volume == 0.0 {
-        0.0
-    } else {
-        let volume = cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)?;
-        volume.get()
-    };
-    Some(MeshProperties {
-        area: area.get(),
-        volume,
-        centroid,
-    })
 }
 
 /// The numeric entity identifier an IR identity ends with, or `None` when it

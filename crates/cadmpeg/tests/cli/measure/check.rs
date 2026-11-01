@@ -289,3 +289,63 @@ fn the_188_step_fixtures_have_no_measurement_warnings() {
         assert!(warnings(&report, "orientation").is_empty(), "{name}");
     }
 }
+
+#[test]
+fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
+    use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+    use cadmpeg_ir::ids::DeclaredMeasureId;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let dir = tempfile::tempdir().unwrap();
+    for (value, unresolved, exit, severity) in [
+        (1000.0, false, 0, None),
+        (1001.0, false, 1, Some("error")),
+        (1000.0, true, 0, Some("warning")),
+    ] {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let target = if unresolved {
+            DeclaredTarget::Unresolved
+        } else {
+            DeclaredTarget::Bodies {
+                bodies: vec![ir.model.bodies[0].id.clone()],
+            }
+        };
+        ir.model.declared_measures.push(DeclaredMeasure {
+            id: DeclaredMeasureId::mint("test:model:declared_measure#volume").unwrap(),
+            target,
+            quantity: DeclaredQuantity::Volume {
+                value: FiniteReal::new(value).unwrap(),
+            },
+            label: None,
+            native_ref: None,
+        });
+        let path = dir.path().join("declared.cadir.json");
+        std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
+        let output = super::cadmpeg()
+            .arg("check")
+            .arg(&path)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(exit),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let found: Vec<_> = report["check_report"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["check"] == "declared_measure")
+            .collect();
+        match severity {
+            None => assert!(found.is_empty(), "{found:#?}"),
+            Some(severity) => {
+                assert_eq!(found.len(), 1, "{found:#?}");
+                assert_eq!(found[0]["severity"], severity);
+            }
+        }
+    }
+}

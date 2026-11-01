@@ -121,6 +121,7 @@ const COVERAGE: ArenaDispositions = {
         articulations: Written,
         physics_scenes: Written,
         solver_settings: Written,
+        declared_measures: Omitted,
     }
 };
 
