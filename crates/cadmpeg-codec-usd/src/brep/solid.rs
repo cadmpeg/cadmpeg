@@ -153,6 +153,8 @@ pub(crate) struct Packed {
     /// The tolerance of each face, edge, and vertex; `NaN` is the B-rep
     /// tolerance.
     pub(crate) tolerances: PackedTolerances,
+    /// The exact carriers of the entities.
+    pub(crate) exact: exact::PackedExact,
 }
 
 /// The `cad:` arrays of `CadBrepIdentityAPI` (spec §18.1).
@@ -262,8 +264,15 @@ fn surface_loop(brep: &Brep, loop_: &LoopRecord, same_sense: bool) -> Vec<(usize
 impl Packed {
     /// Appends one NURBS B-rep whose surface `i` is the surface of face `i`,
     /// curve `i` the curve of edge `i`, and pcurve `i`, when present, the
-    /// pcurve of oriented edge `i`.
-    pub(crate) fn push(&mut self, brep: &Brep, trimmed: bool) -> Result<(), Refusal> {
+    /// pcurve of oriented edge `i`, with the exact carriers of `exact`, the
+    /// B-rep it is the NURBS form of (spec §18.5).
+    pub(crate) fn push(
+        &mut self,
+        brep: &Brep,
+        trimmed: bool,
+        exact: Option<&Brep>,
+    ) -> Result<(), Refusal> {
+        let mut layout = exact::Layout::default();
         let face_base = self.face_loop_count.len();
         let vertex_base = self.vertices.len();
         let edge_base = self.edge_vertices.len();
@@ -372,6 +381,7 @@ impl Packed {
             self.face_loop_count.push(count(face.loops.len())?);
             for loop_index in &face.loops {
                 let loop_ = brep.loops.get(*loop_index).ok_or("a face names no loop")?;
+                layout.loops.push(*loop_index);
                 let uses = surface_loop(brep, loop_, face.same_sense);
                 self.loop_edgeuse_count.push(count(uses.len())?);
                 self.loop_vertex.push(match loop_.vertex {
@@ -379,6 +389,7 @@ impl Packed {
                     _ => NO_VERTEX,
                 });
                 for (oriented, same) in uses {
+                    layout.edgeuses.push(oriented);
                     let record = brep
                         .oriented_edges
                         .get(oriented)
@@ -492,7 +503,7 @@ impl Packed {
         )
         .ok_or("a B-rep has no point")?;
         self.extent.extend(box_);
-        Ok(())
+        self.exact.push(exact, brep, &layout)
     }
 
     fn push_surface(&mut self, record: &NurbsSurfaceRecord) -> Result<(), Refusal> {
@@ -726,6 +737,11 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
         } else {
             PackedIdentities::default()
         },
+        exact: if schemas.contains(exact::ANALYTIC_API) {
+            exact::read(prim, issues)?
+        } else {
+            exact::PackedExact::default()
+        },
         tolerances: if schemas.contains(TOLERANCE_API) {
             PackedTolerances {
                 faces: reals(prim, "cad:face:tolerance", 1, issues).unwrap_or_default(),
@@ -843,6 +859,16 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         }
         None => None,
     };
+    let catalogs = if packed.exact.face_surfaces.is_empty() {
+        None
+    } else {
+        Some(packed.exact.unpack(
+            surfaces.len(),
+            packed.edge_vertices.len(),
+            packed.loop_edgeuse_count.len(),
+            packed.edgeuse_edge.len(),
+        )?)
+    };
     let loops = ranges(&packed.face_loop_count);
     let uses = ranges(&packed.loop_edgeuse_count);
     let faceuses = ranges(&packed.shell_faceuse_count);
@@ -917,6 +943,8 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         // Faces in face order, with their loops and edgeuses.
         let mut faces_in_order: Vec<usize> = face_map.keys().copied().collect();
         faces_in_order.sort_unstable();
+        let mut loop_records: Vec<(usize, usize)> = Vec::new();
+        let mut edgeuse_records: Vec<(usize, usize)> = Vec::new();
         for (written, face) in faces_in_order.iter().enumerate() {
             face_map.insert(*face, written);
             let sense = same_sense[face];
@@ -967,6 +995,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                         orientation: if sense { same } else { !same },
                         pcurve,
                     });
+                    edgeuse_records.push((edgeuse, brep.oriented_edges.len() - 1));
                     oriented.push(brep.oriented_edges.len() - 1);
                 }
                 if !sense {
@@ -981,6 +1010,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                     oriented_edges: oriented,
                     vertex: loop_vertex,
                 });
+                loop_records.push((loop_, brep.loops.len() - 1));
                 loop_indices.push(brep.loops.len() - 1);
             }
             brep.nurbs_surfaces.push(surfaces[*face].clone());
@@ -1047,6 +1077,19 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         if trims.is_none() {
             super::convert::derive_pcurves(&mut brep);
         }
+        if let Some(catalogs) = &catalogs {
+            exact::restore(
+                &mut brep,
+                &packed.exact,
+                catalogs,
+                &exact::Decoded {
+                    faces: &faces_in_order,
+                    edges: &edge_map,
+                    loops: &loop_records,
+                    edgeuses: &edgeuse_records,
+                },
+            )?;
+        }
         let named = |values: &[String], index: usize| {
             values.get(index).filter(|value| !value.is_empty()).cloned()
         };
@@ -1088,11 +1131,16 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         for (global, record) in &vertex_map {
             brep.tolerances.vertices[*record] = own(&tolerances.vertices, *global);
         }
+        if catalogs.is_some() {
+            exact::prune(&mut brep);
+        }
         out.faces.push(faces_in_order);
         out.breps.push(brep);
     }
     Ok(out)
 }
+
+pub(crate) mod exact;
 
 #[cfg(test)]
 mod tests;

@@ -76,3 +76,95 @@ class "CadBrepToleranceAPI" (
         doc = """One for each vertex."""
     )
 }
+
+class "CadBrepAnalyticAPI" (
+    inherits = </APISchemaBase>
+    doc = """The exact carriers of the faces, edges, and edgeuses of a BrepArray, whose
+             BrepArray carriers are their NURBS forms (docs/formats/usd.md §18.5). The
+             catalogs hold analytic surfaces, analytic and NURBS curves, and analytic and
+             NURBS pcurves. A type token 'brep' selects the BrepArray carrier of the
+             entity, with index -1."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform token[] cad:surface:analytic:type (
+        allowedTokens = ["plane", "cylinder", "cone", "sphere", "torus", "extrusion", "revolution"]
+    )
+    uniform point3d[] cad:surface:analytic:position
+    uniform vector3d[] cad:surface:analytic:axis
+    uniform vector3d[] cad:surface:analytic:refDirection
+    uniform int[] cad:surface:analytic:paramCounts
+    uniform double[] cad:surface:analytic:params
+    uniform token[] cad:surface:analytic:profileType (
+        allowedTokens = ["none", "analytic", "nurbs"]
+    )
+    uniform int[] cad:surface:analytic:profileIndex
+
+    uniform token[] cad:curve3d:analytic:type (
+        allowedTokens = ["line", "circle", "ellipse", "parabola", "hyperbola"]
+    )
+    uniform point3d[] cad:curve3d:analytic:position
+    uniform vector3d[] cad:curve3d:analytic:axis
+    uniform vector3d[] cad:curve3d:analytic:refDirection
+    uniform int[] cad:curve3d:analytic:paramCounts
+    uniform double[] cad:curve3d:analytic:params
+
+    uniform point3d[] cad:curve3d:nurb:controlVertices
+    uniform uint[] cad:curve3d:nurb:vertexCount
+    uniform uint[] cad:curve3d:nurb:order
+    uniform double[] cad:curve3d:nurb:knots
+    uniform double[] cad:curve3d:nurb:weights
+    uniform token[] cad:curve3d:nurb:form (
+        allowedTokens = ["open", "closed", "periodic"]
+    )
+
+    uniform token[] cad:curveUv:analytic:type (
+        allowedTokens = ["circle", "ellipse"]
+    )
+    uniform double2[] cad:curveUv:analytic:position
+    uniform double2[] cad:curveUv:analytic:refDirection
+    uniform int[] cad:curveUv:analytic:paramCounts
+    uniform double[] cad:curveUv:analytic:params
+    uniform double2[] cad:curveUv:analytic:range
+
+    uniform double2[] cad:curveUv:nurb:controlVertices
+    uniform uint[] cad:curveUv:nurb:vertexCount
+    uniform uint[] cad:curveUv:nurb:order
+    uniform double[] cad:curveUv:nurb:knots
+    uniform double[] cad:curveUv:nurb:weights
+    uniform token[] cad:curveUv:nurb:form (
+        allowedTokens = ["open", "closed", "periodic"]
+    )
+
+    uniform token[] cad:face:surfaceType (
+        allowedTokens = ["brep", "analytic"]
+        doc = """One for each face."""
+    )
+    uniform int[] cad:face:surfaceIndex
+    uniform token[] cad:edge:curveType (
+        allowedTokens = ["brep", "analytic", "nurbs"]
+        doc = """One for each edge."""
+    )
+    uniform int[] cad:edge:curveIndex
+    uniform double2[] cad:edge:range (
+        doc = """The parameter range of the exact curve of each edge."""
+    )
+    uniform token[] cad:edge:sense (
+        allowedTokens = ["same", "opposite"]
+        doc = """'same' when the exact curve runs from the first vertex of
+                 edge:vertexIndices to the second."""
+    )
+    uniform token[] cad:loop:direction (
+        allowedTokens = ["same", "reversed", "absent"]
+        doc = """How each loop runs against its exact loop. 'absent' marks a loop that bounds
+                 the surface domain of a face with no exact loop."""
+    )
+    uniform token[] cad:edgeuse:pcurveType (
+        allowedTokens = ["brep", "none", "analytic", "nurbs"]
+        doc = """One for each edgeuse."""
+    )
+    uniform int[] cad:edgeuse:pcurveIndex
+}

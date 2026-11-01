@@ -606,6 +606,8 @@ struct Exporter<'t, 'ir> {
     surfaces: BTreeMap<SurfaceId, Option<(Reference, Chart)>>,
     /// The face ids in record order.
     faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    traced: Vec<usize>,
     unwritten: Unwritten,
 }
 
@@ -629,6 +631,8 @@ pub(super) struct Exported {
     pub(super) brep: Brep,
     /// The IR face of each face record.
     pub(super) faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    pub(super) traced: Vec<usize>,
     pub(super) unwritten: Unwritten,
 }
 
@@ -651,6 +655,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             faces: Vec::new(),
+            traced: Vec::new(),
             unwritten: Unwritten::default(),
         }
     }
@@ -1092,15 +1097,19 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                         // A pcurve that the tessellator found off its edge is
                         // replaced by the traced one.
                         let trusted = trace.is_none_or(|trace| trace.from_pcurve);
-                        let pcurve = trusted
+                        let given = trusted
                             .then(|| self.pcurve(coedge, chart, planar))
-                            .flatten()
-                            .or_else(|| {
-                                if planar {
-                                    return None;
-                                }
-                                self.derived_pcurve(trace?, chart)
-                            });
+                            .flatten();
+                        let traced = given.is_none() && !planar;
+                        let pcurve = given.or_else(|| {
+                            if planar {
+                                return None;
+                            }
+                            self.derived_pcurve(trace?, chart)
+                        });
+                        if traced && pcurve.is_some() {
+                            self.traced.push(self.brep.oriented_edges.len());
+                        }
                         if pcurve.is_none() && !planar {
                             self.unwritten.pcurves += 1;
                         }
@@ -1476,6 +1485,7 @@ pub(super) fn export<'ir>(
     Some(Exported {
         brep: exporter.brep,
         faces: exporter.faces,
+        traced: exporter.traced,
         unwritten: exporter.unwritten,
     })
 }

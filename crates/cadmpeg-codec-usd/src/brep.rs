@@ -101,6 +101,20 @@ impl SurfaceKind {
             Self::Revolution => "revolution",
         }
     }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [
+            Self::Plane,
+            Self::Cylinder,
+            Self::Cone,
+            Self::Sphere,
+            Self::Torus,
+            Self::Extrusion,
+            Self::Revolution,
+        ]
+        .into_iter()
+        .find(|kind| kind.token() == token)
+    }
 }
 
 /// The analytic curve types.
@@ -123,6 +137,18 @@ impl CurveKind {
             Self::Hyperbola => "hyperbola",
         }
     }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [
+            Self::Line,
+            Self::Circle,
+            Self::Ellipse,
+            Self::Parabola,
+            Self::Hyperbola,
+        ]
+        .into_iter()
+        .find(|kind| kind.token() == token)
+    }
 }
 
 /// The parameter-space analytic curve types.
@@ -132,6 +158,21 @@ pub(crate) enum PcurveKind {
     Ellipse,
 }
 
+impl PcurveKind {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Ellipse => "ellipse",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [Self::Circle, Self::Ellipse]
+            .into_iter()
+            .find(|kind| kind.token() == token)
+    }
+}
+
 /// The closure assertion of a NURBS parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Form {
@@ -139,6 +180,22 @@ pub(crate) enum Form {
     Open,
     Closed,
     Periodic,
+}
+
+impl Form {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Periodic => "periodic",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [Self::Open, Self::Closed, Self::Periodic]
+            .into_iter()
+            .find(|form| form.token() == token)
+    }
 }
 
 /// A frame-positioned analytic record.

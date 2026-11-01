@@ -1452,3 +1452,58 @@ The direction sign `s` is `−1` when both connectors use `faceFrame`, and `+1` 
 | `uniform double[] cad:vertex:tolerance` | one for each vertex |
 
 Element `i` is the tolerance of the entity at position `i` of its arrays (§17.1). `NaN` is the tolerance of its B-rep, `brep:intersectTol3d`. `brep:intersectTol3d` of a B-rep is at least each tolerance of its entities.
+
+### 18.5 CadBrepAnalyticAPI
+
+`CadBrepAnalyticAPI` is a single-apply API schema of a `BrepArray` prim. The `BrepArray` carrier of a face, edge, or edgeuse is the NURBS form of an exact carrier. This API holds the exact carriers in catalogs and selects one for each face, edge, and edgeuse. Lengths are in the length unit of the stage and angles in radians.
+
+#### Catalogs
+
+An analytic record has a frame: `position` `P`, `axis` `Z`, and `refDirection` `X`, with `Y = Z × X`. `Z` and `X` are orthogonal unit vectors. `paramCounts[i]` is the number of `params` of record `i`, in record order.
+
+| Catalog | Attributes |
+| --- | --- |
+| analytic surfaces | `cad:surface:analytic:` `type` (token), `position`, `axis`, `refDirection`, `paramCounts`, `params`, `profileType`, `profileIndex` |
+| analytic curves | `cad:curve3d:analytic:` `type`, `position`, `axis`, `refDirection`, `paramCounts`, `params` |
+| NURBS curves | `cad:curve3d:nurb:` `controlVertices`, `vertexCount`, `order`, `knots`, `weights`, `form` |
+| analytic pcurves | `cad:curveUv:analytic:` `type`, `position` (double2), `refDirection` (double2), `paramCounts`, `params`, `range` (double2) |
+| NURBS pcurves | `cad:curveUv:nurb:` `controlVertices` (double2), `vertexCount`, `order`, `knots`, `weights`, `form` |
+
+With `r(u) = cos u·X + sin u·Y`:
+
+| Surface `type` | `params` | `S(u, v)` |
+| --- | --- | --- |
+| `plane` | | `P + u·X + v·Y` |
+| `cylinder` | `R` | `P + R·r(u) + v·Z` |
+| `cone` | `R, α` | `P + (R + v tan α)·r(u) + v·Z`, with `v` the axial distance |
+| `sphere` | `R` | `P + R(cos v·r(u) + sin v·Z)` |
+| `torus` | `R₁, R₂` | `P + (R₁ + R₂ cos v)·r(u) + R₂ sin v·Z` |
+| `extrusion` | | `C(u) + v·Z`, with `C` the profile curve |
+| `revolution` | | `P + Rot(Z, u)·(C(v) − P)`, with `C` the profile curve |
+
+`profileType` is `analytic`, `nurbs`, or `none`, and `profileIndex` is the index of the profile curve in that catalog, or `-1`.
+
+| Curve `type` | `params` | `C(t)` |
+| --- | --- | --- |
+| `line` | | `P + t·Z` |
+| `circle` | `R` | `P + R(cos t·X + sin t·Y)` |
+| `ellipse` | `a, b` | `P + a cos t·X + b sin t·Y` |
+| `parabola` | `f` | `P + f t²·X + 2f t·Y` |
+| `hyperbola` | `a, b` | `P + a cosh t·X + b sinh t·Y` |
+
+With `perp((x, y)) = (−y, x)`, an analytic pcurve is a `circle` with `params` `R`, `c(t) = P + R(cos t·X + sin t·perp(X))`, or an `ellipse` with `params` `a, b`, `c(t) = P + a cos t·X + b sin t·perp(X)`. `range` is `(t0, t1)`, traversed from `t0` to `t1`. The NURBS catalogs have the form of the `BrepArray` NURBS arrays (§17); `form` is `open`, `closed`, or `periodic` for each curve.
+
+#### Selection
+
+| Attribute | Elements | Meaning |
+| --- | --- | --- |
+| `cad:face:surfaceType`, `cad:face:surfaceIndex` | one for each face | `brep`, or `analytic` and its index |
+| `cad:edge:curveType`, `cad:edge:curveIndex` | one for each edge | `brep`, or `analytic` or `nurbs` and its index |
+| `uniform double2[] cad:edge:range` | one for each edge | the parameter range of the exact curve |
+| `uniform token[] cad:edge:sense` | one for each edge | `same` when the exact curve runs from the first vertex of `edge:vertexIndices` to the second, else `opposite` |
+| `uniform token[] cad:loop:direction` | one for each loop | `same`, `reversed`, or `absent` |
+| `cad:edgeuse:pcurveType`, `cad:edgeuse:pcurveIndex` | one for each edgeuse | `brep`, `none`, or `analytic` or `nurbs` and its index |
+
+A type token `brep` selects the `BrepArray` carrier of the entity, with index `-1`. A pcurve type `none` selects no pcurve. An exact pcurve is in the parameters of the exact surface of its face, in the direction of the exact oriented edge.
+
+A loop with direction `reversed` runs against its exact loop: the exact loop has its edgeuses in the opposite order, each with the opposite orientation. A loop with direction `absent` bounds the surface domain of a face whose exact form has no loop; the exact face does not hold it, nor its edgeuses, nor the edges and vertices that only it reaches.
