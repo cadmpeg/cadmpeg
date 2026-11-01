@@ -1727,3 +1727,33 @@ Parsed by:
 | 25 | 24 | `origin` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+
+## `pm_dc_thread_definition_prefix`
+
+Spec §13 · layout: byte offsets · size: 30 B
+
+Segment major versions 19 and 21. The linked-element header precedes the first counted UTF-16LE string.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 26 | `linked_header` | `bytes[26]` | little | spec | Its linked-element header occupies 26 bytes. |
+| 26 | 4 | `nominal_size_code_units` | `u32` | little | spec | its u32 code-unit count at byte 26 |
+
+## `pm_dc_thread_definition_body`
+
+Spec §13 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/thread.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `nominal_size` | `lp_utf16` | little | spec | nominal-size, designation, and standard strings |
+| 1 | `designation` | `lp_utf16` | little | spec | nominal-size, designation, and standard strings |
+| 2 | `standard` | `lp_utf16` | little | spec | nominal-size, designation, and standard strings |
+| 3 | `controls` | `u32[6]` | little | spec | six u32 controls |
+| 4 | `class` | `lp_utf16` | little | spec | a counted UTF-16LE class string |
+| 5 | `table_strings` | `array` | little | spec | Eight strings; the eighth is the pitch field. |
