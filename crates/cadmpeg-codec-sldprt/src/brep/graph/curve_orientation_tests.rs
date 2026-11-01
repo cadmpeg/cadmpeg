@@ -161,8 +161,22 @@ fn spline_edge_against_its_curve_reverses_the_stored_direction() {
 }
 
 #[test]
-fn spline_edge_with_ends_off_its_vertices_keeps_the_stored_direction() {
+fn a_spline_edge_inside_its_curve_takes_its_direction_from_its_vertex_parameters() {
+    // The curve runs past both vertices and against the stored direction.
     let (start, end, sense) = decode_spline_edge([2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]);
+    assert!(start.ends_with("#51"), "{start}");
+    assert!(end.ends_with("#50"), "{end}");
+    assert_eq!(sense, Sense::Reversed);
+    // The same curve runs with the stored direction.
+    let (start, end, sense) = decode_spline_edge([-1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    assert!(start.ends_with("#50"), "{start}");
+    assert!(end.ends_with("#51"), "{end}");
+    assert_eq!(sense, Sense::Forward);
+}
+
+#[test]
+fn a_spline_edge_whose_vertices_are_off_its_curve_keeps_the_stored_direction() {
+    let (start, end, sense) = decode_spline_edge([2.0, 1.0, 0.0], [-1.0, 1.0, 0.0]);
     assert!(start.ends_with("#50"), "{start}");
     assert!(end.ends_with("#51"), "{end}");
     assert_eq!(sense, Sense::Forward);
@@ -186,6 +200,44 @@ fn polyline_carrier(points: &[[f64; 3]]) -> crate::brep::CurveCarrier {
         )),
         parameter_range: None,
     }
+}
+
+#[test]
+fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
+    // A closed square, periodic: the edge crosses the seam at the origin.
+    let points = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    let mut carrier = polyline_carrier(&points);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(open)) = &carrier.geometry else {
+        panic!("polyline carrier");
+    };
+    carrier.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            open.degree(),
+            open.knots().to_vec(),
+            points
+                .iter()
+                .map(|&[x, y, z]| Point3::new(x, y, z))
+                .collect(),
+            None,
+            true,
+        )
+        .unwrap(),
+    ));
+    assert_eq!(
+        super::vertex_parameter_reversal(
+            &cadmpeg_test_support::service_decode_context(),
+            &carrier,
+            Some([Point3::new(0.5, 0.0, 0.0), Point3::new(0.0, 0.5, 0.0)]),
+        )
+        .unwrap(),
+        None
+    );
 }
 
 fn domain_reversal(carrier: &crate::brep::CurveCarrier, ends: [[f64; 3]; 2]) -> Option<bool> {
