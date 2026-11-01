@@ -1104,3 +1104,101 @@ fn owned_nested_component_paths_keep_the_saved_state_native() {
         ]
     );
 }
+
+#[test]
+fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance() {
+    const REFERENCE: &str = "f3d:xref/source/occurrence-0/xref:reference#0-occurrence-0";
+    const PART: &str = "f3d:xref/source/occurrence-0/xref/part/Design/BulkStream.dat:design-component-occurrence#496";
+    let mut pose = retained(12, 496, &[], translation(3.0, 4.0, 5.0));
+    let mut bytes = pose.frame_bytes.to_vec();
+    let mut at = 24;
+    for _ in 0..2 {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+        at += 4;
+    }
+    bytes.splice(at..at + 11, inline_local(8506, PLACEMENT));
+    pose.frame_bytes = bytes.into();
+    let mut reference = reference(vec![pose]);
+    reference.id = REFERENCE.to_owned();
+    assert!(crate::xref::contained_poses_match(&reference));
+    let table = crate::xref::XrefTable {
+        references: vec![reference.clone()],
+        ..Default::default()
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for instance in 0..2 {
+        let boundary = format!("f3d:model:occurrence#source-{instance}");
+        let insertion = format!("f3d:xref/source-{instance}/model:occurrence#insertion");
+        let root = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#root");
+        let leaf = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#leaf");
+        ir.model.occurrences.extend([
+            occurrence(&boundary, None, None, f64::from(instance) * 100.0),
+            occurrence(&insertion, Some(&boundary), Some(REFERENCE), 0.0),
+            occurrence(&root, Some(&insertion), None, 0.0),
+            occurrence(&leaf, Some(&root), Some(PART), 0.0),
+        ]);
+    }
+    ir.model.occurrences[4].transform = Transform::affine([
+        [0.0, -1.0, 0.0, 100.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        native.design_component_occurrences = vec![local_carrier(PART, 496)];
+        native.xref_references = vec![reference];
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut protected = std::collections::BTreeSet::new();
+    let mut losses = Vec::new();
+    for index in [0, 4] {
+        let boundary = ir.model.occurrences[index].id.clone();
+        super::super::place_contained_poses_with_protected(
+            &ctx,
+            &mut ir,
+            &table,
+            &mut losses,
+            &mut protected,
+            super::super::ContainedPass::Ordered,
+            Some(&boundary),
+        )
+        .unwrap();
+    }
+    for index in [0, 4] {
+        assert_eq!(
+            ir.model.occurrences[index + 1].transform,
+            Transform::identity()
+        );
+        let local = ir.model.occurrences[index + 3].transform.rows();
+        for (row, expected) in local.iter().zip([30.0, 40.0, 50.0]) {
+            assert!((row[3] - expected).abs() < 1e-9);
+        }
+        let world = ir.model.occurrences[index]
+            .transform
+            .compose(ir.model.occurrences[index + 3].transform)
+            .unwrap();
+        let expected = if index == 0 {
+            [30.0, 40.0, 50.0]
+        } else {
+            [60.0, 30.0, 50.0]
+        };
+        for (row, expected) in world.rows().iter().zip(expected) {
+            assert!((row[3] - expected).abs() < 1e-9);
+        }
+    }
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == F3dLossCode::XrefContainedPose.kind()));
+    let absent = OccurrenceId::mint("f3d:model:occurrence#absent-source").unwrap();
+    assert!(super::super::place_contained_poses_with_protected(
+        &ctx,
+        &mut ir,
+        &table,
+        &mut losses,
+        &mut protected,
+        super::super::ContainedPass::Ordered,
+        Some(&absent),
+    )
+    .is_err());
+}

@@ -43,6 +43,7 @@ pub(super) fn merge_archive(
         failed: std::collections::BTreeMap::new(),
         operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(ir, report, fidelity, &table)
 }
@@ -182,6 +183,7 @@ struct MergeSession<'r, 'a> {
     failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    component_path_tables: Vec<(cadmpeg_ir::ids::OccurrenceId, XrefTable)>,
 }
 
 impl MergeSession<'_, '_> {
@@ -210,13 +212,33 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
-        let mut left_identity = place_contained_poses_with_protected(
+        crate::xref::operation_pose::project(
+            self.ctx,
+            parent_ir,
+            &self.operation_poses,
+            &std::collections::BTreeSet::new(),
+            &mut parent_report.losses,
+        )?;
+        let mut left_identity = 0;
+        for (boundary, member_table) in &self.component_path_tables {
+            left_identity += place_contained_poses_with_protected(
+                self.ctx,
+                parent_ir,
+                member_table,
+                &mut parent_report.losses,
+                &mut self.operation_protected,
+                ContainedPass::Ordered,
+                Some(boundary),
+            )?;
+        }
+        left_identity += place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             table,
             &mut parent_report.losses,
             &mut self.operation_protected,
             ContainedPass::Ordered,
+            None,
         )?;
         crate::xref::operation_pose::project(
             self.ctx,
@@ -232,6 +254,7 @@ impl MergeSession<'_, '_> {
             &mut parent_report.losses,
             &mut std::collections::BTreeSet::new(),
             ContainedPass::Nested,
+            None,
         )?;
         crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         parent_report
@@ -447,6 +470,8 @@ impl MergeSession<'_, '_> {
                 member_roots,
             )?;
             self.stack.pop();
+            self.component_path_tables
+                .push((placement.parent.clone(), member.table.clone()));
             merged += descendants + 1;
             parent_report.notes.push(format!(
                 "xref {label}: merged {} as occurrence {occurrence} (shared definition; {descendants} nested occurrence(s))",
@@ -588,6 +613,7 @@ fn place_contained_poses(
         losses,
         &mut std::collections::BTreeSet::new(),
         ContainedPass::Ordered,
+        None,
     )?;
     let nested = place_contained_poses_with_protected(
         ctx,
@@ -596,6 +622,7 @@ fn place_contained_poses(
         losses,
         &mut std::collections::BTreeSet::new(),
         ContainedPass::Nested,
+        None,
     )?;
     Ok(ordered + nested)
 }
@@ -665,6 +692,7 @@ fn place_contained_poses_with_protected(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     pass: ContainedPass,
+    boundary: Option<&cadmpeg_ir::ids::OccurrenceId>,
 ) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::products::OccurrenceParent;
@@ -705,6 +733,61 @@ fn place_contained_poses_with_protected(
         Some(OccurrenceParent::Occurrence { occurrence }) => index.get(occurrence).copied(),
         _ => None,
     };
+    let boundary_index = boundary
+        .map(|id| {
+            index.get(id).copied().ok_or_else(|| {
+                CodecError::malformed("F3Z component-path source occurrence is absent")
+            })
+        })
+        .transpose()?;
+    let in_scope = |mut position: usize| {
+        if let Some(boundary) = boundary_index {
+            for _ in 0..=index.len() {
+                let Some(parent) = parent_of(position) else {
+                    return false;
+                };
+                if parent == boundary {
+                    return true;
+                }
+                position = parent;
+            }
+            false
+        } else {
+            true
+        }
+    };
+    let mut source_chain = Vec::new();
+    let mut at = boundary_index;
+    while let Some(position) = at {
+        source_chain.push(position);
+        if source_chain.len() > index.len() {
+            return Err(CodecError::malformed(
+                "F3Z component-path source owner cycle",
+            ));
+        }
+        at = parent_of(position);
+    }
+    let source_world = source_chain
+        .into_iter()
+        .rev()
+        .try_fold(Transform::identity(), |world, position| {
+            world.compose(ir.model.occurrences[position].transform)
+        })
+        .map_err(|_| CodecError::malformed("F3Z component-path source frame overflow"))?;
+    let source_scope = boundary_index.and_then(|boundary| {
+        ir.model
+            .occurrences
+            .iter()
+            .enumerate()
+            .find(|(position, _)| parent_of(*position) == Some(boundary))
+            .and_then(|(_, occurrence)| {
+                occurrence
+                    .id
+                    .as_str()
+                    .split_once("/model:")
+                    .map(|(scope, _)| scope)
+            })
+    });
     let mut children = BTreeMap::<usize, Vec<usize>>::new();
     for position in 0..ir.model.occurrences.len() {
         if let Some(parent) = parent_of(position) {
@@ -716,11 +799,25 @@ fn place_contained_poses_with_protected(
         let mut owners = Vec::new();
         let mut at = parent_of(instance);
         while let Some(position) = at {
+            if Some(position) == boundary_index {
+                break;
+            }
             let Some(record) = ir.model.occurrences.get(position).and_then(|occurrence| {
                 occurrence
                     .native_ref
                     .as_deref()
-                    .filter(|id| local_root(id))
+                    .filter(|id| {
+                        source_scope.map_or_else(
+                            || local_root(id),
+                            |scope| {
+                                ir.model.occurrences[position]
+                                    .id
+                                    .as_str()
+                                    .split_once("/model:")
+                                    .is_some_and(|(owner_scope, _)| owner_scope == scope)
+                            },
+                        )
+                    })
                     .and_then(|id| records.get(id))
             }) else {
                 break;
@@ -755,8 +852,9 @@ fn place_contained_poses_with_protected(
             .occurrences
             .iter()
             .enumerate()
-            .filter(|(_, occurrence)| {
-                occurrence.native_ref.as_deref() == Some(reference.id.as_str())
+            .filter(|(position, occurrence)| {
+                in_scope(*position)
+                    && occurrence.native_ref.as_deref() == Some(reference.id.as_str())
             })
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
@@ -772,11 +870,12 @@ fn place_contained_poses_with_protected(
                 == 1
         };
         for instance in instances {
-            if let Some(occurrence) = ir.model.occurrences.get(instance) {
-                protected.insert(occurrence.id.clone());
-            }
             let owners = owners_of(instance);
-            let independent = reference.owned_poses.iter().any(|pose| {
+            let independent = reference.contained_poses.iter().any(|pose| {
+                !xref::contained_pose_is_nested(pose)
+                    && owners.starts_with(&pose.owner_record_indices)
+                    && xref::component_path_has_inline_local_type(&pose.frame_bytes)
+            }) || reference.owned_poses.iter().any(|pose| {
                 owners.starts_with(&pose.owner_record_indices)
                     && xref::component_path_has_inline_local_type(&pose.frame_bytes)
             });
@@ -865,6 +964,9 @@ fn place_contained_poses_with_protected(
                 else {
                     continue;
                 };
+                let stored = source_world
+                    .compose(stored)
+                    .map_err(|_| CodecError::malformed("F3Z contained source pose overflow"))?;
                 if let Some(occurrence) = ir.model.occurrences.get(*target) {
                     protected.insert(occurrence.id.clone());
                 }
@@ -897,6 +999,9 @@ fn place_contained_poses_with_protected(
                     else {
                         continue;
                     };
+                    let stored = source_world
+                        .compose(stored)
+                        .map_err(|_| CodecError::malformed("F3Z own source pose overflow"))?;
                     bound_owned.insert((reference.id.as_str(), ordinal));
                     target_poses.entry(instance).or_default().push((
                         pose.owner_record_indices.len(),
@@ -943,6 +1048,9 @@ fn place_contained_poses_with_protected(
                         disagreeing += 1;
                     }
                     continue;
+                }
+                if let Some(occurrence) = ir.model.occurrences.get(target) {
+                    protected.insert(occurrence.id.clone());
                 }
                 placed.push((target, first));
                 if own_pose {
