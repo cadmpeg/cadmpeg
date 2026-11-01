@@ -1100,6 +1100,7 @@ fn validate_loaded(
         &face_operand_records,
         &identity_group_members,
         &native.design_entity_selection_operands,
+        &native.design_parameter_scopes,
     );
     validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings);
@@ -2113,7 +2114,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         valid_sketch_profile_region_selection(profile, selection)
                     })
             };
-        let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
+        let native_profiles_link = scope.extrude_native_profiles().is_none_or(|profiles| {
+            profiles.len() > 1
+                && scope.extrude_profile().is_none()
+                && profiles.iter().all(valid_sketch_profile)
+                && profiles
+                    .iter()
+                    .map(|profile| profile.record_index)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == profiles.len()
+        });
+        let extrude_profile_link =
+            scope.extrude_profile().is_none_or(valid_sketch_profile) && native_profiles_link;
+
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
         let base_flange_profile_link = scope.base_flange_profile().is_none_or(valid_sketch_profile);
         let emboss_profile_link = scope
@@ -4292,13 +4306,13 @@ fn act_link_is_document_root(
     if tracked == STANDARD_ROOT_COMPONENT_ENTITY {
         return true;
     }
-    let folder = stream.split('/').next();
+    let folder = stream.rsplitn(3, '/').nth(2);
     let component_entities = |entity: u32| {
         native.design_types.iter().any(|kind| {
             kind.type_guid
                 .as_str()
                 .eq_ignore_ascii_case(COMPONENT_TYPE_GUID)
-                && ids::native_stream(kind.id()).and_then(|design| design.split('/').next())
+                && ids::native_stream(kind.id()).and_then(|design| design.rsplitn(3, '/').nth(2))
                     == folder
                 && kind
                     .entities
@@ -7942,6 +7956,7 @@ fn validate_face_group_member_resolution(
     face_operand_records: &HashSet<(&str, u32, u32)>,
     identity_group_members: &HashSet<(&str, u32, u32)>,
     entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[records::feature::scope::DesignParameterScope],
 ) {
     let entity_selection_records = entity_selection_operands
         .iter()
@@ -7953,8 +7968,20 @@ fn validate_face_group_member_resolution(
             )
         })
         .collect::<std::collections::HashSet<_>>();
+    let native_profiles = scopes
+        .iter()
+        .flat_map(|scope| {
+            let stream = design_stream(&scope.id);
+            scope
+                .extrude_native_profiles()
+                .into_iter()
+                .flatten()
+                .map(move |profile| (stream, scope.record_index, profile.record_index))
+        })
+        .collect::<HashSet<_>>();
     for member in face_group_members {
-        if !face_operand_records.contains(&member)
+        if !native_profiles.contains(&member)
+            && !face_operand_records.contains(&member)
             && !identity_group_members.contains(&member)
             && !entity_selection_records.contains(&member)
         {

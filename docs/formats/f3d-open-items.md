@@ -426,6 +426,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** None.
 
+### DR-165. Composition of multiple Sketch-profile operands
+
+**Question.** How does one Extrude profile group combine Sketch-profile operands from different Sketches when their nested selections use region and bounded-face forms?
+
+**Known.** Each member uses the Sketch-profile frame in `f3d.md` §3.1. Each frame stores an asset UUID and a decimal Sketch entity suffix. Its nested selection can carry counted profile regions or a bounded-face recipe. The construction group preserves member order.
+
+**Need.** A rule that combines the member selections and their Sketch frames into the complete extrusion profile.
+
+**Conflict.** None.
+
+**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
