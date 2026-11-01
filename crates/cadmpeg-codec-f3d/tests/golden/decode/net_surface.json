@@ -1346,7 +1346,7 @@
         }
       }
     },
-    "decode_digest": "d719e20dd5dcd91f41b132b1b2c7484be1d47e4c915036800d133a9b05a53137",
+    "decode_digest": "e67561dadcada701fc171337baa7d08411d1d2439dce8350bbcb0e7c19baf2dc",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

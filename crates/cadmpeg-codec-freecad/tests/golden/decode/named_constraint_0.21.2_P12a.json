@@ -7311,7 +7311,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "c06c5bf4e97e17819de1ee41d3fd958bcb4e288638d864ece152fcec80fd2c68",
+    "decode_digest": "d49fd8273b190a3eaa00573aa3af78e02fc271715ffe0ede9cfb7a3d367bd551",
     "retained_records": {
       "fcstd:native:entry#DiffuseColor1": {
         "bytes": {

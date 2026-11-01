@@ -652,7 +652,7 @@
         }
       }
     },
-    "decode_digest": "0020d9bcaec66a7b301c6e2dd28509becc76bef0fd06d4a802d9d3a0ece14d9b",
+    "decode_digest": "fa9b02259d8af0db2fe761e898a2e07ffccc5fffc78e7aaf944f739b7be02418",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

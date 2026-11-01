@@ -6059,7 +6059,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "b8b7e3b6b77d503ac43b8af35b8300e469ba4f18efb7cee7edf9a135bc705e1a",
+    "decode_digest": "2f0e5e20da3e8f6d2073a7c8dd654b0c5035ed142c2e0392a14de832cd82eb5d",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {
