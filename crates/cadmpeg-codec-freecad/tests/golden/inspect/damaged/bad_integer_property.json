@@ -1,0 +1,60 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "358",
+        "crc32": "ba8b83cd",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "stored",
+      "name": "Document.xml",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 316
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "record.unreadable",
+        "kind": "decode_diagnostic",
+        "namespace": "decode",
+        "scope": "namespaced",
+        "strict_floor": "error"
+      },
+      "message": "part freecad.property_value stream=\"Document.xml\" offset=115 length=38: malformed container: malformed container: App::PropertyInteger Integer value \"9223372036854775808\" is invalid; dropped=[]",
+      "provenance": {
+        "byte_len": 38,
+        "format": "fcstd",
+        "offset": 115,
+        "stream": "Document.xml"
+      },
+      "severity": "error"
+    }
+  ],
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=empty",
+    "object count=0"
+  ]
+}

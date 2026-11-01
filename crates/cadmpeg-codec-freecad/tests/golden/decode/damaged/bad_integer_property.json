@@ -1,0 +1,224 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Good:property",
+          "name": "Good",
+          "native_ref": "fcstd:native:property#0:Good",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "A&B"
+            }
+          ]
+        }
+      ],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 0,
+          "applications": 0,
+          "attachments": 0,
+          "carrier_census": 0,
+          "design_census": 0,
+          "document": 1,
+          "drawings": 0,
+          "element_maps": 0,
+          "entries": 1,
+          "extensions": 0,
+          "gui_documents": 0,
+          "gui_properties": 0,
+          "gui_view_providers": 0,
+          "joints": 0,
+          "objects": 0,
+          "product_nodes": 0,
+          "properties": 2,
+          "shape_payloads": 0,
+          "string_tables": 0,
+          "topology_uses": 0,
+          "unknowns": 1
+        }
+      },
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "applications": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "attachments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "document": "6d3c667be65ca30ce267ba35a598092b1a63d48b48dd0566e325929a3b3ce484",
+          "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "b7b6fa4bd5d85917cd4bd42987b2eeaf102f5e4a76ade7116a2d8ee71678108a",
+          "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "objects": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "properties": "0af27368e9b2cfdc23b729fca9016aba653a4ae3e5029da56a7b5fcc4b15ea50",
+          "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "topology_uses": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unknowns": "628e106c6a6a6ef099848f48068276c4cfa35a7b558c345f06740218f870b71c"
+        }
+      },
+      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "application_domains": "",
+        "document_kind": "empty",
+        "document_root": "Document"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part freecad.property_value stream=\"Document.xml\" offset=115 length=38: malformed container: malformed container: App::PropertyInteger Integer value \"9223372036854775808\" is invalid; dropped=[]",
+        "provenance": {
+          "byte_len": 38,
+          "format": "fcstd",
+          "offset": 115,
+          "stream": "Document.xml"
+        },
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "SchemaVersion=4",
+      "FileVersion=1",
+      "document root=Document",
+      "document kind=empty",
+      "object count=0"
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "1d3f32cbe4f0d21a66c0e464b99c6002efe04cd85a0d9e8f58beda82e1fa0791",
+    "retained_records": {
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "UEsDBBQAAAAAAAAAAADNg4u6PAEAADwBAAAMAAAARG9jdW1lbnQueG1sPERvY3VtZW50IFNjaGVtYVZlcnNpb249JzQnIEZpbGVWZXJzaW9uPScxJz48UHJvcGVydGllcyBDb3VudD0nMic+PFByb3BlcnR5IG5hbWU9J0JhZCcgdHlwZT0nQXBwOjpQcm9wZXJ0eUludGVnZXInPjxJbnRlZ2VyIHZhbHVlPSc5MjIzMzcyMDM2ODU0Nzc1ODA4Jy8+PC9Qcm9wZXJ0eT48UHJvcGVydHkgbmFtZT0nR29vZCcgdHlwZT0nQXBwOjpQcm9wZXJ0eVN0cmluZyc+PFN0cmluZyB2YWx1ZT0nQSZhbXA7QicvPjwvUHJvcGVydHk+PC9Qcm9wZXJ0aWVzPjxPYmplY3RzIENvdW50PScwJy8+PE9iamVjdERhdGEgQ291bnQ9JzAnLz48L0RvY3VtZW50PlBLAQIUABQAAAAAAAAAAADNg4u6PAEAADwBAAAMAAAAAAAAAAAAAAAAAAAAAABEb2N1bWVudC54bWxQSwUGAAAAAAEAAQA6AAAAZgEAAAAA",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "fcstd:source:part#1af617a8c0096872ea93017c42557bc747fe6bbbc779a9b78912bdc9d359a510": {
+        "bytes": {
+          "data": "PEludGVnZXIgdmFsdWU9JzkyMjMzNzIwMzY4NTQ3NzU4MDgnLz4=",
+          "retention": "inline"
+        },
+        "offset": 115,
+        "stream": "Document.xml",
+        "untyped": [
+          "model",
+          "design"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
+  }
+}

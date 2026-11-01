@@ -1,0 +1,117 @@
+{
+  "container_kind": "fixed-ascii",
+  "entries": [
+    {
+      "attributes": {
+        "cards": "1",
+        "line_endings": "lf:1"
+      },
+      "compression": "none",
+      "name": "start",
+      "role": "section",
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
+    },
+    {
+      "attributes": {
+        "cards": "2",
+        "line_endings": "lf:2"
+      },
+      "compression": "none",
+      "name": "global",
+      "role": "section",
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
+    },
+    {
+      "attributes": {
+        "cards": "2",
+        "line_endings": "lf:2"
+      },
+      "compression": "none",
+      "name": "directory-entry",
+      "role": "section",
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
+    },
+    {
+      "attributes": {
+        "cards": "1",
+        "line_endings": "lf:1"
+      },
+      "compression": "none",
+      "name": "parameter-data",
+      "role": "section",
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
+    },
+    {
+      "attributes": {
+        "cards": "1",
+        "line_endings": "lf:1"
+      },
+      "compression": "none",
+      "name": "terminate",
+      "role": "section",
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "effective_version": "5.3",
+          "representation": "fixed-ascii",
+          "version_flag": "11"
+        },
+        "dialect": "iges:5.3-fixed-ascii"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "record.unreadable",
+        "kind": "decode_diagnostic",
+        "namespace": "decode",
+        "scope": "namespaced",
+        "strict_floor": "error"
+      },
+      "message": "part iges.parameter_field stream=\"iges/parameter/405/486\" offset=12 length=4: malformed container: IGES Parameter Data D1, logical offset Some(12): a token is not a number (token-not-a-number); dropped=[]",
+      "provenance": {
+        "byte_len": 4,
+        "format": "iges",
+        "offset": 12,
+        "stream": "iges/parameter/405/486"
+      },
+      "severity": "error"
+    }
+  ],
+  "notes": [
+    "source_bytes=567",
+    "parameter_delimiter=,",
+    "record_delimiter=;",
+    "sender_product=product",
+    "units=MM",
+    "iges_version=5.3",
+    "entities=1",
+    "entity.116.form.0=1",
+    "parameter_records=1",
+    "parameter_tokens=4",
+    "external_references=0"
+  ]
+}
