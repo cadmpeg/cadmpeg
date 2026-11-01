@@ -920,64 +920,9 @@ pub(crate) fn sketch(reader: &mut Reader<'_>) -> Res<V> {
     ]))
 }
 
-/// `sktail`: the end of a sketch, to its plane.
-pub(crate) fn sktail(reader: &mut Reader<'_>) -> Res<V> {
-    let at = reader.p + 18;
-    if reader.zeros(reader.p, 18) && at + 14 <= reader.len() {
-        let nxt = reader.pu32(at)?;
-        let cnt = reader.pu32(at + 4)?;
-        if 0 < cnt && cnt <= nxt && nxt < 4096 && objat(reader, at + 12) {
-            reader.p = at + 8;
-            for _ in 0..cnt {
-                reader.u32()?;
-                reader.ptr(Some(&["sgSlot_c"]))?;
-            }
-        }
-    }
-    let mut zeros_ = 0;
-    while reader.p + zeros_ < reader.len() && reader.byte(reader.p + zeros_)? == 0 && zeros_ < 80 {
-        zeros_ += 1;
-    }
-    if reader.p + zeros_ + 8 < reader.len() {
-        let a2 = reader.pu32(reader.p + zeros_)?;
-        let n2 = reader.pu32(reader.p + zeros_ + 4)?;
-        if 0 < a2 && a2 < 64 && n2 > a2 && isclass(reader, reader.p + zeros_ + 8, &["sgBlock"])? {
-            reader.skip(zeros_ + 4);
-            for _ in 0..a2 {
-                reader.u32()?;
-                reader.ptr(Some(&["sgBlock"]))?;
-            }
-        } else if a2 == 1
-            && n2 == 0
-            && reader.zeros(reader.p + zeros_ + 8, 4)
-            && (reader.eq(reader.p + zeros_ + 12, &[3, 0, 0, 0])
-                || reader.eq(reader.p + zeros_ + 12, &[7, 0, 0, 0]))
-        {
-            reader.skip(zeros_ + 8);
-        } else if 0 < n2 && n2 <= a2 && a2 < 4096 && objat(reader, reader.p + zeros_ + 8) {
-            reader.skip(zeros_ + 8);
-            for _ in 0..n2 {
-                reader.ptr(None)?;
-            }
-        }
-    }
-    loop {
-        let marker = reader.eq(reader.p, &[3, 0, 0, 0]) || reader.eq(reader.p, &[7, 0, 0, 0]);
-        if marker && reader.byte(reader.p + 4)? <= 1 {
-            break;
-        }
-        if reader.byte(reader.p)? != 0 {
-            return Err(bad("sketch tail"));
-        }
-        reader.p += 1;
-    }
-    let mk = reader.u32()?;
-    if reader.byte(reader.p)? == 0 {
-        blob(reader)?;
-    } else {
-        reader.skip(1);
-    }
-    reader.expect_zeros(4, "sketch tail u32 0")?;
+/// A sketch tail's references: a u16 count and the references, then, when
+/// the count is non-zero, u32 `4`, `16`, `1`, a u32 count and the identifiers.
+fn tail_references(reader: &mut Reader<'_>) -> Res<u16> {
     let class = reader.u16()?;
     for _ in 0..class {
         reader.ptr(None)?;
@@ -994,11 +939,91 @@ pub(crate) fn sktail(reader: &mut Reader<'_>) -> Res<V> {
             reader.u32()?;
         }
     }
-    // `(mk == 3 or not c) and not (c and 100000 <= u32 <= 100064)`.
-    if mk == 3 || class == 0 {
-        let marked = class != 0 && (100_000..=100_064).contains(&reader.pu32(reader.p)?);
-        if !marked {
-            reader.expect_zeros(4, "sketch tail u32 0 b")?;
+    Ok(class)
+}
+
+/// `sktail`: the end of a sketch, to its plane.
+pub(crate) fn sktail(reader: &mut Reader<'_>) -> Res<V> {
+    let at = reader.p + 18;
+    if reader.zeros(reader.p, 18) && at + 14 <= reader.len() {
+        let nxt = reader.pu32(at)?;
+        let cnt = reader.pu32(at + 4)?;
+        if 0 < cnt && cnt <= nxt && nxt < 4096 && objat(reader, at + 12) {
+            reader.p = at + 8;
+            for _ in 0..cnt {
+                reader.u32()?;
+                reader.ptr(Some(&["sgSlot_c"]))?;
+            }
+        } else if cnt == 0 && 0 < nxt && nxt < 4096 {
+            // An empty slot map ends after its next free key and its count.
+            reader.p = at + 8;
+        }
+    }
+    let mut zeros_ = 0;
+    while reader.p + zeros_ < reader.len() && reader.byte(reader.p + zeros_)? == 0 && zeros_ < 80 {
+        zeros_ += 1;
+    }
+    let mut blk = false;
+    if reader.p + zeros_ + 8 < reader.len() {
+        let a2 = reader.pu32(reader.p + zeros_)?;
+        let n2 = reader.pu32(reader.p + zeros_ + 4)?;
+        if 0 < a2 && a2 < 64 && n2 > a2 && isclass(reader, reader.p + zeros_ + 8, &["sgBlock"])? {
+            reader.skip(zeros_ + 4);
+            for _ in 0..a2 {
+                reader.u32()?;
+                reader.ptr(Some(&["sgBlock"]))?;
+            }
+            blk = true;
+        } else if a2 == 1
+            && n2 == 0
+            && reader.zeros(reader.p + zeros_ + 8, 4)
+            && (reader.eq(reader.p + zeros_ + 12, &[3, 0, 0, 0])
+                || reader.eq(reader.p + zeros_ + 12, &[7, 0, 0, 0]))
+        {
+            reader.skip(zeros_ + 8);
+        } else if 0 < n2 && n2 <= a2 && a2 < 4096 && objat(reader, reader.p + zeros_ + 8) {
+            reader.skip(zeros_ + 8);
+            for _ in 0..n2 {
+                reader.ptr(None)?;
+            }
+        }
+    }
+    let p0 = reader.p;
+    loop {
+        let marker = reader.eq(reader.p, &[3, 0, 0, 0]) || reader.eq(reader.p, &[7, 0, 0, 0]);
+        if marker && reader.byte(reader.p + 4)? <= 1 {
+            break;
+        }
+        if reader.byte(reader.p)? != 0 {
+            if !blk {
+                return Err(bad("sketch tail"));
+            }
+            reader.p = p0;
+            break;
+        }
+        reader.p += 1;
+    }
+    let at_marker = (reader.eq(reader.p, &[3, 0, 0, 0]) || reader.eq(reader.p, &[7, 0, 0, 0]))
+        && reader.byte(reader.p + 4)? <= 1;
+    if blk && !at_marker {
+        // After a block list the references follow with no marker.
+        tail_references(reader)?;
+        reader.expect_zeros(4, "sketch tail u32 0 c")?;
+    } else {
+        let mk = reader.u32()?;
+        if reader.byte(reader.p)? == 0 {
+            blob(reader)?;
+        } else {
+            reader.skip(1);
+        }
+        reader.expect_zeros(4, "sketch tail u32 0")?;
+        let class = tail_references(reader)?;
+        // `(mk == 3 or not class) and not (class and 100000 <= u32 <= 100064)`.
+        if mk == 3 || class == 0 {
+            let marked = class != 0 && (100_000..=100_064).contains(&reader.pu32(reader.p)?);
+            if !marked {
+                reader.expect_zeros(4, "sketch tail u32 0 b")?;
+            }
         }
     }
     let mv = reader.u32()?;
@@ -2195,10 +2220,14 @@ pub(crate) fn dimtext(reader: &mut Reader<'_>) -> Res<V> {
         for _ in 0..mask {
             reader.u32()?;
         }
-        reader.expect_zeros(8, "text 8 zero")?;
-        for _ in 0..mask * 3 {
+        // Per character: the normal (two f64) and a font identifier.
+        for _ in 0..mask {
             reader.f64()?;
+            reader.f64()?;
+            reader.skip(8);
         }
+        reader.u32()?;
+        reader.expect_zeros(4, "text flags 0")?;
     }
     reader.f64()?;
     reader.f64()?;
@@ -2216,29 +2245,35 @@ pub(crate) fn dimtext(reader: &mut Reader<'_>) -> Res<V> {
     let path = reader.ptr(None);
     reader.st.sk.set_byref(false);
     let path = path?;
+    // A line reference can write a u32 0 before the frame; the compressed
+    // body's header selects the offset.
+    let after_path = reader.p;
+    let mut gap = None;
+    for candidate in [0, 4] {
+        let body = after_path + candidate + 6 * 8;
+        let mut zeros = 0;
+        while zeros < 16 && reader.byte(body + zeros)? == 0 {
+            zeros += 1;
+        }
+        let first = if zeros != 0 {
+            i64::from(reader.pu32(body + zeros)?)
+        } else {
+            0
+        };
+        if zeros == 10
+            && reader.byte(body + zeros + 4)? == 0
+            && i64::from(reader.pu32(body + zeros + 5)?) == first - 5
+        {
+            gap = Some(candidate);
+            break;
+        }
+    }
+    let gap = gap.ok_or_else(|| bad("text path: no body"))?;
+    reader.p = after_path + gap;
     for _ in 0..6 {
         reader.f64()?;
     }
-    let at = reader.p;
-    let mut zeros = 0;
-    while zeros < 16 && reader.byte(at + zeros)? == 0 {
-        zeros += 1;
-    }
-    let first = if zeros != 0 {
-        i64::from(reader.pu32(at + zeros)?)
-    } else {
-        0
-    };
-    if zeros == 0
-        || reader.byte(at + zeros + 4)? != 0
-        || i64::from(reader.pu32(at + zeros + 5)?) != first - 5
-    {
-        return Err(bad("text path: no body"));
-    }
-    if zeros != 10 {
-        return Err(bad("text path zero bytes"));
-    }
-    reader.p = at + 9;
+    reader.skip(9);
     blob(reader)?;
     reader.cstring()?;
     reader.expect_bytes(&[1, 0, 0, 0, 1, 0, 0, 0], "text 1 1")?;
