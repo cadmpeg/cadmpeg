@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nightly inspect and decode of the NIST MBE PMI producer-evidence subset.
 //!
-//! Inputs are the `LicenseRef-NIST-PD` files in `corpus/manifest.toml`. This
-//! is a live pass over those CAD bytes: it does not commit inspect or decode
-//! snapshots. `#[ignore]` keeps it out of `cargo test-fast`. The scheduled
+//! Inputs are the `LicenseRef-NIST-PD` files in `corpus/manifest.toml`.
+//! `#[ignore]` keeps the test out of `cargo test-fast`. The scheduled
 //! workflow `.github/workflows/nist-pmi-hallmarks.yml` runs it.
 
-#![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
+#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};

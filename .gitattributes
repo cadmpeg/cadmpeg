@@ -15,8 +15,8 @@ crates/*/tests/golden/fixtures/** binary
 crates/*/tests/fixtures/** binary
 crates/*/src/**/tests/data/** binary
 
-# Public corpus CAD bytes are SHA-256 pinned in corpus/manifest.toml. Keep
-# README and other track prose as text.
+# NIST corpus files are SHA-256 pinned in corpus/manifest.toml and
+# corpus/nist-pmi/README.md, so checkout must keep their bytes. The README
+# diffs and merges as text.
 corpus/nist-pmi/** binary
-corpus/nist-pmi/**/*.md text eol=lf
-
+corpus/nist-pmi/**/*.md diff merge text eol=lf

@@ -2,12 +2,13 @@
 # Public corpus files: CC0 author donations and LicenseRef-NIST-PD producer
 # evidence. See corpus/README.md and corpus/nist-pmi/README.md.
 #
-# Every field is donor-supplied except `dialect`. That one is derived: the
+# The donor of a CC0 file, or the maintainer who curated a NIST file, writes
+# every field except `dialect`. That one is derived: the
 # codec's own `inspect()` classifies the fixture's bytes and the primary
 # layer's `crates/cadmpeg-registry/docs/dialects.toml` id is pinned here, the way a golden is pinned.
 # A codec change that reclassifies a corpus file then fails a test instead of
 # passing silently. `authoring_app_version` is the producer axis and stays
-# donor-supplied; neither field is derivable from the other.
+# hand-written; neither field is derivable from the other.
 #
 # Regenerate with:
 #   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
@@ -610,17 +611,17 @@ license = "CC0-1.0"
 sha256 = "215d76c07e95dd13f791b404eeacd6f625a0bbefa603e3653b007a73a853184c"
 notes = "Public CAD Fixture Recipes N10a: named sketch constraint expression dependency."
 
-# NIST MBE PMI producer evidence. license = LicenseRef-NIST-PD; not CC0 and
-# not project-authored. Spreadsheets live under nist-pmi/definitions/ and are
-# not [[file]] entries. See corpus/nist-pmi/README.md.
+# NIST MBE PMI producer evidence, authored by NIST and tagged
+# LicenseRef-NIST-PD. corpus/nist-pmi/README.md records the spreadsheets under
+# nist-pmi/definitions/.
 
 [[file]]
 filename = "nist-pmi/step/nist_ctc_01_asme1_ap242-e1.stp"
 format = "step"
 dialect = "step:ap242-e1"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 1"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -632,8 +633,8 @@ filename = "nist-pmi/step/nist_ctc_02_asme1_ap242-e2.stp"
 format = "step"
 dialect = "step:ap242-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 2"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -645,8 +646,8 @@ filename = "nist-pmi/step/nist_ctc_03_asme1_ap242-e2.stp"
 format = "step"
 dialect = "step:ap242-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 2"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -658,8 +659,8 @@ filename = "nist-pmi/step/nist_ctc_04_asme1_ap242-e1.stp"
 format = "step"
 dialect = "step:ap242-e1"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 1"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -671,8 +672,8 @@ filename = "nist-pmi/step/nist_ctc_05_asme1_ap242-e1.stp"
 format = "step"
 dialect = "step:ap242-e1"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 1"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -684,8 +685,8 @@ filename = "nist-pmi/step/nist_ftc_06_asme1_ap242-e2.stp"
 format = "step"
 dialect = "step:ap242-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 2"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -697,8 +698,8 @@ filename = "nist-pmi/step/nist_ftc_07_asme1_ap242-e2.stp"
 format = "step"
 dialect = "step:ap242-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 2"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -710,8 +711,8 @@ filename = "nist-pmi/step/nist_ftc_10_asme1_ap242-e2.stp"
 format = "step"
 dialect = "step:ap242-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-242 STEP"
-authoring_app_version = "AP242 edition 2"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-pmi-step-files"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
@@ -723,13 +724,13 @@ filename = "nist-pmi/step/nist_ftc_09_asme1_rd.stp"
 format = "step"
 dialect = "step:ap203-e2"
 author = "National Institute of Standards and Technology"
-authoring_app = "ISO 10303-203 STEP"
-authoring_app_version = "AP203"
+authoring_app = "unknown"
+authoring_app_version = "unknown"
 source_url = "https://www.nist.gov/document/nist-ftc-ctc-pmi-cad-models"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
 sha256 = "d12866d3ab0fc260efd0f1a5c54af47950be513486f61f65513877045582afa8"
-notes = "NIST FTC-09 geometry-only STEP; slots without the tessellated AP242 whale."
+notes = "NIST FTC-09 geometry-only AP203 STEP; slots."
 
 [[file]]
 filename = "nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart"
@@ -755,7 +756,7 @@ source_url = "https://www.nist.gov/document/nist-ftc-ctc-pmi-cad-models"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
 sha256 = "b19cf2776a9a9fe356cd3146fc811b6630c9cc316a7a7ebf6ea8cbcc10e6e340"
-notes = "NIST CTC-03 NX 1980 part; multi-body feature tree. format=nx so inspect uses the NX codec."
+notes = "NIST CTC-03 NX 1980 part; multi-body feature tree."
 
 [[file]]
 filename = "nist-pmi/nx/NIST mtc crada assembly.prt"
@@ -763,12 +764,12 @@ format = "nx"
 dialect = "nx:splmsstr"
 author = "National Institute of Standards and Technology"
 authoring_app = "Siemens NX"
-authoring_app_version = "unspecified"
+authoring_app_version = "1953"
 source_url = "https://www.nist.gov/document/nist-cad-models-mtc-assembly"
 acquisition_date = "2026-10-30"
 license = "LicenseRef-NIST-PD"
 sha256 = "83eab6cfcdb5a3b93f6c4893e37c9a19332a450df74615ca78253937ebf736de"
-notes = "NIST MTC NX box assembly placements; no McMaster fastener library parts."
+notes = "NIST MTC NX box assembly; its component and fastener parts are absent from the corpus."
 
 [[file]]
 filename = "nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5"

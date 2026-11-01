@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pin each corpus fixture's dialect and fail when classification drifts.
 //!
-//! `corpus/manifest.toml` records donor-supplied facts about each fixture. One
-//! field is not donor-supplied: `dialect` is derived, by running this codec's
+//! `corpus/manifest.toml` records hand-written facts about each fixture from
+//! its donor or curator. One field is derived: `dialect`, by running this codec's
 //! own `inspect()` over the fixture's bytes and reading the primary layer's
 //! registry id out of the resulting `ContainerSummary`. Pinning it turns
 //! classification into a golden — a codec change that reclassifies a corpus

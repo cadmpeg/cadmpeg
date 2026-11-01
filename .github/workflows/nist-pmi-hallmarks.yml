@@ -1,9 +1,8 @@
 name: NIST PMI producer-evidence hallmarks
 
-# Slow-cadence inspect and decode of corpus/nist-pmi. These files are producer
-# evidence, not default cargo-test work: a full decode pass is tens of seconds
-# and must not bloat the tree with IR snapshots. They do not gate pull
-# requests. Dispatch this workflow on a branch to run them there.
+# Daily inspect and decode of every CAD file in corpus/nist-pmi. The test is
+# #[ignore] in cargo test-fast. This workflow does not gate pull requests;
+# dispatch it on a branch to run the check there.
 
 on:
   schedule:
