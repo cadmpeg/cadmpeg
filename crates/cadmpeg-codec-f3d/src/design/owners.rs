@@ -149,10 +149,9 @@ pub(crate) fn attach(
                             && row.record_index() == record
                     })
                 })
-                .map_or(
-                    source.record_index,
-                    |row| row.scope_record_index().unwrap_or(source.record_index),
-                );
+                .map_or(source.record_index, |row| {
+                    row.scope_record_index().unwrap_or(source.record_index)
+                });
             resolve(native, model, losses, &source.id, record_index)
         } else {
             None

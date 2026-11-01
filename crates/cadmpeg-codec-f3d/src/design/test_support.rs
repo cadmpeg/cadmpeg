@@ -283,7 +283,10 @@ pub(crate) fn name_scope_references(
         .expect("the scope fixture admits its extended reference table");
 }
 
-pub(crate) fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
+pub(crate) fn set_extrude_operation(
+    scope: &mut DesignParameterScope,
+    operation: DesignExtrudeOperation,
+) {
     let Some(
         DesignExtrudePrologue::LegacyDistance {
             operation: value, ..
