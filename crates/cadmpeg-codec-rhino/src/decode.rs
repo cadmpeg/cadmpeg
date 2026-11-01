@@ -296,15 +296,6 @@ impl<'a> DecodeContext<'a> {
         self.unit_binding().neutral_scale()
     }
 
-    /// Looks up a scanned object by deterministic source order.
-    #[cfg(test)]
-    fn object(&self, source_order: usize) -> Option<&ObjectDescriptor> {
-        self.scan
-            .objects
-            .get(source_order)
-            .and_then(|object| object.framed())
-    }
-
     /// Looks up the retained unknown record for a source-order object.
     #[cfg(test)]
     fn unknown(&self, source_order: usize) -> Option<&UnknownRecord> {
@@ -312,59 +303,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     #[cfg(test)]
-    fn unknown_links_mut(&mut self, source_order: usize) -> Option<&mut Vec<String>> {
-        self.session
-            .unknown_links_mut(source_order)
-            .expect("test link mutation")
-            .map(|(_, links)| links)
-    }
-
-    #[cfg(test)]
     fn unknown_count(&self) -> usize {
         self.session.unknowns().len()
-    }
-
-    /// Appends a later geometry-phase link to an object record.
-    fn append_link(
-        &mut self,
-        source_order: usize,
-        link: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.append_links(source_order, &[link])
-    }
-
-    /// Merges links into an object record's sorted, duplicate-free link list.
-    /// Each new copy is retained output; an active expansion logs it for
-    /// rollback.
-    fn append_links<S: AsRef<str>>(
-        &mut self,
-        source_order: usize,
-        incoming: &[S],
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let ctx = self.expand.ctx();
-        let Some((id, links)) = self.session.unknown_links_mut(source_order)? else {
-            return Ok(());
-        };
-        let mut added = Vec::new();
-        for link in incoming {
-            let link = link.as_ref();
-            if link != id
-                && links
-                    .binary_search_by(|existing| existing.as_str().cmp(link))
-                    .is_err()
-            {
-                added.push(link);
-            }
-        }
-        added.sort_unstable();
-        added.dedup();
-        for link in &added {
-            ctx.retain_bytes(u64_from_index(link.len()), "Rhino source record link")?;
-        }
-        links.extend(added.iter().map(|link| (*link).to_owned()));
-        // Two sorted runs: the stable sort merges them in linear time.
-        links.sort();
-        Ok(())
     }
 
     fn validate_candidate<T>(
@@ -828,13 +768,11 @@ impl<'a> DecodeContext<'a> {
                             )),
                         );
                     }
-                    let links = [annotation.id.as_str().to_owned()];
                     let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.semantic_annotations.push(annotation);
                     });
                     match result {
                         Ok(()) => {
-                            self.append_links(source_order, &links)?;
                             self.mark_decoded(source_order);
                             for code in unresolved {
                                 self.report.typed_losses.push(code.note(format_args!(
@@ -1040,6 +978,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let hatch_loops = hatch.loops;
         let session = self.expand.ctx();
@@ -1066,8 +1005,6 @@ impl<'a> DecodeContext<'a> {
                 for warning in hatch.warnings {
                     self.scan_diagnostic(source_order, &warning);
                 }
-                let links = hatch_source_links(loop_ids, &feature_id);
-                self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
             }
@@ -1174,12 +1111,12 @@ impl<'a> DecodeContext<'a> {
                 }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            product_definition: None,
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, id.as_str())?;
                 self.mark_native_retained(
                     source_order,
                     RhinoLossCode::PolyedgeReferencesNotResolved,
@@ -1297,6 +1234,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
@@ -1317,7 +1255,6 @@ impl<'a> DecodeContext<'a> {
         });
         match result {
             Ok(()) => {
-                self.append_links(source_order, &[curve_id, feature_id.to_string()])?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
@@ -1457,12 +1394,12 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, feature_id.as_str())?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
             }
@@ -1536,12 +1473,10 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
-        let feature_id = feature.id.to_string();
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, &feature_id)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
             }
@@ -1674,6 +1609,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let parameter_curve = construction.parameter_curve;
         let model_curve = construction.model_curve;
@@ -1737,11 +1673,6 @@ impl<'a> DecodeContext<'a> {
                 for warning in construction.warnings {
                     self.scan_diagnostic(source_order, &warning);
                 }
-                let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
-                if let Some(model_id) = model_id {
-                    links.push(model_id);
-                }
-                self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(
                     source_order,
@@ -1900,8 +1831,8 @@ impl<'a> DecodeContext<'a> {
             );
             Ok::<_, cadmpeg_core::CodecError>(id.clone())
         });
-        let link = match result {
-            Ok(link) => link,
+        match result {
+            Ok(_) => {}
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.scan_warning(
@@ -1911,7 +1842,6 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
         };
-        self.append_link(source_order, &link)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -2457,11 +2387,11 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id.clone()],
                     &association,
+                    Self::mint_unknown_id(source_order).to_string(),
                 ));
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
                 );
-                self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::PointCloud(cloud) => {
                 let crate::curves::PointCloud {
@@ -2557,6 +2487,7 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id],
                     &association,
+                    Self::mint_unknown_id(source_order).to_string(),
                 ));
                 let point_prefix = format!("rhino:object:point#{key}.");
                 for point in self
@@ -2577,7 +2508,6 @@ impl<'a> DecodeContext<'a> {
                         },
                     );
                 }
-                self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::Curve { curve } => {
                 append_curve_warnings(
@@ -2587,7 +2517,7 @@ impl<'a> DecodeContext<'a> {
                     &identity.source_id,
                 )?;
                 let session = self.expand.ctx();
-                let parent_id = match self.validate_candidate_fallible(|candidate, annotations| {
+                match self.validate_candidate_fallible(|candidate, annotations| {
                     commit_curve_tree(
                         session,
                         candidate,
@@ -2601,7 +2531,7 @@ impl<'a> DecodeContext<'a> {
                         },
                     )
                 }) {
-                    Ok(id) => id,
+                    Ok(_) => {}
                     Err(CandidateError::Codec(error)) => return Err(error),
                     Err(error) => {
                         self.report
@@ -2610,7 +2540,6 @@ impl<'a> DecodeContext<'a> {
                         return Ok(false);
                     }
                 };
-                self.append_link(source_order, parent_id.as_str())?;
             }
             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                 crate::surfaces::DecodedSurface::Typed {
@@ -2640,7 +2569,6 @@ impl<'a> DecodeContext<'a> {
                             Exactness::ByteExact
                         },
                     );
-                    self.append_link(source_order, surface_id.as_str())?;
                 }
                 crate::surfaces::DecodedSurface::Procedural {
                     geometry,
@@ -2739,8 +2667,8 @@ impl<'a> DecodeContext<'a> {
             }
             Ok::<_, CandidateError>(vec![surface_id.to_string()])
         });
-        let links = match result {
-            Ok(links) => links,
+        match result {
+            Ok(_) => {}
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.report.phase_warnings.push(format_args!(
@@ -2749,7 +2677,6 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
         };
-        self.append_links(source_order, &links)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -2879,8 +2806,8 @@ impl<'a> DecodeContext<'a> {
             }
             Ok::<_, CandidateError>(links)
         });
-        let links = match result {
-            Ok(links) => links,
+        match result {
+            Ok(_) => {}
             Err(CandidateError::Admission(error)) => {
                 self.scan_warning(source_order, format_args!("{error}"));
                 return Ok(false);
@@ -2894,7 +2821,6 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
         };
-        self.append_links(source_order, &links)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -2938,9 +2864,7 @@ impl<'a> DecodeContext<'a> {
             Ok::<_, CandidateError>(id.to_string())
         });
         match validation {
-            Ok(link) => {
-                self.append_link(source_order, &link)?;
-            }
+            Ok(_) => {}
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => self.scan_warning(
                 source_order,
@@ -3030,7 +2954,6 @@ impl<'a> DecodeContext<'a> {
                     )),
                 );
         }
-        self.append_link(source_order, &id)?;
         Ok(true)
     }
 
@@ -3134,7 +3057,7 @@ impl<'a> DecodeContext<'a> {
                 let BrepDraft {
                     kind,
                     draft,
-                    links,
+                    links: _,
                     warnings,
                     typed_losses,
                 } = staged;
@@ -3156,8 +3079,6 @@ impl<'a> DecodeContext<'a> {
                         format_args!("Brep draft rejected before commit: {error}"),
                     );
                 } else {
-                    self.append_links(source_order, &links)?;
-
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
                         match warning.code {
@@ -3269,32 +3190,6 @@ fn duplicate_userdata_count(userdata: &[UserdataDescriptor], class: crate::wire:
         .count()
 }
 
-#[cfg(test)]
-fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
-    let mut unknowns = ir
-        .native_unknowns("rhino")
-        .expect("fixture unknown records");
-    let record = unknowns
-        .iter_mut()
-        .find(|record| record.id == *unknown)
-        .expect("fixture unknown record exists");
-    record.links.extend(
-        links
-            .iter()
-            .filter(|link| link.as_str() != record.id.as_str())
-            .map(|link| {
-                cadmpeg_ir::ids::Identity::new(link.clone()).expect("fixture link identity")
-            }),
-    );
-    record.links.sort();
-    record.links.dedup();
-    ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
-        "rhino",
-        &unknowns,
-    )
-    .expect("fixture unknown records");
-}
 
 struct ValidationFindings<'a>([Option<&'a cadmpeg_ir::report::check::Finding>; 3]);
 
@@ -5454,15 +5349,6 @@ fn hatch_loop_ids(
         .collect()
 }
 
-fn hatch_source_links(
-    loop_ids: Vec<(crate::hatch::LoopKind, String)>,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-) -> Vec<String> {
-    let mut links: Vec<String> = loop_ids.into_iter().map(|(_, id)| id).collect();
-    links.push(feature_id.as_str().to_owned());
-    links
-}
-
 /// The hatch plane's placement, scaled into millimetres.
 ///
 /// Both the plane axes and `scale` come off the document, so a scale that
@@ -5680,9 +5566,10 @@ fn body(
     id: cadmpeg_ir::ids::BodyId,
     regions: Vec<cadmpeg_ir::ids::RegionId>,
     association: &ObjectContext,
+    native_ref: String,
 ) -> Body {
     Body {
-        native_ref: None,
+        native_ref: Some(native_ref),
         id,
         kind: BodyKind::General,
         regions,

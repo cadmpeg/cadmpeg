@@ -202,18 +202,40 @@ fn attribute_table_defaults_and_rows_use_current_inward_links_independently() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("attribute table source");
     let mut ir = decoded.ir().clone();
-    for (name, value) in [
-        ("iges.attribute_table.default.attributes.0.values.0", "EDIT"),
-        ("iges.attribute_table.value.rows.0.0", "ROW"),
+    assert!(ir.model.attributes.is_empty());
+    let namespace = ir.native.namespace("iges").expect("native namespace");
+    let definition = &namespace.arenas()["attribute_table_definitions"][0];
+    let instance = &namespace.arenas()["attribute_table_instances"][0];
+    for (name, value, native_ref, source) in [
+        (
+            "iges.attribute_table.default.attributes.0.values.0",
+            "EDIT",
+            definition.id(),
+            match definition.field("source_entity") {
+                Some(serde_json::Value::String(source)) => source,
+                _ => panic!("definition source entity"),
+            },
+        ),
+        (
+            "iges.attribute_table.value.rows.0.0",
+            "ROW",
+            instance.id(),
+            match instance.field("source_entity") {
+                Some(serde_json::Value::String(source)) => source,
+                _ => panic!("instance source entity"),
+            },
+        ),
     ] {
-        let attribute = ir
-            .model
-            .attributes
-            .iter_mut()
-            .find(|attribute| attribute.name == name)
-            .expect("projected table slot");
-        assert!(attribute.native_ref.is_some());
-        attribute.values = vec![Some(AttributeValue::String(value.into()))];
+        ir.model.attributes.push(SourceAttribute {
+            id: AttributeId::mint(format!("test:model:attribute#{name}"))
+                .expect("attribute identity"),
+            native_ref: Some(native_ref.to_owned()),
+            target: AttributeTarget::Source {
+                source_id: source,
+            },
+            name: name.into(),
+            values: vec![Some(AttributeValue::String(value.into()))],
+        });
     }
     let before = ir.clone();
     let mut entities = Vec::new();

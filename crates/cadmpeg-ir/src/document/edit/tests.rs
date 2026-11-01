@@ -35,6 +35,7 @@ fn parameter(
     value: f64,
 ) -> crate::features::DesignParameter {
     crate::features::DesignParameter {
+        product_definition: None,
         id: crate::features::ParameterId::mint(id).unwrap(),
         owner: Some(owner),
         ordinal: 0,
@@ -54,6 +55,7 @@ fn primitive(id: &str, ordinal: u64, length: Dimension<Length>) -> crate::featur
         PrimitiveSolidKind,
     };
     Feature {
+        product_definition: None,
         id: FeatureId::mint(id).unwrap(),
         ordinal,
         name: None,

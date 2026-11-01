@@ -113,6 +113,10 @@ fn a_contradicted_dome_leaves_the_area_centroid_to_its_candidates() {
     };
     assert_point(reading(Reading::FaceSense), [0.0, 0.0, 35.0 / 6.0], 10.0);
     assert_point(reading(Reading::LoopWinding), [0.0, 0.0, 7.5], 10.0);
+    // The body box is unavailable; the faces' boxes give the diagonal.
+    for candidate in centroid.candidates() {
+        assert!(candidate.model_uncertainty().get() > 0.0, "{candidate:?}");
+    }
 }
 
 /// The cap `z ≥ 6` of the sphere of radius 10: area `80π`, box

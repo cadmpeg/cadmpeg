@@ -50,7 +50,7 @@ fn entry<'a>(section: &MetaSection<'a>, index: u32, width: usize) -> Option<View
     section.payload.child(start, start.checked_add(width)?)
 }
 
-fn reference_counts(
+pub(super) fn reference_counts(
     ctx: &DecodeContext<'_>,
     revisions: &MetaSection<'_>,
     references: &MetaSection<'_>,
@@ -109,7 +109,7 @@ fn framed_records<'a, 'b>(
     Some(&records.records)
 }
 
-fn external_link<'a>(
+pub(super) fn external_link<'a>(
     source: &SegmentDescriptor<'_>,
     target: &SegmentDescriptor<'_>,
     reference: PmDcReference,

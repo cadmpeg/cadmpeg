@@ -10,7 +10,7 @@ mod body_selection;
 mod coil;
 mod direct_face;
 mod dispatcher;
-mod extrude;
+mod extrude_extents;
 mod extrude_fallbacks;
 mod fixed_extrude;
 mod hole;

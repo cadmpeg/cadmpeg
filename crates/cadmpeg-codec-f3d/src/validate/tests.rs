@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+pub(crate) mod align;
+
 use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use std::io::Cursor;
 
@@ -42,11 +44,13 @@ mod face_group_members;
 mod face_operand;
 mod fillet_group;
 mod history_transitions;
+mod move_transform;
 mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
 mod parameter_state;
 mod sweep_body_roles;
+mod thread_link;
 mod timeline;
 mod xref;
 
@@ -794,9 +798,9 @@ fn validation_checks_generic_sweep_group_carriers() {
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: Some(0),
-                values: crate::test_support::reals([0.0; 6]),
-                record_indexes: [11, 12, 13, 14, 15, 16],
-                value_offsets: Some([0; 6]),
+                values: crate::test_support::reals([0.0; 6]).to_vec(),
+                record_indexes: vec![11, 12, 13, 14, 15, 16],
+                value_offsets: Some(vec![0; 6]),
             },
         ));
         scope
@@ -1839,3 +1843,5 @@ fn loft_accepts_either_body_group_role() {
         ));
     }
 }
+
+mod profile_curves;

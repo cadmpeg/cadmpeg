@@ -298,7 +298,6 @@ mod tests {
         let scan = crate::decode::Scan::new(
             crate::container::Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
@@ -351,7 +350,6 @@ mod tests {
         let scan = crate::decode::Scan::new(
             crate::container::Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,

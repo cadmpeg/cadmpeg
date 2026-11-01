@@ -483,6 +483,10 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
                         .unwrap()
                 ),
             }),
+            standard: None,
+            designation: None,
+            pitch: None,
+            modeled: None,
         })
     );
 }
@@ -528,6 +532,10 @@ fn cosmetic_thread_without_blind_length_is_through() {
                 cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#thread:0").unwrap()
             )),
             extent: Some(CosmeticThreadExtent::Through {}),
+            standard: None,
+            designation: None,
+            pitch: None,
+            modeled: None,
         })
     );
 }
@@ -579,6 +587,10 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
                         .unwrap()
                 )),
                 extent: Some(CosmeticThreadExtent::Through {}),
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             })
         );
     }

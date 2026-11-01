@@ -1,0 +1,94 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5774",
+        "crc32": "57d69300",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 30285,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 3179
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5832",
+        "crc32": "a0e9d4a4",
+        "data_offset": "3264",
+        "header_offset": "3221"
+      },
+      "compression": "deflate",
+      "expanded": 7070,
+      "name": "PartShape.brp",
+      "role": "brep",
+      "stored": 787
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5891",
+        "crc32": "fa700e1d",
+        "data_offset": "4095",
+        "header_offset": "4051"
+      },
+      "compression": "deflate",
+      "expanded": 1655,
+      "name": "PartShape1.brp",
+      "role": "brep",
+      "stored": 322
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5951",
+        "crc32": "7a6cd13c",
+        "data_offset": "4461",
+        "header_offset": "4417"
+      },
+      "compression": "deflate",
+      "expanded": 4964,
+      "name": "PartShape2.brp",
+      "role": "brep",
+      "stored": 631
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6011",
+        "crc32": "a74f7017",
+        "data_offset": "5136",
+        "header_offset": "5092"
+      },
+      "compression": "deflate",
+      "expanded": 5187,
+      "name": "PartShape3.brp",
+      "role": "brep",
+      "stored": 638
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "0.21R33771 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=10",
+    "physical ledger spans=36 coverage=exact",
+    "ProgramVersion=0.21R33771 (Git)"
+  ]
+}

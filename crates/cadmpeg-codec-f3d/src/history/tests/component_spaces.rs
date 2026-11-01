@@ -140,6 +140,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 context_id_offset: 505,
                 tail_slot_present: false,
                 tail_slot_offset: 581,
+                scope_tail: None,
                 resolved_geometry: None,
                 operand_identity_ids: Vec::new(),
                 historical: None,

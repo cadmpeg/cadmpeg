@@ -278,7 +278,6 @@ fn expected_topology(state_id: i64, scope: AsmTopologyScope) -> Option<AsmHistor
     };
     if scope == AsmTopologyScope::Retained {
         expected.surface_radii.clear();
-        expected.surface_cylinders.clear();
         expected.surface_axes.clear();
         expected.persistent_subentity_tags.clear();
         expected.body_regions.clear();
@@ -416,16 +415,6 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     }
     let bytes = serde_json::to_vec(&history).unwrap();
     let decoded: AsmHistory = serde_json::from_slice(&bytes).unwrap();
-    let fidelity = crate::native::F3dNative {
-        asm_histories: vec![history.clone()],
-        ..Default::default()
-    }
-    .retained_fidelity()
-    .unwrap();
-    assert_eq!(fidelity.metadata["history.byte_offset"], "0");
-    for state in history.states() {
-        assert_eq!(fidelity.metadata[&format!("{}.byte_offset", state.id)], "0");
-    }
     assert_eq!(decoded, history);
     assert!(decoded.materialized.states.get().is_none());
     for state in decoded.states() {
@@ -1324,4 +1313,88 @@ fn identity_query_matches_reconstruction_in_both_scopes() {
         }
         crate::history::discard_projection_caches(std::slice::from_mut(&mut history));
     }
+}
+
+#[test]
+fn retained_scope_cylinder_only_state_retains_topology_and_memberships() {
+    let cylinder_topology = AsmHistoricalTopology {
+        surfaces: vec![10, 10],
+        surface_cylinders: vec![AsmHistoricalCylinder {
+            surface: 10,
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius: 2.5,
+        }],
+        ..Default::default()
+    };
+    let versions = BTreeMap::from([(10, 100)]);
+    let snapshot = AsmStateSnapshot {
+        state_id: 0,
+        topology: &cylinder_topology,
+        versions: &versions,
+    };
+    let transition = AsmHistoricalTransition::between(None, snapshot).unwrap();
+    let state = AsmDeltaState {
+        id: "state-0".into(),
+        parent: "history".into(),
+        byte_offset: Some(0),
+        state_id: 0,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 0,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        transition: Some(transition),
+    };
+    let mut history = AsmHistory {
+        id: "history".into(),
+        byte_offset: Some(0),
+        preamble: None,
+        binding_budget_exceeded: false,
+        states: vec![state],
+        topology_scope: AsmTopologyScope::Retained,
+        materialized: crate::history_records::MaterializedTopologies::default(),
+    };
+
+    assert_eq!(history.check_transitions(), Ok(()));
+
+    let state_ref = &history.states()[0];
+    let top = history.topology(state_ref);
+    assert!(top.is_some());
+    let top = top.unwrap();
+    assert_eq!(top.surface_cylinders.len(), 1);
+    assert_eq!(top.surface_cylinders[0].surface, 10);
+    assert_eq!(top.surface_cylinders[0].radius, 2.5);
+    assert!(top.surface_planes.is_empty());
+    assert!(top.face_surfaces.is_empty());
+    assert!(top.face_loops.is_empty());
+    assert!(top.loop_coedges.is_empty());
+    assert!(top.coedge_topology.is_empty());
+    assert!(top.edge_curves.is_empty());
+    assert!(top.coedge_pcurves.is_empty());
+    assert!(top.curve_axes.is_empty());
+
+    let requested = std::collections::HashSet::from([10, 100]);
+    let query = history.identity_memberships(&requested, &requested);
+    assert!(query.all_states_available);
+    assert_eq!(
+        query.entities,
+        vec![(0, 10, AsmHistoricalEntityKind::Surface)]
+    );
+    assert_eq!(
+        query.revisions,
+        vec![(
+            0,
+            AsmEntityVersion {
+                entity_ref: 10,
+                record_ref: 100,
+            }
+        )]
+    );
+
+    assert_identity_query(&mut history, &requested);
 }

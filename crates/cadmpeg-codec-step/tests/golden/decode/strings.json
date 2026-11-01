@@ -54,7 +54,9 @@
       "model": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "schema": "AP214"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -159,15 +161,6 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "95",
-      "bytes_structural": "220",
-      "bytes_typed": "0",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "1",
-      "schema": "AP214"
-    },
     "retained_records": {
       "step:data:example_strings#1": {
         "bytes": {

@@ -32,6 +32,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -69,6 +70,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -107,6 +109,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut neutral_plane_report,
+        None,
     )
     .unwrap();
 
@@ -121,6 +124,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -197,6 +201,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -216,6 +221,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
         ordinal: 0,
         name: Some("Localized tree item".into()),
@@ -240,6 +246,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -256,6 +263,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     let seed =
         PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"));
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -286,6 +294,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     });
     let hole_id = FeatureId::mint("synthetic:test:id#hole").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: hole_id.clone(),
         ordinal: 1,
         name: None,
@@ -403,6 +412,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -422,6 +432,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
@@ -435,6 +446,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#unevaluated-parameter").expect("identity grammar"),
         owner: None,
@@ -467,6 +479,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -491,6 +504,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
     assert!(!report
@@ -504,6 +518,7 @@ fn active_configuration_uses_only_the_base_neutral_design_state() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -533,6 +548,7 @@ fn active_configuration_uses_only_the_base_neutral_design_state() {
     });
     let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         driving: true,
         id: parameter_id.clone(),
         owner: Some(feature_id.clone()),
@@ -605,6 +621,7 @@ fn sparse_configuration_values_inherit_without_copied_base_caches() {
     let parameter = |id: ParameterId,
                      value: cadmpeg_ir::features::ParameterValue,
                      dependencies: Vec<ParameterId>| DesignParameter {
+        product_definition: None,
         driving: true,
         id,
         owner: None,

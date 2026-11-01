@@ -109,6 +109,9 @@ fn presentation_item(target: &AppearanceTarget) -> Option<PresentationItem> {
         AppearanceTarget::Tessellation(tessellation) => {
             PresentationItem::Tessellation { tessellation }
         }
+        AppearanceTarget::TriangleGroup { tessellation, .. } => {
+            PresentationItem::Tessellation { tessellation }
+        }
         AppearanceTarget::Record { .. } | AppearanceTarget::Source { .. } => return None,
     })
 }

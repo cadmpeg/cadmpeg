@@ -725,7 +725,7 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
             )
             .unwrap()

@@ -196,6 +196,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         tolerance: None,
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -271,6 +272,7 @@ fn generic_native_offset_plane_support_stays_native() {
     };
     let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -339,6 +341,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ],
     };
     let neutral_feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -370,6 +373,10 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                     face: cadmpeg_ir::features::FaceSelection::Unresolved,
                     diameter: None,
                     extent: None,
+                    standard: None,
+                    designation: None,
+                    pitch: None,
+                    modeled: None,
                 },
             ),
         ),
@@ -557,6 +564,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         ],
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -585,6 +593,10 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
                 face: FaceSelection::Unresolved,
                 diameter: None,
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             }),
         ),
     ];
@@ -660,6 +672,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
     let mut signature = [0; 12];
     signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#operation").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -724,6 +737,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
 #[test]
 fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -846,6 +860,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
 #[test]
 fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -973,6 +988,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
 #[test]
 fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1101,6 +1117,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         ],
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1132,6 +1149,10 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
                     face: cadmpeg_ir::features::FaceSelection::Unresolved,
                     diameter: None,
                     extent: None,
+                    standard: None,
+                    designation: None,
+                    pitch: None,
+                    modeled: None,
                 },
             ),
         ),
@@ -1267,6 +1288,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         ],
     };
     let neutral_feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1541,6 +1563,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     ));
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#variable").expect("identity grammar"),
         ordinal: 0,
         name: None,

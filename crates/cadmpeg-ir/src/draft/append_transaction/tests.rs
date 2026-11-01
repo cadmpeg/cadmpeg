@@ -41,6 +41,7 @@ fn spec(label: &'static str) -> PartSpec {
 fn feature(id: &str, ordinal: u64) -> crate::features::Feature {
     use crate::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
     crate::features::Feature {
+        product_definition: None,
         id: id.try_into().expect("feature identity"),
         ordinal,
         name: None,

@@ -64,6 +64,7 @@ Raise every declared envelope to the same read, write, and translation bar:
 - Creo Parametric `.prt`
 - Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams
 - Creo View `.pvz` packages
+- OpenUSD `.usda` and `.usd` layers
 - SolidWorks assemblies and related native documents
 
 New formats enter through byte specification, container decode, semantic decode, validation, native write, translation, and hardening. Ladder scores and proof criteria stay in [format-support.md](format-support.md).

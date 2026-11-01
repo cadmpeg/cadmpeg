@@ -67,17 +67,8 @@
       },
       "source": {
         "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
           "external_reference.0": "child.prt",
-          "external_reference.1": "nested/b.prt",
-          "file_size": "143",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "0",
-          "plain_streams": "0"
+          "external_reference.1": "nested/b.prt"
         },
         "identity": {
           "classification": "classified",

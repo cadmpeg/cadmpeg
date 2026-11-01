@@ -72,6 +72,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
 
 fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,

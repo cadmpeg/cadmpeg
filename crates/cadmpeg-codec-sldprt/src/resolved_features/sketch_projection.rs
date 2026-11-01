@@ -3,7 +3,8 @@
 use super::assembly::contains_ascii_case_insensitive;
 use super::names::configuration;
 use super::sketch_edges::{
-    project_edge, project_endpoint_constraints, project_point, EndpointConstraintSource,
+    nurbs_edge_trim_range, project_edge, project_endpoint_constraints, project_point,
+    EndpointConstraintSource,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::annotations::Annotations;
@@ -75,6 +76,7 @@ pub(crate) fn sketches(
             }
             let configuration = configuration(section);
             project_brep(
+                ctx,
                 &brep,
                 &BrepSketchSource {
                     block_offset: source.ordinal(),
@@ -112,6 +114,7 @@ struct BrepSketchSource<'a> {
 }
 
 fn project_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     brep: &crate::brep::graph::Brep,
     source: &BrepSketchSource<'_>,
     annotations: &mut Annotations,
@@ -153,6 +156,16 @@ fn project_brep(
         .iter()
         .map(|vertex| (&vertex.id, &vertex.point))
         .collect::<HashMap<_, _>>();
+    let vertex_tolerances = brep
+        .vertices
+        .iter()
+        .map(|vertex| {
+            (
+                &vertex.id,
+                vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let points = brep
         .points
         .iter()
@@ -185,7 +198,7 @@ fn project_brep(
         };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
-        let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
+        let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, (SketchEntityId, bool)>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
         for loop_id in &face.loops {
@@ -203,15 +216,28 @@ fn project_brep(
                 for vertex_id in [&edge.start, &edge.end] {
                     used_vertices.insert(vertex_id);
                 }
-                let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
+                let (entity_id, start_aligned) = if let Some((id, start_aligned)) =
+                    edge_entities.get(&edge.id)
+                {
                     let id = id.as_str().to_owned();
-                    SketchEntityId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?
+                    (
+                        SketchEntityId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?,
+                        *start_aligned,
+                    )
                 } else {
                     let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
                     )) else { continue };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
+                    let nurbs_trim = nurbs_edge_trim_range(
+                        ctx,
+                        edge,
+                        &vertices,
+                        &vertex_tolerances,
+                        &points,
+                        &curves,
+                    )?;
                     let projected = project_edge(
                         edge,
                         &vertices,
@@ -222,6 +248,7 @@ fn project_brep(
                             u_axis: *u_axis,
                             v_axis,
                         },
+                        nurbs_trim,
                         &mut edge_refusal,
                     );
                     let edge_refusals = edge_refusal.take_records();
@@ -230,7 +257,7 @@ fn project_brep(
                             edge_refusals.join("; "),
                         ));
                     }
-                    let Some(geometry) = projected else {
+                    let Some((geometry, start_aligned)) = projected else {
                         continue;
                     };
                     let Some(start_point) = vertices.get(&edge.start) else {
@@ -250,9 +277,13 @@ fn project_brep(
                     let geometry_ref = edge
                         .curve()
                         .map(|curve_id| format!("{stream_ordinal}:{}", curve_id.as_str()));
-                    let endpoint_refs = [start_point, end_point]
-                        .map(|point| format!("{stream_ordinal}:{}", point.as_str()))
-                        .into();
+                    let endpoint_refs = if start_aligned {
+                        [start_point, end_point]
+                    } else {
+                        [end_point, start_point]
+                    }
+                    .map(|point| format!("{stream_ordinal}:{}", point.as_str()))
+                    .into();
                     let entity_id = id.clone();
                     let entity_sketch_id = sketch_id.clone();
                     entities.push(
@@ -261,13 +292,13 @@ fn project_brep(
                             .with_endpoint_refs(endpoint_refs),
                     );
                     let index_id = id.clone();
-                    edge_entities.insert(&edge.id, index_id);
-                    id
+                    edge_entities.insert(&edge.id, (index_id, start_aligned));
+                    (id, start_aligned)
                 };
                 if edge.curve().is_some() || edge.start != edge.end {
                     profile.push(SketchEntityUse {
                         entity: entity_id,
-                        reversed: coedge.sense == Sense::Reversed,
+                        reversed: (coedge.sense == Sense::Reversed) == start_aligned,
                     });
                 }
             }
@@ -557,6 +588,7 @@ mod projected_brep_output_tests {
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         project_brep(
+            &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 7,
@@ -597,6 +629,7 @@ mod projected_brep_output_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
+            &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,
@@ -628,6 +661,7 @@ mod projected_brep_output_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
+            &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,

@@ -55,15 +55,7 @@
         "model": false
       },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "2",
-          "file_size": "6656",
-          "header_entry_count": "2",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
           "classification": "classified",
           "dialects": {

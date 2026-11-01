@@ -10,6 +10,7 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#child").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -455,6 +456,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let validate_definition = |definition| {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:feature#generated-sweep")
                 .expect("identity grammar"),
             ordinal: 0,
@@ -529,6 +531,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         definition
     );
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1795,4 +1798,60 @@ fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
         );
     }
     assert!(serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
+}
+
+#[test]
+fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+
+    let full = serde_json::json!({
+        "definition": "cosmetic_thread",
+        "face": {"kind": "unresolved"},
+        "standard": "Profile",
+        "designation": "D5",
+        "diameter": {"kind": "literal", "value": 5.0},
+        "pitch": {"kind": "literal", "value": 0.8},
+        "modeled": false,
+        "extent": {"kind": "through"}
+    });
+    let definition: FeatureDefinition = serde_json::from_value(full.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            modeled: Some(false),
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), full);
+
+    let minimal =
+        serde_json::json!({"definition": "cosmetic_thread", "face": {"kind": "unresolved"}});
+    let definition: FeatureDefinition = serde_json::from_value(minimal.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            standard: None,
+            designation: None,
+            diameter: None,
+            pitch: None,
+            modeled: None,
+            extent: None,
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), minimal);
+
+    for (field, value) in [
+        ("modeled", serde_json::json!(null)),
+        ("standard", serde_json::json!("")),
+        ("designation", serde_json::json!(" ")),
+        ("pitch", serde_json::json!({"kind": "literal", "value": 0.0})),
+    ] {
+        let mut wire = minimal.clone();
+        wire[field] = value;
+        assert!(
+            serde_json::from_value::<FeatureDefinition>(wire).is_err(),
+            "{field} must be refused"
+        );
+    }
 }

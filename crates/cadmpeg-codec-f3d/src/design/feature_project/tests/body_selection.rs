@@ -126,3 +126,37 @@ fn copied_body_output_preserves_resolved_body() {
         [binding.body.as_ref().unwrap().clone()]
     );
 }
+
+#[test]
+fn stored_body_map_requires_complete_unique_membership() {
+    use cadmpeg_ir::features::BodySelection;
+    let (scope, binding) = fixture();
+    let selected = super::super::design_body_selection(
+        &scope,
+        [20].into_iter(),
+        std::slice::from_ref(&binding),
+    );
+    assert!(matches!(selected, BodySelection::Resolved { bodies, .. }
+        if bodies.as_slice() == [binding.body.clone().unwrap()]));
+    for body in [
+        None,
+        Some(cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#2").unwrap()),
+    ] {
+        let mut other = binding.clone();
+        other.body = body;
+        let selected = super::super::design_body_selection(
+            &scope,
+            [20].into_iter(),
+            &[binding.clone(), other],
+        );
+        assert!(matches!(selected, BodySelection::Native(_)));
+    }
+    let selected = super::super::design_body_selection(
+        &scope,
+        [21].into_iter(),
+        std::slice::from_ref(&binding),
+    );
+    assert!(matches!(selected, BodySelection::Native(_)));
+    let selected = super::super::design_body_selection(&scope, [].into_iter(), &[]);
+    assert!(matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.is_empty()));
+}

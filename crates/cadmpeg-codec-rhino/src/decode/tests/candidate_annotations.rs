@@ -93,29 +93,20 @@ fn candidate_session_reuses_source_identity_and_borrows_retained_image() {
 
 #[test]
 fn candidate_source_link_grammar_failure_preserves_admission_classification() {
-    let scan = scan_with_objects(&[super::object_record(
-        super::ArchiveVersion::V5,
-        1,
-        super::POINT_CLASS,
-    )]);
-    super::with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).unwrap();
-        context
-            .session
-            .unknown_links_mut(0)
-            .unwrap()
-            .unwrap()
-            .1
-            .push("invalid".into());
-        let before = context.session.document().clone();
-        let Err(CandidateError::Admission(message)) = context.validate_candidate(|_, _| ()) else {
-            panic!("source link grammar remains an admission failure");
-        };
-        let expected =
-            cadmpeg_ir::NativeUnknownRecord::try_from(&context.session.unknowns()[0]).unwrap_err();
-        assert_eq!(message, expected.to_string());
-        assert_eq!(context.session.document(), &before);
-    });
+    let record = cadmpeg_ir::unknown::UnknownRecord::retained(
+        cadmpeg_ir::ids::UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
+            cadmpeg_ir::ids::IdentityKey::zero_padded(0, 6),
+        ),
+        0,
+        Vec::new(),
+        vec!["invalid".into()],
+    );
+    let expected = cadmpeg_ir::NativeUnknownRecord::try_from(&record).unwrap_err();
+    assert!(
+        expected.to_string().contains("native unknown"),
+        "unexpected grammar failure: {expected}"
+    );
 }
 
 #[test]

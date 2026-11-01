@@ -267,7 +267,6 @@ struct NativeCopiousData {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeBoundaryVertexEndpoint {
-    edge: String,
     endpoint: BoundaryEndpoint,
     position: [f64; 3],
 }
@@ -276,7 +275,6 @@ struct NativeBoundaryVertexEndpoint {
 struct NativeBoundaryVertex {
     id: String,
     source_entity: String,
-    vertex: String,
     representative: [f64; 3],
     tolerance: f64,
     sewn: bool,
@@ -1297,7 +1295,7 @@ mod occurrence {
         pub(super) role: OccurrenceRole,
         pub(super) source_instance: String,
         pub(super) definition: String,
-        pub(super) neutral_links: Vec<String>,
+        pub(super) native_links: Vec<String>,
         pub(super) instance_path: Vec<String>,
         pub(super) local_transform: [[f64; 4]; 3],
         pub(super) world_transform: [[f64; 4]; 3],
@@ -1327,7 +1325,7 @@ mod occurrence {
             member: Option<u32>,
             instance_sequence: u32,
             definition_sequence: u32,
-            neutral_links: Vec<String>,
+            native_links: Vec<String>,
             frames: ([[f64; 4]; 3], [[f64; 4]; 3]),
         ) -> Self {
             let (local_transform, world_transform) = frames;
@@ -1351,7 +1349,7 @@ mod occurrence {
                 role,
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
-                neutral_links,
+                native_links,
                 instance_path: path
                     .iter()
                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
@@ -1371,7 +1369,7 @@ mod occurrence {
                 source_instance: &'a str,
                 definition: &'a str,
                 member: Option<&'a str>,
-                neutral_links: &'a [String],
+                native_links: &'a [String],
                 instance_path: &'a [String],
                 local_transform: [[f64; 4]; 3],
                 world_transform: [[f64; 4]; 3],
@@ -1382,7 +1380,7 @@ mod occurrence {
                 source_instance: &self.source_instance,
                 definition: &self.definition,
                 member: self.role.member(),
-                neutral_links: &self.neutral_links,
+                native_links: &self.native_links,
                 instance_path: &self.instance_path,
                 local_transform: self.local_transform,
                 world_transform: self.world_transform,
@@ -2042,7 +2040,7 @@ struct OccurrenceExpansion<'a, 'ctx> {
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
-    neutral_links: &'a BTreeMap<u32, Vec<String>>,
+    native_links: &'a BTreeMap<u32, Vec<String>>,
     length_factor: f64,
     precision: RealPrecision,
     output_limit: usize,
@@ -2165,13 +2163,13 @@ impl OccurrenceExpansion<'_, '_> {
                 continue;
             };
 
-            let neutral_links = self.neutral_links.get(member).cloned().unwrap_or_default();
+            let native_links = self.native_links.get(member).cloned().unwrap_or_default();
             occurrences.push(NativeProductOccurrence::new(
                 path,
                 Some(*member),
                 instance_sequence,
                 definition_sequence,
-                neutral_links,
+                native_links,
                 (member_local.affine_rows(), member_world.affine_rows()),
             ));
         }
@@ -2188,7 +2186,7 @@ fn native_entity_ids(sequences: impl IntoIterator<Item = u32>) -> Vec<String> {
     ids
 }
 
-fn push_occurrence_neutral_link(links: &mut BTreeMap<u32, Vec<String>>, sequence: u32, id: &str) {
+fn push_occurrence_native_link(links: &mut BTreeMap<u32, Vec<String>>, sequence: u32, id: &str) {
     links.entry(sequence).or_default();
     if let Some(group) = links.get_mut(&sequence) {
         group.push(id.to_string());
@@ -5539,7 +5537,7 @@ pub(crate) fn store(
     {
         occurrence_definitions.insert(sequence, definition);
     }
-    let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
+    let mut occurrence_native_links = BTreeMap::<u32, Vec<String>>::new();
     for curve in &ir.model.curves {
         if let Some(sequence) = curve
             .source_object
@@ -5547,10 +5545,10 @@ pub(crate) fn store(
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|_| sequences.curve(&curve.id))
         {
-            push_occurrence_neutral_link(
-                &mut occurrence_neutral_links,
+            push_occurrence_native_link(
+                &mut occurrence_native_links,
                 sequence,
-                curve.id.as_str(),
+                &format!("iges:entity:directory#{sequence}"),
             );
         }
     }
@@ -5561,24 +5559,28 @@ pub(crate) fn store(
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|_| sequences.surface(&surface.id))
         {
-            push_occurrence_neutral_link(
-                &mut occurrence_neutral_links,
+            push_occurrence_native_link(
+                &mut occurrence_native_links,
                 sequence,
-                surface.id.as_str(),
+                &format!("iges:entity:directory#{sequence}"),
             );
         }
     }
     for body in &ir.model.bodies {
         if let Some(sequence) = sequences.body_neutral_form(&body.id) {
-            push_occurrence_neutral_link(&mut occurrence_neutral_links, sequence, body.id.as_str());
+            push_occurrence_native_link(
+                &mut occurrence_native_links,
+                sequence,
+                &format!("iges:entity:directory#{sequence}"),
+            );
         }
     }
     for point in &ir.model.points {
         if let Some(sequence) = sequences.point(&point.id) {
-            push_occurrence_neutral_link(
-                &mut occurrence_neutral_links,
+            push_occurrence_native_link(
+                &mut occurrence_native_links,
                 sequence,
-                point.id.as_str(),
+                &format!("iges:entity:directory#{sequence}"),
             );
         }
     }
@@ -5605,7 +5607,7 @@ pub(crate) fn store(
             entries: &entries,
             records: &by_directory,
             definitions: &occurrence_definitions,
-            neutral_links: &occurrence_neutral_links,
+            native_links: &occurrence_native_links,
             length_factor,
             precision: global.real_precision(),
             output_limit: limits.output,
@@ -5672,7 +5674,6 @@ pub(crate) fn store(
                     )
                 ),
                 source_entity: derivation.source_entity.clone(),
-                vertex: derivation.vertex.as_str().to_string(),
                 representative: [
                     derivation.representative.x,
                     derivation.representative.y,
@@ -5687,7 +5688,6 @@ pub(crate) fn store(
                     derivation.source_endpoints.iter(),
                     |endpoint| {
                         Ok(NativeBoundaryVertexEndpoint {
-                            edge: endpoint.edge.clone(),
                             endpoint: endpoint.endpoint,
                             position: [
                                 endpoint.position.x,
@@ -5774,6 +5774,7 @@ pub(crate) fn store(
             &product_occurrences,
             &subfigure_definitions,
             &network_definitions,
+            sequences,
             ctx,
         )?
     } else {

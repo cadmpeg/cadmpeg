@@ -153,6 +153,7 @@ pub(super) fn emit_model_features(
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
+            product_definition: None,
             needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -195,6 +196,7 @@ pub(super) fn emit_model_features(
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
+            product_definition: None,
             needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -447,6 +449,7 @@ pub(super) fn emit_model_features(
             operation_exactness,
         )?;
         let feature = Feature {
+            product_definition: None,
             needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
@@ -567,6 +570,7 @@ pub(super) fn emit_model_features(
         }
         let feature =
             Feature {
+                product_definition: None,
                 needs_recompute: false,
                 id,
                 ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),

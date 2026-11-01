@@ -145,6 +145,7 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
         .try_into()
         .expect("valid distance parameter identity");
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter,
         owner: None,
         ordinal: 0,

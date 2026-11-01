@@ -428,34 +428,6 @@ impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
     }
 }
 
-impl DesignEdgeIdentityOperand {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
-            ("byte_offset", self.byte_offset()),
-            ("local_id_offset", self.local_id_offset()),
-            ("asset_id_offset", self.asset_id_offset()),
-            ("context_id_offset", self.context_id_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id), offset.to_string());
-            }
-        }
-        if let Some(layout) = self.layout {
-            fidelity.metadata.insert(
-                format!("{}.prologue_layout", self.id),
-                match layout {
-                    DesignEdgeIdentityLayout::Full => "full",
-                    DesignEdgeIdentityLayout::Compact => "compact",
-                    DesignEdgeIdentityLayout::Shortest => "shortest",
-                }
-                .into(),
-            );
-        }
-    }
-}
-
 /// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "DesignEdgeOperandDraft")]

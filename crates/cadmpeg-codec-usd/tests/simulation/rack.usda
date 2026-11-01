@@ -1,0 +1,58 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    kilogramsPerUnit = 1
+    upAxis = "Z"
+)
+def Xform "World"
+{
+    def PhysicsScene "Scene"
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 0
+    }
+    def Xform "Pinion" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        
+    }
+    def Xform "Rack" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+        double3 xformOp:translate = (0, -1, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        vector3f physics:velocity = (0.1, 0, 0)
+    }
+    def PhysicsRevoluteJoint "HingeP"
+    {
+        rel physics:body1 = </World/Pinion>
+        uniform token physics:axis = "Z"
+    }
+    def PhysicsPrismaticJoint "Track"
+    {
+        rel physics:body1 = </World/Rack>
+        uniform token physics:axis = "X"
+        point3f physics:localPos0 = (0, -1, 0)
+    }
+    def PhysxPhysicsRackAndPinionJoint "RackPinion"
+    {
+        rel physics:body0 = </World/Pinion>
+        rel physics:body1 = </World/Rack>
+        float physics:ratio = 36
+        rel physics:hinge = </World/HingeP>
+        rel physics:prismatic = </World/Track>
+    }
+}

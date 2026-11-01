@@ -779,12 +779,16 @@ fn attach_rm_appearances(
         annotations
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
+        let Some(target) = cadmpeg_ir::appearance::AppearanceTarget::record_for(
+            &ir.model,
+            binding.source_id.as_str(),
+        ) else {
+            continue;
+        };
         ir.model.appearance_bindings.push(AppearanceBinding {
             native_ref: None,
             id: binding_id,
-            target: AppearanceTarget::Source {
-                source_id: binding.source_id.clone(),
-            },
+            target,
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
@@ -1238,6 +1242,7 @@ fn attach_initial_segment_bodies(
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
+        product_definition: None,
     });
     Ok(Some(id))
 }
@@ -4098,6 +4103,7 @@ fn attach_feature_operations(
                 DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
             native_ref: Some(label.id.clone()),
+            product_definition: None,
         });
         if !deletes_body && !operation_body_writes.is_empty() {
             let key = label
@@ -5397,12 +5403,18 @@ fn parasolid_topology_attribute_contexts<'a>(
             continue;
         };
 
-        let target = emitted_targets
+        let Some(target) = emitted_targets
             .get(target_key.as_str())
             .cloned()
-            .unwrap_or_else(|| AttributeTarget::Source {
-                source_id: reference.id.clone(),
-            });
+            .or_else(|| {
+                cadmpeg_ir::attributes::AttributeTarget::record_for(
+                    &ir.model,
+                    reference.id.as_str(),
+                )
+            })
+        else {
+            continue;
+        };
         let mut entities = BTreeSet::new();
         if let Some(entity) = reference.attribute_list_record.as_deref() {
             entities.insert(entity);

@@ -17,6 +17,8 @@ use crate::application::artifact_store;
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::ApplicationError;
 
+mod companions;
+
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
@@ -39,8 +41,10 @@ pub(crate) fn load_artifact(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
+    let companions = companions::Directory::beside(path);
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::new(&arena, &options.policy, options.depth);
+    let ctx =
+        DecodeContext::new(&arena, &options.policy, options.depth).with_companions(&companions);
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut prefix =
         cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
@@ -65,7 +69,7 @@ pub(crate) fn load_artifact(
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
             return Err(anyhow!(
-                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, .cadir.json; use --input-format to override detection",
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
                 path.display()
             )
             .into());

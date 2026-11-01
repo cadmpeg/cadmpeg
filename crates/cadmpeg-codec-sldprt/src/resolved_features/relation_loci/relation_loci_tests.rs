@@ -80,6 +80,7 @@ fn dynamic_relation(
 
 fn length_parameter(value: f64) -> DesignParameter {
     DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
@@ -117,6 +118,7 @@ fn point_operand_requires_one_profile_locus() {
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
@@ -239,6 +241,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         }],
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,

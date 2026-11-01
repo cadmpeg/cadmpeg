@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
-    attributes::{AttributeTarget, AttributeValue, SourceAttribute},
+    attributes::{AttributeValue, SourceAttribute},
     products::{ProductDefinition, ProductDefinitionKind},
     report::loss::LossNote,
     CadIr,
@@ -70,6 +70,14 @@ pub(super) fn project(
                 }
                 "display_jt_string_property_atoms" => {
                     if let Some(value) = fields.get("value").and_then(Value::as_str) {
+                        let Some(target) =
+                            cadmpeg_ir::attributes::AttributeTarget::record_for(
+                                &ir.model,
+                                record.id(),
+                            )
+                        else {
+                            continue;
+                        };
                         let attribute_id = cadmpeg_ir::ids::AttributeId::compose(
                             &cadmpeg_ir::identity_namespace!("nx", "document", "attribute"),
                             cadmpeg_ir::identity_key!("jt-string-").then(attributes.len()),
@@ -78,9 +86,7 @@ pub(super) fn project(
                             ctx,
                             attribute_id,
                             Some(record.id().to_owned()),
-                            AttributeTarget::Source {
-                                source_id: record.id().to_owned(),
-                            },
+                            target,
                             "JT string property".into(),
                             vec![AttributeValue::String(value.to_owned())],
                         )?);

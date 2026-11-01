@@ -8,6 +8,7 @@ pub(crate) mod holes_extrude;
 mod ordering;
 pub(crate) mod primitives;
 mod resource_admission;
+mod revolution;
 pub(crate) mod sketches;
 mod taper;
 
@@ -100,6 +101,45 @@ fn extrusion_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDef
 /// Native feature fallback retains typed records; unreadable payloads also
 /// charge their own Warning and explicitly block design patch/replay.
 fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: usize) {
+    assert_native_retention_as(result, expected, "feature.native-kind-retained", "", 0);
+}
+
+/// Native feature fallback that also charges `extra` losses of one known code
+/// beyond the native-kind and unreadable sets.
+fn assert_native_retention_with_known_losses(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    expected: usize,
+    extra_code: &str,
+    extra: usize,
+) {
+    assert_native_retention_as(
+        result,
+        expected,
+        "feature.native-kind-retained",
+        extra_code,
+        extra,
+    );
+}
+
+/// Untransferred revolution fallback: the same retention checks with the
+/// revolution-specific loss in place of the native-kind loss.
+fn assert_native_revolution_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: usize) {
+    assert_native_retention_as(
+        result,
+        expected,
+        "feature.revolution-not-transferred",
+        "",
+        0,
+    );
+}
+
+fn assert_native_retention_as(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    expected: usize,
+    native_code: &str,
+    extra_code: &str,
+    extra: usize,
+) {
     use crate::native::{ObjectRecord, PropertyBody, PropertyRecord};
     use cadmpeg_ir::features::FeatureOperation;
     let namespace = result
@@ -145,7 +185,7 @@ fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: u
         losses
             .iter()
             .filter(|loss| loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
+                && loss.code.local_code() == native_code
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking)
             .count(),
         expected
@@ -166,7 +206,16 @@ fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: u
             "unreadable {owner} needs its own loss: {losses:?}"
         );
     }
-    assert_eq!(losses.len(), expected + unreadable.len(), "{losses:?}");
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == extra_code)
+            .count(),
+        extra,
+        "{losses:?}"
+    );
+    assert_eq!(losses.len(), expected + unreadable.len() + extra, "{losses:?}");
     let unrepresented = if unreadable.is_empty() {
         cadmpeg_ir::ArenaClasses::new()
     } else {

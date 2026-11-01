@@ -897,6 +897,7 @@ mod tests {
 
     fn source_feature(definition: FeatureDefinition) -> Feature {
         Feature {
+            product_definition: None,
             needs_recompute: false,
             id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
                 .expect("identity grammar"),
@@ -915,6 +916,7 @@ mod tests {
 
     fn source_length_parameter(value: f64) -> DesignParameter {
         DesignParameter {
+            product_definition: None,
             driving: true,
             id: cadmpeg_ir::features::ParameterId::mint("creo:test:parameter#1")
                 .expect("identity grammar"),

@@ -270,6 +270,19 @@ fn parse_component_reference_data(
     Ok(value)
 }
 
+fn reference_data(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Option<XrefTable>, CodecError> {
+    validate_component_reference_data(ctx, scan)?;
+    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => bytes,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    parse(ctx, bytes).map(Some)
+}
+
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
@@ -285,16 +298,9 @@ pub(crate) fn decode_with_scopes(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Option<XrefTable>, CodecError> {
-    // Validate the extension document independently of whether a redirections
-    // table is present. Its members are application-defined and retained by
-    // source fidelity, so no field-level semantics are guessed here.
-    validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
-        Ok(bytes) => bytes,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+    let Some(mut table) = reference_data(ctx, scan)? else {
+        return Ok(None);
     };
-    let mut table = parse(ctx, bytes)?;
     bind_occurrences(scan, &mut table, scopes)?;
     Ok(Some(table))
 }

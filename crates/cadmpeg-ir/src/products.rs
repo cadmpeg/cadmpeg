@@ -10,7 +10,7 @@ pub(crate) mod assembly_graph;
 use cadmpeg_core::text::NonBlankString;
 
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::sketches::SketchId;
 use crate::transform::Transform;
 
@@ -1446,6 +1446,19 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
+        /// Pinion rotation in radians per millimetre of rack translation, as a
+        /// magnitude: the sign follows the connector frames.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_ratio"
+        )]
+        ratio: Option<PositiveReal>,
+        /// The revolute joint of the pinion and the slider joint of the rack that
+        /// the coupling acts on, in that order. Empty when the coupling acts on
+        /// the connectors directly.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        coupled_joints: Vec<JointId>,
     },
     /// Couples translation and rotation by screw pitch.
     Screw {
@@ -1473,6 +1486,20 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
+        /// Rotation of the second connector per rotation of the first, as a
+        /// magnitude: the sign follows the connector frames. For gears with
+        /// `N0` and `N1` teeth it is `N0 / N1`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_ratio"
+        )]
+        ratio: Option<PositiveReal>,
+        /// The revolute joints of the first and the second gear that the
+        /// coupling acts on, in that order. Empty when the coupling acts on the
+        /// connectors directly.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        coupled_joints: Vec<JointId>,
     },
     /// Couples two pulley rotations through a belt.
     Belt {
@@ -1610,6 +1637,9 @@ pub struct AssemblyJoint {
         deserialize_with = "deserialize_driving_parameter"
     )]
     pub driving_parameter: Option<crate::features::ParameterId>,
+    /// Motors and springs that drive degrees of freedom of the joint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drives: Vec<JointDrive>,
     /// Format-native joint record supplying this constraint.
     #[serde(
         default,
@@ -1617,6 +1647,101 @@ pub struct AssemblyJoint {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// An axis of a connector frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum FrameAxis {
+    /// The x axis.
+    X,
+    /// The y axis.
+    Y,
+    /// The z axis.
+    Z,
+}
+
+/// The degree of freedom that a drive acts on, along or about an axis of
+/// the first connector frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DriveAxis {
+    /// Rotation about the axis.
+    Rotation {
+        /// The axis.
+        axis: FrameAxis,
+    },
+    /// Translation along the axis.
+    Translation {
+        /// The axis.
+        axis: FrameAxis,
+    },
+}
+
+/// How a drive's output acts on the bodies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DriveMode {
+    /// The output is a force or a torque.
+    Force,
+    /// The output is an acceleration, independent of the bodies' masses.
+    Acceleration,
+}
+
+/// A motor or spring on one degree of freedom of a joint. The drive output is
+/// `stiffness · (target_position − position) + damping · (target_velocity −
+/// velocity)`, limited to `max_force`.
+///
+/// Rotations are radians and translations millimetres. Stiffness is newton
+/// millimetres per radian, or newtons per millimetre; damping is newton
+/// millimetre seconds per radian, or newton seconds per millimetre; the force
+/// limit is newton millimetres, or newtons.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct JointDrive {
+    /// The driven degree of freedom.
+    pub axis: DriveAxis,
+    /// How the output acts.
+    pub mode: DriveMode,
+    /// Target position.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_position"
+    )]
+    pub target_position: Option<FiniteReal>,
+    /// Target velocity per second.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_velocity"
+    )]
+    pub target_velocity: Option<FiniteReal>,
+    /// Stiffness.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stiffness"
+    )]
+    pub stiffness: Option<NonNegativeReal>,
+    /// Damping.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_damping"
+    )]
+    pub damping: Option<NonNegativeReal>,
+    /// Largest force or torque. Absent means unlimited.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_max_force"
+    )]
+    pub max_force: Option<PositiveReal>,
 }
 
 impl AssemblyJoint {
@@ -1659,11 +1784,13 @@ impl AssemblyJoint {
             operands,
             suppressed: false,
             driving_parameter: None,
+            drives: Vec::new(),
             native_ref: None,
         }
     }
 
-    /// Returns the complete typed operand frames and joint family.
+    /// The connector state: one grounded connector, or two connectors and
+    /// their paired family, with the complete typed operand frames.
     pub const fn operands(&self) -> &JointOperands {
         &self.operands
     }
@@ -1763,8 +1890,14 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
+cadmpeg_core::named_optional_field!(deserialize_ratio, PositiveReal, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
 cadmpeg_core::named_optional_field!(deserialize_frame_sense, PlaneSense, "frame_sense");
+cadmpeg_core::named_optional_field!(deserialize_target_position, FiniteReal, "target_position");
+cadmpeg_core::named_optional_field!(deserialize_target_velocity, FiniteReal, "target_velocity");
+cadmpeg_core::named_optional_field!(deserialize_stiffness, NonNegativeReal, "stiffness");
+cadmpeg_core::named_optional_field!(deserialize_damping, NonNegativeReal, "damping");
+cadmpeg_core::named_optional_field!(deserialize_max_force, PositiveReal, "max_force");
 cadmpeg_core::named_optional_field!(
     deserialize_driving_parameter,
     crate::features::ParameterId,

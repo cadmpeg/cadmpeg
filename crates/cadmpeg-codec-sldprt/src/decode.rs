@@ -125,7 +125,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             geometry_transferred: false,
         };
         report.losses.append(&mut pmi_losses);
-        append_design_losses(ctx, &ir, &mut report)?;
+        let active_block = active_parasolid_block(&scan);
+        append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
         append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
         return decode_result(ctx, ir, report, annotations, unknowns, retention);
     }
@@ -151,7 +152,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
-            append_design_losses(ctx, &ir, &mut report)?;
+            let active_block = active_parasolid_block(&scan);
+            append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
             append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns, retention);
         }
@@ -177,7 +179,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
     append_tessellation_losses(&ir, &mut report);
-    append_design_losses(ctx, &ir, &mut report)?;
+    let active_block = active_parasolid_block(&scan);
+    append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
     append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns, retention)
 }
@@ -534,6 +537,7 @@ fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
+    active_block: Option<&str>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::edge_treatments::{ChamferGroup, FullRoundSideSelection};
     use cadmpeg_ir::features::{
@@ -570,11 +574,8 @@ fn append_design_losses(
                 ir.model.configurations.len()
             )));
     }
-    let active_partition = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+    let active_partition = active_block
+        .and_then(crate::container::configuration_index)
         .and_then(|index| u32::try_from(index).ok());
     let active_partition_mismatch = active_partition.filter(|active_partition| {
         ir.model
@@ -1390,6 +1391,7 @@ fn append_design_losses(
                     face,
                     diameter,
                     extent,
+                    ..
                 } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
                 FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
                 FeatureOperation::SketchBlockInstance { block, placement } => {
@@ -2646,12 +2648,16 @@ fn retain_unresolved_appearance(
     {
         return;
     }
+    let Some(target) = cadmpeg_ir::appearance::AppearanceTarget::record_for(
+        &ir.model,
+        &unresolved.identity,
+    ) else {
+        return;
+    };
     ir.model.appearance_bindings.push(AppearanceBinding {
         native_ref: None,
         id: binding_id,
-        target: AppearanceTarget::Source {
-            source_id: unresolved.identity.clone(),
-        },
+        target,
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
@@ -2901,12 +2907,11 @@ fn build_geometry_ir(
         retention.source(cadmpeg_ir::document::ArenaClass::Model);
     }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
-    let (display_sections, display_summary) = collect_display_sections(ctx, scan)?;
+    let (display_sections, _) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(
         scan,
         classification,
         metadata_header.as_ref(),
-        display_summary,
     )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     previews::project(ctx, scan, &mut ir, &mut annotations)?;
@@ -3332,7 +3337,8 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(&mut ir, configuration_bodies)?;
+    let active_block = active_parasolid_block(scan);
+    assign_configuration_bodies(&mut ir, configuration_bodies, active_block.as_deref())?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -3347,7 +3353,8 @@ fn build_geometry_ir(
         &all_lanes,
         &face_identities,
     )?;
-    mark_active_configuration(&mut ir);
+    let active_block = active_parasolid_block(scan);
+    mark_active_configuration(&mut ir, active_block.as_deref());
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         ctx,
         &mut ir.model.features,
@@ -3393,6 +3400,7 @@ fn build_geometry_ir(
         feature_input_lanes: all_lanes,
         pmi_dimensions,
         document_metadata: Vec::new(),
+        decode_baselines: Vec::new(),
     };
     assign_native_configuration_indices(&ir, &mut native);
 
@@ -3779,55 +3787,13 @@ fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-    display: crate::tessellation::Summary,
 ) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    if display.vertices > 0 {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_vertices"),
-            display.vertices.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_triangles"),
-            display.triangles.to_string(),
-        );
-    }
-    for (name, count) in [
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
-            display.extended_forms[0],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
-            display.extended_forms[1],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
-            display.extended_forms[2],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
-            display.extended_forms[3],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
-            display.opaque_extended_tables,
-        ),
-    ] {
-        if count != 0 {
-            attributes.insert(name, count.to_string());
-        }
-    }
-    if let Some(site) = container::select_active_parasolid_site(scan) {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            site.source_stream().as_str().to_owned(),
-        );
-    } else {
+    if container::select_active_parasolid_site(scan).is_none() {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_active_partition_unresolved"),
             "true".into(),
@@ -4134,10 +4100,6 @@ fn build_metadata_ir(
             container::Section::Block(block) => u64_from_index(block.offset),
             container::Section::Compound(_) => 0,
         };
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            site.source_stream().as_str().to_owned(),
-        );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("parasolid_schema"),
             site.header.schema.value().to_owned(),
@@ -4518,6 +4480,7 @@ fn build_metadata_ir(
         feature_input_lanes: all_lanes,
         pmi_dimensions,
         document_metadata: Vec::new(),
+        decode_baselines: Vec::new(),
     };
     ctx.admit_entities(
         u64_from_index(ir.model.entity_count()),
@@ -4526,8 +4489,9 @@ fn build_metadata_ir(
     )?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    bind_active_configuration_partition(&mut ir);
-    mark_active_configuration(&mut ir);
+    let active_block = active_parasolid_block(scan);
+    bind_active_configuration_partition(&mut ir, active_block.as_deref());
+    mark_active_configuration(&mut ir, active_block.as_deref());
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     let metadata = crate::native::DocumentMetadata {
         id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
@@ -4664,17 +4628,19 @@ fn parameter_identity_lanes(
     selected
 }
 
-fn mark_active_configuration(ir: &mut CadIr) {
+fn active_parasolid_block(scan: &ContainerScan) -> Option<String> {
+    container::select_active_parasolid_site(scan)
+        .map(|site| site.source_stream().as_str().to_owned())
+}
+
+fn mark_active_configuration(ir: &mut CadIr, active_block: Option<&str>) {
     let active_name = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"))
         .map(String::as_str);
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
+    let active_index = active_block
+        .and_then(crate::container::configuration_index);
     let by_name = active_name.and_then(|name| {
         let mut matches = ir
             .model
@@ -4754,6 +4720,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    active_block: Option<&str>,
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
@@ -4794,7 +4761,7 @@ fn assign_configuration_bodies(
             }
         }
     }
-    if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
+    if let Some((active_index, position)) = bind_active_configuration_partition(ir, active_block) {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies =
                 Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
@@ -4838,16 +4805,13 @@ fn assign_configuration_bodies(
 
 /// Bind the active configuration's partition identity from the two native
 /// selectors, without inferring body membership.
-fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
+fn bind_active_configuration_partition(ir: &mut CadIr, active_block: Option<&str>) -> Option<(u32, usize)> {
     let active_name = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"));
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+    let active_index = active_block
+        .and_then(crate::container::configuration_index)
         .and_then(|index| u32::try_from(index).ok());
     let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
         return None;
@@ -4887,70 +4851,44 @@ fn stamp_local_digests(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<(), CodecError> {
     ir.finalize();
-    let source = ir.source.as_mut();
-    if let Some(source) = source {
-        let keys = source
-            .attributes
-            .keys()
-            .filter(|key| {
-                key.as_str().ends_with("sha256")
-                    || matches!(
-                        key.as_str(),
-                        "outer_version"
-                            | "block_count"
-                            | "compound_stream_count"
-                            | "active_parasolid_block"
-                    )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        for key in keys {
-            if let Some(value) = source.attributes.remove(key.as_str()) {
-                fidelity.metadata.insert(key.to_string(), value);
-            }
+    if let Some(source) = ir.source.as_mut() {
+        for key in ["block_count", "compound_stream_count"] {
+            source.attributes.remove(key);
         }
     }
-    fidelity.metadata.insert(
-        "brep_local_sha256".into(),
-        brep_local_sha256_in_place(ctx, ir)?,
-    );
-    let swobjects = (|| -> Result<_, CodecError> {
+    let brep = brep_local_sha256_in_place(ctx, ir)?;
+    let (swobjects, material, identities) = match (|| -> Result<_, CodecError> {
         Ok((
             crate::writer::swobjects_local_sha256(ctx, ir)?,
             crate::writer::swobjects_material_local_sha256(ctx, ir)?,
             crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?,
         ))
-    })();
-    match swobjects {
-        Ok((objects, material, identities)) => {
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE.into(),
-                objects,
-            );
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE.into(),
-                material,
-            );
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE.into(),
-                identities,
-            );
-        }
+    })() {
+        Ok((objects, material, identities)) => (
+            Some(objects),
+            Some(material),
+            Some(identities),
+        ),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         // A source-layout optimization is optional when a current attribute
         // cannot be serialized by the source's metadata grammar.
-        Err(_) => {}
-    }
-    if !ir.model.pmi.is_empty() {
-        if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
-            fidelity
-                .metadata
-                .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
-        }
-    }
-    fidelity
-        .metadata
-        .insert("document_local_sha256".into(), document_local_sha256(ir)?);
+        Err(_) => (None, None, None),
+    };
+    ir.native.namespace_mut("sldprt").set_arena(
+        ctx,
+        "decode_baselines",
+        &[crate::native::DecodeBaselines {
+            id: cadmpeg_core::nonblank_literal!("sldprt:metadata:decode-baselines#0"),
+            brep,
+            swobjects,
+            swobjects_material: material,
+            swobjects_metadata_identity: identities,
+        }],
+    )?;
+    fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_local_sha256(ir)?)
+            .map_err(CodecError::malformed)?,
+    );
     Ok(())
 }
 

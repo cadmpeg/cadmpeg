@@ -74,7 +74,7 @@ mod tests {
             let expected = match encoder.id().as_str() {
                 "cadir" => DecodeDepth::Full,
                 "step" | "iges" | "rhino" => DecodeDepth::Geometry,
-                "f3d" | "sldprt" | "fcstd" => DecodeDepth::Full,
+                "f3d" | "sldprt" | "fcstd" | "usd" => DecodeDepth::Full,
                 other => panic!("{other}: no pinned decode request"),
             };
             assert_eq!(encoder.request(), expected, "{}", encoder.id());

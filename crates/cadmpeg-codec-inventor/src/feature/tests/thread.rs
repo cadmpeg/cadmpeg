@@ -284,7 +284,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: cadmpeg_ir::features::FaceSelection::Native(native),
-            diameter: None, extent: None,
+            diameter: None, extent: None, ..
         }) if *native == expected_face
     ));
     assert_eq!(feature.source_properties["property_1_boolean"], "true");

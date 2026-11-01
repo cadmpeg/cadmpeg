@@ -186,7 +186,6 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
         ..Default::default()
     };
     let fidelity = native.retained_fidelity().unwrap();
-    assert!(fidelity.metadata.is_empty());
     assert!(fidelity.retained_records().is_empty());
 }
 

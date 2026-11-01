@@ -677,12 +677,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &scope_histories,
     );
-    crate::history::bind_feature_outputs(
+    losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
         &mut design.asm_histories,
         geometry.bodies,
-    )?;
+    )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     crate::history::bind_feature_body_selections(
         &mut model.features,
@@ -726,15 +726,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.faces,
         geometry.surfaces,
     );
-    (model.sketches, model.sketch_entities) = crate::design::sketch_project::project_sketch_design(
+    let planar = crate::design::sketch_project::project_sketch_design(
         ctx,
-        &design.design_sketch_placements,
-        &design.sketch_points,
-        &design.sketch_curve_identities,
-        &design.sketch_relations,
-        &design.sketch_texts,
+        &crate::design::sketch_project::SketchProjectInputs::new(
+            &design.design_sketch_placements,
+            &design.sketch_points,
+            &design.sketch_curve_identities,
+            &design.sketch_relations,
+            &design.sketch_texts,
+        )
+        .with_scan(inputs.scan),
         geometry.tolerances.linear.get(),
     )?;
+    model.sketches = planar.sketches;
+    model.sketch_entities = planar.entities;
+    losses.extend(planar.losses);
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
         ctx,
         &design.design_sketch_placements,
@@ -817,6 +823,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut model.features,
     )?;
+    crate::design::feature_project::orient_revolve_axes(
+        &mut model.features,
+        &model.sketches,
+        &model.sketch_entities,
+        (
+            geometry.tolerances.linear.get(),
+            geometry.tolerances.angular.get(),
+        ),
+    );
     crate::design::feature_project::bind_sketch_feature_geometry(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -1367,6 +1382,7 @@ fn extend_related_design_records(
         )?;
     design.design_profile_curve_selections =
         crate::design::decode::operands::decode_profile_curve_selections(
+            ctx,
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,

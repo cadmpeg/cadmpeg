@@ -19,6 +19,7 @@ use crate::context::Eval;
 use crate::failure::Measure;
 use crate::quadrature::extrema;
 use crate::region::{Membership, Region};
+use crate::tolerance::INVERSION_PARAMETER_RESOLUTION;
 
 /// The axial coordinate range of a face, in millimetres from the axis
 /// origin.
@@ -82,11 +83,18 @@ pub(crate) fn axial_range(
                 }
                 Source::Pcurve { chart, .. } => {
                     let mut charge = |units| eval.charge(units);
-                    let mut f = |t: f64| -> Measure<(f64, f64)> {
+                    let mut f = |t: f64| -> Measure<([f64; 1], [f64; 1])> {
                         let sample = piece.sample(eval, chart, t)?;
-                        Ok((axis.h * sample.uv[1], axis.h * sample.duv[1]))
+                        Ok(([axis.h * sample.uv[1]], [axis.h * sample.duv[1]]))
                     };
-                    let found = extrema(&mut charge, &mut f, piece.t0, piece.t1, &piece.breaks())?;
+                    let [found] = extrema(
+                        &mut charge,
+                        &mut f,
+                        piece.t0,
+                        piece.t1,
+                        &piece.breaks(),
+                        [0.0],
+                    )?;
                     include(found.min);
                     include(found.max);
                     numeric_error = numeric_error.max(found.error);
@@ -101,26 +109,44 @@ pub(crate) fn axial_range(
     Ok(range)
 }
 
-/// The lifted range of parameter `axis` (0 for `u`, 1 for `v`) along one
-/// piece.
-fn piece_range(
+/// The lifted ranges of `u` and `v` along one piece.
+fn piece_ranges(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
     piece: &Piece<'_>,
-    axis: usize,
-) -> Measure<([f64; 2], f64)> {
+) -> Measure<[([f64; 2], f64); 2]> {
     if piece.synthesized() {
-        let start = piece.uv(eval, chart, piece.t0)?[axis];
-        let end = piece.uv(eval, chart, piece.t1)?[axis];
-        return Ok(([start.min(end), start.max(end)], 0.0));
+        let start = piece.uv(eval, chart, piece.t0)?;
+        let end = piece.uv(eval, chart, piece.t1)?;
+        return Ok([0, 1].map(|axis| {
+            (
+                [start[axis].min(end[axis]), start[axis].max(end[axis])],
+                0.0,
+            )
+        }));
     }
     let mut charge = |units| eval.charge(units);
-    let mut f = |t: f64| -> Measure<(f64, f64)> {
+    let mut f = |t: f64| -> Measure<([f64; 2], [f64; 2])> {
         let sample = piece.sample(eval, chart, t)?;
-        Ok((sample.uv[axis], sample.duv[axis]))
+        Ok((sample.uv, sample.duv))
     };
-    let found = extrema(&mut charge, &mut f, piece.t0, piece.t1, &piece.breaks())?;
-    Ok(([found.min, found.max], found.error))
+    let found = extrema(
+        &mut charge,
+        &mut f,
+        piece.t0,
+        piece.t1,
+        &piece.breaks(),
+        parameter_precision(chart),
+    )?;
+    Ok(found.map(|found| ([found.min, found.max], found.error)))
+}
+
+/// The precision of a piece's lifted parameters: the inversion resolution
+/// on a NURBS chart, zero on an analytic one.
+fn parameter_precision(chart: &Chart<'_>) -> [f64; 2] {
+    chart.domain().map_or([0.0; 2], |domain| {
+        domain.map(|[low, high]| INVERSION_PARAMETER_RESOLUTION * (high - low))
+    })
 }
 
 /// The parameter ranges of a face on a NURBS carrier: the domain when the
@@ -147,8 +173,8 @@ pub(crate) fn parameter_ranges(
     for resolution in &resolved.loops {
         let resolved_loop = resolution.outcome.as_ref().map_err(Clone::clone)?;
         for piece in &resolved_loop.pieces {
-            for (axis, range) in ranges.iter_mut().enumerate() {
-                let ([low, high], error) = piece_range(eval, chart, piece, axis)?;
+            let found = piece_ranges(eval, chart, piece)?;
+            for (range, ([low, high], error)) in ranges.iter_mut().zip(found) {
                 range.min = range.min.min(low);
                 range.max = range.max.max(high);
                 range.numeric_error = range.numeric_error.max(error);
@@ -176,7 +202,7 @@ pub(crate) fn angular_sweep(
             wraps = true;
         }
         for piece in &resolved_loop.pieces {
-            let (range, error) = piece_range(eval, chart, piece, 0)?;
+            let [(range, error), _] = piece_ranges(eval, chart, piece)?;
             ranges.push(range);
             numeric_error = numeric_error.max(error);
         }
@@ -255,7 +281,6 @@ pub(crate) fn sphere_extent(
     tolerance: f64,
 ) -> Measure<SphereExtent> {
     let half = std::f64::consts::FRAC_PI_2;
-    let period = std::f64::consts::TAU;
     let member = |uv: [f64; 2]| -> Measure<bool> { Ok(membership.member(uv)? != complement) };
     let mut low = f64::INFINITY;
     let mut high = f64::NEG_INFINITY;
@@ -275,12 +300,11 @@ pub(crate) fn sphere_extent(
             }
         }
         for piece in &resolved_loop.pieces {
-            let ([start, end], error) = piece_range(eval, chart, piece, 1)?;
+            let [(range, error), ([start, end], latitude)] = piece_ranges(eval, chart, piece)?;
             low = low.min(start);
             high = high.max(end);
-            latitude_error = latitude_error.max(error);
+            latitude_error = latitude_error.max(latitude);
             if !piece.synthesized() {
-                let (range, error) = piece_range(eval, chart, piece, 0)?;
                 ranges.push(range);
                 sweep_error = sweep_error.max(error);
             }
@@ -314,7 +338,22 @@ pub(crate) fn sphere_extent(
             numeric_error: latitude_error,
         }
     };
-    let sweep = if wraps {
+    let sweep = sweep_about_axis(ranges, wraps, sweep_error, &member, tolerance)?;
+    Ok(SphereExtent { latitude, sweep })
+}
+
+/// The sweep about the axis of a region whose `u` is the angle about it:
+/// the union of the boundary pieces' `u`-ranges and the gaps the region
+/// holds, or the full circle when a loop wraps.
+fn sweep_about_axis(
+    ranges: Vec<[f64; 2]>,
+    wraps: bool,
+    sweep_error: f64,
+    member: &impl Fn([f64; 2]) -> Measure<bool>,
+    tolerance: f64,
+) -> Measure<AngularSweep> {
+    let period = std::f64::consts::TAU;
+    Ok(if wraps {
         full_sweep(period)
     } else {
         let boundary = union_on_circle(&ranges, period, tolerance, 2.0 * sweep_error);
@@ -341,8 +380,37 @@ pub(crate) fn sphere_extent(
             }
             union_on_circle(&covered, period, tolerance, 2.0 * sweep_error)
         }
-    };
-    Ok(SphereExtent { latitude, sweep })
+    })
+}
+
+/// The angular sweep of a face on a ring torus, under its region or under
+/// its complement when `complement` is set.
+pub(crate) fn torus_sweep(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    resolved: &ResolvedFace<'_>,
+    membership: &Membership,
+    complement: bool,
+    tolerance: f64,
+) -> Measure<AngularSweep> {
+    let member = |uv: [f64; 2]| -> Measure<bool> { Ok(membership.member(uv)? != complement) };
+    let mut ranges = Vec::new();
+    let mut sweep_error: f64 = 0.0;
+    let mut wraps = false;
+    for resolution in &resolved.loops {
+        let resolved_loop = resolution.outcome.as_ref().map_err(Clone::clone)?;
+        if resolved_loop.net_shift[0] != 0 {
+            wraps = true;
+        }
+        for piece in &resolved_loop.pieces {
+            if !piece.synthesized() {
+                let [(range, error), _] = piece_ranges(eval, chart, piece)?;
+                ranges.push(range);
+                sweep_error = sweep_error.max(error);
+            }
+        }
+    }
+    sweep_about_axis(ranges, wraps, sweep_error, &member, tolerance)
 }
 
 fn full_sweep(period: f64) -> AngularSweep {

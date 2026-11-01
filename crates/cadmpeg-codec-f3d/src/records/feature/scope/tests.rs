@@ -411,8 +411,9 @@ fn emboss_scope() -> super::DesignParameterScope {
         40,
     );
     let construction = crate::records::feature::emboss::DesignEmbossConstruction {
-        control_words: [7, 9],
-        native_pair: [17, 23],
+        control_words: crate::records::feature::emboss::DesignEmbossControlWords::Two([7, 9]),
+        native_pair: Some([17, 23]),
+        additional_native_pairs: None,
         depth_owner: crate::records::identity::Sourced::at(60, 29),
         auxiliary_group: crate::records::identity::Sourced::at(72, 40),
         horizontal_owner: crate::records::identity::Sourced::at(63, 51),

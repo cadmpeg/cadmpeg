@@ -165,7 +165,6 @@ pub struct SldprtCodec;
 struct SourceRecord<'a> {
     id: UnknownId,
     data: Option<&'a [u8]>,
-    metadata: &'a std::collections::BTreeMap<String, String>,
 }
 
 impl SldprtCodec {
@@ -190,9 +189,7 @@ impl SldprtCodec {
         source_fidelity: &cadmpeg_ir::SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let expected = records
-            .first()
-            .and_then(|record| record.metadata.get("document_local_sha256"));
+        let expected = source_fidelity.decode_digest.as_ref();
         let Some(expected) = expected else {
             return Self::write_semantic(
                 ir,
@@ -203,7 +200,7 @@ impl SldprtCodec {
                 writer,
             );
         };
-        if decode::document_local_sha256(ir)? != *expected {
+        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
             return Self::write_semantic(
                 ir,
                 annotations,
@@ -446,7 +443,6 @@ fn source_records<'a>(_ir: &CadIr, source_fidelity: &'a SourceFidelity) -> Vec<S
         .map(|(id, record)| SourceRecord {
             id: id.clone(),
             data: record.data(),
-            metadata: &source_fidelity.metadata,
         })
         .collect()
 }

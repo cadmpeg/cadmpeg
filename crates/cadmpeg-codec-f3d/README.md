@@ -48,6 +48,47 @@ assets. The document declares its held classes in
 content as a geometry-depth decode; the failure is recorded in the report.
 `F3dCodec::inspect` returns classified ZIP entries and B-rep header facts.
 
+For an F3Z archive, `F3dCodec::open_archive` accepts a `DecodeContext` and its
+root `View`. Use `cadmpeg-core` to create the context and its `DecodeArena`.
+It scans the directory, manifest, and reference data without
+model decoding. Keep the input and the context's expansion arena alive while
+the returned `F3zSession` is in use. `members()` lists stable archive paths,
+roles, uncompressed lengths, and outgoing references. The model root is first.
+Drawing and skipped entries have no member model.
+
+Call `decode_member(id)` on caller-owned threads. Each call uses private decode
+counters and a private scan cache. Its result holds the document, report body,
+and losses, or the member error. Submit one result for every listed entry to
+`compose`, in any arrival order. Composition follows the root's occurrence
+reference order and returns the same finalized `DecodeResult` as `Codec::decode`.
+
+Member charges are speculative until composition. Composition replays them
+at their original traversal positions against one cumulative archive budget.
+Unreachable members add no decode charges. If a changed budget alters optional
+history enrichment, a charge refuses, or derived address spaces need rebinding,
+composition runs that member through the same decoder with the current budget.
+This keeps the output and resource refusal site independent of arrival order.
+There is no progress callback; callers count completed member results.
+
+The session retains the compressed source archive and directory metadata.
+Member scans use temporary arenas. Reopened scans preserve their original
+address-space identities. Raw member expansions, parsed streams and scan caches
+are released after each operation. Member results retain only the decoded
+payload, source fidelity and compact resource trace. Normal `Codec::decode`
+decodes reachable members during composition and moves each definition into
+the output once. Composition releases template caches and unused member
+results after reference traversal.
+
+`F3zDecodedMember::retained_bytes_estimate()` counts compact JSON bytes for the
+document, report fields and source fidelity, plus the member ID and trace
+storage. Failed results use their error text length; skipped results have no
+payload. The estimate excludes allocator overhead and unused capacity.
+`F3zSession::largest_member_working_bytes_estimate()` gives the largest readable
+model archive length plus its inner directory's declared expanded lengths;
+it excludes parsed records and output. These deterministic estimates are not
+RSS bounds. Callers can gate later parallel decode by the working estimate plus
+retained result estimates.
+
 ## Encode
 
 ```rust,no_run
@@ -107,6 +148,11 @@ author export content. The sidecar declares their unrepresented arena classes.
 Failed SAB framing or geometry decoding still returns
 container metadata and retained source data, with blocking geometry and
 topology losses.
+
+Generic appearance transparency maps to the opacity channel of the CADIR base
+colour. The RGB channels stay unchanged. An absent transparency property keeps
+the colour carrier's alpha. Prism transmission colour, attenuation distance,
+and IOR do not define a scalar opacity.
 
 ## Documentation
 

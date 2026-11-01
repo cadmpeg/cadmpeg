@@ -411,9 +411,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     // cannot authorize reuse of the original archive.
     entry["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(b"different layout"));
     assert!(serde_json::from_value::<EntryRecord>(entry.clone()).is_err());
-    fidelity.metadata.insert(
-        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-        cadmpeg_ir::hash::sha256_hex(b"different layout"),
+    fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(cadmpeg_ir::hash::sha256_hex(
+            b"different layout",
+        ))
+        .expect("a hex digest parses"),
     );
     let plan = FcstdCodec
         .plan(

@@ -228,6 +228,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
 
     let mut native_feature = CadIr::empty();
     native_feature.model.features.push(Feature {
+        product_definition: None,
         id: "test:design:feature#0".try_into().expect("valid identity"),
         ordinal: 0,
         name: None,

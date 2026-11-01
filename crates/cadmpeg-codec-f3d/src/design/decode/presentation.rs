@@ -41,6 +41,7 @@ pub(crate) struct BrowserNodeRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PresentationMaterial {
     node_guid: String,
+    pub(crate) body_name: Option<String>,
     pub(crate) physical_token: String,
     pub(crate) physical_token_offset: u64,
     pub(crate) visual_guid: crate::records::references::DesignVisualToken,
@@ -53,6 +54,7 @@ pub(crate) struct PresentationMaterial {
 pub(crate) struct BodyPresentation {
     pub(crate) byte_offset: u64,
     pub(crate) entity_suffix: u64,
+    pub(crate) name: Option<String>,
     pub(crate) owner: BodyPresentationOwner,
     pub(crate) browser_node: Option<BrowserNodeRecord>,
     pub(crate) material: Option<PresentationMaterial>,
@@ -290,6 +292,9 @@ fn parse_body_presentation(
     Ok(Some(BodyPresentation {
         byte_offset: u64_from_index(start),
         entity_suffix,
+        name: material
+            .as_ref()
+            .and_then(|material| material.body_name.clone()),
         owner,
         browser_node,
         material,
@@ -388,7 +393,7 @@ fn presentation_material(
         {
             continue;
         }
-        let Some((_, after_name)) = lp_utf16_bounded(bytes, reference_at, 0..=256) else {
+        let Some((body_name, after_name)) = lp_utf16_bounded(bytes, reference_at, 0..=256) else {
             continue;
         };
         let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
@@ -440,6 +445,7 @@ fn presentation_material(
         }
         candidate = Some(PresentationMaterial {
             node_guid,
+            body_name: (!body_name.is_empty()).then_some(body_name),
             physical_token,
             physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
@@ -505,9 +511,11 @@ fn bare_presentation_material(
             continue;
         }
 
+        let mut body_name = None;
         let mut after_name = None;
         if let Some(name_at) = skip_zeros(bytes, node_reference_at, end) {
-            if let Some((_, end)) = lp_utf16_bounded(bytes, name_at, 1..=256) {
+            if let Some((name, end)) = lp_utf16_bounded(bytes, name_at, 1..=256) {
+                body_name = Some(name);
                 after_name = Some(end);
             }
         }
@@ -547,6 +555,7 @@ fn bare_presentation_material(
         }
         candidate = Some(PresentationMaterial {
             node_guid,
+            body_name,
             physical_token,
             physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
@@ -1175,5 +1184,321 @@ mod tests {
         let material = presentation.material.as_ref().expect("material envelope");
         assert_eq!(material.physical_token, "PrismMaterial-018");
         assert_eq!(&*material.visual_guid, visual_guid);
+    }
+
+    #[test]
+    fn typed_presentation_extracts_custom_body_name() {
+        let body_tag = 256u32;
+        let entity = 42u64;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Bottom");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    256,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    256,
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    256,
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("named presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].name.as_deref(), Some("Bottom"));
+        assert_eq!(
+            presentations[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .body_name
+                .as_deref(),
+            Some("Bottom")
+        );
+    }
+
+    #[test]
+    fn bare_presentation_extracts_custom_body_name() {
+        let body_tag = 256u32;
+        let entity = 42u64;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        lp_utf16(&mut bytes, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        bytes.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut bytes, "PrismMaterial-018");
+        push_reference_u64(&mut bytes, 1_900);
+        bytes.push(0);
+        lp_utf16(&mut bytes, node_guid);
+        push_reference_u64(&mut bytes, entity + 1);
+        bytes.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut bytes, "Plate");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![design_type(
+                256,
+                BODY_PRESENTATION_TYPE_GUID,
+                Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                BODY_PRESENTATION_TYPE_VERSION,
+                DESIGN_MODULE_BODY,
+                vec![entity],
+            )],
+            records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("bare presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].name.as_deref(), Some("Plate"));
+        assert_eq!(
+            presentations[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .body_name
+                .as_deref(),
+            Some("Plate")
+        );
+    }
+
+    #[test]
+    fn typed_presentation_with_empty_name_yields_none() {
+        let body_tag = 256u32;
+        let entity = 42u64;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    256,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    256,
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    256,
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("named presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].name, None);
+        assert_eq!(presentations[0].material.as_ref().unwrap().body_name, None);
+    }
+
+    #[test]
+    fn typed_presentation_rejects_mismatched_scene_node() {
+        let body_tag = 256u32;
+        let entity = 42u64;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 2);
+        lp_utf16(&mut bytes, "Plate");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    256,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    256,
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    256,
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 2],
+                ),
+            ],
+            records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("named presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].material, None);
+        assert_eq!(presentations[0].name, None);
+    }
+
+    #[test]
+    fn typed_presentation_rejects_ambiguity() {
+        let body_tag = 256u32;
+        let entity = 42u64;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+
+        for name in ["CandidateA", "CandidateB"] {
+            lp_utf16(&mut bytes, node_guid);
+            bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+            lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+            lp_utf16(&mut bytes, "PrismMaterial-001");
+            push_reference_u64(&mut bytes, 7);
+            bytes.push(0);
+            push_reference_u64(&mut bytes, entity + 1);
+            lp_utf16(&mut bytes, name);
+            bytes.extend_from_slice(&1.0f32.to_le_bytes());
+            bytes.extend_from_slice(&[1, 1]);
+            lp_utf16(&mut bytes, visual_guid);
+            for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+                lp_utf16(&mut bytes, marker);
+            }
+        }
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    256,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    256,
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    256,
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("named presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].material, None);
+        assert_eq!(presentations[0].name, None);
     }
 }

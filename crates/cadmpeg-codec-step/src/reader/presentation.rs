@@ -386,7 +386,8 @@ pub(super) fn decode(
         let target_steps =
             expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), ctx)?;
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
-            let targets = appearance_targets(target_step, exchange, topology, &entity_ids, indices);
+            let targets =
+                appearance_targets(target_step, exchange, topology, &entity_ids, indices, &ir.model);
             if targets.is_empty() {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
@@ -687,6 +688,7 @@ fn appearance_targets(
     topology: &TopologyData,
     entity_ids: &EntityIds<'_>,
     indices: PresentationIndices<'_>,
+    model: &cadmpeg_ir::document::Model,
 ) -> std::vec::Vec<cadmpeg_ir::appearance::AppearanceTarget> {
     let mut targets = Vec::new();
     if let Some(bodies) = topology.body_by_root.get(&id) {
@@ -749,9 +751,7 @@ fn appearance_targets(
             tessellation_id.into_string(),
         ))
     } else if exchange.records().contains_key(&id) {
-        Some(AppearanceTarget::Source {
-            source_id: format!("#{id}"),
-        })
+        cadmpeg_ir::appearance::AppearanceTarget::record_for(model, &format!("#{id}"))
     } else {
         None
     };

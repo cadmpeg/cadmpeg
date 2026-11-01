@@ -12,6 +12,7 @@ use crate::F3dCodec;
 
 fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter {
     DesignParameter {
+        product_definition: None,
         driving: true,
         id: format!("authored:model:parameter#{ordinal}")
             .try_into()

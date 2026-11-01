@@ -418,9 +418,20 @@ impl<'a> ValidationIndex<'a> {
         }
     }
 
-    pub(crate) fn matches(&self, source: &PmDcFeature, definition: &FeatureDefinition) -> bool {
-        decode(source, &self.properties, &self.transforms)
-            .is_some_and(|motion| definition == &FeatureDefinition::Operation(motion.operation))
+    pub(crate) fn matches(
+        &self,
+        source: &PmDcFeature,
+        definition: &FeatureDefinition,
+        bodies: &HashMap<String, cadmpeg_ir::ids::BodyId>,
+    ) -> bool {
+        decode(source, &self.properties, &self.transforms).is_some_and(|motion| {
+            super::body_selection::matches(
+                FeatureDefinition::Operation(motion.operation),
+                definition,
+                bodies,
+                None,
+            )
+        })
     }
 }
 

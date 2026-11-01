@@ -25,12 +25,7 @@ fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() 
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generic property fixture decodes");
     let ir = result.ir();
-    assert!(ir
-        .model
-        .attributes
-        .iter()
-        .any(|attribute| attribute.name == "NAME"
-            && attribute.values == vec![Some(AttributeValue::String("VAL".into()))]));
+    assert!(ir.model.attributes.is_empty());
     let record = &ir
         .native
         .namespace("iges")
@@ -114,12 +109,7 @@ fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("typed attribute table defaults and row fixture decodes");
     let ir = result.ir();
-    assert!(ir.model.attributes.iter().any(|attribute| attribute.name
-        == "iges.attribute_table.default.attributes.0.values.0"
-        && attribute.values == vec![Some(AttributeValue::String("VAL".into()))]));
-    assert!(ir.model.attributes.iter().any(|attribute| attribute.name
-        == "iges.attribute_table.value.rows.0.0"
-        && attribute.values == vec![Some(AttributeValue::String("ITEM".into()))]));
+    assert!(ir.model.attributes.is_empty());
     let namespace = ir
         .native
         .namespace("iges")
@@ -298,31 +288,5 @@ fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
     })
     .expect("valid nullable attribute fixture");
     assert!(losses.is_empty());
-    let actual: std::collections::BTreeMap<_, _> = ir
-        .model
-        .attributes
-        .iter()
-        .map(|attribute| (attribute.name.as_str(), attribute.values.clone()))
-        .collect();
-    assert_eq!(
-        actual,
-        std::collections::BTreeMap::from([
-            (
-                "iges.attribute_table.value.rows.0.0",
-                vec![Some(AttributeValue::Integer(1))]
-            ),
-            (
-                "iges.attribute_table.value.rows.0.2",
-                vec![Some(AttributeValue::Integer(3))]
-            ),
-            (
-                "iges.attribute_table.value.rows.1.0",
-                vec![Some(AttributeValue::Integer(4))]
-            ),
-            (
-                "iges.attribute_table.value.rows.1.2",
-                vec![Some(AttributeValue::Integer(6))]
-            ),
-        ])
-    );
+    assert!(ir.model.attributes.is_empty());
 }

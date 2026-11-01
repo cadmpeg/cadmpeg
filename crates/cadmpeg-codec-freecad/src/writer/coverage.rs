@@ -51,6 +51,13 @@ pub(super) fn declaration() -> ArenaDispositions {
         attributes: ArenaDisposition::Dropped,
         pmi: ArenaDisposition::Dropped,
         presentation_layers: ArenaDisposition::Dropped,
+        physical_materials: ArenaDisposition::Omitted,
+        mass_properties: ArenaDisposition::Omitted,
+        rigid_bodies: ArenaDisposition::Omitted,
+        colliders: ArenaDisposition::Omitted,
+        articulations: ArenaDisposition::Omitted,
+        physics_scenes: ArenaDisposition::Omitted,
+        solver_settings: ArenaDisposition::Omitted,
     }
 }
 

@@ -14,18 +14,7 @@ fn target<'a>(
     names: &'a HashMap<String, String>,
 ) -> Option<&'a String> {
     match target {
-        AttributeTarget::Record { arena, id }
-            if ir.model.contains_record(*arena, id)
-                && matches!(
-                    arena.as_str(),
-                    "features"
-                        | "sketches"
-                        | "parameters"
-                        | "product_definitions"
-                        | "occurrences"
-                        | "bodies"
-                ) =>
-        {
+        AttributeTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
             names.get(id)
         }
         AttributeTarget::Source { source_id } => names.get(source_id),
@@ -177,7 +166,12 @@ fn through_schema(
             AttributeValue::Float(value) => Some(value.get().to_string()),
             AttributeValue::String(value) => Some(value.clone()),
             AttributeValue::Boolean(value) => Some(u8::from(*value).to_string()),
-            AttributeValue::Reference(value) => Some(value.clone()),
+            AttributeValue::Reference(value) => {
+                let Some(name) = names.get(value.as_str()) else {
+                    return Ok(None);
+                };
+                Some(name.clone())
+            }
             AttributeValue::Vector(coordinates) if vector && coordinates.len() == 3 => {
                 for (key, coordinate) in ["valueX", "valueY", "valueZ"].into_iter().zip(coordinates)
                 {
@@ -218,7 +212,61 @@ pub(super) fn write(
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    write_matching(
+        ir,
+        names,
+        objects,
+        document,
+        losses,
+        properties,
+        |target| !is_product_or_occurrence(target),
+    )
+}
+
+/// Attributes owned by product definitions and occurrences resolve after
+/// [`super::products::write`] emits their objects.
+pub(super) fn write_products(
+    ir: &CadIr,
+    names: &HashMap<String, String>,
+    objects: &mut [Object],
+    document: &mut BTreeMap<String, String>,
+    losses: &mut Vec<LossNote>,
+    properties: &[crate::native::PropertyRecord],
+) -> Result<(), cadmpeg_core::CodecError> {
+    write_matching(
+        ir,
+        names,
+        objects,
+        document,
+        losses,
+        properties,
+        is_product_or_occurrence,
+    )
+}
+
+fn is_product_or_occurrence(target: &AttributeTarget) -> bool {
+    match target {
+        AttributeTarget::ProductDefinition(_) | AttributeTarget::Occurrence(_) => true,
+        AttributeTarget::Record { arena, .. } => {
+            matches!(arena.as_str(), "product_definitions" | "occurrences")
+        }
+        _ => false,
+    }
+}
+
+fn write_matching(
+    ir: &CadIr,
+    names: &HashMap<String, String>,
+    objects: &mut [Object],
+    document: &mut BTreeMap<String, String>,
+    losses: &mut Vec<LossNote>,
+    properties: &[crate::native::PropertyRecord],
+    include: impl Fn(&AttributeTarget) -> bool,
+) -> Result<(), cadmpeg_core::CodecError> {
     for attribute in &ir.model.attributes {
+        if !include(&attribute.target) {
+            continue;
+        }
         let original = match crate::native::unique_property(properties.iter(), |property| {
             attribute.native_ref.as_deref() == Some(property.id.as_str())
         }) {

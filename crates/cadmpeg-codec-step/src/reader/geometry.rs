@@ -241,7 +241,9 @@ pub(super) fn infer_edge_parameter_ranges(
         else {
             continue;
         };
-        let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) else {
+        let closed = edge.start == edge.end;
+        let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter, closed)
+        else {
             continue;
         };
         // Report only what the document's own accuracy does not already cover:
@@ -372,6 +374,7 @@ fn edge_parameter_range(
     geometry: &SolvedCurveGeometry,
     start: FiniteReal,
     end: FiniteReal,
+    closed: bool,
 ) -> Option<[f64; 2]> {
     let periodic_domain = match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
@@ -382,7 +385,7 @@ fn edge_parameter_range(
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         }
         SolvedCurveGeometry::Transformed(placed) => {
-            return edge_parameter_range(placed.basis(), start, end);
+            return edge_parameter_range(placed.basis(), start, end, closed);
         }
         _ => None,
     };
@@ -414,6 +417,11 @@ fn edge_parameter_range(
         (end.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
     };
     let tolerance = period * EPS_GEOMETRY_READ_GEOMETRY;
+    let sweep = if closed && (sweep <= tolerance || period - sweep <= tolerance) {
+        period
+    } else {
+        sweep
+    };
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
     }
@@ -1529,7 +1537,7 @@ pub(super) fn decode(
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
+                source_object: Some(super::step_source_association(id)),
             });
             e.insert(curve_index);
         }
@@ -1585,7 +1593,7 @@ pub(super) fn decode(
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
+                source_object: Some(super::step_source_association(id)),
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"

@@ -1805,9 +1805,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "fa78fe2d3811f833292fe753d6dd75b350e77fc9bd0b8bd5816d4f9b3072b6ea"
-    },
+    "decode_digest": "fa78fe2d3811f833292fe753d6dd75b350e77fc9bd0b8bd5816d4f9b3072b6ea",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

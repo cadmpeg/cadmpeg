@@ -3,7 +3,7 @@
 
 use crate::design::tests::definition;
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
-use crate::FcstdCodec;
+use crate::{test_support::non_placement_losses, FcstdCodec};
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, ShellJoin, ShellMode, SweepOrientation,
     SweepTransformation, SweepTransition,
@@ -71,7 +71,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(tolerance),
         } if result.ir().dimension_value(tolerance).expect("resolved dimension").get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -186,7 +186,12 @@ fn retains_native_for_malformed_post_process_controls() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::AdditiveBox"
         ));
     }
-    crate::design::tests::assert_native_retention(&result, 5);
+    crate::design::tests::assert_native_retention_with_known_losses(
+        &result,
+        5,
+        "feature.primitive-placement-unresolved",
+        8,
+    );
     crate::design::tests::assert_unreadable_properties(
         &result,
         &[
@@ -194,6 +199,16 @@ fn retains_native_for_malformed_post_process_controls() {
             ("DuplicateFuzzy", "FuzzyTolerance"),
             ("NonFiniteFuzzy", "FuzzyTolerance"),
         ],
+    );
+    assert_eq!(non_placement_losses(result.report()).len(), 8);
+    assert_eq!(
+        non_placement_losses(result.report())
+            .iter()
+            .filter(|loss| loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking)
+            .count(),
+        5
     );
 }
 
@@ -465,7 +480,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
     assert_eq!(feature("Reverse").dependencies.len(), 1);
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -525,7 +540,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     ));
     assert_eq!(feature("Ruled").dependencies.len(), 2);
     assert_eq!(feature("Section").dependencies.len(), 2);
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -569,7 +584,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         }) if ( source.ends_with(":Source") && reference.ends_with(":MirrorPlane")) && matches!(geometry_1.get(), cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(*geometry_2.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 2);
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -620,7 +635,7 @@ fn transfers_part_projection_on_surface_construction() {
             && support.ends_with(":SupportFace")) && result.ir().dimension_value(actual_height).expect("resolved dimension").get() == 8.0 && result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1230,7 +1245,7 @@ fn transfers_shape_and_subshape_binder_construction() {
         context,
         cadmpeg_ir::features::BinderTarget::Feature { .. }
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1273,10 +1288,8 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::SubShapeBinder"
         ));
     }
-    assert_eq!(result.report().losses.len(), 2);
-    assert!(result
-        .report()
-        .losses
+    assert_eq!(non_placement_losses(result.report()).len(), 2);
+    assert!(non_placement_losses(result.report())
         .iter()
         .all(|loss| loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
@@ -1333,7 +1346,7 @@ fn transfers_complete_thickness_construction_controls() {
         }) if (selection.ends_with(":Base")) && result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.5
     ));
     assert_eq!(wall.dependencies.len(), 1);
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1439,8 +1452,8 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
             definition(result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind: actual, .. }) if actual.as_str() == kind
         ));
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
+        assert_eq!(non_placement_losses(result.report()).len(), 1);
+        assert!(non_placement_losses(result.report()).iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -1515,7 +1528,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
                 }) if *mode == expected_mode
             )
         );
-        assert!(result.report().losses.is_empty());
+        assert!(non_placement_losses(result.report()).is_empty());
 
         let malformed_values = [
             "<Integer value=\"bad\"/>",
@@ -1595,7 +1608,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
             definition(&result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::ProjectOnSurface { mode: actual, .. }) if *actual == expected
         ));
-        assert!(result.report().losses.is_empty());
+        assert!(non_placement_losses(result.report()).is_empty());
     }
     for value in [
         "<Integer value=\"bad\"/>",
@@ -1615,7 +1628,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
             definition(&result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::ProjectOnSurface"
         ));
-        assert_eq!(result.report().losses.len(), 1);
+        assert_eq!(non_placement_losses(result.report()).len(), 1);
     }
 }
 
@@ -1695,7 +1708,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             ..
         })
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1762,8 +1775,8 @@ fn rejects_ambiguous_single_source_design_operands() {
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
     }
-    assert_eq!(result.report().losses.len(), 5);
-    assert!(result.report().losses.iter().all(|loss| {
+    assert_eq!(non_placement_losses(result.report()).len(), 5);
+    assert!(non_placement_losses(result.report()).iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

@@ -26,6 +26,7 @@ use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
+use crate::layout::offset_24_extrude_prologue;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
@@ -1015,10 +1016,26 @@ fn exact_current_extrude_prologue_with(
         } else {
             return None;
         }
+    } else if bytes.get(
+        start.checked_add(offset_24_extrude_prologue::ZERO_RUN_13)?
+            ..start.checked_add(offset_24_extrude_prologue::OPERATION)?,
+    ) == Some(&[0; 13])
+        && matches!(
+            View::u32_le_at(
+                bytes,
+                start.checked_add(offset_24_extrude_prologue::OPERATION)?
+            ),
+            Some(1..=4)
+        )
+    {
+        start.checked_add(offset_24_extrude_prologue::OPERATION)?
     } else {
         start.checked_add(28)?
     };
-    let reference = if !typed && bytes.get(start.checked_add(25)?) == Some(&1) {
+    let reference = if !typed
+        && direct_offset != start.checked_add(offset_24_extrude_prologue::OPERATION)?
+        && bytes.get(start.checked_add(25)?) == Some(&1)
+    {
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;

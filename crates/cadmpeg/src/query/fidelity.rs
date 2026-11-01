@@ -126,7 +126,7 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                 },
                 "retained_records": records,
                 "unrepresented": payload.unrepresented(),
-                "metadata": payload.metadata,
+                "decode_digest": payload.decode_digest,
             });
             print_json("fidelity", value)?;
             Ok(())

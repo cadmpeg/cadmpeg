@@ -265,15 +265,23 @@ fn project_fields(
     for owner in owners {
         match targets.get(owner) {
             Some(targets) => assigned.extend(targets.iter().cloned()),
-            None => assigned.push(AttributeTarget::Source {
-                source_id: owner.clone(),
-            }),
+            None => {
+                if let Some(target) =
+                    cadmpeg_ir::attributes::AttributeTarget::record_for(&ir.model, owner)
+                {
+                    assigned.push(target);
+                }
+            }
         }
     }
     if assigned.is_empty() {
-        assigned.push(AttributeTarget::Source {
-            source_id: source_id.to_owned(),
-        });
+        if let Some(target) =
+            cadmpeg_ir::attributes::AttributeTarget::record_for(&ir.model, source_id)
+        {
+            assigned.push(target);
+        } else {
+            return Ok(());
+        }
     }
     assigned.sort();
     assigned.dedup();

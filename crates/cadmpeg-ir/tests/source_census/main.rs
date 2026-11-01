@@ -516,6 +516,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "FeatureReadWire",
     ),
     (
+        "crates/cadmpeg-ir/src/features.rs",
+        "Feature",
+        "product_definition",
+        "FeatureReadWire",
+    ),
+    (
         "crates/cadmpeg-ir/src/provenance.rs",
         "Provenance",
         "tag",
@@ -845,6 +851,9 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
     ("FeatureRowWire", "FeatureWriteWire"),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
     ("CadIrReadWire", "CadIrWriteWire"),
+    // `SourceFidelity` writes through `SourceFidelityWriteWire` in its
+    // hand-written `Serialize`.
+    ("SourceFidelityWire", "SourceFidelityWriteWire"),
     // These owners' manual serializers delegate to the corresponding Out structs.
     ("ArchiveSpan", "ArchiveSpanOut"),
     ("LogicalSpan", "LogicalSpanOut"),

@@ -3440,6 +3440,7 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
         let feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile-feature").unwrap(),
             ordinal: 0,
             name: None,
@@ -3524,6 +3525,7 @@ mod detached_legacy_sketch_tests {
         let neutral = natives
             .each_ref()
             .map(|native| cadmpeg_ir::features::Feature {
+                product_definition: None,
                 id: cadmpeg_ir::features::FeatureId::mint(format!(
                     "synthetic:test:id#{}",
                     native.id
@@ -3656,6 +3658,7 @@ mod detached_legacy_sketch_tests {
                 .collect(),
         };
         let feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile-feature").unwrap(),
             ordinal: 0,
             name: None,
@@ -4103,6 +4106,7 @@ mod detached_legacy_sketch_tests {
         };
         let expected_sketch = SketchId::mint("sldprt:model:sketch#markers:1:30").unwrap();
         let mut neutral_feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
             ordinal: 30,
@@ -4205,6 +4209,7 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![unbound],
         };
         let mut neutral_feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
             ordinal: 30,
@@ -4304,6 +4309,7 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![point],
         };
         let neutral_feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
             ordinal: 30,

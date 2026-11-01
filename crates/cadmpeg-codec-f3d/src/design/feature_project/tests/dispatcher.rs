@@ -20,6 +20,9 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+/// Tolerance for the millimetre pitch of a projected Thread.
+const EPS_THREAD_PITCH: f64 = 1.0e-9;
+
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
     let mut transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -99,6 +102,56 @@ fn dispatcher_projects_datum_feature_scopes() {
         FeatureDefinition::Operation(FeatureOperation::DatumPoint { position, construction })
             if *position == Point3::new(40.0, 50.0, 60.0) && construction.is_none()
     ));
+}
+
+#[test]
+fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
+    use cadmpeg_ir::features::UnresolvedFamily;
+
+    let revolve = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#1",
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
+        1,
+    );
+    let thread = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#2",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        2,
+    );
+    let scopes = vec![revolve, thread];
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &scopes;
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+
+    let definition = |kind: &str| {
+        features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some(kind))
+            .map(|feature| feature.evaluation.definition().clone())
+    };
+    assert_eq!(
+        definition("Revolve"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Revolve,
+        }))
+    );
+    assert_eq!(
+        definition("Thread"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Thread,
+        }))
+    );
 }
 
 #[test]
@@ -999,15 +1052,47 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             bodies: BodySelection::Native(scopes[5].id.clone()),
         })
     );
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+        face,
+        standard,
+        designation,
+        diameter,
+        pitch,
+        modeled,
+        extent,
+    }) = definition("Thread")
+    else {
+        panic!("Thread scope projects to a neutral Thread");
+    };
+    assert_eq!(face, FaceSelection::Native(groups[3].id.clone()));
     assert_eq!(
-        definition("Thread"),
-        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-            face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()
-            )),
-            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
-        })
+        standard
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("GB Metric profile")
+    );
+    assert_eq!(
+        designation
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("M3.5x0.6")
+    );
+    assert_eq!(
+        diameter,
+        Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()
+        ))
+    );
+    let pitch = pitch
+        .as_ref()
+        .and_then(|pitch| pitch.literal())
+        .expect("pitch")
+        .get();
+    assert!((pitch - 0.6).abs() < EPS_THREAD_PITCH, "pitch {pitch} mm");
+    assert_eq!(modeled, None);
+    assert_eq!(
+        extent,
+        Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})
     );
 }
 
@@ -1097,6 +1182,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         needs_recompute: false,
         id: feature_id,
         ordinal: 0,
@@ -1241,6 +1327,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             .unwrap();
         let feature_id = crate::ids::neutral_feature_id(&scope);
         let mut features = vec![cadmpeg_ir::features::Feature {
+            product_definition: None,
             needs_recompute: false,
             id: feature_id,
             ordinal: 0,

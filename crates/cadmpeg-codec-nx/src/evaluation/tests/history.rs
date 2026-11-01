@@ -51,6 +51,7 @@ fn complete_sphere_rederives_a_new_body() {
     let body = BodyId::mint("test:model:entity#sphere".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#sphere-feature".to_string())
             .expect("identity grammar"),
@@ -88,6 +89,7 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
     ir.model.features.insert(
         0,
         Feature {
+            product_definition: None,
             needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#initial-bodies".to_string())
                 .expect("identity grammar"),
@@ -672,6 +674,7 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
         BodyId::mint("test:model:entity#extracted".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(extracted.as_str()));
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#extract".to_string()).expect("identity grammar"),
         ordinal: 1,
@@ -709,6 +712,7 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
 fn output_free_local_extract_does_not_change_the_saved_body_census() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#extract-local".to_string())
             .expect("identity grammar"),
@@ -745,6 +749,7 @@ fn delete_body_removes_an_existing_selected_body() {
     let mut ir = complete_block_ir();
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
         ordinal: 1,
@@ -779,6 +784,7 @@ fn delete_body_removes_an_existing_selected_body() {
 fn delete_body_ignores_a_complete_feature_local_body() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#delete-local".to_string())
             .expect("identity grammar"),
@@ -816,6 +822,7 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
     let mut ir = complete_block_ir();
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
         ordinal: 1,

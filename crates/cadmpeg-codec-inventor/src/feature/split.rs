@@ -49,24 +49,46 @@ pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     }
 }
 
-/// The neutral definition of a solid Split.
-///
-/// `resolve` maps a one-based property reference to its record. `plane`
-/// maps the record ordinal of the slot-5 work plane to its datum-plane
-/// feature. Every slot is checked; a form outside the solid split keeps the
-/// native definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeReason {
+    Slots,
+    Mode(u16),
+    Control(usize),
+    Selection(usize),
+    Tool,
+    Result,
+}
+
+impl NativeReason {
+    fn note(self) -> cadmpeg_ir::report::loss::LossNote {
+        let reason = match self {
+            Self::Slots => "property vector is not the ten-slot type-2 form".to_owned(),
+            Self::Mode(value) => {
+                format!("operation mode {value} has unresolved construction operands")
+            }
+            Self::Control(slot) => format!("slot {slot} differs from the solid-split control form"),
+            Self::Selection(slot) => format!("slot {slot} has unresolved selection operands"),
+            Self::Tool => "tool identity, frame, or history position is unresolved".to_owned(),
+            Self::Result => "result-body topology is unresolved".to_owned(),
+        };
+        crate::loss::InventorLossCode::FeatureSplitOperandsNative
+            .note(format!("Retained Inventor Split natively: {reason}."))
+    }
+}
+
+/// Checks the complete solid-split operand form for projection and validation.
 pub(crate) fn definition<'a>(
     source: &PmDcFeature,
     resolve: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
     plane: impl Fn(u32) -> Option<FeatureId>,
-) -> Option<FeatureDefinition> {
+) -> Result<FeatureDefinition, NativeReason> {
     if source.properties.marker() != 2 {
-        return None;
+        return Err(NativeReason::Slots);
     }
     let [mode, solid_control, unused, tool_kind, patches, work_plane, side_control, inputs, surface, results] =
         source.properties.references()
     else {
-        return None;
+        return Err(NativeReason::Slots);
     };
     let enumeration =
         |reference: &PmDcReference, type_value: i16| match resolve(reference.index())?.kind {
@@ -77,28 +99,36 @@ pub(crate) fn definition<'a>(
             } if actual == type_value => Some(value),
             _ => None,
         };
-    if enumeration(mode, 3)? != SPLIT_SOLID
-        || !matches!(
-            resolve(solid_control.index())?.kind,
-            PmDcFeaturePropertyKind::Boolean { value: false, .. }
-        )
-        || unused.index() != 0
-        || !matches!(
-            resolve(side_control.index())?.kind,
-            PmDcFeaturePropertyKind::Boolean { .. }
-        )
-    {
-        return None;
+    let mode = enumeration(mode, 3).ok_or(NativeReason::Control(0))?;
+    if mode != SPLIT_SOLID {
+        return Err(NativeReason::Mode(mode));
+    }
+    if !matches!(
+        resolve(solid_control.index()).map(|property| &property.kind),
+        Some(PmDcFeaturePropertyKind::Boolean { value: false, .. })
+    ) {
+        return Err(NativeReason::Control(1));
+    }
+    if unused.index() != 0 {
+        return Err(NativeReason::Control(2));
+    }
+    if !matches!(
+        resolve(side_control.index()).map(|property| &property.kind),
+        Some(PmDcFeaturePropertyKind::Boolean { .. })
+    ) {
+        return Err(NativeReason::Control(6));
     }
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::BoundaryPatch,
         items: patches,
-    } = &resolve(patches.index())?.kind
+    } = &resolve(patches.index())
+        .ok_or(NativeReason::Selection(4))?
+        .kind
     else {
-        return None;
+        return Err(NativeReason::Selection(4));
     };
     if !patches.references().is_empty() {
-        return None;
+        return Err(NativeReason::Selection(4));
     }
     let body = |reference: PmDcReference| {
         let property = resolve(reference.index())?;
@@ -107,41 +137,48 @@ pub(crate) fn definition<'a>(
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::BodySelection,
         items: targets,
-    } = &resolve(inputs.index())?.kind
+    } = &resolve(inputs.index())
+        .ok_or(NativeReason::Selection(7))?
+        .kind
     else {
-        return None;
+        return Err(NativeReason::Selection(7));
     };
     let [target] = targets.references() else {
-        return None;
+        return Err(NativeReason::Selection(7));
     };
-    let target = body(*target)?;
+    let target = body(*target).ok_or(NativeReason::Selection(7))?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
         items: outputs,
-    } = &resolve(results.index())?.kind
+    } = &resolve(results.index())
+        .ok_or(NativeReason::Selection(9))?
+        .kind
     else {
-        return None;
+        return Err(NativeReason::Selection(9));
     };
     let [first, second] = outputs.references() else {
-        return None;
+        return Err(NativeReason::Selection(9));
     };
-    if body(*first)? == body(*second)? {
-        return None;
+    if body(*first).ok_or(NativeReason::Selection(9))?
+        == body(*second).ok_or(NativeReason::Selection(9))?
+    {
+        return Err(NativeReason::Selection(9));
     }
-    let tool = match enumeration(tool_kind, 4)? {
+    let tool = match enumeration(tool_kind, 4).ok_or(NativeReason::Control(3))? {
         TOOL_WORK_PLANE if surface.index() == 0 => SplitBodyTool::Plane {
-            plane: plane(work_plane.record_ordinal()?)?,
+            plane: plane(work_plane.record_ordinal().ok_or(NativeReason::Tool)?)
+                .ok_or(NativeReason::Tool)?,
         },
         TOOL_SURFACE if work_plane.index() == 0 => {
-            let surface = body(*surface)?;
+            let surface = body(*surface).ok_or(NativeReason::Tool)?;
             if surface == target {
-                return None;
+                return Err(NativeReason::Tool);
             }
             SplitBodyTool::Faces(FaceSelection::Native(surface))
         }
-        _ => return None,
+        _ => return Err(NativeReason::Tool),
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+    Ok(FeatureDefinition::Operation(FeatureOperation::SplitBody {
         targets: BodySelection::Native(target),
         tool,
     }))
@@ -173,9 +210,10 @@ pub(super) fn project(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     history: &super::history::History,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let token = source.identity.segment_token.as_str();
-    let definition = definition(
+    let definition = match definition(
         source,
         |reference| super::resolve_property(token, reference, index),
         |ordinal| {
@@ -187,7 +225,13 @@ pub(super) fn project(
                 history,
             )
         },
-    )?;
+    ) {
+        Ok(definition) => definition,
+        Err(reason) => {
+            losses.push(reason.note());
+            return None;
+        }
+    };
     let mut dependencies = DistinctMembers::default();
     if let FeatureDefinition::Operation(FeatureOperation::SplitBody {
         tool: SplitBodyTool::Plane { plane },
@@ -196,7 +240,11 @@ pub(super) fn project(
     {
         dependencies.insert(plane.clone());
     }
-    let (id, result) = match super::feature_result(ctx, source, RESULT_SLOT, index)? {
+    let Some(result) = super::feature_result(ctx, source, RESULT_SLOT, index) else {
+        losses.push(NativeReason::Result.note());
+        return None;
+    };
+    let (id, result) = match result {
         Ok(result) => result,
         Err(error) => return Some(Err(error)),
     };
@@ -205,6 +253,7 @@ pub(super) fn project(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -633,10 +682,10 @@ pub(crate) mod tests {
             )
         }
 
-        fn decode(
+        fn admit(
             source: &PmDcFeature,
             properties: &[PmDcFeatureProperty],
-        ) -> Option<FeatureDefinition> {
+        ) -> Result<FeatureDefinition, crate::feature::split::NativeReason> {
             definition(
                 source,
                 |index| {
@@ -646,6 +695,13 @@ pub(crate) mod tests {
                 },
                 |ordinal| (ordinal == PLANE).then(plane_id),
             )
+        }
+
+        fn decode(
+            source: &PmDcFeature,
+            properties: &[PmDcFeatureProperty],
+        ) -> Option<FeatureDefinition> {
+            admit(source, properties).ok()
         }
 
         #[test]
@@ -669,6 +725,127 @@ pub(crate) mod tests {
             let mut properties = self::properties(2);
             properties[4] = test_property(5, boolean(false));
             assert!(decode(&plane_split(), &properties).is_some());
+        }
+
+        fn projection_index(
+            properties: &[PmDcFeatureProperty],
+        ) -> crate::feature::ProjectionIndex<'_> {
+            crate::feature::ProjectionIndex {
+                properties: properties
+                    .iter()
+                    .map(|record| {
+                        (
+                            (
+                                record.identity.segment_token.as_str(),
+                                record.identity.record_ordinal,
+                            ),
+                            Some(record),
+                        )
+                    })
+                    .collect(),
+                ..crate::feature::ProjectionIndex::default()
+            }
+        }
+
+        #[test]
+        fn admitted_surface_split_emits_no_native_operand_loss() {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("decode context");
+            let properties = properties(3);
+            let source = surface_split();
+            let label =
+                crate::feature::tests::test_label(0, 1, crate::feature::split::CLASS_ID, &[]);
+            let mut losses = Vec::new();
+            let projected = crate::feature::split::project(
+                &ctx,
+                &source,
+                &label,
+                &projection_index(&properties),
+                &crate::feature::history::History::default(),
+                &mut losses,
+            )
+            .expect("admitted Split")
+            .expect("projection");
+            assert_eq!(
+                projected.0.evaluation.definition(),
+                &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                    targets: BodySelection::Native(properties[7].id()),
+                    tool: SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+                }),
+            );
+            assert!(losses.is_empty());
+        }
+
+        #[test]
+        fn native_modes_keep_both_boolean_values_and_emit_the_pinned_loss() {
+            use crate::feature::history::History;
+            use crate::feature::split::{project, NativeReason};
+
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("decode context");
+            for mode in [1, 2] {
+                for first in [false, true] {
+                    for second in [false, true] {
+                        let mut properties = properties(2);
+                        properties[0] = test_property(1, enumeration(3, mode));
+                        properties[1] = test_property(2, boolean(first));
+                        properties[4] = test_property(5, boolean(second));
+                        let mut slots =
+                            vec![(0, 1), (1, 2), (3, 3), (4, 4), (5, PLANE), (6, 5), (7, 6)];
+                        if mode == 2 {
+                            properties.push(test_property(
+                                12,
+                                PmDcFeaturePropertyKind::References {
+                                    family: PmDcFeatureReferenceFamily::FaceCollection,
+                                    items: list(&[14]),
+                                },
+                            ));
+                            slots.push((2, 12));
+                        }
+                        let source = test_feature(0, 10, &slots);
+                        let index = projection_index(&properties);
+                        assert_eq!(admit(&source, &properties), Err(NativeReason::Mode(mode)));
+                        let label = crate::feature::tests::test_label(
+                            0,
+                            1,
+                            crate::feature::split::CLASS_ID,
+                            &[],
+                        );
+                        let mut losses = Vec::new();
+                        assert!(project(
+                            &ctx,
+                            &source,
+                            &label,
+                            &index,
+                            &History::default(),
+                            &mut losses
+                        )
+                        .is_none());
+                        assert_eq!(losses.len(), 1);
+                        assert_eq!(
+                            losses[0].code,
+                            crate::loss::InventorLossCode::FeatureSplitOperandsNative
+                                .note("test")
+                                .code
+                        );
+                        assert_eq!(losses[0].code.namespace(), "inventor");
+                        assert_eq!(losses[0].code.local_code(), "feature.split-operands-native");
+                        assert!(losses[0]
+                            .message
+                            .contains(&format!("operation mode {mode}")));
+                    }
+                }
+            }
         }
 
         #[test]
@@ -735,7 +912,12 @@ pub(crate) mod tests {
                 let mut properties = properties(2);
                 let ordinal = properties[position].identity.record_ordinal;
                 properties[position] = test_property(ordinal, kind);
-                assert!(decode(&plane_split(), &properties).is_none(), "{position}");
+                let reason = admit(&plane_split(), &properties).expect_err("unsupported operand");
+                assert_eq!(
+                    reason.note().code.local_code(),
+                    "feature.split-operands-native",
+                    "{position}"
+                );
             }
         }
 

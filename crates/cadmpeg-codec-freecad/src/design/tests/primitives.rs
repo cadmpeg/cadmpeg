@@ -616,7 +616,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         assert!(
             matches!(definition(result, name), FeatureDefinition::Operation(FeatureOperation::Native { kind: value, .. }) if value.as_str() == kind)
         );
-        crate::design::tests::assert_native_retention(result, 1);
+        crate::design::tests::assert_native_revolution_retention(result, 1);
     };
 
     for (name, target) in [
@@ -985,7 +985,12 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
             solid, op: cadmpeg_ir::features::BooleanOp::Cut , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 3);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .findings;
@@ -1709,7 +1714,12 @@ fn transfers_remaining_partdesign_analytic_primitives() {
     assert!(
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if result.ir().dimension_value(xmin).expect("resolved dimension").get() == -2.0 && result.ir().dimension_value(ymax).expect("resolved dimension").get() == 6.0))
     );
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 3);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
 }
 
 #[test]

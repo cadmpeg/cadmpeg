@@ -49,9 +49,9 @@ pub(crate) fn decoded(
         )?;
     }
     let digest = crate::writer::target::document_local_sha256(ctx, &ir)?;
-    fidelity.metadata.insert(
-        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-        digest,
+    fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(digest)
+            .map_err(CodecError::malformed)?,
     );
     Ok(Decoded {
         body: DecodeBody {
