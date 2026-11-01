@@ -1437,6 +1437,7 @@ fn append_custom_parameters(
             |(_, expression)| expression.into(),
         );
         parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(design_identity_text(
                 "parameter",
                 object,

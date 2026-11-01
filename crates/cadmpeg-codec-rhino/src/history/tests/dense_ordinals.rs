@@ -7,6 +7,7 @@ use super::{project, record, Diagnostics};
 fn with_existing_feature() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: "test:feature:prefix#0"
             .try_into()
             .expect("authored prefix ID"),
