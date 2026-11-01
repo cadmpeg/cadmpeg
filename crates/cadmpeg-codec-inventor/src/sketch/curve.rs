@@ -13,6 +13,62 @@ use super::{curve_ends, CurveEnds, PmDcSketchEntity, PmDcSketchEntityKind, Sketc
 use crate::loss::InventorLossCode;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState};
 
+pub(crate) fn is_non_geometric(entity: &PmDcSketchEntity) -> bool {
+    matches!(
+        entity.kind,
+        PmDcSketchEntityKind::Polygon { .. }
+            | PmDcSketchEntityKind::BlockInstance { .. }
+            | PmDcSketchEntityKind::BlockMember { .. }
+    )
+}
+
+pub(crate) fn relation_stays_native(
+    constraint: &super::PmDcSketchConstraint,
+    mut non_geometric: impl FnMut(crate::pmdc::PmDcReference) -> bool,
+) -> bool {
+    use super::PmDcSketchConstraintKind as Kind;
+    match constraint.kind {
+        Kind::PolygonRelation { .. } | Kind::BlockGroup { .. } => true,
+        Kind::CircleCenter {
+            entity: first,
+            center: second,
+        }
+        | Kind::Midpoint {
+            entity: first,
+            point: second,
+            ..
+        }
+        | Kind::SplinePoint {
+            spline: first,
+            point: second,
+        }
+        | Kind::Coincident { first, second }
+        | Kind::Parallel { first, second, .. }
+        | Kind::Perpendicular { first, second, .. }
+        | Kind::Tangent { first, second, .. }
+        | Kind::HorizontalDistance { first, second, .. }
+        | Kind::VerticalDistance { first, second, .. }
+        | Kind::EqualRadius { first, second }
+        | Kind::EqualLength { first, second }
+        | Kind::Distance { first, second, .. }
+        | Kind::Angle { first, second, .. }
+        | Kind::HorizontalAlignment { first, second }
+        | Kind::VerticalAlignment { first, second }
+        | Kind::Collinear { first, second, .. } => [first, second].into_iter().any(non_geometric),
+        Kind::Horizontal { entity, .. }
+        | Kind::Vertical { entity, .. }
+        | Kind::Radius { entity, .. }
+        | Kind::Diameter { entity, .. }
+        | Kind::Fix { entity } => non_geometric(entity),
+        Kind::Symmetric {
+            first,
+            second,
+            axis,
+        } => [first, second, axis].into_iter().any(non_geometric),
+        Kind::EqualDistance { first, second } => first.into_iter().chain(second).any(non_geometric),
+    }
+}
+
 pub(crate) fn closed_ellipse(entity: &PmDcSketchEntity) -> bool {
     entity.identity.type_id == crate::record_identity::RecordTypeId::from_bytes(super::ELLIPSE_TYPE)
         && matches!(&entity.kind, PmDcSketchEntityKind::Ellipse { points, state: 1, .. }
