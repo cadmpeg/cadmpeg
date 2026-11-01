@@ -233,6 +233,7 @@ fn empty_data() -> super::NativeData {
         pm_dc_sheet_metal_flanges: Vec::new(),
         pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
+        pm_dc_thread_definitions: Vec::new(),
         pm_dc_entity_style_links: Vec::new(),
         pm_dc_kernel_entity_links: Vec::new(),
         pm_dc_work_planes: Vec::new(),
@@ -1026,3 +1027,5 @@ mod non_geometric;
 mod sketch_curves;
 
 mod split_trim;
+
+mod thread;

@@ -651,6 +651,19 @@ Hole extent values 1, 4, 5, and 7 mean fixed depth, through next, through all, a
 
 Feature-label class `0619aa28d411c77a6000c4a4cae1fbb0` identifies a Thread annotation on selected cylindrical faces. Its generic feature record has nine property slots. Slot 0 is the face collection; it contains at least one face item. Slots 1, 2, and 6 are Boolean properties. Slots 3 and 4 are numeric parameter references. Slot 5 is an edge collection, and slot 8 is the feature-dimension collection. Slot 7 is a native property reference. A Thread annotation has no result object collection.
 
+In segment major versions 19 and 21, type `1f7e08a4d4115f956000c6a4cae1fbb0` is a thread definition. Its linked-element header occupies 26 bytes. The first counted UTF-16LE string starts with its u32 code-unit count at byte 26. The body contains, in order, counted UTF-16LE nominal-size, designation, and standard strings, six u32 controls, a counted UTF-16LE class string, and eight counted UTF-16LE table strings. The eighth table string is the pitch field. The last string ends the record. The qualified owner reference selects the generic feature in the same segment. The parent reference and the feature-label owner reference are qualified. A Thread annotation has one thread definition, and its definition and feature label share that owner. The standard, designation, and class strings identify their catalog entries independently of the numeric sizing form. The parent and next references link the definition to adjacent linked elements.
+
+The following sizing forms have controls `[0, form, 0, 0, 0, 0]` and the stated designation pattern:
+
+| Segment major version | Standard string | `form` | Designation pattern | Nominal-size unit | Pitch-field unit |
+|---|---|---|---|---|---|
+| 19 | `ANSI Metric M Profile` | `0x00ca`, `0x10ca`, `0x10ce`, `0x10ea`, `0x10ee` | `M<diameter>x<pitch>` | millimetres | millimetres |
+| 19 | `ISO Metric profile` | `0x00ca`, `0x10ee` | `M<diameter>x<pitch>` | millimetres | millimetres |
+| 19 | `ANSI Unified Screw Threads` | `0x18f2` | `<size>-<count> <series>` | inches | threads per inch |
+| 21 | `ANSI Metric M Profile` | `0x10ea`, `0x10ee` | `M<diameter>x<pitch>` | millimetres | millimetres |
+
+In these forms, the nominal-size and pitch fields are positive finite decimals with ASCII digits and an optional decimal point. The metric designation has two decimal values equal to the nominal-size and pitch fields. In the Unified designation, size is a positive decimal or a fraction of two positive decimals, count is the positive decimal threads-per-inch value, and series is `UNC` or `UNF`. Its size equals the nominal-size field, and its count equals the pitch field. One inch equals 25.4 millimetres. The Unified axial pitch in millimetres is 25.4 divided by the threads-per-inch value.
+
 Feature-label class identifier `ecf481729c4d5f925f2192b4a83096ac` identifies Thicken. Its 18-slot property vector has these roles:
 
 | Slot | Property |

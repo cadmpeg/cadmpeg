@@ -542,6 +542,13 @@ fn decode_container<'a>(
         &feature_inventory.dimensions,
     )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    if !feature_inventory.thread_definitions.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_thread_definitions",
+            &feature_inventory.thread_definitions,
+        )?;
+    }
     if !feature_inventory.sheet_metal_styles.is_empty() {
         namespace.set_arena(
             ctx,
@@ -966,10 +973,8 @@ fn decode_container<'a>(
                 )
             })
             .count();
-        if partial_threads != 0 {
-            losses.push(InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
-                "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
-            )));
+        if let Some(loss) = crate::feature::thread::partial_loss(partial_threads) {
+            losses.push(loss);
         }
         losses.extend(crate::feature::thicken_operand_losses(
             &ir.model.features,

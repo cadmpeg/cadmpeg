@@ -4992,3 +4992,70 @@ offset = 73
 type = "f64[3]"
 source = "spec"
 anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record]]
+name = "pm_dc_thread_definition_prefix"
+kind = "byte"
+section = "13"
+anchor = "is a thread definition"
+size = 30
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thread.rs"
+note = "Segment major versions 19 and 21. The linked-element header precedes the first counted UTF-16LE string."
+
+[[record.field]]
+name = "linked_header"
+offset = 0
+type = "bytes[26]"
+source = "spec"
+anchor = "Its linked-element header occupies 26 bytes."
+
+[[record.field]]
+name = "nominal_size_code_units"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "its u32 code-unit count at byte 26"
+
+[[record]]
+name = "pm_dc_thread_definition_body"
+kind = "slot"
+section = "13"
+anchor = "The body contains, in order"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thread.rs"
+
+[[record.field]]
+name = "nominal_size"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "designation"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "standard"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "controls"
+type = "u32[6]"
+source = "spec"
+anchor = "six u32 controls"
+
+[[record.field]]
+name = "class"
+type = "lp_utf16"
+source = "spec"
+anchor = "a counted UTF-16LE class string"
+
+[[record.field]]
+name = "table_strings"
+type = "array"
+source = "spec"
+anchor = "eight counted UTF-16LE table strings"
+note = "Eight strings; the eighth is the pitch field."
