@@ -661,6 +661,7 @@ mod projected_brep_output_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
+            &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,

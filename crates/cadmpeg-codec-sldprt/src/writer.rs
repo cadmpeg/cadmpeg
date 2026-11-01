@@ -509,7 +509,7 @@ pub(super) fn write_semantic_at(
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
 fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Reported, Written};
+    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Dropped };
     ArenaDispositions {
         bodies: Written,

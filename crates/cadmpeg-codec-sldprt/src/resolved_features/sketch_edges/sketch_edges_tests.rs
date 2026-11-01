@@ -142,6 +142,7 @@ fn a_nurbs_edge_whose_carrier_misses_its_vertices_projects_as_its_chord() {
         start: start_vertex.clone(),
         end: end_vertex.clone(),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -343,6 +344,7 @@ fn closed_square_edge(
         start: vertex.clone(),
         end: vertex.clone(),
         tolerance: None,
+        native_ref: None,
     };
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
@@ -418,6 +420,7 @@ fn a_circle_turning_clockwise_in_the_sketch_projects_a_negative_sweep() {
         start: start_vertex.clone(),
         end: end_vertex.clone(),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -495,6 +498,7 @@ fn a_cubic_edge_trims_to_its_interior_vertices() {
         start: start_vertex.clone(),
         end: end_vertex.clone(),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let start_position = Point3::new(0.75, 0.0, 0.0);
