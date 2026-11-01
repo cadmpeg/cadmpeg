@@ -583,7 +583,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
-### DR-162. Body-map entity with no membership and no browser node
+### DR-163. Body-map entity with no membership and no browser node
 
 **Question.** Is a body-map pair outside the current model when complete Body-container memberships omit its entity and the entity has no browser node?
 
