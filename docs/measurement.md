@@ -246,8 +246,10 @@ around the axis:
 | 1 | On a cone, the part between the loop and the apex. The apex is a member of the region. |
 | 0 | The planar rule, with the winding numbers taken over lifts of each loop by whole turns. |
 
-Other configurations are `boundary.nesting-invalid`. A loop that meets the
-cone apex has a synthesized segment along the apex. When the loop has one
+Other configurations are `boundary.nesting-invalid`. A ring whose coedges are
+all degenerate at the cone apex bounds no area and is a vertex loop at the apex.
+It is valid only with `m` = 1, and the edge has length 0. A loop that meets the cone apex has a synthesized
+segment along the apex. When the loop has one
 such segment and the segment can close the loop without a full turn, the
 segment takes that length and the loop is contractible.
 
