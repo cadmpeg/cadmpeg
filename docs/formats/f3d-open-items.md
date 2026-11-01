@@ -613,7 +613,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding in the current model without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
 
-**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component, before neutral ownership can rely on the fallback.
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component. A consumed body that retains a bound component cluster needs a positive consumer or history-state join that separates it from a current hidden body.
 
 **Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
 

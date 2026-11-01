@@ -1405,15 +1405,6 @@ impl<'a> Projector<'a> {
     }
 
     fn definition_bodies(&self, stream: &str, root_entity: u64) -> Vec<BodyId> {
-        let end = self.sources.components.get(stream).and_then(|components| {
-            components
-                .roots
-                .values()
-                .map(|root| root.root_entity)
-                .chain(components.root_entities.iter().copied())
-                .filter(|entity| *entity > root_entity)
-                .min()
-        });
         let mut bodies = self
             .sources
             .body_bindings
@@ -1429,8 +1420,15 @@ impl<'a> Projector<'a> {
                             .is_some_and(|definition| definition.root_entity == root_entity),
                         None => {
                             !binding.component_owner_unresolved
-                                && binding.entity_suffix >= root_entity
-                                && end.is_none_or(|end| binding.entity_suffix < end)
+                                && self
+                                    .sources
+                                    .components
+                                    .get(stream)
+                                    .is_some_and(|components| {
+                                        components
+                                            .cluster_owner(binding.entity_suffix)
+                                            .is_some_and(|owner| owner.root_entity == root_entity)
+                                    })
                         }
                     }
             })

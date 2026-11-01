@@ -1116,6 +1116,8 @@ pub(crate) fn decode_design_body_bindings(
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
+    let naming_spaces = super::meta::decode_component_naming_spaces(scan)?;
+    let components = super::components::decode_local_components(scan, &naming_spaces.spaces)?;
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
     for entry in scan
@@ -1147,7 +1149,11 @@ pub(crate) fn decode_design_body_bindings(
             }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
                 let owner = memberships.owners.get(&binding.entity_suffix);
-                let history_only = memberships.complete
+                let cluster_owner = components
+                    .get(&crate::ids::native_scope(&entry.name))
+                    .and_then(|components| components.cluster_owner(binding.entity_suffix));
+                let history_only = cluster_owner.is_none()
+                    && memberships.complete
                     && owner.is_none()
                     && hidden_by_entity
                         .get(&binding.entity_suffix)

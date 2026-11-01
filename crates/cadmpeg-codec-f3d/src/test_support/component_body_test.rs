@@ -88,6 +88,15 @@ pub(crate) fn history_only_pairs_design(
     pairs: &[(u64, u64, Option<bool>)],
     container: HistoryOnlyContainer<'_>,
 ) -> (Vec<u8>, Vec<u8>) {
+    history_only_pairs_with_cluster(blob, pairs, container, false)
+}
+
+pub(crate) fn history_only_pairs_with_cluster(
+    blob: &str,
+    pairs: &[(u64, u64, Option<bool>)],
+    container: HistoryOnlyContainer<'_>,
+    bound_cluster: bool,
+) -> (Vec<u8>, Vec<u8>) {
     const COMPONENT: u64 = 40;
     let mut bulk = Vec::new();
     let mut records = Vec::new();
@@ -206,6 +215,30 @@ pub(crate) fn history_only_pairs_design(
         let mut registration = container_type(&other_version);
         registration.2 = 3;
         types.push(registration);
+    }
+    if bound_cluster {
+        records.push((300, u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"261", 300);
+        bulk.push(1);
+        bulk.extend_from_slice(&301_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0; 2]);
+        super::lp_utf16(&mut bulk, "00000000-0000-4000-8000-000000000300");
+        types.extend([
+            (
+                crate::records::body_ownership::COMPONENT_GUID,
+                "",
+                2,
+                "Component",
+                &[300][..],
+            ),
+            (
+                "00000000-0000-4000-8000-000000000011",
+                "21F379C8-CAFD-4985-B461-767673A4C502",
+                2,
+                "Component",
+                &[301][..],
+            ),
+        ]);
     }
     let meta = super::streams_test::design_metastream_with_records(&types, &records);
     (bulk, meta)
