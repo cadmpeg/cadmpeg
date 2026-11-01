@@ -78,7 +78,9 @@
       "model": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "schema": "AP242"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -194,15 +196,6 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "28",
-      "bytes_structural": "539",
-      "bytes_typed": "30",
-      "bytes_unclassified": "0",
-      "data_sections": "2",
-      "entity_instances": "2",
-      "schema": "AP242"
-    },
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {

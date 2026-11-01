@@ -136,12 +136,7 @@
       "model": true
     },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "181",
-        "finjpl_segment_count": "0",
-        "preview_count": "0"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

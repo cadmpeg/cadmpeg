@@ -783,13 +783,7 @@
       "model": false
     },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "5125",
-        "finjpl_segment_count": "0",
-        "preview_count": "0",
-        "stream_count": "1"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

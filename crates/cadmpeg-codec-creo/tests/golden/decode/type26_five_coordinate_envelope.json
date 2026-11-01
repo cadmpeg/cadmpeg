@@ -249,18 +249,6 @@
     },
     "source": {
       "attributes": {
-        "crv_array_count": "0",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "156",
-        "section.0.length": "80",
-        "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
-        "section.0.raw_name": "VisibGeom",
-        "section.0.role": "psb-geometry",
-        "section_count": "1",
-        "srf_array_count": "1",
-        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {

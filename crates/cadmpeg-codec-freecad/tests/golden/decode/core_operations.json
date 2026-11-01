@@ -52223,11 +52223,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "84bad50a010d41cfb6c27c104b8b19d37841c0ca589af5cca62cc90a1768a8bf",
-      "fcstd.archive_entry_count": "66",
-      "fcstd.object_count": "57"
-    },
+    "decode_digest": "84bad50a010d41cfb6c27c104b8b19d37841c0ca589af5cca62cc90a1768a8bf",
     "retained_records": {
       "fcstd:native:entry#Edges": {
         "bytes": {

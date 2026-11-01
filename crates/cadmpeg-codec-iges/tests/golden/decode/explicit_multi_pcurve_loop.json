@@ -2448,9 +2448,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "e44899df5f99d34637efc82e4964f6e440145d6356a5a4ec7049b19114496dbe"
-    },
+    "decode_digest": "e44899df5f99d34637efc82e4964f6e440145d6356a5a4ec7049b19114496dbe",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

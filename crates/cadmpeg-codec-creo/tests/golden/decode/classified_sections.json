@@ -69,28 +69,6 @@
     },
     "source": {
       "attributes": {
-        "crv_array_count": "12",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "158",
-        "section.0.length": "42",
-        "section.0.name": "VisibGeom",
-        "section.0.offset": "79",
-        "section.0.raw_name": "VisibGeom",
-        "section.0.role": "psb-geometry",
-        "section.1.length": "16",
-        "section.1.name": "AllFeatur",
-        "section.1.offset": "121",
-        "section.1.raw_name": "AllFeatur",
-        "section.1.role": "model-data",
-        "section.2.length": "21",
-        "section.2.name": "THMB_IMG_MAIN",
-        "section.2.offset": "137",
-        "section.2.raw_name": "THMB_IMG_MAIN",
-        "section.2.role": "thumbnail",
-        "section_count": "3",
-        "srf_array_count": "5",
-        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P test"
       },
       "identity": {

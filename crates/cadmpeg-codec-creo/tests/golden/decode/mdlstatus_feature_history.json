@@ -251,16 +251,6 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "200",
-        "section.0.length": "124",
-        "section.0.name": "MdlStatus",
-        "section.0.offset": "76",
-        "section.0.raw_name": "MdlStatus",
-        "section.0.role": "metadata",
-        "section_count": "1",
-        "unresolved_feature_state_selection_count": "1",
         "version_line": "#UGC:2 P c"
       },
       "identity": {

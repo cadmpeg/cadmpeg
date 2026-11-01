@@ -703,20 +703,7 @@
         "model": false
       },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "0",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "567",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "1"
-        },
+        "attributes": {},
         "identity": {
           "classification": "classified",
           "dialects": {

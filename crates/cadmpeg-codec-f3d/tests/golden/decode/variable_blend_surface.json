@@ -34,9 +34,7 @@
         "asset_folder": "FusionAssetName[Active]",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "save_date": "Tue Mar 31 16:16:19 2026",
-        "solved_record_len": "4285",
-        "zip_entry_count": "3"
+        "save_date": "Tue Mar 31 16:16:19 2026"
       }
     },
     "units": {
@@ -1284,11 +1282,7 @@
         }
       }
     },
-    "metadata": {
-      "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-      "active_brep_sha256": "b16e5e5937260fcac6317806d944910a802d5ad403afe1df7fe9988a4e13b9c7",
-      "document_local_sha256": "6cb052e2f554b107f181717a9c277d617282ac54e134aa2c9d0344916ea2b91b"
-    },
+    "decode_digest": "846e930f5c12bf16d1515b9554673db17f7045c55cfe6f0f83f19e9fee0a5f6e",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",
