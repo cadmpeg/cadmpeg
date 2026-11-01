@@ -2648,12 +2648,16 @@ fn retain_unresolved_appearance(
     {
         return;
     }
+    let Some(target) = cadmpeg_ir::appearance::AppearanceTarget::record_for(
+        &ir.model,
+        &unresolved.identity,
+    ) else {
+        return;
+    };
     ir.model.appearance_bindings.push(AppearanceBinding {
         native_ref: None,
         id: binding_id,
-        target: AppearanceTarget::Source {
-            source_id: unresolved.identity.clone(),
-        },
+        target,
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
