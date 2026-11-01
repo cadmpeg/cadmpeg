@@ -27,6 +27,7 @@ const GOLDEN_ROOTS: &[&str] = &[
     "crates/cadmpeg-codec-sat/src/golden_tests.rs",
     "crates/cadmpeg-codec-sldprt/src/golden_tests.rs",
     "crates/cadmpeg-codec-step/src/golden_tests.rs",
+    "crates/cadmpeg-codec-usd/src/golden_tests.rs",
 ];
 
 /// Counts calls to the shared golden check 8 inside `#[test]` functions.
