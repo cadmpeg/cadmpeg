@@ -117,7 +117,7 @@ fn state_records_keep_actual_nonconstant_links_and_only_owned_reads() {
         .expect("context");
     let source = root.child(7, 7 + bytes.len()).expect("source window");
     let frames = supported_frames(&ctx, source, &meta).expect("primary frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, source, "Design1/BulkStream.dat", &frames, &mut output).expect("decode");
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
@@ -155,7 +155,7 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
     let frames = supported_frames(&ctx, root, &meta).expect("frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, root, "Design1/BulkStream.dat", &frames, &mut output)
         .expect("partial decode");
     let (_, native, fidelity, losses) = output.into_parts();
@@ -213,7 +213,7 @@ fn parameter_state_source_header_flip_is_part_local_and_foreign_source_is_refuse
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
     let frames = supported_frames(&ctx, root, &meta).expect("frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, root, "Design1/BulkStream.dat", &frames, &mut output)
         .expect("partial decode");
     assert_eq!(output.losses().len(), 2);
@@ -227,7 +227,7 @@ fn parameter_state_session_budget_refusal_escapes_without_a_given_up_substitute(
     policy.limits.max_entities = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
     let frames = supported_frames(&ctx, root, &meta).expect("frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     let result = decode_stream(&ctx, root, "Design1/BulkStream.dat", &frames, &mut output);
     assert!(matches!(&result, Err(CodecError::ResourceLimit(_))));
     let refusal = match result {
@@ -302,7 +302,7 @@ fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
     let source = root.child(0, parameter_start).expect("state source");
     let frames = supported_frames(&ctx, source, &meta).expect("frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, source, "Design1/BulkStream.dat", &frames, &mut output).expect("states");
     let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
@@ -335,7 +335,7 @@ fn companion_state_record_index_follows_the_physical_reference_counterfactual() 
     let (ctx, source) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
     let frames = supported_frames(&ctx, source, &meta).expect("frames");
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, source, "Design1/BulkStream.dat", &frames, &mut output).expect("decode");
     let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());

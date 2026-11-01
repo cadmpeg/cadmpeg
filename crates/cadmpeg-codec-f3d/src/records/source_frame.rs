@@ -116,7 +116,10 @@ mod tests {
         assert_eq!(frame, restored);
         assert!(restored.data().is_none());
         assert!(!restored.is_empty());
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::for_decode(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::Annotations::default(),
+        );
         restored
             .retain(
                 &mut fidelity,
@@ -131,7 +134,10 @@ mod tests {
     #[test]
     fn retained_parser_bytes_charge_only_declared_untyped_content() {
         let frame = SourceFrame::from(vec![1, 2, 3]);
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::for_decode(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::Annotations::default(),
+        );
         frame
             .retain(
                 &mut fidelity,

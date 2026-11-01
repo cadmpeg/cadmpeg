@@ -125,7 +125,10 @@ fn body_recipe_document_keeps_semantic_chain_and_evidence_without_layout_or_byte
     assert!(restored.selector_tail.as_ref().unwrap().data().is_none());
     assert!(restored.clone().into_draft().is_err());
     assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"f3d body recipe test"),
+    );
     restored.retain_source(&mut fidelity).unwrap();
     assert!(fidelity.retained_records().is_empty());
 }
@@ -133,7 +136,10 @@ fn body_recipe_document_keeps_semantic_chain_and_evidence_without_layout_or_byte
 #[test]
 fn body_recipe_untyped_selector_tail_is_retained_outside_the_document() {
     let record = source_record();
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"f3d body recipe test"),
+    );
     record.retain_source(&mut fidelity).unwrap();
     let retained = fidelity
         .retained_record("f3d:Design:body-recipe#0:selector-tail")
@@ -146,7 +152,10 @@ fn body_recipe_untyped_selector_tail_is_retained_outside_the_document() {
     let mut fixed = source_draft();
     fixed.class_tag = "367".to_owned().try_into().unwrap();
     fixed.selector_tail.as_mut().unwrap().value = [1, 0, 0, 0];
-    let mut fixed_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fixed_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"f3d body recipe test"),
+    );
     DesignBodyRecipeOperand::try_new(fixed)
         .unwrap()
         .retain_source(&mut fixed_fidelity)

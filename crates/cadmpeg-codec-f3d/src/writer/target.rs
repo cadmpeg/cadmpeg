@@ -91,10 +91,10 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     if !input.can_reuse_source() {
         return Ok(Preservation::SourceImageUnavailable);
     }
-    let Some(record) = input
-        .fidelity
-        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-    else {
+    let Some(fidelity) = input.fidelity else {
+        return Ok(Preservation::SourceImageUnavailable);
+    };
+    let Some(record) = fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID) else {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
@@ -102,14 +102,10 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
             "retained F3D source image has no bytes".into(),
         ));
     };
-    let Some(expected) = input
-        .fidelity
-        .and_then(|fidelity| fidelity.decode_digest.as_ref())
-    else {
-        return Ok(Preservation::PatchDeclined {
-            reason: "retained F3D layout has no bound document digest".into(),
-        });
-    };
+    // The digest is the source baseline, so the document comparison in
+    // `write_preserved_bytes` takes the patch path until a document
+    // baseline is re-established.
+    let expected = &fidelity.decode_digest;
     let authored = super::synthesis::write(input.ir)?;
     let omitted_native = input
         .has_foreign_native_content(cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT))

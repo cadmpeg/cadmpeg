@@ -8,7 +8,6 @@ use crate::test_support::assembly_test::{
 };
 use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
 use crate::test_support::zip_test::f3d_with_smbh;
-use cadmpeg_ir::Codec;
 use crate::F3dCodec;
 use crate::F3dLossCode;
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -16,6 +15,7 @@ use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
 fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
@@ -383,7 +383,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn f3z_archive_without_merged_components_preserves_root_replay() {
+fn f3z_archive_without_merged_components_synthesizes_root() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -403,7 +403,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("unmerged F3Z archive remains replayable");
+        .expect("unmerged F3Z archive remains patchable");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
         plan.report(),
         "identity/target",
@@ -411,12 +411,20 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     .as_ref()
     .expect("an F3D export names its target")
     .clone();
-    let mut replayed = Vec::new();
-    plan.write_to(&mut replayed).unwrap();
-    assert_eq!(replayed, archive);
+    assert!(
+        matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ),
+        "unexpected path {:?} cause {:?}",
+        plan.report().write_path(),
+        plan.report().synthesis_cause()
+    );
+    let mut synthesized = Vec::new();
+    plan.write_to(&mut synthesized).unwrap();
 
     let redecode = crate::test_support::archive_session::decode(
-        &mut Cursor::new(replayed),
+        &mut Cursor::new(synthesized),
         &DecodeOptions::default(),
     )
     .unwrap();
@@ -426,12 +434,48 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
     assert_eq!(primary.dialect(), &reported);
+    assert_eq!(
+        redecode.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
 }
 
 #[test]
-fn f3z_container_only_stamps_the_outer_document_digest() {
+fn two_entry_points_yield_the_digest_of_the_bytes_each_read() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+    let direct = crate::test_support::archive_session::decode(
+        &mut Cursor::new(root.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        direct.source_fidelity().decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&root),
+        "a plain F3D decode carries the digest of its own bytes"
+    );
+    let merged = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        merged.source_fidelity().decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&archive),
+        "an F3Z merge carries the digest of the archive it was decoded from"
+    );
+    assert_ne!(
+        direct.source_fidelity().decode_digest,
+        merged.source_fidelity().decode_digest,
+        "each decode digests the bytes it read"
+    );
+}
+
+#[test]
+fn f3z_container_only_stamps_the_archive_digest() {
+    let root = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+    let expected = cadmpeg_ir::hash::digest::Sha256Digest::digest(&archive);
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(archive),
         &DecodeOptions {
@@ -441,13 +485,10 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
     )
     .unwrap();
 
-    let expected = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     assert_eq!(
         decoded.source_fidelity().decode_digest,
-        Some(
-            cadmpeg_ir::hash::digest::Sha256Digest::try_from(expected)
-                .expect("a document digest parses")
-        )
+        expected,
+        "an F3Z merge carries the digest of the archive it was decoded from"
     );
 }
 
