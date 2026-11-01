@@ -9,7 +9,7 @@
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
-/// Offset starts after the segment-major-19 content header.
+/// Offset starts after the versioned content header.
 /// ```
 pub(crate) mod pm_dc_derived_source_field {
     /// Record length in bytes. Spec §13.4.
@@ -21,7 +21,7 @@ pub(crate) mod pm_dc_derived_source_field {
 /// Spec §13.4. Record length 32 B.
 ///
 /// ```text
-/// Offsets start after the segment-major-19 state content header.
+/// Offsets start after the state content header in segment major versions 19 and 23.
 /// ```
 pub(crate) mod pm_dc_derived_component_fields {
     /// Record length in bytes. Spec §13.4.
@@ -44,6 +44,32 @@ pub(crate) mod pm_dc_derived_component_fields {
     pub(crate) const COUNT: usize = 24;
     /// Stated value of `count` (`u32`). Spec §13.4.
     pub(crate) const COUNT_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `pm_dc_derived_source_stamp` record.
+///
+/// Spec §13.4. Record length 4 B.
+///
+/// ```text
+/// Offset starts after the 22-byte content header in segment major version 23.
+/// ```
+pub(crate) mod pm_dc_derived_source_stamp {
+    /// Record length in bytes. Spec §13.4.
+    pub(crate) const LEN: usize = 4;
+}
+
+/// Byte offsets for the `pm_dc_derived_component_suffix` record.
+///
+/// Spec §13.4. Record length 4 B.
+///
+/// ```text
+/// Offsets start after the component terminal reference in segment major version 23.
+/// ```
+pub(crate) mod pm_dc_derived_component_suffix {
+    /// Record length in bytes. Spec §13.4.
+    pub(crate) const LEN: usize = 4;
+    /// Stated value of `state` (`u32`). Spec §13.4.
+    pub(crate) const STATE_VALUE: u32 = 0x0000_0000;
 }
 
 /// Byte offsets for the `pm_dc_content_header` record.

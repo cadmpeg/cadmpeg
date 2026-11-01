@@ -9,9 +9,9 @@ note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stre
 name = "pm_dc_derived_source_field"
 kind = "byte"
 section = "13.4"
-anchor = "source property in segment major version 19"
+anchor = "source property in segment major versions 19 and 23"
 size = 4
-note = "Offset starts after the segment-major-19 content header."
+note = "Offset starts after the versioned content header."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
 
 [[record.field]]
@@ -25,9 +25,9 @@ anchor = "one qualified component reference"
 name = "pm_dc_derived_component_fields"
 kind = "byte"
 section = "13.4"
-anchor = "In segment major version 19, a derived component"
+anchor = "In segment major versions 19 and 23, a derived component"
 size = 32
-note = "Offsets start after the segment-major-19 state content header."
+note = "Offsets start after the state content header in segment major versions 19 and 23."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
 
 [[record.field]]
@@ -67,6 +67,39 @@ offset = 28
 type = "u32"
 source = "spec"
 anchor = "terminal u32"
+
+[[record]]
+name = "pm_dc_derived_source_stamp"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major version 23, the source header includes one stamp"
+size = 4
+note = "Offset starts after the 22-byte content header in segment major version 23."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "stamp"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "In segment major version 23, the source header includes one stamp"
+
+[[record]]
+name = "pm_dc_derived_component_suffix"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major version 23, the component has a four-byte suffix"
+size = 4
+note = "Offsets start after the component terminal reference in segment major version 23."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "suffix_state:u32 = 0"
+value = 0
 
 [[record]]
 name = "pm_dc_content_header"

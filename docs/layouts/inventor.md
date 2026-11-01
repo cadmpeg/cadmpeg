@@ -13,7 +13,7 @@ Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, P
 
 Spec §13.4 · layout: byte offsets · size: 4 B
 
-Offset starts after the segment-major-19 content header.
+Offset starts after the versioned content header.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
@@ -26,7 +26,7 @@ Parsed by:
 
 Spec §13.4 · layout: byte offsets · size: 32 B
 
-Offsets start after the segment-major-19 state content header.
+Offsets start after the state content header in segment major versions 19 and 23.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
@@ -38,6 +38,32 @@ Parsed by:
 | 20 | 4 | `marker` | `u32` | little | spec | marker u32 = 0x30000004 · value `805306372` |
 | 24 | 4 | `count` | `u32` | little | spec | count u32 = 0 · value `0` |
 | 28 | 4 | `terminal` | `u32` | little | spec | terminal u32 |
+
+## `pm_dc_derived_source_stamp`
+
+Spec §13.4 · layout: byte offsets · size: 4 B
+
+Offset starts after the 22-byte content header in segment major version 23.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `stamp` | `i32` | little | spec | In segment major version 23, the source header includes one stamp |
+
+## `pm_dc_derived_component_suffix`
+
+Spec §13.4 · layout: byte offsets · size: 4 B
+
+Offsets start after the component terminal reference in segment major version 23.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `u32` | little | spec | suffix_state:u32 = 0 · value `0` |
 
 ## `pm_dc_content_header`
 
