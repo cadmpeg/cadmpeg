@@ -277,3 +277,45 @@ fn only_a_closed_degenerate_edge_has_length_zero() {
         .unavailable()
         .is_some());
 }
+
+#[test]
+fn a_ring_with_an_ordinary_coedge_is_not_a_vertex_loop() {
+    use crate::test_support::builders::Circle;
+    let circle = Circle {
+        frame: Frame::z_up([0.0, 0.0, 20.0]),
+        radius: 10.0,
+    };
+    let slant = 10.0 * 5.0_f64.sqrt();
+    for degenerate_first in [true, false] {
+        let mut builder = Builder::new();
+        let apex = builder.vertex([0.0, 0.0, 0.0]);
+        let start = builder.vertex([10.0, 0.0, 20.0]);
+        let end = builder.vertex([0.0, -10.0, 20.0]);
+        let collapsed = builder.degenerate_edge(&apex);
+        let rising = builder.line(&apex, &start);
+        let rim = builder.arc(circle, [0.0, 1.5 * PI], &start, &end);
+        let falling = builder.line(&apex, &end);
+        let mut ring = vec![
+            (rising, Sense::Forward),
+            (rim, Sense::Forward),
+            (falling, Sense::Reversed),
+        ];
+        if degenerate_first {
+            ring.insert(0, (collapsed, Sense::Forward));
+        } else {
+            ring.push((collapsed, Sense::Forward));
+        }
+        let surface = cone(&mut builder);
+        builder.face(&surface, Sense::Reversed, &[ring], true);
+        let ir = builder.finish(BodyKind::Sheet);
+        let report = measure(&ir, &faces());
+        let measures = only_face(&report).measures();
+        assert_eq!(
+            *measures.loops()[0].role(),
+            Some(LoopRole::Outer),
+            "{degenerate_first}"
+        );
+        assert_measured(measures.area(), 0.75 * tip_area(10.0), 400.0);
+        assert_measured(measures.boundary_length(), 2.0 * slant + 15.0 * PI, 20.0);
+    }
+}
