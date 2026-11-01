@@ -2487,11 +2487,14 @@ The header fields have these meanings:
 
 A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
 A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
-and that many printable ASCII bytes. The ATTRIB_DEF `identifier` pointer
-selects that KEY in the same stream. Adjacency does not bind a name to a
-definition. The instance's `disc` resolves to the definition by transmit
-index. Low-index system definitions can have no KEY name. Conflicting KEY
-names or definition identities do not supply a named family.
+and that many printable ASCII bytes. A `00 54` CHAR_VALUES node carries the
+same u32 byte length and u16 transmit index, followed by that many bytes. No
+record starts inside the length, index or text of either node. The
+ATTRIB_DEF `identifier` pointer selects that KEY in the same stream.
+Adjacency does not bind a name to a definition. The instance's `disc`
+resolves to the definition by transmit index. Low-index system definitions
+can have no KEY name. Conflicting KEY names or definition identities do not
+supply a named family.
 
 A definition is named by its `identifier`; one whose `identifier` names no
 framed KEY takes the KEY immediately before it. The KEY need not follow its
