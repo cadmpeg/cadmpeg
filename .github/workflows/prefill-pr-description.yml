@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     # A PR from a fork gets a read-only token, so the edit would 403. Restrict
     # to same-repo branches, where the token can write.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.body, '<!-- What this changes and why. -->')
     steps:
       - name: Seed the Summary from the branch's commit subjects
         shell: bash

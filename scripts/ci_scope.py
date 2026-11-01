@@ -145,6 +145,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             audit = True
             affected |= lock_dependents(base_lock, (root / 'Cargo.lock').read_text(), names)
             continue
+        if re.fullmatch(r'crates/cadmpeg-codec-[^/]+/README\.md', path):
+            continue
         if Path(path).name in {'Cargo.toml', 'Cargo.lock'}:
             # Feature unification can change crates outside the dependency closure.
             audit = True

@@ -180,7 +180,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_prose_and_static_tables_skip_rust(self):
         for path in ('docs/architecture.md', 'README.md', 'docs/codec-facade.toml',
-                     '.github/dependabot.yml'):
+                     '.github/dependabot.yml', 'crates/cadmpeg-codec-inventor/README.md'):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
                 self.assertFalse(scope['rust'])
