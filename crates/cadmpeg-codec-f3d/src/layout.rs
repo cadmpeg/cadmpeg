@@ -1567,6 +1567,66 @@ pub(crate) mod combine_extended_reference_operation_prefix {
     pub(crate) const REFERENCE_MARKER: usize = 35;
 }
 
+/// Byte offsets for the `combine_operand_list_operation_prefix` record.
+///
+/// Spec §3.1. Record length 58 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+/// ```
+pub(crate) mod combine_operand_list_operation_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 25;
+    /// Offset of `keep_tools` (`u8`). Spec §3.1.
+    pub(crate) const KEEP_TOOLS: usize = 29;
+    /// Offset of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG: usize = 30;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 31;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 35;
+    /// Offset of `reference_value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_VALUE: usize = 36;
+    /// Offset of `reference_tail` (`bytes[2]`). Spec §3.1.
+    pub(crate) const REFERENCE_TAIL: usize = 44;
+    /// Offset of `stamp` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const STAMP: usize = 46;
+    /// Offset of `tool_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TOOL_COUNT: usize = 54;
+}
+
+/// Byte offsets for the `combine_body_selection_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the body-selection record header. The clauses start at offset 25.
+/// ```
+pub(crate) mod combine_body_selection_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `clause_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CLAUSE_COUNT: usize = 21;
+}
+
+/// Byte offsets for the `combine_body_node_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+/// ```
+pub(crate) mod combine_body_node_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `combine_external_selector_prefix` record.
 ///
 /// Spec §3.1. Record length 40 B.

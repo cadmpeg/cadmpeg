@@ -42,6 +42,8 @@ pub(crate) enum DesignCombineForm {
     Compact,
     /// Eighteen-zero reference form with the operation at offset 31.
     ExtendedReference,
+    /// Counted operand-list form with the zero-based operation at offset 21.
+    OperandLists,
 }
 
 /// Version identity carried by a cross-document reference.
@@ -491,6 +493,20 @@ pub(crate) struct DesignCombineBodySelection {
         deserialize_with = "deserialize_external_identity"
     )]
     pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
+    /// Browser node that the selector names in the operand-list form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) body_node: Option<DesignCombineBodyNode>,
+}
+
+/// Browser node of one body selected by an operand-list `Combine`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignCombineBodyNode {
+    /// Browser-node record index.
+    pub(crate) record_index: u32,
+    /// Design entity suffix of the body.
+    pub(crate) body_entity_suffix: u32,
+    /// Record index of the feature scope that creates the body.
+    pub(crate) creating_scope_record_index: u32,
 }
 
 /// Exact Boolean construction carried by a `Combine` scope.
@@ -509,6 +525,8 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) keep_tools_offset: u64,
     /// Boolean target body selector.
     pub(crate) target_record_index: u32,
+    /// Browser node that the target selector names in the operand-list form.
+    pub(crate) target_body_node: Option<DesignCombineBodyNode>,
     /// Boolean tool body selectors in source order.
     pub(crate) tools: DesignCombineTools,
 }
@@ -529,6 +547,7 @@ impl Clone for DesignCombineOperation {
             keep_tools: self.keep_tools,
             keep_tools_offset: self.keep_tools_offset,
             target_record_index: self.target_record_index,
+            target_body_node: self.target_body_node,
             tools: self.tools.clone(),
         }
     }
@@ -564,6 +583,7 @@ impl Serialize for DesignCombineOperation {
             target: DesignCombineBodySelection {
                 record_index: self.target_record_index,
                 external_identity: None,
+                body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
         }
@@ -628,6 +648,7 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
             keep_tools: wire.keep_tools,
             keep_tools_offset: wire.keep_tools_offset,
             target_record_index: wire.target.record_index,
+            target_body_node: wire.target.body_node,
             tools: DesignCombineTools {
                 first,
                 additional: tools.collect(),
@@ -648,6 +669,7 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             target: DesignCombineBodySelection {
                 record_index: operation.target_record_index,
                 external_identity: None,
+                body_node: operation.target_body_node,
             },
             tools: std::iter::once(operation.tools.first)
                 .chain(operation.tools.additional)

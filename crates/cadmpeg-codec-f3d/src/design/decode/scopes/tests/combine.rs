@@ -3,11 +3,13 @@
 use crate::design::decode::scopes::combine::{
     exact_combine_operation, take_external_reference_identity,
 };
-use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::parameter_scope::{
+    parse_parameter_scope, parse_parameter_scope_with_type_guid,
+};
 use crate::design::feature_project::project_combine;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{
-    DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+    DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
@@ -229,14 +231,17 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             keep_tools: true,
             keep_tools_offset: 25,
             target_record_index: 96,
+            target_body_node: None,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
+                    body_node: None,
                 },
                 additional: vec![DesignCombineBodySelection {
                     record_index: 94,
                     external_identity: None,
+                    body_node: None,
                 },]
             },
         }
@@ -542,4 +547,329 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     .unwrap()
     .expect("operation remains exact when only the optional external identity is malformed");
     assert!(operation.tools.first.external_identity.is_none());
+}
+
+/// Operand records of one operand-list `Combine` scope.
+struct OperandListFixture {
+    operation: u32,
+    keep_tools: u8,
+    /// Operation-identity record and selection record, in table order.
+    tools: Vec<(u32, u32)>,
+    target: (u32, u32),
+    target_position: usize,
+    listed_tools: Option<Vec<u32>>,
+    listed_target: Option<u32>,
+    consumed: Option<Vec<u32>>,
+    guid_units: u32,
+    node_flag: u8,
+    node_entries: usize,
+    node_trailing_bytes: usize,
+}
+
+impl OperandListFixture {
+    fn new(operation: u32, keep_tools: u8) -> Self {
+        Self {
+            operation,
+            keep_tools,
+            tools: vec![(91, 92)],
+            target: (93, 94),
+            target_position: 1,
+            listed_tools: None,
+            listed_target: None,
+            consumed: None,
+            guid_units: 36,
+            node_flag: 1,
+            node_entries: 1,
+            node_trailing_bytes: 0,
+        }
+    }
+
+    fn two_tools(mut self) -> Self {
+        self.tools = vec![(91, 92), (93, 94)];
+        self.target = (95, 96);
+        self.target_position = 2;
+        self
+    }
+
+    fn table(&self) -> Vec<(u32, u32)> {
+        let mut table = self.tools.clone();
+        table.insert(self.target_position, self.target);
+        table
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        fn marked(bytes: &mut Vec<u8>, record: u32) {
+            bytes.push(1);
+            bytes.extend_from_slice(&record.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        fn marked_list(bytes: &mut Vec<u8>, records: &[u32]) {
+            bytes.extend_from_slice(&(u32::try_from(records.len()).unwrap()).to_le_bytes());
+            for record in records {
+                marked(bytes, *record);
+            }
+        }
+        let tool_operations: Vec<u32> =
+            self.tools.iter().map(|(operation, _)| *operation).collect();
+        let consumed = self.consumed.clone().unwrap_or_else(|| {
+            if self.keep_tools == 0 {
+                self.tools
+                    .iter()
+                    .map(|(_, selection)| selection + 100)
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        });
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"412", 90);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&self.operation.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.push(self.keep_tools);
+        bytes.push(0);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        marked(&mut bytes, 377);
+        bytes.extend_from_slice(&306u64.to_le_bytes());
+        marked_list(
+            &mut bytes,
+            self.listed_tools.as_deref().unwrap_or(&tool_operations),
+        );
+        bytes.extend_from_slice(&[0; 8]);
+        marked_list(&mut bytes, &consumed);
+        marked_list(&mut bytes, &[self.listed_target.unwrap_or(self.target.0)]);
+        bytes.extend_from_slice(&self.guid_units.to_le_bytes());
+        for unit in "00000000-0000-0000-0000-000000000000"
+            .bytes()
+            .take(usize::try_from(self.guid_units).unwrap())
+        {
+            bytes.extend_from_slice(&[unit, 0]);
+        }
+        bytes.extend_from_slice(&[0; 3]);
+        let table = self.table();
+        bytes.extend_from_slice(&(u32::try_from(table.len() * 2).unwrap()).to_le_bytes());
+        for (operation, selection) in &table {
+            marked(&mut bytes, *operation);
+            marked(&mut bytes, *selection);
+        }
+        bytes.extend_from_slice(&5u32.to_le_bytes());
+        lp_utf16(&mut bytes, "Combiner");
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        indexed_header(&mut bytes, *b"258", 90);
+        for (operation, selection) in &table {
+            indexed_header(&mut bytes, *b"342", *operation);
+            if (*operation, *selection) == self.target {
+                bytes.extend_from_slice(&[0; 10]);
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+            } else {
+                bytes.extend_from_slice(&[0; 9]);
+                bytes.push(1);
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+                bytes.extend_from_slice(&24u32.to_le_bytes());
+                bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+                bytes.extend_from_slice(&23u32.to_le_bytes());
+                bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+                bytes.extend_from_slice(&306u64.to_le_bytes());
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+            }
+            marked(&mut bytes, *selection);
+            indexed_header(&mut bytes, *b"258", *operation);
+            indexed_header(&mut bytes, *b"366", *selection);
+            bytes.extend_from_slice(&[0; 10]);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&304u64.to_le_bytes());
+            bytes.extend_from_slice(&33u32.to_le_bytes());
+            marked(&mut bytes, selection + 3);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000001");
+            lp_utf16(&mut bytes, "10000000-0000-0000-0000-000000000001");
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            marked_list(&mut bytes, &[selection + 50]);
+            let node = selection + 100;
+            marked_list(&mut bytes, &vec![node; self.node_entries]);
+            bytes.extend_from_slice(&9u32.to_le_bytes());
+            indexed_header(&mut bytes, *b"258", *selection);
+            indexed_header(&mut bytes, *b"304", node);
+            bytes.extend_from_slice(&[0; 10]);
+            lp_utf16(&mut bytes, "20000000-0000-0000-0000-000000000001");
+            bytes.push(1);
+            bytes.push(self.node_flag);
+            marked(&mut bytes, selection + 150);
+            marked(&mut bytes, selection + 200);
+            bytes.resize(bytes.len() + self.node_trailing_bytes, 0);
+            indexed_header(&mut bytes, *b"258", node);
+        }
+        bytes
+    }
+
+    fn decode(&self) -> Option<DesignCombineOperation> {
+        decode_combine_frame(&self.bytes())
+    }
+}
+
+fn decode_combine_frame(bytes: &[u8]) -> Option<DesignCombineOperation> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let class_tag = crate::records::references::DesignClassTag::try_from("412".to_owned()).unwrap();
+    let scope = parse_parameter_scope_with_type_guid(
+        bytes,
+        &records,
+        90,
+        &class_tag,
+        0,
+        Some("2A94257F-2020-4B19-9A68-103A2672F1B7"),
+    )
+    .unwrap()
+    .expect("Combine scope");
+    exact_combine_operation(bytes, &records, &scope).unwrap()
+}
+
+#[test]
+fn operand_list_prologue_reads_zero_based_operation_and_keep_tools() {
+    use cadmpeg_ir::features::BooleanKind;
+    for (code, expected) in [
+        (0, BooleanKind::Join),
+        (1, BooleanKind::Cut),
+        (2, BooleanKind::Intersect),
+    ] {
+        for (keep_tools, expected_keep) in [(0, false), (1, true)] {
+            let operation = OperandListFixture::new(code, keep_tools)
+                .decode()
+                .expect("operand-list Combine");
+            assert_eq!(operation.form, DesignCombineForm::OperandLists);
+            assert_eq!(operation.operation, expected);
+            assert_eq!(operation.operation_offset, 21);
+            assert_eq!(operation.keep_tools, expected_keep);
+            assert_eq!(operation.keep_tools_offset, 29);
+            assert_eq!(operation.target_record_index, 94);
+            assert_eq!(operation.tools.first.record_index, 92);
+        }
+    }
+    assert_eq!(OperandListFixture::new(3, 0).decode(), None);
+    assert_eq!(OperandListFixture::new(0, 2).decode(), None);
+}
+
+#[test]
+fn operand_list_prologue_takes_its_target_from_any_table_position() {
+    for target_position in [0, 1, 2] {
+        let mut fixture = OperandListFixture::new(0, 0).two_tools();
+        fixture.target_position = target_position;
+        let operation = fixture.decode().expect("operand-list Combine");
+        assert_eq!(operation.target_record_index, 96);
+        assert_eq!(operation.tools.first.record_index, 92);
+        assert_eq!(operation.tools.additional[0].record_index, 94);
+    }
+}
+
+#[test]
+fn operand_list_prologue_requires_every_list_to_agree_with_the_table() {
+    let two_tools = || OperandListFixture::new(0, 0).two_tools();
+    let mut one_listed_tool = two_tools();
+    one_listed_tool.listed_tools = Some(vec![91]);
+    assert_eq!(one_listed_tool.decode(), None);
+
+    let mut reordered_tools = two_tools();
+    reordered_tools.listed_tools = Some(vec![93, 91]);
+    assert_eq!(reordered_tools.decode(), None);
+
+    let mut one_valid_of_two = two_tools();
+    one_valid_of_two.listed_tools = Some(vec![91, 95]);
+    assert_eq!(one_valid_of_two.decode(), None);
+
+    let mut target_names_tool = two_tools();
+    target_names_tool.listed_target = Some(91);
+    assert_eq!(target_names_tool.decode(), None);
+
+    let mut one_consumed_of_two = two_tools();
+    one_consumed_of_two.consumed = Some(vec![192]);
+    assert_eq!(one_consumed_of_two.decode(), None);
+
+    let mut kept_tool_consumed = OperandListFixture::new(0, 1);
+    kept_tool_consumed.consumed = Some(vec![192]);
+    assert_eq!(kept_tool_consumed.decode(), None);
+
+    let mut unkept_tool_not_consumed = OperandListFixture::new(0, 0);
+    unkept_tool_not_consumed.consumed = Some(Vec::new());
+    assert_eq!(unkept_tool_not_consumed.decode(), None);
+
+    let mut short_guid = OperandListFixture::new(0, 0);
+    short_guid.guid_units = 35;
+    assert_eq!(short_guid.decode(), None);
+}
+
+#[test]
+fn operand_list_prologue_rejects_nonzero_fixed_fields() {
+    for (offset, value) in [
+        (11, 1),
+        (19, 1),
+        (25, 1),
+        (28, 1),
+        (30, 1),
+        (31, 2),
+        (35, 0),
+        (44, 1),
+        (45, 1),
+    ] {
+        let mut bytes = OperandListFixture::new(1, 0).bytes();
+        bytes[offset] = value;
+        assert_eq!(decode_combine_frame(&bytes), None, "offset {offset}");
+    }
+    let mut bytes = OperandListFixture::new(1, 0).bytes();
+    bytes[36..44].fill(0);
+    assert_eq!(decode_combine_frame(&bytes), None);
+}
+
+#[test]
+fn operand_list_prologue_admits_any_operation_identity_value() {
+    let mut bytes = OperandListFixture::new(1, 0).bytes();
+    bytes[46..54].copy_from_slice(&0x1234u64.to_le_bytes());
+    assert_eq!(
+        decode_combine_frame(&bytes).map(|operation| operation.form),
+        Some(DesignCombineForm::OperandLists)
+    );
+}
+
+#[test]
+fn operand_list_selections_name_their_browser_nodes() {
+    let node = |selection: u32| DesignCombineBodyNode {
+        record_index: selection + 100,
+        body_entity_suffix: selection + 150,
+        creating_scope_record_index: selection + 200,
+    };
+    for node_flag in [0, 1] {
+        let mut fixture = OperandListFixture::new(0, 0).two_tools();
+        fixture.node_flag = node_flag;
+        let operation = fixture.decode().expect("operand-list Combine");
+        assert_eq!(operation.target_body_node, Some(node(96)));
+        assert_eq!(operation.tools.first.body_node, Some(node(92)));
+        assert_eq!(operation.tools.additional[0].body_node, Some(node(94)));
+    }
+}
+
+#[test]
+fn operand_list_keeps_its_operation_when_a_browser_node_is_not_exact() {
+    let mut invalid_flag = OperandListFixture::new(1, 0);
+    invalid_flag.node_flag = 2;
+    let mut two_entries = OperandListFixture::new(1, 0);
+    two_entries.node_entries = 2;
+    let mut no_entry = OperandListFixture::new(1, 0);
+    no_entry.node_entries = 0;
+    let mut trailing_bytes = OperandListFixture::new(1, 0);
+    trailing_bytes.node_trailing_bytes = 1;
+    for fixture in [invalid_flag, two_entries, no_entry, trailing_bytes] {
+        let operation = fixture.decode().expect("operand-list Combine");
+        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+        assert_eq!(operation.target_body_node, None);
+        assert_eq!(operation.tools.first.body_node, None);
+    }
+}
+
+#[test]
+fn nonzero_byte_twenty_is_not_the_operand_list_prologue() {
+    let mut bytes = OperandListFixture::new(0, 0).bytes();
+    bytes[20] = 1;
+    assert_eq!(decode_combine_frame(&bytes), None);
 }

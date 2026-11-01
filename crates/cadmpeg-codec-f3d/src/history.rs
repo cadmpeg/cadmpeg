@@ -1565,7 +1565,7 @@ pub(crate) fn bind_feature_outputs(
                 .entry(cadmpeg_core::nonblank_literal!("deleted_bodies"))
                 .or_insert(formatted);
         }
-        if deleted_set.is_empty() {
+        if deleted_set.is_empty() && !combine_states_applied_operation(feature, scopes) {
             feature.evaluation.edit(|def, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Combine {
                     op,
@@ -1690,6 +1690,20 @@ pub(crate) fn bind_feature_outputs(
 }
 
 /// The history state a feature's scope produces and the state it follows.
+fn combine_states_applied_operation(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> bool {
+    feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        .and_then(|scope| scope.combine_operation())
+        .is_some_and(|operation| {
+            operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
+        })
+}
+
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1971,6 +1985,21 @@ pub(crate) fn bind_feature_body_selections(
                         };
                         if let Some(local) = combine_external_local_tools(scope) {
                             *tools = local;
+                        }
+                        if let Some(operation) = scope.combine_operation().filter(|operation| {
+                            operation.form
+                                == crate::records::feature::combine::DesignCombineForm::OperandLists
+                        }) {
+                            bind_operand_list_combine_bodies(
+                                target,
+                                tools,
+                                scope,
+                                operation,
+                                feature_id,
+                                previous_state_id,
+                                (histories, inputs.scopes),
+                            );
+                            return;
                         }
                         let BodySelection::Native(native) = target else {
                             return;
@@ -2431,6 +2460,80 @@ fn combine_recipe_family_tool_slots(
         return None;
     }
     Some(selected.into_iter().collect::<Vec<_>>())
+}
+
+/// Bind an operand-list `Combine` through the browser node of each operand.
+///
+/// Leaves both selections native unless every node names a distinct body of the
+/// preceding history state.
+fn bind_operand_list_combine_bodies(
+    target: &mut cadmpeg_ir::features::BodySelection,
+    tools: &mut cadmpeg_ir::features::BodySelection,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    operation: &crate::records::feature::combine::DesignCombineOperation,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    (histories, scopes): (
+        &[AsmHistory],
+        &[crate::records::feature::scope::DesignParameterScope],
+    ),
+) -> Option<()> {
+    use cadmpeg_ir::features::{BodyMembers, BodySelection};
+
+    let stream = crate::ids::native_stream(&scope.id)?;
+    let (history, _, previous) =
+        unique_history_state_pair(histories, scope.history_state_id()?, previous_state_id)?;
+    let input = history.topology(previous)?;
+    let body_slot = |node: Option<crate::records::feature::combine::DesignCombineBodyNode>| {
+        let node = node?;
+        let creator = scopes.iter().find(|candidate| {
+            candidate.record_index == node.creating_scope_record_index
+                && crate::ids::native_stream(&candidate.id) == Some(stream)
+        })?;
+        let creator_state = creator.history_state_id()?;
+        let mut states = history
+            .states()
+            .iter()
+            .filter(|state| state.state_id == creator_state);
+        let (Some(state), None) = (states.next(), states.next()) else {
+            return None;
+        };
+        let [slot] = state.transition.as_ref()?.topology.bodies.inserted[..] else {
+            return None;
+        };
+        input.bodies.contains(&slot).then_some(slot)
+    };
+    let target_slot = body_slot(operation.target_body_node)?;
+    let mut tool_slots = Vec::new();
+    for tool in operation.tools.iter() {
+        let slot = body_slot(tool.body_node)?;
+        if slot == target_slot || tool_slots.contains(&slot) {
+            return None;
+        }
+        tool_slots.push(slot);
+    }
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
+    let design_record = |record_index| format!("{stream}:design-record#{record_index}");
+    let mut rows = Vec::new();
+    for (slot, tool) in tool_slots.into_iter().zip(operation.tools.iter()) {
+        rows.push(body_member(
+            crate::ids::history_input_body_id(&prefix, slot),
+            design_record(tool.record_index),
+        )?);
+    }
+    let members = BodyMembers::try_from_rows(rows).ok()?;
+    let target_selection = BodySelection::historical(
+        crate::ids::history_input_state_id(&prefix),
+        vec![crate::ids::history_input_body_id(&prefix, target_slot)],
+        design_record(operation.target_record_index),
+    )
+    .ok()?;
+    *target = target_selection;
+    *tools = BodySelection::HistoricalSet {
+        state: crate::ids::history_input_state_id(&prefix),
+        members,
+    };
+    Some(())
 }
 
 fn combine_external_local_tools(
