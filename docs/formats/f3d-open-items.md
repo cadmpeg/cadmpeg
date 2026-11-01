@@ -895,13 +895,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** How does the u32 instance discriminator of a local component path select one expanded instance when several instances of the target have the listed containing carriers?
 
-**Known.** No two component-path records of a Design stream share a record and a discriminator. A path that lists the full chain of containing carriers names one instance. A path that lists fewer carriers names every instance below those carriers. In one public assembly, 107 of 1241 local paths name two or more instances this way. For one target with 16 expanded instances and 16 records, the target discriminators are 0 to 15 once each, and the order of the target discriminators equals the order of the Component element discriminators. No tested order of the expanded instances reproduces the target discriminators: ordering by the records from the outermost carrier inward matches for 46 of 77 targets.
+**Known.** No two component-path records of a Design stream share a record and a discriminator. A path that lists the full chain of containing carriers names one instance. The initial element list can name several instances below its listed carriers. The first closing reference run carries the full ordered occurrence chain defined in `f3d.md` §1.4. In one public assembly, 105 of 1241 initial element lists name several instances and two reach no instance. For one target with 16 expanded instances and 16 records, the target discriminators are 0 to 15 once each, and the order of the target discriminators equals the order of the Component element discriminators. No tested order of the expanded instances reproduces the target discriminators: ordering by the records from the outermost carrier inward matches for 46 of 77 targets.
 
 **Need.** Designs with a repeated holder of known instance order, made by copy and by pattern, with the component-path records before and after reordering the instances.
 
 **Conflict.** None.
 
-**Note.** A path that names more than one instance is placed only when the layout-consistency inference in `docs/format-support.md` selects exactly one assignment; it is then reported as `assembly.local-occurrence-path-pose-inferred`. Otherwise it is reported as `assembly.local-occurrence-path-pose-unresolved`.
+**Note.** A path whose initial elements and local closing occurrence chain name one instance supplies its stored world pose. A path that still names more than one instance is placed only when the layout-consistency inference in `docs/format-support.md` selects exactly one assignment; it is then reported as `assembly.local-occurrence-path-pose-inferred`. Otherwise it is reported as `assembly.local-occurrence-path-pose-unresolved`.
 
 ### DR-150. History namespace of copied feature scopes
 
