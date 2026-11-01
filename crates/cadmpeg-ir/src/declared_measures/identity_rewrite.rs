@@ -6,7 +6,7 @@ use super::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
 rewrite_enum!(DeclaredTarget, []; {
     Definition {definition},
     Bodies {bodies},
-    Unresolved,
+    Unresolved {},
 });
 rewrite_enum!(DeclaredQuantity, []; {
     Volume {value},

@@ -208,7 +208,10 @@ fn a_geometry_level_area_for_the_wrong_class_warns() {
         part.shape, part.representation, part.items[0]
     );
     let found = findings(
-        &part, 900, &[Item::Area("independent surface area measure", 600.0)], &aspect,
+        &part,
+        900,
+        &[Item::Area("independent surface area measure", 600.0)],
+        &aspect,
     );
     assert_eq!(severities(&found), [Severity::Warning], "{found:#?}");
     assert!(found[0].message.contains("declared.geometry-class"));

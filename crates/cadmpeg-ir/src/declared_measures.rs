@@ -33,7 +33,7 @@ pub enum DeclaredTarget {
     },
     /// The source names a target that does not resolve to bodies of the
     /// model.
-    Unresolved,
+    Unresolved {},
 }
 
 /// One stated quantity.

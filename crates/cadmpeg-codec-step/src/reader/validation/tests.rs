@@ -152,7 +152,7 @@ fn a_property_of_a_face_has_no_body_target() {
 
     for property in [41, 46, 50, 57] {
         for measure in of_property(result.ir(), property) {
-            assert_eq!(measure.target, DeclaredTarget::Unresolved, "{measure:?}");
+            assert_eq!(measure.target, DeclaredTarget::Unresolved {}, "{measure:?}");
         }
     }
 }
@@ -329,14 +329,14 @@ fn a_shape_aspect_of_a_face_has_no_body_target() {
         )
     });
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved);
+    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
 }
 
 #[test]
 fn a_shape_aspect_without_geometry_has_no_body_target() {
     let (ir, _) = aspect_part(|_| String::new());
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved);
+    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
 }
 
 #[test]
@@ -399,18 +399,20 @@ fn item_names_select_the_class_of_each_quantity() {
 
 #[test]
 fn unresolved_or_dimensionally_incompatible_units_are_not_compared() {
-    for unit in ["#44=DERIVED_UNIT((#55));", "#44=DERIVED_UNIT((#56));"] {
-        let source = tessellation_fixture()
-            .replace("#44=DERIVED_UNIT((#55));", unit)
-            .replace(
-                "#55=DERIVED_UNIT_ELEMENT(#1,2.);",
-                "#55=DERIVED_UNIT_ELEMENT(#9999,2.);",
-            );
+    for unit in [
+        "#44=(AREA_UNIT() NAMED_UNIT(*));",
+        "#44=DERIVED_UNIT((#56));",
+    ] {
+        let source = tessellation_fixture().replace("#44=DERIVED_UNIT((#55));", unit);
         let result = decode_source(&source);
         assert!(of_property(result.ir(), 41).is_empty());
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.message
-                .contains("unit scale did not resolve; the quantity is not compared")
-        }));
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.message
+                    .contains("unit scale did not resolve; the quantity is not compared")
+            }),
+            "{:#?}",
+            result.report().losses
+        );
     }
 }

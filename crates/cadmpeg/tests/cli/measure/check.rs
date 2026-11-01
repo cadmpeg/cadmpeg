@@ -304,7 +304,7 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let target = if unresolved {
-            DeclaredTarget::Unresolved
+            DeclaredTarget::Unresolved {}
         } else {
             DeclaredTarget::Bodies {
                 bodies: vec![ir.model.bodies[0].id.clone()],

@@ -22,7 +22,7 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind};
 use cadmpeg_ir::CadIr;
 
-use crate::report::{BodyMeasures, ShellRole};
+use crate::report::{BodyMeasures, MeasureReport, ShellRole};
 use crate::select::Selection;
 use crate::session::{MeasureError, MeasureInput, MeasureOptions, Measurer};
 use crate::value::{Point, Quantity, Scalar};
@@ -132,7 +132,7 @@ pub fn declared_findings(
     };
     let rows: BTreeMap<&str, &BodyMeasures> = report
         .iter()
-        .flat_map(|report| report.bodies())
+        .flat_map(MeasureReport::bodies)
         .map(|row| (row.body().as_str(), row))
         .collect();
     let mut findings = Vec::new();
@@ -189,7 +189,7 @@ fn target_ids(target: &DeclaredTarget) -> Vec<String> {
     match target {
         DeclaredTarget::Definition { definition } => vec![definition.to_string()],
         DeclaredTarget::Bodies { bodies } => bodies.iter().map(ToString::to_string).collect(),
-        DeclaredTarget::Unresolved => Vec::new(),
+        DeclaredTarget::Unresolved {} => Vec::new(),
     }
 }
 
@@ -200,7 +200,7 @@ fn member_bodies<'ir>(
 ) -> Result<Vec<&'ir Body>, Unmeasured> {
     let body = |id: &BodyId| ir.model.bodies.iter().find(|body| &body.id == id);
     match &measure.target {
-        DeclaredTarget::Unresolved => Err(Unmeasured::gap(
+        DeclaredTarget::Unresolved {} => Err(Unmeasured::gap(
             Gap::TargetUnresolved,
             "the source names a target that is not a body or a definition of the document",
         )),
@@ -417,9 +417,8 @@ fn sum(
     Ok(total)
 }
 
-/// The centroid of the member rows weighted by `weight`, with each error
-/// term `(Σ wᵢ eᵢ + Σ |Cᵢ − C| e_wᵢ) / Σ wᵢ` for the member centroid terms
-/// `eᵢ` and weight terms `e_wᵢ`.
+/// The centroid weighted by volume or area. Error bounds include uncertainty
+/// in both the member locations and their weights.
 fn centroid(
     rows: &[&BodyMeasures],
     (weight_name, weight): Field<Scalar>,
@@ -448,6 +447,17 @@ fn centroid(
             "the target has no member body with a positive weight",
         ));
     }
+    let weight_error: f64 = members
+        .iter()
+        .map(|(_, weight)| weight.numeric_error().get() + weight.model_uncertainty().get())
+        .sum();
+    let minimum_weight = total - weight_error;
+    if minimum_weight <= 0.0 || !minimum_weight.is_finite() {
+        return Err(Unmeasured::gap(
+            Gap::AggregateUnavailable,
+            "the combined weight uncertainty reaches zero weight",
+        ));
+    }
     let mut moment = [0.0; 3];
     for (point, weight) in &members {
         let at = point.value().value.get();
@@ -461,13 +471,15 @@ fn centroid(
     let mut model_uncertainty = 0.0;
     for (point, weight) in &members {
         let lever = distance(point.value().value.get(), value);
-        let mass = weight.value().value.get().abs();
+        let mass = weight.value().value.get().abs()
+            + weight.numeric_error().get()
+            + weight.model_uncertainty().get();
         numeric_error += mass * point.numeric_error().get() + lever * weight.numeric_error().get();
         model_uncertainty +=
             mass * point.model_uncertainty().get() + lever * weight.model_uncertainty().get();
     }
-    numeric_error /= total;
-    model_uncertainty /= total;
+    numeric_error /= minimum_weight;
+    model_uncertainty /= minimum_weight;
     if ![value.x, value.y, value.z, numeric_error, model_uncertainty]
         .iter()
         .all(|value| value.is_finite())
