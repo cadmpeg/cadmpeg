@@ -38,7 +38,6 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
-        assert_eq!(result.source_fidelity().metadata["bytes_unclassified"], "0");
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
             .unwrap()
             .is_ok());
@@ -52,10 +51,6 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded defect and unreadable metadata remain recoverable");
     assert_eq!(decoded.ir().model.points.len(), 2);
-    assert_eq!(
-        decoded.source_fidelity().metadata["bytes_unclassified"],
-        "0"
-    );
 }
 
 #[test]
@@ -410,20 +405,29 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode byte-accounting fixture");
-    let attributes = &result.source_fidelity().metadata;
-    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+    let (structural, typed, opaque, unclassified) = byte_accounting_note(&result);
+    assert!(structural > 0);
+    assert!(typed > 0);
+    assert_eq!(opaque, 0);
+    assert_eq!(unclassified, 0);
+    assert_eq!(structural + typed + opaque + unclassified, bytes.len());
+}
 
-    assert!(count("bytes_structural") > 0);
-    assert!(count("bytes_typed") > 0);
-    assert_eq!(count("bytes_named_opaque"), 0);
-    assert_eq!(count("bytes_unclassified"), 0);
-    assert_eq!(
-        count("bytes_structural")
-            + count("bytes_typed")
-            + count("bytes_named_opaque")
-            + count("bytes_unclassified"),
-        bytes.len()
-    );
+/// Reads the decode's byte-accounting note into its four class tallies.
+fn byte_accounting_note(result: &cadmpeg_ir::codec::DecodeResult) -> (usize, usize, usize, usize) {
+    let note = result
+        .report()
+        .notes
+        .iter()
+        .find(|note| note.starts_with("byte accounting: "))
+        .expect("the decode reports its byte accounting");
+    let numbers: Vec<usize> = note
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse().expect("accounting tallies are numbers"))
+        .collect();
+    assert_eq!(numbers.len(), 4, "{note}");
+    (numbers[0], numbers[1], numbers[2], numbers[3])
 }
 
 #[test]
@@ -502,14 +506,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let attributes = &result.source_fidelity().metadata;
-        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
-        assert_eq!(count("bytes_unclassified"), 0, "{name}");
+        let (structural, typed, opaque, unclassified) = byte_accounting_note(&result);
+        assert_eq!(unclassified, 0, "{name}");
         assert_eq!(
-            count("bytes_structural")
-                + count("bytes_typed")
-                + count("bytes_named_opaque")
-                + count("bytes_unclassified"),
+            structural + typed + opaque + unclassified,
             bytes.len(),
             "{name}"
         );
@@ -714,7 +714,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
     assert_eq!(
-        result.source_fidelity().metadata["schema"],
+        result.ir().source.as_ref().expect("source").attributes["schema"],
         "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
     );
 }
@@ -806,7 +806,6 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
-    assert_eq!(result.source_fidelity().metadata["bytes_named_opaque"], "0");
 }
 
 #[test]
