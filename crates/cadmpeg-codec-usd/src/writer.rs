@@ -309,6 +309,12 @@ struct Writer<'ir> {
     physics: physics::Plan,
     /// Meshes the faces of bodies with no tessellation.
     tessellator: cadmpeg_tessellate::Tessellator<'ir>,
+    /// The identity index of the model.
+    index: cadmpeg_ir::index::ModelIndex<'ir>,
+    /// The arena position of each region, shell, face, and edge.
+    positions: BTreeMap<&'ir str, usize>,
+    /// The tessellations of each body, in arena order.
+    body_tessellations: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>>,
     /// Occurrences with a part occurrence below them.
     above_parts: BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     /// The members a package holds beside the root layer, or `None` for a
@@ -410,6 +416,17 @@ impl<'ir> Writer<'ir> {
             paths: BTreeMap::new(),
             target_paths: BTreeMap::new(),
             physics: physics::Plan::new(ir),
+            index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            positions: positions(ir),
+            body_tessellations: {
+                let mut out: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>> = BTreeMap::new();
+                for tessellation in &ir.model.tessellations {
+                    if let Some(body) = &tessellation.body {
+                        out.entry(body).or_default().push(tessellation);
+                    }
+                }
+                out
+            },
             tessellator: cadmpeg_tessellate::Tessellator::new(
                 ir,
                 cadmpeg_tessellate::Options::default(),
@@ -676,7 +693,10 @@ impl<'ir> Writer<'ir> {
                 definition
                     .bodies
                     .iter()
-                    .filter_map(|id| self.ir.model.bodies.iter().find(|body| &body.id == id))
+                    .filter_map(|id| {
+                        self.index
+                            .bodies(id.as_str(), cadmpeg_ir::index::StandardIndex)
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -853,18 +873,18 @@ impl<'ir> Writer<'ir> {
     }
 
     fn body_name(&self, id: &BodyId) -> String {
-        let body = self.ir.model.bodies.iter().find(|body| &body.id == id);
+        let body = self
+            .index
+            .bodies(id.as_str(), cadmpeg_ir::index::StandardIndex);
         text::identifier(body.and_then(|body| body.name.as_deref()).unwrap_or("Body"))
     }
 
     /// The tessellations of a body.
     fn tessellations(&self, body: &BodyId) -> Vec<&'ir Tessellation> {
-        self.ir
-            .model
-            .tessellations
-            .iter()
-            .filter(|tessellation| tessellation.body.as_ref() == Some(body))
-            .collect()
+        self.body_tessellations
+            .get(body)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// The geometry prims of a body. Records no prim carries are counted
@@ -896,7 +916,7 @@ impl<'ir> Writer<'ir> {
             }
             if !meshed.is_empty() {
                 self.tessellator
-                    .set_options(brep::mesh_options(self.ir, body));
+                    .set_options(brep::mesh_options(&self.index, body));
                 let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
                 self.unwritten.unmeshed.extend(unmeshed);
                 if let Some(mesh) = mesh {
@@ -917,14 +937,12 @@ impl<'ir> Writer<'ir> {
     /// Whether the one loop of `face` runs along the boundary of the domain
     /// of its surface `nurbs`: each pcurve is a segment on one side.
     fn whole_domain(&self, face: &cadmpeg_ir::topology::Face, nurbs: &NurbsSurface) -> bool {
-        let model = &self.ir.model;
         let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
             return false;
         };
-        let Some(loop_) = model
-            .loops
-            .iter()
-            .find(|candidate| &candidate.id == loop_id)
+        let Some(loop_) = self
+            .index
+            .loops(loop_id.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             return false;
         };
@@ -948,12 +966,14 @@ impl<'ir> Writer<'ir> {
         };
         !loop_.coedges().is_empty()
             && loop_.coedges().iter().all(|coedge| {
-                let Some(pcurve) = model
-                    .coedges
-                    .iter()
-                    .find(|candidate| &candidate.id == coedge)
+                let Some(pcurve) = self
+                    .index
+                    .coedges(coedge.as_str(), cadmpeg_ir::index::StandardIndex)
                     .and_then(|coedge| coedge.pcurves.first())
-                    .and_then(|use_| model.pcurves.iter().find(|pcurve| pcurve.id == use_.pcurve))
+                    .and_then(|use_| {
+                        self.index
+                            .pcurves(use_.pcurve.as_str(), cadmpeg_ir::index::StandardIndex)
+                    })
                 else {
                     return false;
                 };
@@ -1088,32 +1108,56 @@ impl<'ir> Writer<'ir> {
         &'ir cadmpeg_ir::topology::Face,
         Option<&'ir cadmpeg_ir::geometry::Surface>,
     )> {
-        let model = &self.ir.model;
+        let query = cadmpeg_ir::index::StandardIndex;
         let mut out = Vec::new();
-        for region in model
-            .regions
-            .iter()
-            .filter(|region| body.regions.contains(&region.id))
-        {
-            for shell in model
-                .shells
+        for region in self.ordered(
+            body.regions
                 .iter()
-                .filter(|shell| region.shells.contains(&shell.id))
-            {
-                for face in model
-                    .faces
+                .filter_map(|region| self.index.regions(region.as_str(), query)),
+            |region| region.id.as_str(),
+        ) {
+            for shell in self.ordered(
+                region
+                    .shells
                     .iter()
-                    .filter(|face| shell.faces().contains(&face.id))
-                {
-                    let surface = model
-                        .surfaces
+                    .filter_map(|shell| self.index.shells(shell.as_str(), query)),
+                |shell| shell.id.as_str(),
+            ) {
+                for face in self.ordered(
+                    shell
+                        .faces()
                         .iter()
-                        .find(|surface| surface.id == face.surface);
+                        .filter_map(|face| self.index.faces(face.as_str(), query)),
+                    |face| face.id.as_str(),
+                ) {
+                    let surface = self.index.surfaces(face.surface.as_str(), query);
                     out.push((face, surface));
                 }
             }
         }
         out
+    }
+
+    /// `records` in model arena order, without repeats.
+    fn ordered<T>(
+        &self,
+        records: impl Iterator<Item = &'ir T>,
+        id: impl Fn(&T) -> &str,
+    ) -> Vec<&'ir T> {
+        let mut out: Vec<(usize, &'ir T)> = records
+            .map(|record| {
+                (
+                    self.positions
+                        .get(id(record))
+                        .copied()
+                        .unwrap_or(usize::MAX),
+                    record,
+                )
+            })
+            .collect();
+        out.sort_by_key(|(position, _)| *position);
+        out.dedup_by_key(|(position, _)| *position);
+        out.into_iter().map(|(_, record)| record).collect()
     }
 
     fn color_primvars(&mut self, body: Option<&Body>) {
@@ -1381,28 +1425,38 @@ impl<'ir> Writer<'ir> {
     /// The wire edges of a body in NURBS form. Edges with no line or NURBS
     /// curve are counted as unwritten.
     fn wire_curves(&mut self, body: &Body) -> Vec<WireCurve> {
-        let model = &self.ir.model;
-        let mut curves = Vec::new();
-        for region in model
-            .regions
-            .iter()
-            .filter(|region| body.regions.contains(&region.id))
-        {
-            for shell in model
-                .shells
+        let query = cadmpeg_ir::index::StandardIndex;
+        let index = &self.index;
+        let mut edges = Vec::new();
+        for region in self.ordered(
+            body.regions
                 .iter()
-                .filter(|shell| region.shells.contains(&shell.id))
-            {
-                for edge in model
-                    .edges
+                .filter_map(|region| index.regions(region.as_str(), query)),
+            |region| region.id.as_str(),
+        ) {
+            for shell in self.ordered(
+                region
+                    .shells
                     .iter()
-                    .filter(|edge| shell.wire_edges().contains(&edge.id))
-                {
-                    match self.edge_nurbs(edge) {
-                        Some(curve) => curves.push(curve),
-                        None => self.unwritten.curves += 1,
-                    }
-                }
+                    .filter_map(|shell| index.shells(shell.as_str(), query)),
+                |shell| shell.id.as_str(),
+            ) {
+                edges.extend(
+                    self.ordered(
+                        shell
+                            .wire_edges()
+                            .iter()
+                            .filter_map(|edge| index.edges(edge.as_str(), query)),
+                        |edge| edge.id.as_str(),
+                    ),
+                );
+            }
+        }
+        let mut curves = Vec::new();
+        for edge in edges {
+            match self.edge_nurbs(edge) {
+                Some(curve) => curves.push(curve),
+                None => self.unwritten.curves += 1,
             }
         }
         curves
@@ -1459,14 +1513,11 @@ impl<'ir> Writer<'ir> {
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())?;
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-            let vertex = model
-                .vertices
-                .iter()
-                .find(|candidate| &candidate.id == vertex)?;
-            model
-                .points
-                .iter()
-                .find(|point| point.id == vertex.point)
+            let vertex = self
+                .index
+                .vertices(vertex.as_str(), cadmpeg_ir::index::StandardIndex)?;
+            self.index
+                .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
                 .map(|point| point.position().get())
         };
         let ends = position(&edge.start).zip(position(&edge.end));
@@ -1564,14 +1615,17 @@ impl<'ir> Writer<'ir> {
                 .model
                 .product_definitions
                 .iter()
-                .find(|definition| definition.id == id)
+                .find(|candidate| candidate.id == id)
             else {
                 continue;
             };
             let bodies: Vec<&'ir Body> = definition
                 .bodies
                 .iter()
-                .filter_map(|id| self.ir.model.bodies.iter().find(|body| &body.id == id))
+                .filter_map(|id| {
+                    self.index
+                        .bodies(id.as_str(), cadmpeg_ir::index::StandardIndex)
+                })
                 .collect();
             let mut names = Names::default();
             if let [body] = bodies.as_slice() {
@@ -1877,3 +1931,22 @@ fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f3
 
 #[cfg(test)]
 mod tests;
+
+/// The arena position of each region, shell, face, and edge of `ir`.
+fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
+    let model = &ir.model;
+    let mut out = BTreeMap::new();
+    for (position, region) in model.regions.iter().enumerate() {
+        out.insert(region.id.as_str(), position);
+    }
+    for (position, shell) in model.shells.iter().enumerate() {
+        out.insert(shell.id.as_str(), position);
+    }
+    for (position, face) in model.faces.iter().enumerate() {
+        out.insert(face.id.as_str(), position);
+    }
+    for (position, edge) in model.edges.iter().enumerate() {
+        out.insert(edge.id.as_str(), position);
+    }
+    out
+}

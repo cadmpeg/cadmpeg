@@ -15,6 +15,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, SurfaceId, VertexId};
+use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -591,6 +592,7 @@ fn solved_surface(geometry: &SolvedSurfaceGeometry) -> Option<(SurfaceRecord, Ch
 /// Writer state for one body.
 struct Exporter<'t, 'ir> {
     ir: &'ir CadIr,
+    index: &'t ModelIndex<'ir>,
     tessellator: &'t mut Tessellator<'ir>,
     /// Every face needs a mesh: the body has no tessellation of its own.
     meshes_wanted: bool,
@@ -637,9 +639,15 @@ pub(super) struct Exported {
 }
 
 impl<'t, 'ir> Exporter<'t, 'ir> {
-    fn new(ir: &'ir CadIr, tessellator: &'t mut Tessellator<'ir>, meshes_wanted: bool) -> Self {
+    fn new(
+        ir: &'ir CadIr,
+        index: &'t ModelIndex<'ir>,
+        tessellator: &'t mut Tessellator<'ir>,
+        meshes_wanted: bool,
+    ) -> Self {
         Self {
             ir,
+            index,
             tessellator,
             meshes_wanted,
             meshes: Vec::new(),
@@ -678,11 +686,8 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             return *found;
         }
         let record = self
-            .ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| &curve.id == id)
+            .index
+            .curves(id.as_str(), StandardIndex)
             .and_then(|curve| curve_record(&curve.geometry));
         let out = record.map(|(record, map)| (self.add_curve(record), map));
         self.curves.insert(id.clone(), out);
@@ -693,12 +698,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(found) = self.surfaces.get(id) {
             return *found;
         }
-        let surface = self
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == id);
+        let surface = self.index.surfaces(id.as_str(), StandardIndex);
         let record = match surface.map(|surface| &surface.geometry) {
             Some(SurfaceGeometry::Solved(solved)) => solved_surface(solved),
             Some(SurfaceGeometry::Procedural {
@@ -791,12 +791,10 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(index) = self.vertices.get(id) {
             return Some(*index);
         }
-        let model = &self.ir.model;
-        let vertex = model.vertices.iter().find(|vertex| &vertex.id == id)?;
-        let position = model
-            .points
-            .iter()
-            .find(|candidate| candidate.id == vertex.point)?
+        let vertex = self.index.vertices(id.as_str(), StandardIndex)?;
+        let position = self
+            .index
+            .points(vertex.point.as_str(), StandardIndex)?
             .position()
             .get();
         self.brep.vertices.push(point(position));
@@ -811,7 +809,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         if let Some(index) = self.edges.get(id) {
             return Some(*index);
         }
-        let edge = self.ir.model.edges.iter().find(|edge| &edge.id == id)?;
+        let edge = self.index.edges(id.as_str(), StandardIndex)?;
         let vertices = [self.vertex(&edge.start)?, self.vertex(&edge.end)?];
         let curve = edge.curve().and_then(|curve| self.curve(curve));
         let range = edge
@@ -950,12 +948,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         let [use_] = coedge.pcurves.as_slice() else {
             return None;
         };
-        let pcurve = self
-            .ir
-            .model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == use_.pcurve)?;
+        let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
         // A use with no range runs on the edge's parameter range, in the
         // coedge direction.
         let range = use_
@@ -1040,8 +1033,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
     }
 
     fn face(&mut self, face_id: &FaceId) {
-        let model = &self.ir.model;
-        let Some(face) = model.faces.iter().find(|face| &face.id == face_id) else {
+        let Some(face) = self.index.faces(face_id.as_str(), StandardIndex) else {
             return;
         };
         let Some((surface, chart)) = self.surface(&face.surface) else {
@@ -1066,7 +1058,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let mut loops = Vec::new();
         for loop_id in &face.loops {
-            let Some(loop_) = model.loops.iter().find(|loop_| &loop_.id == loop_id) else {
+            let Some(loop_) = self.index.loops(loop_id.as_str(), StandardIndex) else {
                 continue;
             };
             match &loop_.boundary {
@@ -1083,8 +1075,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     }
                     let mut oriented = Vec::new();
                     for coedge_id in ring.coedges() {
-                        let Some(coedge) =
-                            model.coedges.iter().find(|coedge| &coedge.id == coedge_id)
+                        let Some(coedge) = self.index.coedges(coedge_id.as_str(), StandardIndex)
                         else {
                             continue;
                         };
@@ -1354,19 +1345,19 @@ fn analytic_pcurve(
 /// derived pcurves.
 pub(super) fn export<'ir>(
     ir: &'ir CadIr,
+    index: &ModelIndex<'ir>,
     body: &Body,
     tessellator: &mut Tessellator<'ir>,
     meshes_wanted: bool,
 ) -> Option<Exported> {
-    let model = &ir.model;
-    let mut exporter = Exporter::new(ir, tessellator, meshes_wanted);
+    let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
     for region_id in &body.regions {
-        let Some(region) = model.regions.iter().find(|region| &region.id == region_id) else {
+        let Some(region) = index.regions(region_id.as_str(), StandardIndex) else {
             continue;
         };
         let mut region_shells = Vec::new();
         for shell_id in &region.shells {
-            let Some(shell) = model.shells.iter().find(|shell| &shell.id == shell_id) else {
+            let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
             if shell.faces().is_empty() {
@@ -1400,13 +1391,10 @@ pub(super) fn export<'ir>(
     }
     // `brep:tolerance` bounds every vertex-on-face and edge-on-face
     // deviation, so it is the largest entity tolerance of the body.
-    let model = &ir.model;
-    let faces: BTreeMap<&FaceId, &cadmpeg_ir::topology::Face> =
-        model.faces.iter().map(|face| (&face.id, face)).collect();
     let face_records: Vec<Option<&cadmpeg_ir::topology::Face>> = exporter
         .faces
         .iter()
-        .map(|face| faces.get(face).copied())
+        .map(|face| index.faces(face.as_str(), StandardIndex))
         .collect();
     let mut tolerances = crate::brep::Tolerances {
         faces: face_records
@@ -1419,18 +1407,24 @@ pub(super) fn export<'ir>(
         edges: vec![None; exporter.brep.edges.len()],
         vertices: vec![None; exporter.brep.vertices.len()],
     };
-    for edge in &model.edges {
-        if let (Some(index), Some(value)) = (exporter.edges.get(&edge.id), edge.tolerance) {
-            if let Some(slot) = tolerances.edges.get_mut(*index) {
-                *slot = Some(value.get());
-            }
+    for (id, position) in &exporter.edges {
+        if let (Some(slot), Some(value)) = (
+            tolerances.edges.get_mut(*position),
+            index
+                .edges(id.as_str(), StandardIndex)
+                .and_then(|edge| edge.tolerance),
+        ) {
+            *slot = Some(value.get());
         }
     }
-    for vertex in &model.vertices {
-        if let (Some(index), Some(value)) = (exporter.vertices.get(&vertex.id), vertex.tolerance) {
-            if let Some(slot) = tolerances.vertices.get_mut(*index) {
-                *slot = Some(value.get());
-            }
+    for (id, position) in &exporter.vertices {
+        if let (Some(slot), Some(value)) = (
+            tolerances.vertices.get_mut(*position),
+            index
+                .vertices(id.as_str(), StandardIndex)
+                .and_then(|vertex| vertex.tolerance),
+        ) {
+            *slot = Some(value.get());
         }
     }
     let mut tolerance = exporter.brep.tolerance;

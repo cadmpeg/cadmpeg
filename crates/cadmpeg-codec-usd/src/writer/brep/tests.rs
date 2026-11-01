@@ -16,7 +16,7 @@ fn an_untrimmed_sphere_takes_its_chord_from_the_radius() {
     let [body] = ir.model.bodies.as_slice() else {
         panic!("one body");
     };
-    let options = mesh_options(ir, body);
+    let options = mesh_options(&cadmpeg_ir::index::ModelIndex::new_model_only(ir), body);
     let radius = 20.0_f64;
     let diagonal = (3.0 * (2.0 * radius).powi(2)).sqrt();
     let expected = (diagonal * CHORD_RATIO).max(ir.tolerances.linear.get() * MIN_CHORD_TOLERANCES);
@@ -36,7 +36,7 @@ fn a_box_keeps_the_chord_of_its_vertices() {
     let [body] = ir.model.bodies.as_slice() else {
         panic!("one body");
     };
-    let options = mesh_options(ir, body);
+    let options = mesh_options(&cadmpeg_ir::index::ModelIndex::new_model_only(ir), body);
     assert!(options.chord > cadmpeg_tessellate::Options::default().chord);
     assert!(floats_agree(
         options.chord,
