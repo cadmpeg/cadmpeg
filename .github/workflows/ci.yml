@@ -424,12 +424,12 @@ jobs:
         run: sccache --stop-server || true
 
       - name: Save compiler cache
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.enable_compiler_cache.outcome == 'success' && steps.compiler_cache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.enable_compiler_cache.outcome == 'success' && steps.compiler_cache.outputs.cache-primary-key != '' && steps.compiler_cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/compiler-cache
-          key: workspace-sccache-v1-0.16.0-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ steps.compiler_cache_key.outputs.week }}
+          key: ${{ steps.compiler_cache.outputs.cache-primary-key }}
 
   layout:
     needs: changes
