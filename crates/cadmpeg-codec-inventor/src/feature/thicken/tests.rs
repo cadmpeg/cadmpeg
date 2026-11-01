@@ -290,7 +290,7 @@ fn offset_checks_control_words_and_every_boolean_polarity() {
             assert!(fixture.operation().is_err(), "slot {slot}, word {word}");
         }
     }
-    for slot in [3, 4, 7, 10, 16, 17] {
+    for slot in [3, 4, 7, 10, 17] {
         let mut fixture = Operands::new();
         fixture.change_slot(slot, |kind| {
             let PmDcFeaturePropertyKind::Boolean { value, .. } = kind else {
@@ -460,4 +460,20 @@ fn offset_requires_a_resolved_segment_version() {
         NativeReason::Version.note().code,
         crate::loss::InventorLossCode::FeatureThickenConstructionNative.kind()
     );
+}
+
+#[test]
+fn offset_distinguishes_the_false_slot_16_control_from_a_malformed_operand() {
+    let mut fixture = Operands::new();
+    fixture.change_slot(16, |kind| {
+        let PmDcFeaturePropertyKind::Boolean { value, .. } = kind else {
+            panic!("slot 16 Boolean")
+        };
+        *value = false;
+    });
+    assert_eq!(fixture.operation(), Err(NativeReason::OffsetControl));
+    fixture.change_slot(16, |kind| {
+        *kind = PmDcFeaturePropertyKind::TerminationFlag { value: 0 };
+    });
+    assert_eq!(fixture.operation(), Err(NativeReason::Slot(16)));
 }

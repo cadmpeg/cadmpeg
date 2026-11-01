@@ -200,7 +200,13 @@ fn build_fixture(
     push_u32(&mut feature, 0);
     push_u32(&mut feature, 0);
     let slot_two_reference = if slot_two { 17 } else { 18 };
-    let slot_sixteen_reference = if slot_sixteen { 17 } else { 18 };
+    let slot_sixteen_reference = if selected {
+        29
+    } else if slot_sixteen {
+        17
+    } else {
+        18
+    };
     references(
         &mut feature,
         &[
@@ -316,6 +322,7 @@ fn build_fixture(
             (parameter_type, parameter(26, "SyntheticOffset", 3, 27, 0.4)),
             (guid("047aa7f8d2118f09c0005a9a2378d04f"), literal(3, 0.4)),
             (guid("b1377779d2116794a00049803603c8c9"), dimension),
+            (boolean_type, boolean(29, slot_sixteen)),
         ]);
     }
     primary_envelope_fixture_with_design_version(
