@@ -56,19 +56,24 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
         decoded.ir().source.as_ref().unwrap().dialects(),
         baseline.ir().source.as_ref().unwrap().dialects()
     );
-    assert!(decoded
-        .ir()
-        .native
-        .namespace("fcstd")
-        .is_none_or(|native| native.arenas().is_empty()));
     let fidelity = decoded.source_fidelity();
     assert!(fidelity
         .retained_record(crate::fidelity::SOURCE_IMAGE)
         .is_none());
     let parts = crate::test_support::source_fidelity::given_up(fidelity);
-    let [(_, retained)] = parts.as_slice() else {
+    let [(retained_id, retained)] = parts.as_slice() else {
         panic!("one root part: {parts:?}")
     };
+    // #215 rule 1: the given-up archive keeps one unknowns home.
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("one unknowns home");
+    assert_eq!(namespace.arenas().len(), 1);
+    let unknowns = &namespace.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].id(), *retained_id);
     assert_eq!(retained.data(), Some(bytes.as_slice()));
     assert_eq!(retained.offset(), 0);
     assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
