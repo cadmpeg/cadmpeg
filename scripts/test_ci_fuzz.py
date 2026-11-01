@@ -43,9 +43,8 @@ class FuzzGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 target_sources(source)
 
-    def test_rejects_unknown_feature(self):
-        with self.assertRaises(ValueError):
-            command('check', ['not-a-codec'])
+    def test_unknown_feature_uses_full_gate(self):
+        self.assertIn('--all-targets', command('check', ['not-a-codec']))
 
     def test_unresolved_module_uses_full_gate(self):
         with patch('scripts.ci_fuzz.target_sources', side_effect=ValueError):

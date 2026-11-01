@@ -47,7 +47,7 @@ def command(mode: str, codecs: list[str]) -> list[str]:
     manifest = tomllib.loads(MANIFEST.read_text())
     valid = set(manifest['features']) - {'default'}
     if not set(codecs) <= valid:
-        raise ValueError('unknown codec feature')
+        return command(mode, [])
     patterns = [re.compile(r'\bcadmpeg_codec_' + re.escape(codec.replace('-', '_')) + r'\b')
                 for codec in codecs]
     targets = []
