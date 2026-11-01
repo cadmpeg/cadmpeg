@@ -213,6 +213,7 @@ mod tests {
         .unwrap();
         let curve = Curve {
             id: CurveId::mint("test:model:curve#0001".to_owned()).unwrap(),
+            native_ref: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             parameter_range: None,
             source_object: None,

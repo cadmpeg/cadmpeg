@@ -3,7 +3,7 @@ use super::*;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::{
-    BooleanKind, FeatureResultMembers, FeatureResultTopology, FiniteVector3, NativeSelections,
+    BooleanKind, FeatureResultMembers, FeatureResultTopology, NativeSelections,
     SplitBodyTool,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
@@ -103,9 +103,9 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
     let motion = FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies: BodySelection::local(vec!["target".into(), "tool".into()], "selection".into())
             .expect("distinct wrappers"),
-        translation: FiniteVector3::ZERO,
+        translation: [cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO), cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO), cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO)],
         rotation: None,
-        copies: 0,
+        copies: cadmpeg_ir::Dimension::Literal(0),
     });
     let surface_split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
         targets: BodySelection::Native("target".into()),
@@ -274,7 +274,6 @@ fn carrier() -> ActiveCarrierRecord {
         header_value: 0,
         schema: 0,
         carrier_len: std::num::NonZeroU64::new(1).expect("nonzero"),
-        carrier_offset: 0,
         carrier_sha256: String::new(),
         selected_key: 0x8000_0001,
         enabled: true,
@@ -323,6 +322,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
     let mut model = Model::default();
     model.bodies.push(cadmpeg_ir::topology::Body {
         id: key.body.clone(),
+        native_ref: None,
         kind: cadmpeg_ir::topology::BodyKind::default(),
         regions: vec![],
         transform: None,
@@ -527,6 +527,7 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: Some("combine".into()),

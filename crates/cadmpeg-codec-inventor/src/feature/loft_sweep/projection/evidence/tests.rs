@@ -187,7 +187,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     let side_values = |values: [i64; 11]| {
         let mut swapped = model.clone();
         for (slot, value) in swapped.attributes[2].values[11..].iter_mut().zip(values) {
-            *slot = AttributeValue::Integer(value);
+            *slot = Some(AttributeValue::Integer(value));
         }
         swapped
     };
