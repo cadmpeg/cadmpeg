@@ -26,7 +26,9 @@ use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_core::bytes::contains;
 
-use crate::container::{is_embedded_document, unwrapped_name, xml_text, ContainerScan};
+use crate::container::{
+    is_embedded_document, unwrapped_name, virtual_component_key, xml_text, ContainerScan,
+};
 use crate::loss::SldprtLossCode;
 
 use self::native::{NativeAssembly, NativeDefinition, NativePlacement, NativePrototype};
@@ -57,6 +59,9 @@ pub(crate) struct AssemblyProjection {
     /// Whether a section outside the embedded documents carries a Parasolid
     /// stream, or a capped probe left that open.
     carries_parasolid: bool,
+    /// Each virtual component definition, the site key of its section, and
+    /// its name.
+    virtual_sites: Vec<(ProductDefinitionId, String, String)>,
 }
 
 /// Part losses that `apply` removes from an assembly without its own
@@ -69,7 +74,38 @@ const PART_MODEL_ABSENT: [SldprtLossCode; 3] = [
 
 impl AssemblyProjection {
     /// Add the projection to a decoded document.
-    pub(crate) fn apply(self, decoded: &mut Decoded) {
+    pub(crate) fn apply(mut self, decoded: &mut Decoded) {
+        let mut bodiless = Vec::new();
+        for (definition, site, name) in &self.virtual_sites {
+            let tail = format!("@{site}");
+            let bodies = decoded
+                .ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| body.id.as_str().ends_with(&tail))
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>();
+            if bodies.is_empty() {
+                bodiless.push(name.clone());
+            }
+            if let Some(target) = self
+                .definitions
+                .iter_mut()
+                .find(|candidate| &candidate.id == definition)
+            {
+                target.bodies = bodies;
+            }
+        }
+        if !bodiless.is_empty() {
+            self.losses.push(
+                SldprtLossCode::AssemblyVirtualComponentsNotTransferred.note(format!(
+                    "{} virtual component document(s) of this assembly give no decoded body: {}.",
+                    bodiless.len(),
+                    named(&bodiless)
+                )),
+            );
+        }
         decoded
             .ir
             .model
@@ -85,6 +121,15 @@ impl AssemblyProjection {
         decoded.ir.model.occurrences.extend(self.occurrences);
         decoded.body.losses.extend(self.losses);
         decoded.ir.model.finalize();
+    }
+
+    /// The site keys of the virtual component sections that the assembly
+    /// places.
+    pub(crate) fn virtual_site_keys(&self) -> BTreeSet<String> {
+        self.virtual_sites
+            .iter()
+            .map(|(_, site, _)| site.clone())
+            .collect()
     }
 
     #[cfg(test)]
@@ -121,6 +166,8 @@ pub(crate) fn read(
     let mut is_assembly = false;
     let mut carries_parasolid = false;
     let mut embedded = Vec::new();
+    let mut virtual_sections = BTreeMap::new();
+    let mut shared_virtual_names = Vec::new();
     let mut trees_differ = false;
     for section in scan.sections() {
         let parasolid = !section.ps_streams().is_empty() || section.ps_probe_capped();
@@ -130,6 +177,18 @@ pub(crate) fn read(
         };
         if is_embedded_document(name) {
             embedded.push(name.to_string());
+            continue;
+        }
+        if let Some(key) = virtual_component_key(name) {
+            match virtual_sections.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(section.site_key()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                    shared_virtual_names.push(name.to_string());
+                }
+            }
             continue;
         }
         carries_parasolid |= parasolid;
@@ -155,7 +214,7 @@ pub(crate) fn read(
         Some(_) if trees_differ => NativeAssembly::structure_lost(format!(
             "The document holds different `{TREE_SECTION}` sections. No occurrence is transferred."
         )),
-        Some(text) => native_project(ctx, &text)?,
+        Some(text) => native_project(ctx, &text, &virtual_sections)?,
         None => NativeAssembly::structure_lost(format!(
             "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
              placement, or component reference is transferred."
@@ -167,6 +226,16 @@ pub(crate) fn read(
                 "{} embedded component document(s) are not decoded: {}.",
                 embedded.len(),
                 named(&embedded)
+            )),
+        );
+    }
+    if !shared_virtual_names.is_empty() {
+        native.push_loss(
+            SldprtLossCode::AssemblyVirtualComponentsNotTransferred.note(format!(
+                "{} virtual component section(s) share a name with another and are not \
+                 transferred: {}.",
+                shared_virtual_names.len(),
+                named(&shared_virtual_names)
             )),
         );
     }
@@ -207,11 +276,17 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<AssemblyProjection, CodecError> {
-    Ok(native_project(ctx, text)?.into_projection())
+    Ok(native_project(ctx, text, &BTreeMap::new())?.into_projection())
 }
 
-/// Build the native structure of the component tree text.
-fn native_project(ctx: &DecodeContext<'_>, text: &str) -> Result<NativeAssembly, CodecError> {
+/// Build the native structure of the component tree text. `virtual_sections`
+/// maps the key of each virtual component section to its site key, or to
+/// `None` when sections share the key.
+fn native_project(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    virtual_sections: &BTreeMap<String, Option<String>>,
+) -> Result<NativeAssembly, CodecError> {
     let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -316,11 +391,14 @@ fn native_project(ctx: &DecodeContext<'_>, text: &str) -> Result<NativeAssembly,
         ctx,
         files: &files,
         models: &models,
+        virtual_sections,
+        holder_stem: None,
         definitions: BTreeSet::new(),
         occurrences: BTreeSet::new(),
         native: &mut native,
         tally: &mut tally,
     };
+    walk.holder_stem = walk.model_name(root_model);
     let Some(root_definition) = walk.definition(root_model)? else {
         return Ok(NativeAssembly::structure_lost(format!(
             "The active configuration's model `{root_model}` has no valid identity. No \
@@ -429,6 +507,10 @@ struct Walk<'w, 'a> {
     ctx: &'w DecodeContext<'w>,
     files: &'w BTreeMap<&'a str, File<'a>>,
     models: &'w BTreeMap<&'a str, Model<'a>>,
+    virtual_sections: &'w BTreeMap<String, Option<String>>,
+    /// The stem of the document being decoded, which holds the
+    /// `VirtualComp` sections.
+    holder_stem: Option<String>,
     definitions: BTreeSet<&'a str>,
     /// Occurrence identities already placed.
     occurrences: BTreeSet<OccurrenceId>,
@@ -459,6 +541,49 @@ impl<'a> Walk<'_, 'a> {
             Some(doc_type) => doc_type.eq_ignore_ascii_case("ASSEMBLY"),
             None => !data.references.is_empty(),
         }
+    }
+
+    /// The site key of the section that holds a virtual component model's
+    /// document (`sldprt.md` §11.5). The document stem is
+    /// `<name>^<assembly>`: `<assembly>` must be the stem of the document
+    /// being decoded, and the section key is `<name>` in ASCII lower case
+    /// followed by `-sldprt`. Each `^` of the stem is tried.
+    fn virtual_site(&self, model: &str, reference: roxmltree::Node<'_, '_>) -> Option<String> {
+        let holder = self.holder_stem.as_deref()?;
+        let stem = self
+            .model_name(model)
+            .or_else(|| reference.attribute("swName").map(str::to_string))?;
+        stem.match_indices('^').find_map(|(at, _)| {
+            let name = stem.get(..at).filter(|name| !name.is_empty())?;
+            let assembly = stem.get(at + 1..)?;
+            if !assembly.eq_ignore_ascii_case(holder) {
+                return None;
+            }
+            self.virtual_sections
+                .get(&format!("{}-sldprt", name.to_ascii_lowercase()))?
+                .clone()
+        })
+    }
+
+    /// The product definition of a virtual component model whose document
+    /// section has site key `site`, added once.
+    fn virtual_definition(
+        &mut self,
+        model: &'a str,
+        site: &str,
+    ) -> Result<Option<ProductDefinitionId>, CodecError> {
+        let Some(definition) = NativeDefinition::tree_model(model, self.model_name(model))
+            .map(|definition| definition.with_bodies_from(site.to_string()))
+        else {
+            return Ok(None);
+        };
+        let id = definition.id().clone();
+        if self.definitions.insert(model) {
+            self.ctx
+                .charge_entities(1, "project SolidWorks virtual component")?;
+            self.native.push_definition(definition);
+        }
+        Ok(Some(id))
     }
 
     /// The product definition of an assembly model, added once, or `None` for
@@ -535,8 +660,17 @@ impl<'a> Walk<'_, 'a> {
                 };
                 NativePrototype::Local(definition)
             } else if reference.attribute("swIsVirtualComponent") == Some("YES") {
-                self.tally.virtual_components.push(name.clone());
-                NativePrototype::Unresolved
+                let definition = match self.virtual_site(child, reference) {
+                    Some(site) => self.virtual_definition(child, &site)?,
+                    None => None,
+                };
+                match definition {
+                    Some(definition) => NativePrototype::Local(definition),
+                    None => {
+                        self.tally.virtual_components.push(name.clone());
+                        NativePrototype::Unresolved
+                    }
+                }
             } else {
                 let path = self.file_path(child).unwrap_or_default();
                 self.tally.external += 1;

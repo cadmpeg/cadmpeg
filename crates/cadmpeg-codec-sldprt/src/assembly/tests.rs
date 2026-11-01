@@ -308,13 +308,193 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
     assert_eq!(remaining_part_losses(&decoded), 3);
 }
 
+fn body(id: &str) -> cadmpeg_ir::topology::Body {
+    serde_json::from_value(serde_json::json!({ "id": id, "regions": [] })).expect("a body")
+}
+
+#[test]
+fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
+    let sections =
+        std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
+    let projection = super::native_project(&ctx(), &tree(), &sections)
+        .expect("native project")
+        .into_projection();
+    let definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#13")
+        .expect("the virtual component definition identity");
+    assert!(matches!(
+        &occurrence(&projection, "sldprt:assembly:occurrence#11").prototype,
+        PrototypeReference::Local { definition: local } if local == &definition
+    ));
+    assert!(!codes(&projection).contains(
+        &SldprtLossCode::AssemblyVirtualComponentsNotTransferred
+            .kind()
+            .local_code()
+            .to_string()
+    ));
+    let mut decoded = decoded_without_a_model();
+    decoded.ir.model.bodies = vec![
+        body("sldprt:brep:body#3"),
+        body("sldprt:brep:body#3@block@7"),
+        body("sldprt:brep:body#3@block@70"),
+    ];
+    projection.apply(&mut decoded);
+    let owner = decoded
+        .ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|candidate| candidate.id == definition)
+        .expect("the virtual component definition");
+    let bodies = owner
+        .bodies
+        .iter()
+        .map(cadmpeg_ir::ids::BodyId::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(bodies, ["sldprt:brep:body#3@block@7"]);
+}
+
+#[test]
+fn virtual_component_sections_that_share_a_name_leave_it_unresolved() {
+    let sections = std::collections::BTreeMap::from([("box-sldprt".to_string(), None)]);
+    let projection = super::native_project(&ctx(), &tree(), &sections)
+        .expect("native project")
+        .into_projection();
+    assert!(matches!(
+        occurrence(&projection, "sldprt:assembly:occurrence#11").prototype,
+        PrototypeReference::Unresolved {}
+    ));
+    assert!(codes(&projection).contains(
+        &SldprtLossCode::AssemblyVirtualComponentsNotTransferred
+            .kind()
+            .local_code()
+            .to_string()
+    ));
+}
+
+/// A top assembly `Top` that places virtual parts `Box`, `Lid` and `Bad`, and
+/// sub-assembly `Sub`, whose own virtual part is also named `Box`.
+fn virtual_tree() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema" swVersion="17000">
+ <swHeader>
+  <swFile id="3" swDocType="ASSEMBLY" swPath="C:\work\Top.SLDASM"/>
+  <swFile id="6" swDocType="ASSEMBLY" swPath="C:\work\Sub.SLDASM"/>
+  <swFile id="9" swDocType="PART" swPath="Box^Top.sldprt"/>
+  <swFile id="12" swDocType="PART" swPath="Lid^Top.sldprt"/>
+  <swFile id="15" swDocType="PART" swPath="Bad^Top.sldprt"/>
+  <swFile id="18" swDocType="PART" swPath="Box^Sub.sldprt"/>
+ </swHeader>
+ <swModelList>
+  <swModel id="8" swName="Top" swConfigurationName="Default" swFileRef="9"/>
+  <swModel id="11" swName="Top" swConfigurationName="Default" swFileRef="12"/>
+  <swModel id="14" swName="Top" swConfigurationName="Default" swFileRef="15"/>
+  <swModel id="17" swName="Top" swConfigurationName="Default" swFileRef="18"/>
+  <swModel id="5" swName="Top" swConfigurationName="Default" swFileRef="6">
+   <swReference id="19" swName="Box^Sub" swReferenceNumber="1" swModelRef="17" swSuppressed="NO" swHidden="NO" swIsVirtualComponent="YES" swTransform="{IDENTITY}"/>
+  </swModel>
+  <swModel id="2" swName="Top" swConfigurationName="Default" swFileRef="3">
+   <swReference id="4" swName="Sub" swReferenceNumber="1" swModelRef="5" swSuppressed="NO" swHidden="NO" swIsVirtualComponent="NO" swTransform="{IDENTITY}"/>
+   <swReference id="7" swName="Box^Top" swReferenceNumber="1" swModelRef="8" swSuppressed="NO" swHidden="NO" swIsVirtualComponent="YES" swTransform="{IDENTITY}"/>
+   <swReference id="10" swName="Lid^Top" swReferenceNumber="1" swModelRef="11" swSuppressed="NO" swHidden="NO" swIsVirtualComponent="YES" swTransform="{SHIFTED_X}"/>
+   <swReference id="13" swName="Bad^Top" swReferenceNumber="1" swModelRef="14" swSuppressed="NO" swHidden="NO" swIsVirtualComponent="YES" swTransform="{IDENTITY}"/>
+  </swModel>
+ </swModelList>
+ <swConfigurationList>
+  <swConfiguration id="1" swName="Default" swMostRecentConfiguration="YES" swModelRef="2"/>
+ </swConfigurationList>
+</swSolidWorks>"#
+    )
+}
+
+#[test]
+fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
+    use crate::test_support::container::{make_block, outer_header, sldprt_with_body};
+    use cadmpeg_ir::codec::Codec as _;
+    let part = sldprt_with_body(&crate::test_support::parasolid::triangle_body());
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x42,
+        "swXmlContents/COMPINSTANCETREE",
+        virtual_tree().as_bytes(),
+    ));
+    for name in ["Box", "Lid", "Spare"] {
+        source.extend(make_block(
+            0x42,
+            &format!("VirtualComp/{name}-sldprt"),
+            &part,
+        ));
+    }
+    source.extend(make_block(
+        0x42,
+        "VirtualComp/Bad-sldprt",
+        b"not a document",
+    ));
+    let decoded = crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("decode");
+    let model = &decoded.ir().model;
+    let owned = |model_id: &str| {
+        model
+            .product_definitions
+            .iter()
+            .find(|definition| {
+                definition.id.as_str() == format!("sldprt:assembly:model#{model_id}")
+            })
+            .map(|definition| definition.bodies.clone())
+            .unwrap_or_default()
+    };
+    let (box_bodies, lid_bodies) = (owned("8"), owned("11"));
+    assert_eq!(box_bodies.len(), 1);
+    assert_eq!(lid_bodies.len(), 1);
+    assert_ne!(box_bodies, lid_bodies);
+    assert_eq!(model.bodies.len(), 2);
+    let prototype = |id: &str| {
+        model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.as_str() == id)
+            .map(|occurrence| occurrence.prototype.clone())
+            .expect("occurrence")
+    };
+    assert!(matches!(
+        prototype("sldprt:assembly:occurrence#7"),
+        PrototypeReference::Local { .. }
+    ));
+    assert!(matches!(
+        prototype("sldprt:assembly:occurrence#4-19"),
+        PrototypeReference::Unresolved {}
+    ));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == SldprtLossCode::AssemblyVirtualComponentsNotTransferred.kind()
+        && loss.message.contains("`Bad^Top`")));
+}
+
+#[test]
+fn a_virtual_component_section_without_a_body_is_reported() {
+    let sections =
+        std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
+    let projection = super::native_project(&ctx(), &tree(), &sections)
+        .expect("native project")
+        .into_projection();
+    let mut decoded = decoded_without_a_model();
+    projection.apply(&mut decoded);
+    assert!(decoded.body.losses.iter().any(|loss| loss.code
+        == SldprtLossCode::AssemblyVirtualComponentsNotTransferred.kind()
+        && loss.message.contains("give no decoded body")));
+}
+
 fn affine(rows: [[f64; 4]; 3]) -> Transform {
     Transform::affine(rows).expect("finite affine rows")
 }
 
 #[test]
 fn the_component_tree_records_native_structure_and_projects_it() {
-    let native = super::native_project(&ctx(), &tree()).expect("native project");
+    let native = super::native_project(&ctx(), &tree(), &std::collections::BTreeMap::new())
+        .expect("native project");
     let root_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#2")
         .expect("the root definition identity");
     let sub_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#5")

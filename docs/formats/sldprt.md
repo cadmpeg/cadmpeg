@@ -3071,3 +3071,7 @@ The placement is relative to the assembly model that contains the `swReference`.
 ### 11.4 Embedded components
 
 `ImportedComp/<name>` sections, and sections whose names end in `.sldprt` or `.sldasm` (ASCII case-insensitive), are complete embedded documents of the container of §1. An embedded document can be an assembly. The Parasolid streams of an embedded document belong to that document, not to the assembly document.
+
+### 11.5 Virtual components
+
+A virtual component (`swIsVirtualComponent="YES"`) has its document stored in the assembly document that places it. The document of a virtual component model has a file stem `<name>^<assembly>`, where `<assembly>` is the stem of the assembly document that holds the section. Its section is `VirtualComp/<name>-sldprt`, where `<name>` matches without ASCII case. The section holds a complete part document of the container of §1, with the partition of each of that document's configurations. The Parasolid streams of the section belong only to the virtual component's document. A virtual component of a sub-assembly is stored in the sub-assembly's document.
