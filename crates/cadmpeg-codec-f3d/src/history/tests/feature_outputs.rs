@@ -1063,8 +1063,11 @@ fn historical_partial_and_native_edge_selections_test() {
     // 1. HistoricalPartial: 1 proven edge (#10) and 1 unresolved string ("unresolved_edge")
     let mut feature_partial = make_fillet(
         EdgeSelection::historical_partial(
-            cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#0").unwrap(),
-            vec![HistoricalEdgeId::mint("f3d:history-input:edge#10").unwrap()],
+            crate::ids::feature_input_topology_id(
+                &FeatureId::mint("test:model:feature#fillet").unwrap(),
+                0,
+            ),
+            vec![HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:0:10").unwrap()],
             vec!["unresolved_edge".into()],
             "native:ref".into(),
         )
@@ -1072,7 +1075,10 @@ fn historical_partial_and_native_edge_selections_test() {
     );
     feature_partial.native_ref = Some(scope.id.clone());
 
-    let mut state0_topo = AsmHistoricalTopology::default();
+    let mut state0_topo = AsmHistoricalTopology {
+        edges: vec![10],
+        ..Default::default()
+    };
     state0_topo.edge_samples.push(AsmHistoricalEdgeSample {
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
@@ -1846,3 +1852,5 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
     .unwrap();
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
 }
+
+mod edge_midpoints;

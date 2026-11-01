@@ -23,6 +23,7 @@ pub(crate) mod face_admission;
 mod loop_index;
 mod output_chain;
 mod recipe_index;
+mod reference_edge;
 pub(crate) mod selection;
 pub(crate) mod stored_bodies;
 mod topology_cache;
@@ -1010,6 +1011,11 @@ impl<'a> HistoricalBodyIndex<'a> {
     }
 }
 
+struct EdgeMidpointRequest {
+    feature_index: usize,
+    slots: Vec<i64>,
+}
+
 pub(crate) fn bind_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1060,9 +1066,9 @@ pub(crate) fn bind_feature_outputs(
             .filter(|state| output_states.contains(&state.state_id))
             .filter_map(|state| state.transition.as_ref()?.previous_state_id),
     );
-    let mut treatment_states = HashMap::<i64, Vec<i64>>::new();
-    for feature in features.iter() {
-        let Some((state_id, _)) = feature_history_states(feature, scopes) else {
+    let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
+    for (feature_index, feature) in features.iter().enumerate() {
+        let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
             continue;
         };
         let op = match feature.evaluation.definition() {
@@ -1082,7 +1088,9 @@ pub(crate) fn bind_feature_outputs(
                     has_unresolved = true;
                 }
                 for edge_id in edge_ids {
-                    if let Some(slot) = stable_ref(edge_id.as_str()) {
+                    if let Some(slot) =
+                        crate::ids::feature_input_edge_slot(&feature.id, previous_state_id, edge_id)
+                    {
                         if !slots.contains(&slot) {
                             slots.push(slot);
                         }
@@ -1134,10 +1142,39 @@ pub(crate) fn bind_feature_outputs(
             );
         }
         if !slots.is_empty() {
-            treatment_states.insert(state_id, slots);
+            let source = feature.native_ref.as_deref().and_then(|scope| {
+                let (history, _, previous) = if scope_histories.contains_key(scope) {
+                    bound_history_state_pair(
+                        scope,
+                        state_id,
+                        previous_state_id,
+                        scope_histories,
+                        histories,
+                    )
+                } else {
+                    unique_history_state_pair(histories, state_id, previous_state_id)
+                }?;
+                history_state_indexes(histories, history, previous)
+            });
+            if let Some((history_index, _)) = source {
+                treatment_states
+                    .entry((history_index, previous_state_id))
+                    .or_default()
+                    .push(EdgeMidpointRequest {
+                        feature_index,
+                        slots,
+                    });
+            } else {
+                losses.push(
+                    crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(format!(
+                        "feature {} edge selection has no bound input state {previous_state_id}",
+                        feature.id
+                    )),
+                );
+            }
         }
     }
-    let mut state_edge_midpoints = HashMap::<i64, Vec<cadmpeg_ir::math::Point3>>::new();
+    let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
     let mut state_deleted_bodies = HashMap::<i64, Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<i64, BTreeSet<i64>>::new();
     let mut state_body_centers = HashMap::<i64, Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
@@ -1162,35 +1199,6 @@ pub(crate) fn bind_feature_outputs(
         for (position, &index) in order.iter().enumerate() {
             let state = &history.states()[index];
             let walked = walked_deletions.take();
-            if let (Some(explicit_slots), Some(Some(&previous))) = (
-                treatment_states.get(&state.state_id),
-                state.next_ref.map(|node| by_node.get(&node)),
-            ) {
-                if let (Some(_transition), Some(prev_topology)) = (
-                    state.transition.as_ref(),
-                    history.topology(&history.states()[previous]),
-                ) {
-                    let edge_samples = KeyedRows::new(&prev_topology.edge_samples);
-                    let mut midpoints = Vec::new();
-                    for &slot in explicit_slots {
-                        if let Some(sample) = edge_samples.get(slot) {
-                            midpoints.push(sample.interior);
-                        } else {
-                            losses.push(
-                                crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
-                                    format!(
-                                    "historical edge slot {slot} has no carrier sample in state {}",
-                                    history.states()[previous].state_id
-                                ),
-                                ),
-                            );
-                        }
-                    }
-                    if !midpoints.is_empty() {
-                        state_edge_midpoints.insert(state.state_id, midpoints);
-                    }
-                }
-            }
             if let Some(Some(&previous)) = state.next_ref.map(|node| by_node.get(&node)) {
                 if output_states.contains(&state.state_id) {
                     if let (Some(transition), Some(prev_topology)) = (
@@ -1232,6 +1240,32 @@ pub(crate) fn bind_feature_outputs(
             };
             history.advance_topology(index);
             let cur_state_id = history.states()[index].state_id;
+            if let Some(requests) = treatment_states.remove(&(history_index, cur_state_id)) {
+                let topology = history.topology(&history.states()[index]);
+                let samples = topology.map(|topology| KeyedRows::new(&topology.edge_samples));
+                for EdgeMidpointRequest {
+                    feature_index,
+                    slots,
+                } in requests
+                {
+                    let mut midpoints = Vec::new();
+                    for slot in slots {
+                        let sample = topology
+                            .filter(|topology| topology.edges.contains(&slot))
+                            .and_then(|_| samples.as_ref()?.get(slot));
+                        if let Some(sample) = sample {
+                            midpoints.push(sample.interior);
+                        } else {
+                            losses.push(crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
+                                format!("historical edge slot {slot} has no carrier sample in bound input state {cur_state_id}"),
+                            ));
+                        }
+                    }
+                    if !midpoints.is_empty() {
+                        feature_edge_midpoints.insert(feature_index, midpoints);
+                    }
+                }
+            }
             let measured_topology = measured_states
                 .contains(&cur_state_id)
                 .then(|| history.topology(&history.states()[index]))
@@ -1367,6 +1401,16 @@ pub(crate) fn bind_feature_outputs(
                 .or_insert_with(|| Some(outputs));
         }
     }
+    for ((_, state_id), requests) in treatment_states {
+        for EdgeMidpointRequest { feature_index, .. } in requests {
+            losses.push(
+                crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(format!(
+                    "feature {} edge selection has no available input state {state_id}",
+                    features[feature_index].id
+                )),
+            );
+        }
+    }
     let mut active = HashMap::new();
     let stored_active = stored_bodies::ActiveBodies::new(active_bodies);
     for body in active_bodies {
@@ -1453,7 +1497,7 @@ pub(crate) fn bind_feature_outputs(
             }
         );
         let is_split_body = matches!(op_ref, FeatureOperation::SplitBody { .. });
-        if let Some(midpoints) = state_edge_midpoints.get(&state_id) {
+        if let Some(midpoints) = feature_edge_midpoints.get(&idx) {
             let formatted = midpoints
                 .iter()
                 .map(|p| format!("{},{},{}", p.x, p.y, p.z))
@@ -7536,6 +7580,51 @@ fn bind_historical_edge_operand<'a>(
         &operand.recipe_selectors,
         &operand.preceding_boundary_edge_slots,
     );
+    if operand.resolved_edge_slot.is_none()
+        && operand.preceding_candidate_faces.is_empty()
+        && matches!(
+            crate::design::design_feature_family(&scope.kind()),
+            Some(
+                crate::design::DesignFeatureFamily::Fillet
+                    | crate::design::DesignFeatureFamily::Chamfer
+            )
+        )
+    {
+        let preceding_edges = selection::FamilySlots::new(&topology.edges);
+        operand.resolved_edge_slot = operand.recipe_structure.as_ref().and_then(|structure| {
+            reference_edge::primary_reference_common_edge(structure, |ordinal| {
+                let context = operand.recipe_reference_contexts.get(ordinal)?;
+                if usize::try_from(context.reference_ordinal).ok()? != ordinal {
+                    return None;
+                }
+                let [face] = context.preceding_faces.as_slice() else {
+                    return None;
+                };
+                let face_slot = stable_ref(face.as_str())?;
+                let [boundary_id] = context.preceding_face_boundary_ids.as_slice() else {
+                    return None;
+                };
+                let boundary = face_boundaries.records.get(boundary_id)?;
+                if boundary.face_slot != face_slot || boundary.loops.is_empty() {
+                    return None;
+                }
+                let mut edges = Vec::new();
+                for face_loop in &boundary.loops {
+                    let before = edges.len();
+                    for coedge in face_loop.boundary.coedges() {
+                        if !preceding_edges.contains(coedge.edge_slot) {
+                            return None;
+                        }
+                        edges.push(coedge.edge_slot);
+                    }
+                    if edges.len() == before {
+                        return None;
+                    }
+                }
+                Some((face_slot, edges))
+            })
+        });
+    }
     Ok(())
 }
 
