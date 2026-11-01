@@ -35,7 +35,7 @@ def main() -> int:
     complete = False
     try:
         run(['sccache', '--start-server'], env)
-        run(gate + ['--no-run'], env)
+        run([argument for argument in gate if argument != '--no-fail-fast'] + ['--no-run'], env)
         run(['sccache', '--stop-server'], env)
         shutil.rmtree(env['SCCACHE_DIR'])
         for iteration in range(5):
