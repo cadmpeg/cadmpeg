@@ -24,6 +24,7 @@ pub mod tree;
 mod unique;
 mod utf16;
 mod view;
+mod whole_input;
 pub mod zstd;
 
 #[cfg(test)]
@@ -43,3 +44,4 @@ pub use unique::unique_index;
 pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };
+pub use whole_input::WholeInput;
