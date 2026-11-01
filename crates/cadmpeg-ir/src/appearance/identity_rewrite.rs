@@ -29,6 +29,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
             Self::Curve(id) => visitor(id.as_str()),
             Self::Point(id) => visitor(id.as_str()),
             Self::Tessellation(id) | Self::Record { id, .. } => visitor(id),
+            Self::TriangleGroup { .. } => Ok(()),
             Self::Source { source_id } => source_id.visit_identity_references(ctx, visitor),
         }
     }
@@ -48,6 +49,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
             Self::Curve(id) => Self::Curve(id.rewrite_identities(ctx, map)?),
             Self::Point(id) => Self::Point(id.rewrite_identities(ctx, map)?),
             Self::Tessellation(id) => Self::Tessellation(map.identity(&id)?),
+            Self::TriangleGroup { tessellation, group } => Self::TriangleGroup {
+                tessellation: tessellation.rewrite_identities(ctx, map)?,
+                group: group.rewrite_identities(ctx, map)?,
+            },
             Self::Source { source_id } => Self::Source {
                 source_id: source_id.rewrite_identities(ctx, map)?,
             },
@@ -59,5 +64,5 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
     }
 }
 rewrite_record!(BumpMap, []; {normal_map, depth, normal_scale});
-rewrite_record!(TextureMap2d, []; {map_channel, uvw_source, u_offset, v_offset, u_scale, v_scale, rotation, repeat_u, repeat_v, real_world_offset_x, real_world_offset_y, real_world_scale_x, real_world_scale_y});
+rewrite_record!(TextureMap2d, []; {map_channel, uvw_source, u_offset, v_offset, u_scale, v_scale, rotation, repeat_u, repeat_v, real_world_offset_x, real_world_offset_y, real_world_scale_x, real_world_scale_y, coordinates});
 rewrite_record!(TextureRef, []; {asset_guid, slot, schema, paths, urn, mapping, bump});

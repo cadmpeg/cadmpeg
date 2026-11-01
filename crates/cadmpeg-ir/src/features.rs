@@ -2677,10 +2677,31 @@ pub enum FeatureOperation {
         /// Ordered control cages committed by the session.
         cages: Vec<SubdId>,
     },
-    /// Non-geometric thread annotation attached to a cylindrical face.
+    /// Thread attached to a cylindrical face.
+    ///
+    /// The source may also model the helical form in the body geometry;
+    /// `modeled` states whether it does, and absent means unproven. A field
+    /// that the source encoding does not prove stays absent. F3D threads set
+    /// `standard`, `designation` and `pitch` and stay definition-incomplete
+    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
+    /// set the four new fields.
     CosmeticThread {
-        /// Cylindrical face carrying the annotation.
+        /// Cylindrical face carrying the thread.
         face: FaceSelection,
+        /// Thread standard family or profile name, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_standard"
+        )]
+        standard: Option<NonBlankString>,
+        /// Size designation within the standard, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_designation"
+        )]
+        designation: Option<NonBlankString>,
         /// Nominal thread diameter, when resolved.
         #[serde(
             default,
@@ -2688,7 +2709,21 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_diameter"
         )]
         diameter: Option<Dimension<PositiveLength>>,
-        /// Axial extent of the annotation, when resolved.
+        /// Thread pitch along the axis, when resolved.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_pitch"
+        )]
+        pitch: Option<Dimension<PositiveLength>>,
+        /// Whether the body geometry already contains the helical form.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_modeled"
+        )]
+        modeled: Option<bool>,
+        /// Axial extent of the thread, when resolved.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -7169,8 +7204,11 @@ pub enum ExtrudeExtent {
     },
 }
 
-/// Revolution sidedness around the profile plane. Revolution sides carry no
-/// side-local modifiers, only their termination laws.
+/// Revolution sides use the right-hand rule about the stated axis direction.
+/// The source profile is at zero radians. One-sided travel runs from zero to
+/// the positive angle. Two-sided travel runs from zero to the first angle and
+/// from zero to the negative second angle. Symmetric travel runs from minus
+/// half the total angle to plus half the total angle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -7193,6 +7231,22 @@ pub enum RevolveExtent {
         /// The mirrored side's termination.
         termination: AngularTermination,
     },
+}
+
+impl RevolveExtent {
+    /// Whether each fixed angle and their combined travel fit within one turn.
+    #[must_use]
+    pub fn angles_within_turn(&self) -> bool {
+        let angle = |termination: &AngularTermination| match termination {
+            AngularTermination::Angle { angle } => angle.literal().map_or(0.0, |angle| angle.get()),
+            _ => 0.0,
+        };
+        let total = match self {
+            Self::OneSided { termination } | Self::Symmetric { termination } => angle(termination),
+            Self::TwoSided { first, second } => angle(first) + angle(second),
+        };
+        total <= std::f64::consts::TAU
+    }
 }
 
 /// Persisted source of a resolved linear-extrusion direction.
@@ -9152,6 +9206,14 @@ cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active
 cadmpeg_core::named_optional_field!(deserialize_diameter<Q>, Q, "diameter");
 cadmpeg_core::named_optional_field!(deserialize_extent, CosmeticThreadExtent, "extent");
 cadmpeg_core::named_optional_field!(deserialize_opacity<Q>, Q, "opacity");
+cadmpeg_core::named_optional_field!(deserialize_thread_standard, NonBlankString, "standard");
+cadmpeg_core::named_optional_field!(
+    deserialize_thread_designation,
+    NonBlankString,
+    "designation"
+);
+cadmpeg_core::named_optional_field!(deserialize_thread_pitch<Q>, Q, "pitch");
+cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(
     deserialize_construction,

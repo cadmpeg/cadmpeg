@@ -16,6 +16,7 @@ use cadmpeg_ir::math::Point3;
 
 use crate::area::LoopCut;
 use crate::boundary::ResolvedLoop;
+use crate::canonical::column::Column;
 use crate::canonical::surface::{Chart, Partials, PlaneChart};
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
@@ -165,15 +166,17 @@ fn density(partials: &Partials, origin: Point3) -> [f64; FLUX] {
     ]
 }
 
-/// The magnitude scale `scale^d` of each component.
-fn scales(scale: f64) -> [f64; TRACKED] {
-    let powers = [3, 4, 4, 4, 2, 2, 2, 5, 5, 5, 5, 5, 5, 3, 3, 3];
-    std::array::from_fn(|k| scale.powi(powers[k % FLUX]))
+/// The magnitude scale of each component: an area `scale²` times the
+/// component's power of the distance from the reference point, at most
+/// `reach`, and at least `scale`.
+fn scales(scale: f64, reach: f64) -> [f64; TRACKED] {
+    let distance_powers = [1, 2, 2, 2, 0, 0, 0, 3, 3, 3, 3, 3, 3, 1, 1, 1];
+    let distance = reach.max(scale);
+    std::array::from_fn(|k| scale * scale * distance.powi(distance_powers[k % FLUX]))
 }
 
 /// The components a measurement pass targets. The second moments ride
-/// along: on a face of size `s` at a distance `|d| ≫ s` from `P_ref` their
-/// round-off, about `ε |d|³ s²`, exceeds any goal relative to `s^5`.
+/// along without a goal of their own.
 pub(crate) const MEASURE_COMPONENTS: [bool; FLUX] = {
     let mut active = [true; FLUX];
     let mut k = SECOND_MOMENTS;
@@ -225,6 +228,8 @@ pub(crate) struct FluxFrame<'a, 'ir> {
     pub(crate) origin: Point3,
     /// The length the quadrature targets are relative to.
     pub(crate) scale: f64,
+    /// A bound on the distance of the face's points from `origin`.
+    pub(crate) reach: f64,
     /// The components whose accuracy the quadrature targets; the others
     /// ride along on the same panels.
     pub(crate) active: [bool; FLUX],
@@ -258,14 +263,15 @@ impl FluxFrame<'_, '_> {
         u: f64,
         [from, to]: [f64; 2],
     ) -> Measure<([f64; FLUX], [f64; FLUX])> {
+        let column = Column::new(eval, self.chart, u)?;
         let mut charge = |units| eval.charge(units);
-        let mut column = |s: f64| -> Measure<[f64; FLUX]> {
-            Ok(density(&self.chart.partials(eval, u, s)?, self.origin))
+        let mut density_at = |s: f64| -> Measure<[f64; FLUX]> {
+            Ok(density(&column.partials(eval, s)?, self.origin))
         };
-        let scale = scales(self.scale);
+        let scale = scales(self.scale, self.reach);
         let integral = integrate(
             &mut charge,
-            &mut column,
+            &mut density_at,
             from,
             to,
             &self.v_breaks(),
@@ -308,7 +314,7 @@ impl FluxFrame<'_, '_> {
                 piece.t0,
                 piece.t1,
                 &LoopCut::breaks(cut.as_ref(), position, piece.breaks()),
-                Target::outer(scales(self.scale)).with_active(self.tracked()),
+                Target::outer(scales(self.scale, self.reach)).with_active(self.tracked()),
             )?;
             if !integral.converged {
                 return Err(not_converged());
@@ -373,7 +379,7 @@ impl FluxFrame<'_, '_> {
             u0,
             u1,
             u_breaks,
-            Target::outer(scales(self.scale)).with_active(self.tracked()),
+            Target::outer(scales(self.scale, self.reach)).with_active(self.tracked()),
         )?;
         if !integral.converged {
             return Err(not_converged());
@@ -426,5 +432,31 @@ impl FluxFrame<'_, '_> {
             }
         }
         Ok(flux)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scales, AREA_MOMENTS, CLOSURE, MOMENTS, SECOND_MOMENTS, VOLUME};
+
+    #[test]
+    fn a_far_face_is_held_to_its_moments_at_its_distance() {
+        // A face of size 0.2 at distance 10: each scale is area × distance^p;
+        // at distance 0, size^(p + 2).
+        let (size, distance) = (0.2_f64, 10.0_f64);
+        let area = size * size;
+        let far = scales(size, distance);
+        let near = scales(size, 0.0);
+        let expected = [
+            (VOLUME, area * distance, size.powi(3)),
+            (MOMENTS, area * distance.powi(2), size.powi(4)),
+            (CLOSURE, area, area),
+            (SECOND_MOMENTS, area * distance.powi(3), size.powi(5)),
+            (AREA_MOMENTS, area * distance, size.powi(3)),
+        ];
+        for (k, at_distance, at_origin) in expected {
+            assert!((far[k] - at_distance).abs() <= 1.0e-12 * at_distance, "{k}");
+            assert!((near[k] - at_origin).abs() <= 1.0e-12 * at_origin, "{k}");
+        }
     }
 }

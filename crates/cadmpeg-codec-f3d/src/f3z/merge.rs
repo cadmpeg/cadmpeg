@@ -11,7 +11,8 @@ use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use super::archive::{ArchiveSession, ClassifiedMember};
+use super::archive::ClassifiedMember;
+use super::{F3zDecodedMember, F3zSession};
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 use crate::records::xref::XrefReference;
@@ -20,33 +21,36 @@ use crate::xref::{self, XrefTable};
 /// Merges the root document's recursively reachable members in archive scope.
 pub(super) fn merge_archive(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-    archive: &ArchiveSession<'_>,
-    model_root: String,
-    root: &mut crate::decode::AuthoredDecoded,
+    session: &F3zSession<'_>,
+    decoded: &mut std::collections::BTreeMap<String, F3zDecodedMember>,
+    operation_poses: super::session::OperationPoses,
+    ir: &mut cadmpeg_ir::CadIr,
+    report: &mut cadmpeg_ir::codec::DecodeBody,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
-    let table = xref_table_from_ir(ctx, &root.ir)?;
+    let scan = &session.scan;
+    let table = xref_table_from_ir(ctx, ir)?;
 
-    let stack = vec![model_root];
-    let mut session = MergeSession {
+    let stack = vec![session.model_root.clone()];
+    let mut merge_session = MergeSession {
         ctx,
         scan,
-        archive,
+        archive: &session.archive,
+        session,
+        decoded,
         stack,
         untyped: cadmpeg_ir::ArenaClasses::default(),
         members: std::collections::BTreeMap::new(),
-        operation_poses: std::mem::take(&mut root.operation_poses),
+        failed: std::collections::BTreeMap::new(),
+        operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
     };
-    let merged = session.merge(
-        &mut root.ir,
-        &mut root.body,
-        &mut root.source_fidelity,
-        &table,
-    )?;
-    if !session.untyped.is_empty() {
-        root.source_fidelity
-            .mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, session.untyped)?;
+    let merged = merge_session.merge(ir, report, fidelity, &table)?;
+    if !merge_session.untyped.is_empty() {
+        fidelity.mark_untyped(
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+            merge_session.untyped,
+        )?;
     }
     Ok(merged)
 }
@@ -176,10 +180,15 @@ struct MemberDefinition {
 struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
-    archive: &'r ArchiveSession<'a>,
+    archive: &'r super::archive::ArchiveSession,
+    session: &'r F3zSession<'a>,
+    decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     untyped: cadmpeg_ir::document::ArenaClasses,
     members: std::collections::BTreeMap<String, MemberDefinition>,
+    /// Members whose decode failed, by path, with the failure text. A failed
+    /// member is decoded once; every later reference reports the same loss.
+    failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 }
@@ -202,6 +211,8 @@ impl MergeSession<'_, '_> {
             placements,
             &mut member_roots,
         )?;
+        self.members.clear();
+        self.decoded.clear();
         rebind_joint_descent(
             self.ctx,
             parent_ir,
@@ -270,6 +281,13 @@ impl MergeSession<'_, '_> {
             }
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
+            if let Some(error) = self.failed.get(reference.relative_path.as_str()) {
+                super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
+                    reference.relative_path
+                ));
+                continue;
+            }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
                 self.ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(
@@ -287,7 +305,7 @@ impl MergeSession<'_, '_> {
             } else {
                 let Some(member) = self.archive.members.get(reference.relative_path.as_str())
                 else {
-                    if self.scan.entry_view(&reference.relative_path).is_some() {
+                    if self.scan.has_entry(&reference.relative_path) {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
@@ -300,23 +318,23 @@ impl MergeSession<'_, '_> {
                     }
                     continue;
                 };
-                let member_scan = match member {
-                    ClassifiedMember::Scanned(member_scan) => member_scan,
+                match member {
+                    ClassifiedMember::Scanned { .. } => {}
                     ClassifiedMember::Unreadable(_) => continue,
-                };
-                let component = match crate::decode::decode_archive_member(
+                }
+                let component = match self.session.take_member(
                     self.ctx,
-                    member_scan,
-                    &self.archive.layers,
+                    reference.relative_path.as_str(),
+                    self.decoded,
                 ) {
-                    Ok(component) => {
-                        for (key, pose) in &component.operation_poses {
+                    Ok((component, component_poses)) => {
+                        for (key, pose) in &component_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {
                                 CodecError::malformed("invalid F3Z operation-pose identity")
                             })?;
                             self.operation_poses.insert(key, pose.clone());
                         }
-                        component.into_decoded()
+                        component
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
@@ -328,6 +346,10 @@ impl MergeSession<'_, '_> {
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
                         ));
+                        self.failed.insert(
+                            reference.relative_path.as_str().to_owned(),
+                            error.to_string(),
+                        );
                         continue;
                     }
                 };

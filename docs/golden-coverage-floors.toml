@@ -24,6 +24,7 @@ rhino = 188
 sat = 8
 sldprt = 108
 step = 42
+usd = 156
 
 [notes]
 catia = "26 frozen fixture files + 27 inspect + 27 decode snapshots. The external_preview input is code-built and contributes inspect/decode goldens without another frozen fixture file."
@@ -34,3 +35,4 @@ inventor = "thinnest code-built input net; 3 inspect + 3 decode snapshots, inclu
 sat = "eight snapshots from code-built inputs (4 inspect + 4 decode), including attributed_sphere; no frozen fixture files; Harness::check_inputs covers both branches."
 pvz = "twenty-six snapshots from code-built packages (13 inspect + 13 decode): the assembly under each of the five binary structure signatures, the XML structure form, a structure member without its geometry members, closed cubes with f64 and f32 exact streams beside a member whose exact stream does not decode, and closed solids with a seamed cylinder face, a cone face with a singular apex, a rational B-spline face, a face with only secondary pcurves, and faces with inner loops; no authorized .pvz fixture exists; Harness::check_inputs (code-built packages; inspect+decode branches)"
 nx = "flat golden directory (112 JSON snapshots at tests/golden root); Harness::check_inputs with Branch kind empty. In-tree arena coverage floors and catalogue-count pins live in crates/cadmpeg-codec-nx/src/golden_tests.rs; they check which native arenas the fixtures populate, which this TOML cannot. Fixtures call zlib_compress at test time, so snapshots pin compressor output. Regenerate with UPDATE_GOLDEN=1 cargo test-fast golden. Do not use cargo test -p cadmpeg-codec-nx: an isolated package build can resolve a different flate2 backend (miniz_oxide vs zlib-rs via feature unification) and diverge zlib bytes."
+usd = "156 files: 37 fixtures (13 USDA layers: 10 hand-written from the specification, 2 written by the OpenUSD Python API, 1 with an undeclared header version; 23 USDC layers written by usdcat from those layers, one cube at every crate version; 1 USDZ package) and 2 code-built USDC bootstrap headers, each with inspect, decode, and encode snapshots (117), plus 2 encode snapshots of IR example documents; Harness::check_inputs over the fixture inputs and the code-built inputs"

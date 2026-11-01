@@ -1,0 +1,140 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 36511,
+      "payload_sha256": "5cce85e41d04da598f144cb9639cfab4f0f08ed7b7957fe9c702ce91f146bd2d"
+    },
+    {
+      "name": "Body.Shape.brp",
+      "payload_len": 3471,
+      "payload_sha256": "6934063ad65a1d9e0eab1c584391fe29da06256af41cc2f78b3cf62ddc1fb2de"
+    },
+    {
+      "name": "Body.Shape.Map.txt",
+      "payload_len": 264,
+      "payload_sha256": "f7bc98f5cc8e0aee441779ff28f620edb2b25ae7568150b78541ecf5beb84760"
+    },
+    {
+      "name": "DatumPlane.Shape.brp",
+      "payload_len": 663,
+      "payload_sha256": "663d2e0769d48748dcde39918da05fc11e8570fccb2f0756aa7c83011043857e"
+    },
+    {
+      "name": "Sketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Sketch.Shape.brp",
+      "payload_len": 489,
+      "payload_sha256": "e53d16140c11996ef9221f476f26792822ba226c1f89757207f713eddccca901"
+    },
+    {
+      "name": "Sketch.Shape.Map.txt",
+      "payload_len": 133,
+      "payload_sha256": "406e44cc60ef5442ba90aa1b30d499f387cdaa4991035651a8e0e6c66ed78426"
+    },
+    {
+      "name": "AdditiveCylinder.AddSubShape.brp",
+      "payload_len": 2423,
+      "payload_sha256": "daa6ccb49cbb8d6285679011a35866c263c41640ba663a6883556c0962a76c5f"
+    },
+    {
+      "name": "AdditiveCylinder.Shape.brp",
+      "payload_len": 2645,
+      "payload_sha256": "b82b7083cc707a42e529ca9b5dff4a99dd62e53a9b60eeb032ab69a0d1d735ed"
+    },
+    {
+      "name": "AdditiveCylinder.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 5,
+        "coedges": 18,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 10,
+        "drawings": 0,
+        "edges": 9,
+        "faces": 10,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 4,
+        "loops": 9,
+        "mass_properties": 0,
+        "native.fcstd.applications": 11,
+        "native.fcstd.attachments": 10,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 5,
+        "native.fcstd.design_census": 4,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 2,
+        "native.fcstd.entries": 10,
+        "native.fcstd.extensions": 7,
+        "native.fcstd.logical_ledger": 290,
+        "native.fcstd.objects": 11,
+        "native.fcstd.physical_ledger": 71,
+        "native.fcstd.properties": 141,
+        "native.fcstd.shape_payloads": 7,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 5,
+        "pcurves": 14,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 7,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 5,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 5,
+        "sketch_constraints": 2,
+        "sketch_entities": 2,
+        "sketches": 1,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 11,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 7,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

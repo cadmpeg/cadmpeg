@@ -64,6 +64,7 @@ pub mod ids;
 pub mod index;
 pub mod math;
 pub mod native;
+pub mod physics;
 pub mod pmi;
 pub mod presentation;
 pub mod products;

@@ -74,6 +74,20 @@ pub(crate) struct DesignMoveOperation {
     pub(crate) form_offset: Option<u64>,
 }
 
+impl DesignMoveOperation {
+    pub(crate) fn preserves_orientation(&self) -> bool {
+        use cadmpeg_ir::math::Vector3;
+        let column = |index: usize| {
+            Vector3::new(
+                self.transform[0][index],
+                self.transform[1][index],
+                self.transform[2][index],
+            )
+        };
+        column(0).cross(column(1)).dot(column(2)) > 0.0
+    }
+}
+
 /// Source Move transform-form code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]

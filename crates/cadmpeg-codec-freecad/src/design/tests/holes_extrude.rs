@@ -3,7 +3,7 @@
 
 use crate::design::tests::{definition, extrusion_definition};
 use crate::test_support::test_archive::{archive, assert_valid_document};
-use crate::FcstdCodec;
+use crate::{test_support::non_placement_losses, FcstdCodec};
 use cadmpeg_ir::{
     features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
@@ -1432,7 +1432,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             ..
         }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_length_2).expect("resolved dimension").get() == 2.0
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]

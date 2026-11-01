@@ -114,6 +114,7 @@ pub(crate) fn design_feature_family(
         | Kind::BoxPrimitive
         | Kind::CylinderPrimitive
         | Kind::Emboss
+        | Kind::Align
         | Kind::Native(_)
         | Kind::Canvas
         | Kind::Decal

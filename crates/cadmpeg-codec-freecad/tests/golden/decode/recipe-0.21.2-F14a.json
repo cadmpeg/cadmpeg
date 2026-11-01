@@ -1,0 +1,5467 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
+          "kind": "solid",
+          "regions": [
+            "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34"
+          ],
+          "visible": false
+        },
+        {
+          "id": "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1",
+          "kind": "solid",
+          "regions": [
+            "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1"
+          ],
+          "visible": false
+        },
+        {
+          "id": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
+          "kind": "solid",
+          "regions": [
+            "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:8",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:7",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:13",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:15",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:17",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:18",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:22",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:13",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:21",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:25",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:17",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:26",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:7",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:21",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:18",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:25",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:8",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:26",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:15",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:22",
+          "id": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:8%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:7%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:5%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:3%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:13%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:15%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:17%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:18%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:3%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:22%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:13%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:21%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:25%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:17%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:26%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A2%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:7%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                10.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:21%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:18%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:25%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:8%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:5%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:26%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:15%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                30.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:22%40location1",
+          "id": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                20.0
+              ],
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A3%3A1"
+            }
+          ],
+          "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:5%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:17%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:18%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:17%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:18%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A1",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:5%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3",
+          "sense": "reversed"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A2",
+          "sense": "forward"
+        },
+        {
+          "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location1",
+          "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1",
+          "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2",
+          "sense": "forward"
+        }
+      ],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:10",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:8",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:9",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:10",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:11",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:12",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:8",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:9",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:10",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:11",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:12",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 30.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:8",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#Body:Shape:PartShape.brp:9",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:5",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:13",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:6",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:15",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:7",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:17",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:8",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:18",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:9",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:21",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:10",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:22",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:25",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:12",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:26",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:2",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:7",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:AddSubShape:PartShape1.brp:4",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:8",
+          "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:5",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:13%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:6",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:15%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:7",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:17%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:8",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:18%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:9",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:21%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:10",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:22%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:25%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:12",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:26%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:3%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:2",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:5%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:7%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#AdditiveBox:Shape:PartShape2.brp:4",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:8%40location1",
+          "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:5",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:6",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:7",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:17%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:8",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:18%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:9",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:10",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:12",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:2",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:5%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:PartShape.brp:4",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
+          "id": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location1",
+          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
+          "tolerance": 1e-7
+        }
+      ],
+      "faces": [
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:10",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:20",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:24",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:28",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:30",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:32",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:10%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:20%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:6",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:24%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:28%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:30%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:5",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:32%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:3",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:20%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:3",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:5",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location1",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1"
+            ]
+          },
+          "sense": "forward",
+          "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:6",
+          "tolerance": 1e-7
+        }
+      ],
+      "features": [
+        {
+          "definition": {
+            "definition": "post_process",
+            "fuzzy_tolerance": {
+              "kind": "kernel_default"
+            },
+            "operation": {
+              "definition": "primitive",
+              "op": "join",
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ]
+              ],
+              "solid": {
+                "height": 10.0,
+                "kind": "box",
+                "length": 20.0,
+                "width": 30.0
+              }
+            },
+            "refine": false
+          },
+          "dependencies": [
+            "fcstd:design:feature#Body"
+          ],
+          "id": "fcstd:design:feature#AdditiveBox",
+          "name": "AdditiveBox",
+          "native_ref": "fcstd:native:object#AdditiveBox",
+          "ordinal": 8,
+          "outputs": [
+            "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
+            "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
+          ],
+          "source_properties": {
+            "MapMode": "0",
+            "Support": "<Property name=\"Support\" type=\"App::PropertyLinkSubList\">\n                    <LinkSubList count=\"0\">\n                    </LinkSubList>\n                </Property>",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::AdditiveBox",
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "children": {
+              "active_child": "fcstd:design:feature#AdditiveBox",
+              "children": [
+                "fcstd:design:feature#AdditiveBox"
+              ]
+            },
+            "definition": "tree_node",
+            "role": "solid_bodies"
+          },
+          "id": "fcstd:design:feature#Body",
+          "name": "Body",
+          "native_ref": "fcstd:native:object#Body",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
+          ],
+          "source_properties": {
+            "Tip": "fcstd:native:object#AdditiveBox",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Body",
+          "suppressed": null
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:10",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:20",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:24",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:28",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:30",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:32",
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:10%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:20%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:24%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:28%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:30%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A1",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A4",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A3",
+              "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:32%40location1",
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:20%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:20%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A1",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A4",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A3",
+              "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location1%3A1%3A2"
+            ],
+            "kind": "ring"
+          },
+          "face": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location1",
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [
+        {
+          "expression": "20.0000000000000000",
+          "id": "fcstd:design:parameter#AdditiveBox:Length",
+          "name": "Length",
+          "native_ref": "fcstd:native:property#AdditiveBox:Length",
+          "ordinal": 8,
+          "owner": "fcstd:design:feature#AdditiveBox",
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        }
+      ],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 20.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 20.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 20.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 20.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -30.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A2%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A3%3A1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                30.0
+              ]
+            },
+            "source": "general"
+          }
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location4",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:11%40location4",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:12%40location4",
+          "position": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:14%40location4",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:16%40location4",
+          "position": {
+            "x": 20.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:2%40location4",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:4%40location4",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 10.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "id": "fcstd:model:point#Body:Shape:PartShape.brp:6%40location4",
+          "position": {
+            "x": 0.0,
+            "y": 30.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
+          "id": "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34",
+          "shells": [
+            "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1",
+          "id": "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1",
+          "shells": [
+            "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
+          "id": "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1",
+          "shells": [
+            "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:32",
+              "kind": "face"
+            }
+          ],
+          "region": "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34"
+        },
+        {
+          "id": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
+          "members": [
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:10%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:20%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:24%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:28%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:30%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:32%40location1",
+              "kind": "face"
+            }
+          ],
+          "region": "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1"
+        },
+        {
+          "id": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
+          "members": [
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:20%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location1",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location1",
+              "kind": "face"
+            }
+          ],
+          "region": "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -0.0
+            },
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#AdditiveBox"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#Body"
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:11%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:12%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:14%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:16%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:2%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:4%40location4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
+          "point": "fcstd:model:point#Body:Shape:PartShape.brp:6%40location4",
+          "tolerance": 1e-7
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 0,
+          "applications": 9,
+          "attachments": 8,
+          "byte_coverage": 1,
+          "carrier_census": 3,
+          "design_census": 2,
+          "document": 1,
+          "drawings": 0,
+          "element_maps": 0,
+          "entries": 4,
+          "extensions": 3,
+          "gui_documents": 0,
+          "gui_properties": 0,
+          "gui_view_providers": 0,
+          "joints": 0,
+          "logical_ledger": 186,
+          "objects": 9,
+          "physical_ledger": 29,
+          "product_nodes": 0,
+          "properties": 91,
+          "shape_payloads": 3,
+          "string_tables": 0
+        }
+      },
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "applications": "902cfe8714fd80db4bed0bf5e9e788ad129d457a5237d8470d9806391b5884a8",
+          "byte_coverage": "0fe056fe5f453dd441b17df732e8dcf534933e845ae5bba646ef4aad4bfa8d27",
+          "carrier_census": "fe4f9c79bd7923900478bc231a58f64616ab4ec3e61a249712c9f5b887d5d186",
+          "design_census": "31fc41df69c2df5c5503bc192db1464804fddb50bbaaa9cd92253f091f176da0",
+          "document": "109068a11cb4418acaf363ac1c5ed8a7aa9a2e5ff06e9153c38e9a59fadf952e",
+          "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "53df8fa77530769ac8c0955ffb743ff6f7c0cbbb84d6437556335d1d984c5aea",
+          "extensions": "e25e59dd2b1b0189a606b5dd33e0200938203075d98bd8005b2ee31574c2f5b5",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "logical_ledger": "e610987cc0c076d0a046ccce6cd499f79b57605a85e32d19b908519fba4bcb59",
+          "objects": "efdcb876fe45ffc2f0082c39c2ef6fcdb5b0480833a4044a3204439a14f455c5",
+          "physical_ledger": "561e9fc1129f56d7889a75fc04c49c5a8113033652b56561b193566a2c9d73bc",
+          "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "properties": "f1c68320770b0ecb934c2a6158ceff3e8610b40794ed6818fda7d48cd692fc1b",
+          "shape_payloads": "d236a6e7dc43f7c8489f303738167e68fd0e7c4941254098e465becfa90b5f20",
+          "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "__arena_values": {
+        "fcstd": {
+          "attachments": [
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#AdditiveBox",
+              "map_mode": "0",
+              "object": "fcstd:native:object#AdditiveBox",
+              "offset": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Body",
+              "map_mode": null,
+              "object": "fcstd:native:object#Body",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XY_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XY_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#X_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#X_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#YZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#YZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Y_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Y_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Z_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Z_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            }
+          ]
+        }
+      },
+      "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+    },
+    "source": {
+      "attributes": {
+        "application_domains": "App,PartDesign",
+        "archive_entry_count": "4",
+        "document_kind": "part-design",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "document_root": "Document",
+        "object_count": "9",
+        "physical_archive_bytes": "5166",
+        "physical_ledger_spans": "29",
+        "program_version": "0.21R33771 (Git)"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "program_version": "0.21R33771 (Git)",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "0.21R33771 (Git)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4"
+        }
+      }
+    },
+    "losses": [],
+    "notes": [
+      "SchemaVersion=4",
+      "FileVersion=1",
+      "document root=Document",
+      "document kind=part-design",
+      "object count=9",
+      "physical ledger spans=29 coverage=exact",
+      "ProgramVersion=0.21R33771 (Git)"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

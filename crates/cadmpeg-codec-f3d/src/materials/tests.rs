@@ -1802,3 +1802,72 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
 mod assignment_losses;
 
 mod appearance_assignments;
+
+#[test]
+fn generic_transparency_sets_opacity_without_changing_rgb() {
+    use cadmpeg_protein::property::{DecodedProperty, PropertyContent, PropertyValue};
+    for transparency in [0.0, 0.25, 0.75, 1.0] {
+        let record = appearance_record(
+            "GenericSchema",
+            std::collections::BTreeMap::from([
+                color_property("generic_diffuse", [0.125, 0.25, 0.375, 1.0]),
+                (
+                    "generic_transparency".to_owned(),
+                    DecodedProperty {
+                        value_offset: 0,
+                        content: PropertyContent::Value {
+                            value: PropertyValue::Float(
+                                cadmpeg_ir::scalar::FiniteReal::new(transparency).unwrap(),
+                            ),
+                            connections: Vec::new(),
+                        },
+                    },
+                ),
+            ]),
+        );
+        let (appearances, _) = schema_appearances(&[record]).unwrap();
+        let color = appearances[0].base_color.unwrap();
+        assert_eq!([color.r(), color.g(), color.b()], [0.125, 0.25, 0.375]);
+        assert_eq!(f64::from(color.a()), 1.0 - transparency);
+    }
+}
+
+#[test]
+fn generic_transparency_refuses_values_outside_the_unit_interval() {
+    use cadmpeg_protein::property::{DecodedProperty, PropertyContent, PropertyValue};
+    for transparency in [-0.25, 1.25] {
+        let record = appearance_record(
+            "GenericSchema",
+            std::collections::BTreeMap::from([
+                color_property("generic_diffuse", [0.125, 0.25, 0.375, 1.0]),
+                (
+                    "generic_transparency".to_owned(),
+                    DecodedProperty {
+                        value_offset: 0,
+                        content: PropertyContent::Value {
+                            value: PropertyValue::Float(
+                                cadmpeg_ir::scalar::FiniteReal::new(transparency).unwrap(),
+                            ),
+                            connections: Vec::new(),
+                        },
+                    },
+                ),
+            ]),
+        );
+        let error = schema_appearances(&[record]).unwrap_err();
+        assert!(error.to_string().contains("generic_transparency"));
+    }
+}
+
+#[test]
+fn generic_transparency_absence_preserves_carrier_alpha() {
+    let record = appearance_record(
+        "GenericSchema",
+        std::collections::BTreeMap::from([color_property(
+            "generic_diffuse",
+            [0.125, 0.25, 0.375, 0.5],
+        )]),
+    );
+    let (appearances, _) = schema_appearances(&[record]).unwrap();
+    assert_eq!(appearances[0].base_color.unwrap().a(), 0.5);
+}

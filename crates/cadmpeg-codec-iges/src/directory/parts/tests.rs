@@ -97,9 +97,21 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
         .0;
     assert_eq!(entries[0], expected[0]);
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = &native
         .namespace("iges")
-        .is_none_or(|namespace| namespace.arenas().is_empty()));
+        .expect("one unknowns home")
+        .arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .first_key_value()
+            .expect("the damaged field is retained")
+            .0
+            .as_str()
+    );
     // #222: a Directory Entry field is a given-up `iges.directory_field`.
     // The damaged field is the required transformation field (card 1
     // columns 49-56), so the record is not formed and its entry part stays
@@ -144,9 +156,21 @@ fn a_trailing_single_directory_card_uses_its_actual_known_extent() {
         1
     );
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = &native
         .namespace("iges")
-        .is_none_or(|namespace| namespace.arenas().is_empty()));
+        .expect("one unknowns home")
+        .arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .first_key_value()
+            .expect("the trailing card is retained")
+            .0
+            .as_str()
+    );
     assert_eq!(fidelity.retained_records().len(), 1);
     let (_, entry) = fidelity
         .retained_records()

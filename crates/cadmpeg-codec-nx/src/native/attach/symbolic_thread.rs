@@ -306,6 +306,10 @@ pub(super) fn definitions<'a>(
                 face,
                 diameter: Some(cadmpeg_ir::features::Dimension::Literal(diameter)),
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             }),
         );
     }

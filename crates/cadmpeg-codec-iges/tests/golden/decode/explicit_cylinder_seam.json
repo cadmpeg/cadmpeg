@@ -1629,9 +1629,10 @@
           "code": "record.unreadable",
           "kind": "decode_diagnostic",
           "namespace": "decode",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "error"
         },
-        "message": "part iges.parameter_field stream=\"iges/parameter/2592/2754\" offset=50 length=18: malformed container: IGES Parameter Data D15, logical offset Some(50): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card)",
+        "message": "part iges.parameter_field stream=\"iges/parameter/2592/2754\" offset=50 length=18: malformed container: IGES Parameter Data D15, logical offset Some(50): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card); dropped=[]",
         "provenance": {
           "byte_len": 18,
           "format": "iges",

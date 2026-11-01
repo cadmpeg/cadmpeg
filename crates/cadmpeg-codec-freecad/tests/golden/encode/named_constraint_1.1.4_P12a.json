@@ -1,0 +1,233 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 44425,
+      "payload_sha256": "100809c42985583dda0f2d839c045e6d1631803a5e6cb66bbf69a4266cfdfd95"
+    },
+    {
+      "name": "StringHasher.Table.txt",
+      "payload_len": 364,
+      "payload_sha256": "82233bcc406605a408407e34501a055169d6d1c7cb5bf3793ce3681866780a48"
+    },
+    {
+      "name": "Body.Shape.brp",
+      "payload_len": 7114,
+      "payload_sha256": "a38d9592ab3883146e846f31b59fad8ccca1987ef54b7c958534ca4808269d47"
+    },
+    {
+      "name": "Body.Shape.Map.txt",
+      "payload_len": 820,
+      "payload_sha256": "922787f1db9db2b321ca5ee209fc4c98f40fa86c9bd51d6e08583bf5f14bc4af"
+    },
+    {
+      "name": "Sketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Sketch.Shape.brp",
+      "payload_len": 1671,
+      "payload_sha256": "5205dbc940c53f2677ad9eaaf53dcdacc69fa55d5f0900a70bd7ef88cc75dbec"
+    },
+    {
+      "name": "Sketch.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "3122a2e70dafbd5617afe7851c9a3864672cd03df3cc15e737748f470219b4a7"
+    },
+    {
+      "name": "Pad.AddSubShape.brp",
+      "payload_len": 4994,
+      "payload_sha256": "5c55f936471ea534850cad98778a903a39488e56a6e459aa2544986412640ac1"
+    },
+    {
+      "name": "Pad.AddSubShape.Map.txt",
+      "payload_len": 620,
+      "payload_sha256": "5b5a8c0041f4a44c5aff3d4c1c1ddf814a4008088e32d917738137d9dc61e4be"
+    },
+    {
+      "name": "Pad.Shape.brp",
+      "payload_len": 5217,
+      "payload_sha256": "6f00822e745b1e6c186b52e2fe079d38698abc3e4c8b92ca25d9718a8410fba0"
+    },
+    {
+      "name": "Pad.Shape.Map.txt",
+      "payload_len": 620,
+      "payload_sha256": "39659b47550531951f7ebca79c42d292177218176c537bd69be05c9f19de15af"
+    },
+    {
+      "name": "Pad.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "GuiDocument.xml",
+      "payload_len": 34663,
+      "payload_sha256": "7251560de90a74ea5fa2fe04e17c6cac75b9432ad398fee309c68a4178b8dbd6"
+    },
+    {
+      "name": "ShapeAppearance",
+      "payload_len": 40,
+      "payload_sha256": "e06abb08fd008f84d62335991c259bae64321c4fa33486d505850b4234ae4be8"
+    },
+    {
+      "name": "ShapeAppearance1",
+      "payload_len": 40,
+      "payload_sha256": "3e35c841a9474753d23bd43db4d7143c82b07f75d00c7ff5d3e0b0fc61a7cce5"
+    },
+    {
+      "name": "ShapeAppearance2",
+      "payload_len": 40,
+      "payload_sha256": "0e79b01f265120c4ff108c2c832b75d4531005c789bc4db8a4857f327f4fff6f"
+    },
+    {
+      "name": "ShapeAppearance3",
+      "payload_len": 40,
+      "payload_sha256": "b1f3667c54fa8acfd81616ce75d12dff41ba71e3927283db25989fda83c2bd93"
+    },
+    {
+      "name": "ShapeAppearance4",
+      "payload_len": 40,
+      "payload_sha256": "0e79b01f265120c4ff108c2c832b75d4531005c789bc4db8a4857f327f4fff6f"
+    },
+    {
+      "name": "LineColorArray",
+      "payload_len": 8,
+      "payload_sha256": "30d1a075d15b0d11b4007a7bad635e57c7ad2347dc5ae5bbc42090813bf03fd8"
+    },
+    {
+      "name": "PointColorArray",
+      "payload_len": 8,
+      "payload_sha256": "30d1a075d15b0d11b4007a7bad635e57c7ad2347dc5ae5bbc42090813bf03fd8"
+    },
+    {
+      "name": "ShapeAppearance5",
+      "payload_len": 40,
+      "payload_sha256": "194f5f392557f0269f5e9aa25910b0de16e080767cc2276bcb4c8245708f1adc"
+    },
+    {
+      "name": "ShapeAppearance6",
+      "payload_len": 40,
+      "payload_sha256": "b1f3667c54fa8acfd81616ce75d12dff41ba71e3927283db25989fda83c2bd93"
+    },
+    {
+      "name": "LineColorArray1",
+      "payload_len": 8,
+      "payload_sha256": "30d1a075d15b0d11b4007a7bad635e57c7ad2347dc5ae5bbc42090813bf03fd8"
+    },
+    {
+      "name": "PointColorArray1",
+      "payload_len": 8,
+      "payload_sha256": "30d1a075d15b0d11b4007a7bad635e57c7ad2347dc5ae5bbc42090813bf03fd8"
+    },
+    {
+      "name": "ShapeAppearance7",
+      "payload_len": 40,
+      "payload_sha256": "194f5f392557f0269f5e9aa25910b0de16e080767cc2276bcb4c8245708f1adc"
+    },
+    {
+      "name": "ShapeAppearance8",
+      "payload_len": 40,
+      "payload_sha256": "e06abb08fd008f84d62335991c259bae64321c4fa33486d505850b4234ae4be8"
+    },
+    {
+      "name": "LineColorArray2",
+      "payload_len": 8,
+      "payload_sha256": "43c73490dba1735fbabbc1436ba4e38c93992566ac86f6a651d7ef646b20c302"
+    },
+    {
+      "name": "PointColorArray2",
+      "payload_len": 8,
+      "payload_sha256": "43c73490dba1735fbabbc1436ba4e38c93992566ac86f6a651d7ef646b20c302"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 50,
+        "appearances": 19,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 4,
+        "coedges": 72,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 44,
+        "drawings": 0,
+        "edges": 40,
+        "faces": 18,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 4,
+        "loops": 18,
+        "mass_properties": 0,
+        "native.fcstd.applications": 12,
+        "native.fcstd.attachments": 11,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 4,
+        "native.fcstd.design_census": 4,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 4,
+        "native.fcstd.entries": 28,
+        "native.fcstd.extensions": 5,
+        "native.fcstd.gui_documents": 1,
+        "native.fcstd.gui_properties": 163,
+        "native.fcstd.gui_view_providers": 12,
+        "native.fcstd.logical_ledger": 680,
+        "native.fcstd.objects": 12,
+        "native.fcstd.physical_ledger": 197,
+        "native.fcstd.properties": 162,
+        "native.fcstd.shape_payloads": 6,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 6,
+        "pcurves": 0,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 28,
+        "presentation_documents": 1,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 4,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 4,
+        "sketch_constraints": 11,
+        "sketch_entities": 5,
+        "sketches": 1,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 1,
+        "subds": 0,
+        "surfaces": 19,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 28,
+        "view_presentations": 12
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

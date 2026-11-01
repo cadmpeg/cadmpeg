@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
+pub(crate) mod align;
 mod assembly_alignment;
 mod assembly_carrier_paths;
 mod assembly_operand_frames;
@@ -12,7 +13,7 @@ mod coil;
 mod combine;
 mod component_constructions;
 mod copy_paste_bodies;
-mod direct_face;
+pub(crate) mod direct_face;
 mod draft;
 mod emboss;
 pub(crate) mod extrude;

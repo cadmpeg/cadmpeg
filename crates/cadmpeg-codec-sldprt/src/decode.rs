@@ -1391,6 +1391,7 @@ fn append_design_losses(
                     face,
                     diameter,
                     extent,
+                    ..
                 } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
                 FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
                 FeatureOperation::SketchBlockInstance { block, placement } => {

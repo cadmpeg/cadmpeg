@@ -15,7 +15,7 @@ use cadmpeg_ir::codec::{Codec, Confidence};
 use crate::container::{self, Block, BlockName, CompoundStream, Section};
 use crate::SldprtCodec;
 
-use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
+use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC, MARKER};
 use crate::test_support::container::anchored_cache_cell;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
@@ -142,6 +142,26 @@ fn generic_compound_prefix_is_a_weak_container_signal() {
     )
     .expect("root");
     assert!(!looks_like_sldprt(&ctx, &prefix).expect("probe"));
+}
+
+/// The block marker alone does not identify a native file: the outer header
+/// states version 4 (spec §1.1).
+#[test]
+fn a_native_prefix_states_version_four() {
+    let mut prefix = b"PXR-USDC".to_vec();
+    prefix.extend_from_slice(&[0; 8]);
+    prefix.extend_from_slice(&MARKER);
+    let mut native = vec![1, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0];
+    native.extend_from_slice(&MARKER);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &native,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("root");
+    assert!(!looks_like_sldprt(&ctx, &prefix).expect("probe"));
+    assert!(looks_like_sldprt(&ctx, &native).expect("probe"));
 }
 
 fn synthetic_compound_with_storage(name: &str) -> Vec<u8> {

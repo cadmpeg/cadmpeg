@@ -41,10 +41,13 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count: usize,
 ) -> bool {
     side_one_offset_count == 0
-        && scope.class_tag.as_str() == "330"
-        && scope.paired_class_tag.as_str() == "258"
-        && scope.generation()
-            == DesignScopeGeneration::Extrude(DesignExtrudeFrame::ReferenceAware476)
+        && ((scope.class_tag.as_str() == "330"
+            && scope.paired_class_tag.as_str() == "258"
+            && scope.generation()
+                == DesignScopeGeneration::Extrude(DesignExtrudeFrame::ReferenceAware476))
+            || (scope.class_tag.as_str() == "375"
+                && scope.paired_class_tag.as_str() == "260"
+                && matches!(scope.frame_length(), Some(477 | 481))))
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
@@ -2492,6 +2495,7 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
         DesignSketchFrameForm::ScopeGenesisCompact
         | DesignSketchFrameForm::ScopeGenesisExplicit(_)
         | DesignSketchFrameForm::MemberCompact { .. }
+        | DesignSketchFrameForm::MemberTypedCompact { .. }
         | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
         DesignSketchFrameForm::Authored { .. }
         | DesignSketchFrameForm::ScopeCompact

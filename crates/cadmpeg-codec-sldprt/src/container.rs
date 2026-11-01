@@ -31,6 +31,8 @@ use crate::layout::zlb_wrapper_header as zlb_hdr;
 
 /// Marker shared by block, cache-cell, and directory frames.
 pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
+/// The stated `version` of the native outer header (spec §1.1).
+const NATIVE_VERSION: u32 = 4;
 
 /// Resource ceiling on the expansion of one native block.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
@@ -360,6 +362,14 @@ pub(crate) fn looks_like_sldprt(
         return Ok(false);
     }
     if prefix.len() < outer_hdr::LEN + MARKER.len() {
+        return Ok(false);
+    }
+    let mut header = View::over_retained(prefix);
+    let version = header
+        .req_take(outer_hdr::VERSION)
+        .and_then(|_| header.req_u32_be())
+        .ok();
+    if version != Some(NATIVE_VERSION) {
         return Ok(false);
     }
     Ok(prefix[outer_hdr::LEN..]

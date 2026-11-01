@@ -228,7 +228,8 @@ impl InputCatalog {
                         feature = "step",
                         feature = "iges",
                         feature = "sat",
-                        feature = "pvz"
+                        feature = "pvz",
+                        feature = "usd"
                     ))]
                     crate::descriptors::FormatKind::Native(native) => InputDescriptor::from(native),
                 })
@@ -548,6 +549,38 @@ mod tests {
             panic!("a signed package resolves to a native codec");
         };
         assert_eq!(codec.id().as_str(), "pvz");
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
+    }
+
+    /// A USDA layer resolves to the USD codec at high confidence, and `usd`
+    /// names a writable format.
+    #[cfg(feature = "usd")]
+    #[test]
+    fn a_usda_layer_resolves_to_the_usd_codec() {
+        use super::Selection;
+        use cadmpeg_ir::codec::Confidence;
+
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "usd")
+            .expect("USD descriptor exists");
+        assert_eq!(descriptor.extensions(), ["usd", "usda", "usdc", "usdz"]);
+        assert_eq!(
+            crate::Format::from_name("usd").expect("embedded registry loads"),
+            Some(crate::Format::Usd)
+        );
+        let ResolvedSource::Native { codec, selection } =
+            resolve(&catalog, b"#usda 1.0\ndef Xform \"A\"\n{\n}\n", None).expect("detection")
+        else {
+            panic!("a USDA layer resolves to a native codec");
+        };
+        assert_eq!(codec.id().as_str(), "usd");
         assert_eq!(
             selection,
             Selection::Detected {

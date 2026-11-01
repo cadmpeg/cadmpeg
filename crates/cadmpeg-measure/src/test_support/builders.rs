@@ -10,7 +10,8 @@ use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
 };
 use cadmpeg_ir::geometry::pcurve::{
-    CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
+    CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs,
+    PcurveNurbsPoles, PolarHarmonicPcurve,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -419,14 +420,53 @@ impl Builder {
         radius: f64,
         range: [f64; 2],
     ) {
+        self.circle_pcurve_on_axes(face, at, center, [1.0, 0.0], radius, range);
+    }
+
+    /// [`Builder::circle_pcurve`] with the first axis `x_axis`, the second
+    /// axis `(0, 1)`: `x_axis = (−1, 0)` makes the circle clockwise.
+    pub(crate) fn circle_pcurve_on_axes(
+        &mut self,
+        face: &FaceId,
+        at: [usize; 2],
+        center: [f64; 2],
+        x_axis: [f64; 2],
+        radius: f64,
+        range: [f64; 2],
+    ) {
         let geometry = PcurveGeometry::Circle(
             CirclePcurve::try_new(
                 Point2::new(center[0], center[1]),
-                Point2::new(1.0, 0.0),
+                Point2::new(x_axis[0], x_axis[1]),
                 Point2::new(0.0, 1.0),
                 radius,
             )
             .expect("circle pcurve"),
+        );
+        self.pcurve_use(face, at, geometry, Some(range));
+    }
+
+    /// Append the polar-harmonic pcurve whose `u` is the principal-branch
+    /// angle of `(cos t, sin t)` and whose `v` has the constant, cosine and
+    /// sine coefficients `axial`, on the use interval `range`, to the pcurve
+    /// uses of the coedge at `position` of ring `ring` of `face`.
+    pub(crate) fn polar_harmonic_pcurve(
+        &mut self,
+        face: &FaceId,
+        at: [usize; 2],
+        axial: [f64; 3],
+        range: [f64; 2],
+    ) {
+        let geometry = PcurveGeometry::PolarHarmonic(
+            PolarHarmonicPcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                axial[0],
+                axial[1],
+                axial[2],
+            )
+            .expect("polar harmonic pcurve"),
         );
         self.pcurve_use(face, at, geometry, Some(range));
     }

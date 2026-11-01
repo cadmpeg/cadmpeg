@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed modeling-feature scopes, operations, and source operands.
 
+pub(crate) mod align;
 pub(crate) mod assembly;
 pub(crate) mod assembly_features;
 pub(crate) mod base_feature;

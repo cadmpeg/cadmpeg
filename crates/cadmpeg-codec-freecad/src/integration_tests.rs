@@ -9,10 +9,14 @@ mod mandatory_document_parts;
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
+mod named_bindings;
 mod object_declaration_parts;
+mod primitive_placement;
 mod product_native_order;
+mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
+mod sketch_bspline;
 mod source_parts;
 mod visibility;
 

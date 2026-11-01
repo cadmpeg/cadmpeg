@@ -32,6 +32,7 @@ pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod physics;
 mod pmi;
 mod presentation;
 mod products;
@@ -159,6 +160,7 @@ fn validate_model_with_index<'ir>(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
+    physics::check_physics(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);

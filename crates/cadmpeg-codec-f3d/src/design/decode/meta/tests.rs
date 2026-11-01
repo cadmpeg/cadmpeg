@@ -123,7 +123,7 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
     with_scan(&bytes, |scan| {
         let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
         let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
-        assert!(std::rc::Rc::ptr_eq(&first, &second));
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
         assert_eq!(first.types.len(), 1);
         assert_eq!(
             first.types[0]

@@ -4,7 +4,7 @@
 use super::{
     ChannelAddressing, ShadedTriangle, ShadedVertex, Strip, Strips, Tessellation,
     TessellationChannel, TessellationMesh, TessellationTextureAssignment,
-    TessellationTriangleGroup,
+    TessellationTriangleGroup, TextureCoordinateAddressing, TextureCoordinates,
 };
 
 rewrite_enum!(ChannelAddressing, []; {
@@ -16,7 +16,7 @@ rewrite_record!(ShadedTriangle<N>, [N]; {corners, normals});
 rewrite_record!(ShadedVertex<P, N>, [P, N]; {position, normal});
 rewrite_record!(Strip<V>, [V]; (field0));
 rewrite_record!(Strips<V>, [V]; (field0));
-rewrite_record!(Tessellation, []; {id, native_ref, body, faces, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, channels});
+rewrite_record!(Tessellation, []; {id, native_ref, body, faces, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, texture_coordinates, channels});
 rewrite_record!(TessellationChannel, []; {addressing, item_size, kind, flags, data, count});
 rewrite_enum!(TessellationMesh<P, N>, [P, N]; {
     List {vertices, triangles},
@@ -27,3 +27,5 @@ rewrite_enum!(TessellationMesh<P, N>, [P, N]; {
 });
 rewrite_record!(TessellationTextureAssignment, []; {source_id, texture, triangles});
 rewrite_record!(TessellationTriangleGroup, []; {source_id, triangles});
+rewrite_scalar!(TextureCoordinateAddressing);
+rewrite_record!(TextureCoordinates, []; {name, addressing, values});

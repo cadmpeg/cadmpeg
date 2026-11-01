@@ -261,7 +261,19 @@ fn late_source_body_failure_keeps_exact_bytes_and_an_independent_rendering_peer(
     let wire = serde_json::to_value(&styles[0]).expect("a rendering style record serializes");
     assert_eq!(wire["name"], "actual style");
     assert_eq!(wire["long_name"], "long name");
-    assert!(!ns.arenas().contains_key("unknowns"));
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = ns.arenas().get("unknowns").expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
+    assert!(!ns.arenas().contains_key("presentation_record_issues"));
     assert!(!styles.iter().any(|style| style.id == bad_id));
     let given_up = crate::test_support::given_up_records(&fidelity);
     assert_eq!(given_up.len(), 1);

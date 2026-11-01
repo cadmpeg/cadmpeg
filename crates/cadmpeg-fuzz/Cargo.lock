@@ -243,6 +243,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-usd"
+version = "0.6.7"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-tessellate",
+ "crc32fast",
+ "unicode-ident",
+]
+
+[[package]]
 name = "cadmpeg-container"
 version = "0.6.7"
 dependencies = [
@@ -283,6 +295,7 @@ dependencies = [
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
+ "cadmpeg-codec-usd",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -324,6 +337,14 @@ dependencies = [
  "roxmltree",
  "serde",
  "zip",
+]
+
+[[package]]
+name = "cadmpeg-tessellate"
+version = "0.6.7"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
 ]
 
 [[package]]

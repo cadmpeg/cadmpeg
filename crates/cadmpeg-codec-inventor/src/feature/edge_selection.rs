@@ -585,6 +585,134 @@ pub(super) fn resolve(
     EdgeSelection::generated(edges, collection.id()).unwrap_or_else(|_| fallback())
 }
 
+fn collection_has_empty_item<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    property_at: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeaturePropertyKind>,
+) -> bool {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = kind
+    else {
+        return false;
+    };
+    items.references().iter().any(|reference| {
+        matches!(property_at(*reference), Some(PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        }) if index_references.values().is_empty())
+    })
+}
+
+pub(crate) fn native_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
+
+    let native = unique_index(features.iter().filter_map(|feature| {
+        let family = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: NativeFeatureKind::Fillet,
+                ..
+            }) => super::PmDcFeatureReferenceFamily::FilletEdgeSets,
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: NativeFeatureKind::Chamfer,
+                ..
+            }) => super::PmDcFeatureReferenceFamily::EdgeCollection,
+            _ => return None,
+        };
+        Some((feature.native_ref.as_deref()?, family))
+    }));
+    if native.is_empty() {
+        return Vec::new();
+    }
+    let labels = unique_index(inventory.labels.iter().map(|label| {
+        (
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
+            label,
+        )
+    }));
+    let properties = unique_index(inventory.properties.iter().map(|property| {
+        (
+            (
+                property.identity.segment_token.as_str(),
+                property.identity.record_ordinal,
+            ),
+            &property.kind,
+        )
+    }));
+    let count = inventory
+        .features
+        .iter()
+        .filter(|source| {
+            let source_id = source.id();
+            let Some(Some(expected_family)) = native.get(source_id.as_str()) else {
+                return false;
+            };
+            // A corner round reports its own sheet-metal operand loss.
+            if labels
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    Some(source.identity.record_ordinal),
+                ))
+                .is_some_and(|label| {
+                    label.is_some_and(|label| label.class_id() == super::CORNER_ROUND_CLASS_ID)
+                })
+            {
+                return false;
+            }
+            let property_at = |reference: crate::pmdc::PmDcReference| {
+                properties
+                    .get(&(
+                        source.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))?
+                    .as_ref()
+                    .copied()
+            };
+            let Some(kind) = source
+                .properties
+                .references()
+                .first()
+                .and_then(|reference| property_at(*reference))
+            else {
+                return false;
+            };
+            if !matches!(kind, PmDcFeaturePropertyKind::References { family, .. }
+                if family == expected_family)
+            {
+                return false;
+            }
+            if let PmDcFeaturePropertyKind::References {
+                family: super::PmDcFeatureReferenceFamily::FilletEdgeSets,
+                items,
+            } = kind
+            {
+                return items.references().iter().any(|reference| {
+                    let Some(PmDcFeaturePropertyKind::FilletEdgeSet { edges, .. }) =
+                        property_at(*reference)
+                    else {
+                        return false;
+                    };
+                    property_at(*edges)
+                        .is_some_and(|kind| collection_has_empty_item(kind, &property_at))
+                });
+            }
+            collection_has_empty_item(kind, &property_at)
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectionEmptyItemsNative.note(format!(
+            "Retained {count} edge-treatment feature(s) with empty edge-item index-reference lists; their input-edge naming joins are unresolved."
+        ))]
+    }
+}
+
 fn retain_producers(selection: &mut EdgeSelection, ordinal: u64, producers: &HashMap<String, u64>) {
     if let EdgeSelection::Generated { edges, native } = selection {
         if edges.iter().any(|edge| {
