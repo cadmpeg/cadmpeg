@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Data checks 1, 5, 6 and 7 (#246 IV.2) over serialized CADIR documents.
+//! Data checks 1, 2, 5, 6 and 7 (#246 IV.2) over serialized CADIR documents.
 //!
 //! Each check returns one finding per violation, so a caller names every
 //! failing record of every golden in one run.
@@ -112,6 +112,69 @@ fn id(record: &Value) -> &str {
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or("<no id>")
+}
+
+/// Check 2 (#246): `source.attributes` holds no source-byte fact.
+///
+/// A key is a violation when it names the forbidden list, or when it matches
+/// the forbidden shape: a digest, offset, byte, stamp, baseline, synthesis or
+/// fingerprint spelling, a trailing count/length/size/record-group token, a
+/// `raw_` segment, or a `section.`/`layer.` prefix. Matching is
+/// case-insensitive.
+#[must_use]
+pub fn source_attributes_findings(document: &Value) -> Vec<String> {
+    const FORBIDDEN: &[&str] = &[
+        "document_local_sha256",
+        "brep_local_sha256",
+        "sldprt_neutral_feature_local_sha256",
+        "sldprt_native_history_sha256",
+        "sldprt_neutral_parameter_local_sha256",
+        "sldprt_native_parameter_sha256",
+        "sldprt_configuration_snapshot_synthesized",
+        "active_brep",
+        "thumbnail_bytes",
+        "sldprt_active_partition_unresolved",
+    ];
+    const TRAILING_TOKENS: &[&str] = &[
+        "count", "len", "length", "size", "offset", "records", "rows", "runs", "spans",
+        "block", "blocks", "sections", "instances", "pairs",
+    ];
+    let Some(attributes) = document.pointer("/source/attributes").and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let mut findings = Vec::new();
+    for key in attributes.keys() {
+        if FORBIDDEN.contains(&key.as_str()) {
+            findings.push(format!("source.attributes holds forbidden key `{key}`"));
+            continue;
+        }
+        let lower = key.to_lowercase();
+        let shape = lower.contains("digest")
+            || lower.contains("_offset")
+            || lower.contains("byte")
+            || lower.contains("stamp")
+            || lower.contains("baseline")
+            || lower.contains("fingerprint")
+            || lower.contains("synthesized")
+            || lower.contains("synthesised")
+            || lower.as_bytes().windows(4).any(|window| {
+                window[..3] == *b"sha" && window[3].is_ascii_digit()
+            })
+            || lower
+                .split(['.', '_'])
+                .next_back()
+                .is_some_and(|token| TRAILING_TOKENS.contains(&token))
+            || lower.starts_with("raw_")
+            || lower.contains(".raw_")
+            || lower.contains("_raw_")
+            || lower.starts_with("section.")
+            || lower.starts_with("layer.");
+        if shape {
+            findings.push(format!("source.attributes holds source-byte key `{key}`"));
+        }
+    }
+    findings
 }
 
 /// Check 7: `Feature.ordinal` values are exactly `{0 … n−1}`.
