@@ -30,15 +30,40 @@ pub(super) fn validate_mirrors(
     }
     let selection_type = crate::pmdc::type_id_string(crate::feature::mirror::SELECTION_TYPE);
     let options_type = crate::pmdc::type_id_string(crate::feature::mirror::OPTIONS_TYPE);
+    let instance_map_type = crate::pmdc::type_id_string(crate::feature::mirror::instance_map::TYPE);
+    let generated_nodes = data
+        .pm_dc_feature_properties
+        .iter()
+        .filter_map(|property| {
+            let crate::feature::PmDcFeaturePropertyKind::Mirror {
+                definition: crate::feature::mirror::Property::InstanceMap { result, .. },
+            } = &property.kind
+            else {
+                return None;
+            };
+            Some((
+                property.identity.segment_token.as_str(),
+                result.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
+    let generic_type = crate::pmdc::type_id_string(crate::feature::FEATURE_TYPE);
     let index = crate::feature::mirror::MirrorIndex::new(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
         &data.pm_dc_work_planes,
     )
+    .with_generated_nodes(&data.pm_dc_features, &data.pm_dc_feature_labels)
     .with_record_lengths(
         data.records
             .iter()
-            .filter(|record| record.type_id == selection_type || record.type_id == options_type)
+            .filter(|record| {
+                record.type_id == selection_type
+                    || record.type_id == options_type
+                    || record.type_id == instance_map_type
+                    || (record.type_id == generic_type
+                        && generated_nodes.contains(&(record.token.as_str(), record.ordinal)))
+            })
             .map(|record| (record.token.as_str(), record.ordinal, record.payload_len)),
     );
     let patterns = unique_index(data.pm_dc_pattern_features.iter().map(|p| (p.id(), p)));
@@ -179,6 +204,9 @@ fn requires_mirror_validation(
 
 fn is_mirror_construction(feature: &Feature) -> bool {
     matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
+    ) || matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })
             if matches!(pattern.definition(), PatternTransform::Mirror { .. })
