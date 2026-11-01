@@ -66,6 +66,7 @@ pub mod math;
 pub mod native;
 pub mod physics;
 pub mod pmi;
+pub mod point_cloud;
 pub mod presentation;
 pub mod products;
 mod provenance;

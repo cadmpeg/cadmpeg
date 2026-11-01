@@ -111,6 +111,7 @@ macro_rules! classified_arena_registry {
             presentation_documents: PresentationDocument, model, "Document presentation arena.", [serde(default)];
             view_presentations: ViewPresentation, model, "View-provider presentation arena.", [serde(default)];
             tessellations: Tessellation, model, "Tessellation arena.", [];
+            point_clouds: crate::point_cloud::PointCloud, model, "Point cloud arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             appearances: Appearance, model, "Appearance arena.", [];
             appearance_bindings: AppearanceBinding, model, "Appearance binding arena.", [];
             attributes: SourceAttribute, model, "Attribute arena.", [];

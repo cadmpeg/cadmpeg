@@ -107,6 +107,8 @@ pub enum EntityKind {
     PhysicsScene,
     /// Solver settings.
     SolverSettings,
+    /// Point cloud.
+    PointCloud,
 }
 
 impl EntityKind {
@@ -161,11 +163,12 @@ impl EntityKind {
             Self::Articulation => 45,
             Self::PhysicsScene => 46,
             Self::SolverSettings => 47,
+            Self::PointCloud => 48,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 48] = [
+    pub const ALL: [Self; 49] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -214,6 +217,7 @@ impl EntityKind {
         Self::Articulation,
         Self::PhysicsScene,
         Self::SolverSettings,
+        Self::PointCloud,
     ];
 }
 
@@ -400,6 +404,7 @@ impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinema
 impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, product_definition, name, sensor, positions, normals, colors, channels, native_ref);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]

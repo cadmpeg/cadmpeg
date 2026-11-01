@@ -30,6 +30,7 @@ mod geometry_payloads;
 mod identity_order;
 mod physics;
 mod pmi;
+mod point_clouds;
 mod presentation;
 mod products;
 mod referential_integrity;
@@ -143,6 +144,7 @@ fn validate_model_with_index<'ir>(
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
     physics::check_physics(ir, &mut findings);
+    point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
