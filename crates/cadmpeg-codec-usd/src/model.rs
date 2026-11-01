@@ -507,7 +507,7 @@ impl Builder<'_, '_, '_, '_> {
             name: Some(display_name(prim).to_owned()),
             visible,
             link: None,
-            native_ref: Some(prim.path.clone()),
+            native_ref: None,
         });
         self.admit("usd_occurrence")?;
         let bodied = self.bodied.contains(&definition);
@@ -533,16 +533,7 @@ impl Builder<'_, '_, '_, '_> {
                 name: Some(external.asset.clone()),
                 visible: None,
                 link: None,
-                native_ref: Some(format!(
-                    "{} {} @{}@",
-                    prim.path,
-                    if external.payload {
-                        "payload"
-                    } else {
-                        "reference"
-                    },
-                    external.asset
-                )),
+                native_ref: None,
             });
             self.tallies.external += 1;
             child_ordinal = child_ordinal
@@ -627,7 +618,7 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies: body.into_iter().collect(),
             sketches: Vec::new(),
-            native_ref: Some(prim.path.clone()),
+            native_ref: None,
         });
         self.admit("usd_definition")
     }
@@ -1001,7 +992,7 @@ impl Builder<'_, '_, '_, '_> {
                     media_type: image_media_type(&texture.file)
                         .and_then(|media| NonBlankString::new(media.to_owned())),
                     content,
-                    native_ref: Some(texture.file.clone()),
+                    native_ref: None,
                 });
             }
             let slot_name = match (slot.kind, texture.channel) {
