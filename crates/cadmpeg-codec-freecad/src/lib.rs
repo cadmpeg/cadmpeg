@@ -828,7 +828,8 @@ impl CodecBackend for FcstdCodec {
                     .get("Thumbnail.png")
                     .map(|view| ("Thumbnail.png", *view))
             });
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut source_fidelity =
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(root.window().len()),
             "retain FCStd source image",
@@ -1268,11 +1269,7 @@ impl CodecBackend for FcstdCodec {
             &mut source_fidelity,
         )?);
         fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
-        let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-        source_fidelity.decode_digest = Some(
-            cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_digest)
-                .map_err(CodecError::malformed)?,
-        );
+        // The decode wrapper stamps the source digest from its root view.
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,

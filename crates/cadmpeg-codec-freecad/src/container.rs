@@ -155,7 +155,7 @@ pub(crate) fn attempt<'a>(
         Vec::new(),
         Vec::new(),
     );
-    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, ctx);
     let mut document_found = false;
     let outcome = ctx.decode_part(&mut parts, root, parts::part("zip.archive"), |stage| {
         let document = parts::document(ctx, &archive, stage, &mut document_found)?;
