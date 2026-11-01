@@ -1106,6 +1106,14 @@ class SourcePolicyCommand(TempSourceCase):
             result = policy.main(list(args))
         return result, output.getvalue()
 
+    def test_authoring_only_reports_document_paths(self) -> None:
+        self.write('docs/example.md', '/home/author/work/example\n')
+        self.write('crates/demo/src/lib.rs', 'fn f() { let x = 1e-9; }\n')
+        result, output = self.run_check('--authoring-paths-only', '--json')
+        self.assertEqual(result, 1)
+        self.assertEqual([finding['rule'] for finding in json.loads(output)['findings']],
+                         ['authoring_path'])
+
     def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")
         self.write("crates/other/src/lib.rs", "fn f() { let x = 1e-8; }\n")

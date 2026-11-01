@@ -51,12 +51,14 @@ jobs:
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
       fuzz: ${{ steps.scope.outputs.fuzz }}
+      codec_scope: ${{ steps.scope.outputs.codec_scope }}
       sldprt_cli: ${{ steps.scope.outputs.sldprt_cli }}
       step_cli: ${{ steps.scope.outputs.step_cli }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
       layout: ${{ steps.scope.outputs.layout }}
       static: ${{ steps.scope.outputs.static }}
+      prose_only: ${{ steps.scope.outputs.prose_only }}
       audit: ${{ steps.scope.outputs.audit }}
     steps:
       - name: Checkout
@@ -151,12 +153,17 @@ jobs:
         run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
 
       - name: Source policy
+        if: needs.changes.outputs.prose_only != 'true'
         run: |
           set -euo pipefail
           python3 scripts/check-source-policy.py
           python3 scripts/check-resource-caps.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
+
+      - name: Source policy for documentation
+        if: needs.changes.outputs.prose_only == 'true'
+        run: python3 scripts/check-source-policy.py --authoring-paths-only
 
       - name: Golden coverage floors
         # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
@@ -208,6 +215,7 @@ jobs:
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -399,6 +407,8 @@ jobs:
     needs: changes
     if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
     name: fuzz crate (stable)
+    env:
+      CI_FUZZ_CODECS: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -422,22 +432,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fuzz targets compile
-        # The fuzz crate declares its own `[workspace]`, so every other job
-        # skips it; a refactor that moves a codec's internals silently rots the
-        # harnesses' imports. A stable `check` catches that drift without the
-        # nightly toolchain `cargo fuzz build` needs. `--all-targets` reaches
-        # every harness and seed binary, and `--keep-going` reports all of them
-        # rather than stopping at the first.
         run: |
-          cargo check -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
-            --all-targets --keep-going
+          python3 scripts/ci_fuzz.py check
 
       - name: Fuzz crate tests
-        # Runs the library and seed-generator tests, including the seed
-        # decode tests that fail when a reader change stops a seed reaching
-        # its decoder. Every harness under `fuzz_targets/` declares
-        # `test = false`, so this builds and runs no harness.
-        run: cargo test -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml
+        run: python3 scripts/ci_fuzz.py test
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
@@ -450,6 +449,7 @@ jobs:
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
       RUSTUP_TOOLCHAIN: "1.88"
       # `[workspace.lints]` denies warnings on every toolchain, and 1.88's lint
       # set differs from the pinned one's. This job checks compilation, not

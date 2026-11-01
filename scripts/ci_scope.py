@@ -35,13 +35,8 @@ STATIC_ONLY = {
     'AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'LEGAL.md', 'LICENSE',
     'LICENSE-docs', 'README.md', 'SECURITY.md', '.gitignore',
     'docs/codec-facade.toml', 'docs/evaluations.toml',
-    'docs/golden-coverage-floors.toml',
+    'docs/golden-coverage-floors.toml', 'corpus/README.md', 'corpus/manifest.example.toml',
     '.github/PULL_REQUEST_TEMPLATE.md', '.github/dependabot.yml',
-}
-
-NON_GATE_WORKFLOWS = {
-    'audit.yml', 'codeql.yml', 'cut-release.yml', 'dco.yml', 'fuzz-smoke.yml', 'interop.yml',
-    'prefill-pr-description.yml', 'publish-crates.yml', 'release.yml',
 }
 
 # Single-codec CLI builds in the feature-gate job, by output name.
@@ -61,6 +56,12 @@ def is_cache_key_input(path: str) -> bool:
     name = Path(path).name
     return (name in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain', 'rust-toolchain.toml'}
             or path.endswith('.cargo/config.toml'))
+
+
+def ci_calls_workflows(root: Path) -> bool:
+    workflow = root / '.github/workflows/ci.yml'
+    return not workflow.is_file() or bool(re.search(
+        r'\buses:\s*[\'"]?\./\.github/workflows/', workflow.read_text()))
 
 
 def lock_dependents(old: str, new: str, names: set[str]) -> set[str]:
@@ -132,8 +133,10 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     elif tested:
         return {'packages': [], 'rust': False, 'fuzz': False,
                 **dict.fromkeys(SINGLE_CODEC_GATES, False), 'schema': False,
-                'iges': False, 'layout': False, 'full': False, 'static': False, 'audit': False}
+                'iges': False, 'layout': False, 'codec_scope': [], 'prose_only': False,
+                'full': False, 'static': False, 'audit': False}
     affected = set()
+    tested_only = set()
     layout = False
     fuzz = False
     audit = full
@@ -160,6 +163,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             affected.add(EMBEDDED_BY[path])
         elif path.startswith(LAYOUT_TABLE_INPUTS):
             layout = True
+        elif path == 'corpus/manifest.toml':
+            tested_only.add('cadmpeg')
         elif path in {'scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'}:
             affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
@@ -173,7 +178,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         elif path.startswith('docs/') and path.count('/') == 1 and path.endswith('.md'):
             continue
         elif (path.startswith('.github/workflows/')
-              and path.removeprefix('.github/workflows/') in NON_GATE_WORKFLOWS):
+              and path != '.github/workflows/ci.yml'
+              and not ci_calls_workflows(root)):
             continue
         else:
             # Manifests, configuration, workflows, documentation, fixtures and
@@ -183,6 +189,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         affected = names.copy()
         fuzz = True
     changed = set(affected)
+    affected |= tested_only
     cli_changed = bool(changed & {'cadmpeg', 'cadmpeg-registry'})
     pending = list(affected)
     while pending:
@@ -204,10 +211,16 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         'packages': sorted(affected),
         'rust': full or bool(affected),
         'fuzz': fuzz or bool(affected & fuzz_inputs),
+        'codec_scope': sorted(name.removeprefix('cadmpeg-codec-') for name in affected
+                              if name.startswith('cadmpeg-codec-'))
+        if changed and not full and not fuzz and all(name.startswith('cadmpeg-codec-') for name in changed) else [],
         **gates,
         'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
-        'layout': layout and not (full or affected),
+        'layout': layout and 'cadmpeg' not in affected and not full,
+        'prose_only': bool(paths) and not full and all(
+            path == 'README.md' or re.fullmatch(r'crates/cadmpeg-codec-[^/]+/README\.md', path)
+            or path.startswith(LAYOUT_TABLE_INPUTS) for path in paths),
         'full': full,
         'static': True,
         'audit': audit or full,
