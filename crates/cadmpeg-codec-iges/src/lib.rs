@@ -148,6 +148,23 @@ impl CodecBackend for IgesCodec {
         Ok(representation::confidence(prefix))
     }
 
+    fn detect_whole_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        input: cadmpeg_core::decode::WholeInput<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let bytes = input.view().window();
+        let prefix = representation::confidence(bytes);
+        if prefix > Confidence::No {
+            return Ok(prefix);
+        }
+        Ok(if card::whole_file_fixed_ascii(bytes) {
+            Confidence::Medium
+        } else {
+            Confidence::No
+        })
+    }
+
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,

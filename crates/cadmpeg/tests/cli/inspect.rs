@@ -87,6 +87,45 @@ fn iges_dump_report_classifies_codec_refusal() {
 }
 
 #[test]
+fn a_file_of_one_iges_start_card_is_detected_and_dumped() {
+    let dir = tempdir().unwrap();
+    let mut bytes = vec![b' '; 72];
+    bytes.push(b'S');
+    bytes.extend_from_slice(b"      1");
+    bytes.push(b'\n');
+    let input = dir.path().join("one-start.igs");
+    fs::write(&input, &bytes).unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format: iges"));
+
+    let report = dir.path().join("decode-report.json");
+    let output = dir.path().join("one-start.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(value["decode_report"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["code"] == "card.framing-recovered"));
+}
+
+#[test]
 fn convert_decode_failure_writes_a_refusal_report() {
     let dir = tempdir().unwrap();
     let input = dir.path().join("malformed.igs");
