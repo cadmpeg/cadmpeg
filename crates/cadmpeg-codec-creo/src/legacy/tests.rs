@@ -1147,13 +1147,6 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["legacy_ascii_schema"], "12");
     assert_eq!(source.attributes["legacy_ascii_product_release"], "16.0");
-    assert_eq!(source.attributes["legacy_ascii_declaration_count"], "0");
-    assert_eq!(source.attributes["legacy_ascii_scope_count"], "1");
-    assert_eq!(source.attributes["legacy_ascii_value_count"], "0");
-    assert_eq!(
-        source.attributes["legacy_ascii_conflicting_declaration_count"],
-        "0"
-    );
 
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";

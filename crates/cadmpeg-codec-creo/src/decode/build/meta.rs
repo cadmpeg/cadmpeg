@@ -49,43 +49,7 @@ pub(super) fn source_meta(
         if let Some(release) = &legacy.product_release {
             insert_source_attribute(&mut attributes, "legacy_ascii_product_release", release);
         }
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_declaration_count",
-            legacy.persistence.declaration_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_scope_count",
-            legacy.persistence.scopes.len(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_value_count",
-            legacy.persistence.value_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_continuation_count",
-            legacy.persistence.continuation_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_unresolved_value_count",
-            legacy.persistence.unresolved_value_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_conflicting_declaration_count",
-            legacy.persistence.conflicting_declaration_count(),
-        );
     }
-    insert_source_attribute(&mut attributes, "file_size", scan.framing.data.len());
-    insert_source_attribute(
-        &mut attributes,
-        "section_count",
-        scan.framing.sections.len(),
-    );
     for (index, section) in scan.framing.sections.iter().enumerate() {
         insert_source_attribute(
             &mut attributes,
@@ -94,30 +58,9 @@ pub(super) fn source_meta(
         );
         insert_source_attribute(
             &mut attributes,
-            format_args!("section.{index}.raw_name"),
-            &section.raw_name,
-        );
-        insert_source_attribute(
-            &mut attributes,
             format_args!("section.{index}.role"),
             cadmpeg_core::container::ContainerRole::from(section.role()),
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.offset"),
-            section.offset(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.length"),
-            section.length(),
-        );
-    }
-    if let Some(c) = scan.framing.census.srf_array_count {
-        insert_source_attribute(&mut attributes, "srf_array_count", c);
-    }
-    if let Some(c) = scan.framing.census.crv_array_count {
-        insert_source_attribute(&mut attributes, "crv_array_count", c);
     }
     if let Some(unit) = &scan.framing.principal_unit {
         insert_source_attribute(&mut attributes, "principal_unit", unit);
@@ -457,20 +400,6 @@ pub(super) fn source_meta(
         crate::coverage::DECODED_CURVE_EXPRESSION_RECORD_COUNT,
         scan.curves.expressions.len(),
     );
-    insert_source_attribute(
-        &mut attributes,
-        "expanded_section_count",
-        scan.framing.expanded_sections.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "expanded_section_byte_count",
-        scan.framing
-            .expanded_sections
-            .iter()
-            .map(|section| section.data.len())
-            .sum::<usize>(),
-    );
     if let Some(family_table) = scan.framing.family_table {
         match family_table.pointer {
             crate::container::FamilyTablePointer::Null => {
@@ -661,11 +590,6 @@ pub(super) fn source_meta(
         .len();
     coverage.record(
         crate::coverage::UNRESOLVED_FEATURE_STATE_SELECTION_COUNT,
-        rejected_states,
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "unresolved_feature_state_selection_count",
         rejected_states,
     );
     if rejected_states != 0 {
@@ -1053,12 +977,6 @@ pub(super) fn source_meta(
         crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT,
         feature_surface_replay_association_count(scan)?,
     );
-    if let Some(count) = scan.framing.declared_body_count {
-        insert_source_attribute(&mut attributes, "declared_body_count", count);
-    }
-    if let Some(value) = scan.framing.first_quilt_ptr {
-        insert_source_attribute(&mut attributes, "first_quilt_ptr", value);
-    }
     Ok((
         SourceMeta::classified(
             DialectLayers::of(classification.matched().clone()),
