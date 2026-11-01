@@ -40,7 +40,41 @@ pub(super) fn project(
         None => losses.push(operand_loss()),
         _ => {}
     }
+    if let Some(Ok((feature, _))) = &projected {
+        for _ in 0..native_face_targets(feature.evaluation.definition()) {
+            losses.push(crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.note(
+                "Extrusion target retains its stored planar face geometry; its body-face identity remains unresolved.",
+            ));
+        }
+    }
     projected
+}
+
+pub(super) fn native_face_targets(definition: &cadmpeg_ir::features::FeatureDefinition) -> usize {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlaneTargetSource};
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
+    else {
+        return 0;
+    };
+    let is_face = |side: &cadmpeg_ir::features::ExtrudeSide| {
+        usize::from(matches!(
+            side.termination,
+            LinearTermination::ToPlane {
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            }
+        ))
+    };
+    usize::from(matches!(
+        start,
+        ExtrudeStart::FromPlane {
+            source: Some(PlaneTargetSource::FaceSurface),
+            ..
+        }
+    )) + match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => is_face(side),
+        ExtrudeExtent::TwoSided { first, second } => is_face(first) + is_face(second),
+    }
 }
 
 pub(super) struct Operands {
@@ -102,6 +136,7 @@ pub(super) fn work_point_plane(
     Some(LinearTermination::ToPlane {
         plane,
         native: cadmpeg_core::text::NonBlankString::new(point.native)?,
+        source: Some(cadmpeg_ir::features::PlaneTargetSource::WorkPoint),
     })
 }
 
@@ -143,8 +178,12 @@ pub(super) fn indexed_operands(
         &direction,
     )?;
     let start = if extent_value == EXTENT_FROM_TO {
-        let (plane, native) = extent_target_plane(source, index, 8, 10, 17)?;
-        ExtrudeStart::FromPlane { plane, native }
+        let (plane, native, source) = extent_target_plane(source, index, 8, 10, 17)?;
+        ExtrudeStart::FromPlane {
+            plane,
+            native,
+            source: Some(source),
+        }
     } else {
         ExtrudeStart::ProfilePlane {}
     };
@@ -384,4 +423,19 @@ pub(super) fn matches(
             .is_some_and(|expected| *profile == ProfileRef::Planar(expected));
     }
     source.properties.references().get(23) == source.properties.references().get(1)
+}
+
+pub(super) fn plane_surface_controls(
+    version: u8,
+    references: [crate::pmdc::PmDcReference; 3],
+    extension: Option<u32>,
+    state: u8,
+    form: u32,
+    value: u32,
+) -> bool {
+    references == [crate::pmdc::PmDcReference::from_packed(0); 3]
+        && extension == (version >= super::SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
+        && state == 1
+        && form == super::PLANE_SURFACE_FORM
+        && value == 0
 }

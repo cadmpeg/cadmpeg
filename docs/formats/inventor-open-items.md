@@ -272,6 +272,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Component references outside the transform require complete record grammars and source-document joins. Source revision selection and update dependencies require exact operands before external construction can replay. The additional component fields in other segment versions, and nonempty component lists, require their construction roles.
 
+### DE-12. Extrusion termination face identity
+
+**Question.** Which records join an extrusion's stored planar termination surface to its selected input-body face and history revision? What roles do the other surface reference, state, and value forms have?
+
+**Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination.
+
+**Need.** An exact selection-to-face join and input-body revision are required for a resolved face identity. Other surface controls require their selection, frame, and polarity roles.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

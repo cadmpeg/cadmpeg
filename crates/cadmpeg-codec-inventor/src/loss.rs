@@ -86,6 +86,8 @@ pub(crate) enum InventorLossCode {
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
     FeatureExtrusionProfileNative,
+    /// A planar extrusion target retains its unresolved body-face identity.
+    FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
@@ -260,6 +262,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
+        Self::FeatureExtrusionTargetFaceNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
@@ -366,6 +369,7 @@ impl InventorLossCode {
             }
             Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
+            Self::FeatureExtrusionTargetFaceNative => "feature.extrusion-target-face-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureEdgeSelectionEmptyItemsNative => {
                 "feature.edge-selection-empty-items-native"
@@ -491,6 +495,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
+            | Self::FeatureExtrusionTargetFaceNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
@@ -630,6 +635,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
+                "feature.extrusion-target-face-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
