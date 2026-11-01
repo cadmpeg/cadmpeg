@@ -2338,7 +2338,11 @@ fn validate_features(
                 ));
             }
         }
-        let output_slot = family.output_slot(raw_feature);
+        let output_slot = if matches!(family, crate::feature::FeatureFamily::Split) {
+            crate::feature::split::output_slot(definition)
+        } else {
+            family.output_slot(raw_feature)
+        };
         let expected_collection = raw_feature
             .properties
             .references()

@@ -126,6 +126,14 @@ pub(crate) enum InventorLossCode {
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
     FeatureSplitOperandsNative,
+    /// Split mode 1 retains its side and body-revision operands.
+    FeatureSplitModeOneNative,
+    /// Split mode 2 operands differ from the selected-face construction.
+    FeatureSplitModeTwoNative,
+    /// A surface-tool Split retains its unresolved kept side.
+    FeatureSplitTrimSideNative,
+    /// Selected Split faces retain their historical selector identity.
+    FeatureSplitFaceSelectionNative,
     /// A persistent body wrapper has no exact current-model join.
     FeatureBodySelectionNative,
     /// A history work plane's stored in-plane axes are not orthonormal.
@@ -268,6 +276,10 @@ impl InventorLossCode {
         Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
+        Self::FeatureSplitModeOneNative,
+        Self::FeatureSplitModeTwoNative,
+        Self::FeatureSplitTrimSideNative,
+        Self::FeatureSplitFaceSelectionNative,
         Self::FeatureBodySelectionNative,
         Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
@@ -378,6 +390,10 @@ impl InventorLossCode {
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
+            Self::FeatureSplitModeOneNative => "feature.split-mode-one-native",
+            Self::FeatureSplitModeTwoNative => "feature.split-mode-two-native",
+            Self::FeatureSplitTrimSideNative => "feature.split-trim-side-native",
+            Self::FeatureSplitFaceSelectionNative => "feature.split-face-selection-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureFilletOperandsNative => "feature.fillet-operands-native",
             Self::FeatureChamferOperandsNative => "feature.chamfer-operands-native",
@@ -484,6 +500,10 @@ impl InventorLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureSplitOperandsNative
+            | Self::FeatureSplitModeOneNative
+            | Self::FeatureSplitModeTwoNative
+            | Self::FeatureSplitTrimSideNative
+            | Self::FeatureSplitFaceSelectionNative
             | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureFilletOperandsNative
             | Self::FeatureChamferOperandsNative
@@ -620,6 +640,10 @@ mod tests {
                 "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
+                "feature.split-mode-one-native",
+                "feature.split-mode-two-native",
+                "feature.split-trim-side-native",
+                "feature.split-face-selection-native",
                 "feature.body-selection-native",
                 "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",

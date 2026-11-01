@@ -655,3 +655,62 @@ fn producing_outputs_keep_exact_joins_in_member_order_and_report_missing_wrapper
     );
     assert_eq!(model.feature_result_topologies[0].bodies().len(), 3);
 }
+
+#[test]
+fn trim_body_selections_resolve_distinct_bodies_and_report_native_operands() {
+    use cadmpeg_ir::features::{
+        BodyTrimSide, DistinctMembers, Feature, FeatureContent, FeatureEvaluation,
+    };
+    let source = FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands: TrimBodyOperands::new(
+            BodySelection::Native("target".into()),
+            BodySelection::Native("tool".into()),
+        )
+        .expect("distinct operands"),
+        keep: BodyTrimSide::Unresolved,
+    });
+    for missing in [false, true] {
+        let mut bodies = joins();
+        if missing {
+            bodies.remove("tool");
+        }
+        let mut actual = source.clone();
+        definition(&mut actual, &bodies, None);
+        let FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, keep }) = &actual
+        else {
+            panic!("trim")
+        };
+        assert_eq!(*keep, BodyTrimSide::Unresolved);
+        assert!(matches!(operands.targets(), BodySelection::Resolved { .. }));
+        assert_eq!(
+            matches!(operands.tools(), BodySelection::Native(_)),
+            missing
+        );
+        assert!(matches(source.clone(), &actual, &bodies, None));
+        let mut model = Model::default();
+        model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#trim").expect("feature"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: Some("trim_bodies".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(actual),
+            native_ref: None,
+            product_definition: None,
+        });
+        let losses = native_losses(&model, &bodies);
+        assert_eq!(losses.len(), usize::from(missing));
+        if missing {
+            assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
+        }
+    }
+    let mut aliases = joins();
+    aliases.insert("tool".into(), body("body:target"));
+    let mut actual = source.clone();
+    definition(&mut actual, &aliases, None);
+    assert_eq!(actual, source);
+}

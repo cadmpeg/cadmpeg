@@ -7,7 +7,9 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::features::{BodySelection, CombineOperands, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    BodySelection, CombineOperands, FeatureDefinition, FeatureOperation, TrimBodyOperands,
+};
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
 
@@ -284,6 +286,15 @@ pub(crate) fn definition(
                 *operands = resolved;
             }
         }
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
+            let mut targets = operands.targets().clone();
+            let mut tools = operands.tools().clone();
+            selection(&mut targets, bodies, None);
+            selection(&mut tools, bodies, tools_group);
+            if let Ok(resolved) = TrimBodyOperands::new(targets, tools) {
+                *operands = resolved;
+            }
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MoveBody {
                 bodies: selected, ..
@@ -409,6 +420,9 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
                     let (target, tools) = operands.clone().into_parts();
                     native(&target) + native(&tools)
+                }
+                FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
+                    native(operands.targets()) + native(operands.tools())
                 }
                 FeatureDefinition::Operation(
                     FeatureOperation::MoveBody { bodies, .. }

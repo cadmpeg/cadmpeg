@@ -77,7 +77,7 @@ const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
     0x28, 0xbe, 0x9a, 0x72, 0xd1, 0x11, 0x44, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOUNDARY_PATCH_TYPE: [u8; 16] = [
+pub(crate) const BOUNDARY_PATCH_TYPE: [u8; 16] = [
     0x91, 0x73, 0x94, 0x22, 0xd1, 0x11, 0x07, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
 pub(crate) const SELECTION_LIST_TYPE: [u8; 16] = [
@@ -2067,7 +2067,11 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Combine { .. })
             ) | (
                 Self::Split,
-                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::SplitBody { .. }
+                        | FeatureOperation::SplitFace { .. }
+                        | FeatureOperation::TrimBodies { .. }
+                )
             )
         )
     }
@@ -2097,7 +2101,11 @@ impl FeatureFamily {
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
-            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
+            FeatureDefinition::Operation(
+                FeatureOperation::SplitBody { .. }
+                | FeatureOperation::SplitFace { .. }
+                | FeatureOperation::TrimBodies { .. },
+            ) => Some(Self::Split),
             _ => None,
         }
     }
