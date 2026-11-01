@@ -951,6 +951,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
+### DR-170. Single-clause bounded-face nodes in DeleteFace selections
+
+**Question.** How does a bounded-face node with second prelude scalar `1` bind its incident face pair and endpoint topology to a selected historical face?
+
+**Known.** Five DeleteFace bounded-face operands in one public local file each contain two opener-framed nodes. Every node stores second prelude scalar `1`. The two-clause structure parser retains these nodes as complete raw programs. Other DeleteFace operands carry second prelude scalar `2` and two endpoint face-fan clauses as defined in `f3d.md` §3.1.
+
+**Need.** The complete single-clause grammar and its topology binding, including the relation between the clause and the endpoints of a closed boundary edge. Independent files with controlled closed-edge face selections must distinguish the clause count from an endpoint or vertex selector.
+
+**Conflict.** The two-clause grammar requires second prelude scalar `2`; these nodes carry `1`.
+
+**Note.** An unresolved DeleteFace group retains its native identity and reports `feature.face-selection-native`.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
