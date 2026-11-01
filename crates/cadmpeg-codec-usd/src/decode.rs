@@ -48,7 +48,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         ir,
         body: DecodeBody {
             losses,
-            ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), transferred))
+            ..DecodeBody::new(DecodeTransfer {
+                scope: ctx.depth().required_scope(),
+                geometry_transferred: transferred,
+            })
         },
         source_fidelity: SourceFidelity::default(),
     })

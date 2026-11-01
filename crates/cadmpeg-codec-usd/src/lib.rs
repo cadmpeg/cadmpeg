@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -110,10 +110,11 @@ impl CodecBackend for UsdCodec {
 }
 
 impl EncoderBackend for UsdCodec {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(TARGETS, Some(0));
 

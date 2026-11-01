@@ -28,8 +28,20 @@ fn lengths_scale_from_scene_units_to_millimetres() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("A"))
         .unwrap();
-    assert_eq!(root.transform.affine_rows()[0][3], 10.0);
-    assert_eq!(root.transform.affine_rows()[2][3], 30.0);
+    assert_eq!(
+        root.transform
+            .as_ref()
+            .expect("root placement")
+            .affine_rows()[0][3],
+        10.0
+    );
+    assert_eq!(
+        root.transform
+            .as_ref()
+            .expect("root placement")
+            .affine_rows()[2][3],
+        30.0
+    );
     let vertices = ir.model.tessellations[0].vertices();
     assert!((vertices[1].get().x - 10.0).abs() <= EPS_LENGTH);
     assert_eq!(

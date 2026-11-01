@@ -92,8 +92,16 @@ fn transforms_are_written_as_row_vector_matrices() {
     ));
     let (text, _) = encode(source.ir());
     let round = decode(&text);
-    let original = &source.ir().model.occurrences[0].transform.affine_rows();
-    let written = &round.ir().model.occurrences[0].transform.affine_rows();
+    let original = &source.ir().model.occurrences[0]
+        .transform
+        .as_ref()
+        .expect("root placement")
+        .affine_rows();
+    let written = &round.ir().model.occurrences[0]
+        .transform
+        .as_ref()
+        .expect("root placement")
+        .affine_rows();
     assert_eq!(original, written);
     assert!(text.contains("(0.001, 0.002, 0.003, 1))"), "{text}");
 }
