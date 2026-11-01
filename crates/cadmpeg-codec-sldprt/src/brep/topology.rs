@@ -751,6 +751,22 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
     ends.into_iter().min()
 }
 
+/// The end of the surface front refs of a FACE at `off` whose header prefix
+/// ends at `sense_end` (spec §4).
+fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize> {
+    let p = body_start(buf, off, 0x0e)?;
+    let (len, refs) = if sense_end == p + face_body::SURFACE_FRONT_REFS {
+        (face_body::LEN, refs_be::<5>(buf, sense_end)?)
+    } else if sense_end == p + face_delta::SURFACE_FRONT_REFS {
+        (face_delta::LEN, refs_tripled::<5>(buf, sense_end)?)
+    } else {
+        return None;
+    };
+    refs.iter()
+        .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+        .then_some(p + len)
+}
+
 /// The record tag of an intersection composite.
 const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
 
@@ -885,7 +901,8 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             off = end;
         } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
             scopes.excluded_starts.push(off + 1..end);
-            off = end;
+            // A FACE's surface front refs hold no record header.
+            off = face_front_refs_end(buf, off, end).unwrap_or(end);
         } else {
             off += 1;
         }
@@ -2035,6 +2052,9 @@ fn scan_records(
     }
     t
 }
+
+#[cfg(test)]
+mod scope_tests;
 
 #[cfg(test)]
 mod tests {
