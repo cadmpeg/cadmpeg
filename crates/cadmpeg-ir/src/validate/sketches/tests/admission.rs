@@ -197,6 +197,7 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
     let parameter: ParameterId = "test:model:parameter#same".try_into().unwrap();
     let mut ir = crate::CadIr::empty();
     ir.model.parameters.push(crate::features::DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,

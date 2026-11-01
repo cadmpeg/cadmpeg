@@ -30,6 +30,7 @@ fn configuration() -> DesignConfiguration {
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::mint(id).unwrap(),
         ordinal,
         name: None,
@@ -52,6 +53,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     let mut ir = unit_cube().unwrap();
     let parameter = ParameterId::mint("test:model:parameter#width").unwrap();
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,
@@ -293,6 +295,7 @@ fn inactive_dimension_resolution_uses_its_override_cache_and_never_the_base_cach
     let mut ir = CadIr::empty();
     let id = ParameterId::mint("test:model:parameter#width").unwrap();
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: id.clone(),
         owner: None,
         ordinal: 0,
