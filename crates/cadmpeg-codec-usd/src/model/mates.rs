@@ -127,6 +127,60 @@ struct Resolved {
 }
 
 impl super::Builder<'_, '_, '_, '_> {
+    /// The IR placement of row frame `frame`, with its origin in millimetres.
+    fn row_transform(&self, frame: &RowFrame) -> Option<Transform> {
+        // The row frame's rows are the columns of the IR placement.
+        let mut rows = [[0.0; 4]; 3];
+        for (axis, row) in rows.iter_mut().enumerate() {
+            for (column, value) in row.iter_mut().take(3).enumerate() {
+                *value = frame[column][axis];
+            }
+            row[3] = frame[3][axis] * self.scale;
+        }
+        Transform::affine(rows)
+    }
+
+    /// The attachment offsets of mate `prim`, when both are authored.
+    fn attachment_offsets(&mut self, prim: &Prim<'_>) -> Option<[Transform; 2]> {
+        let mut offset = |name: &str| {
+            vector(prim, name, 16, &mut self.issues).and_then(|values| row_frame(&values))
+        };
+        let (first, second) = (
+            offset("cadMate:attachmentOffset0")?,
+            offset("cadMate:attachmentOffset1")?,
+        );
+        Some([self.row_transform(&first)?, self.row_transform(&second)?])
+    }
+
+    /// The drives of the `UsdPhysics` joint that mate `prim` holds.
+    fn mate_drives(&mut self, prim: &Prim<'_>) -> Vec<cadmpeg_ir::products::JointDrive> {
+        let stage = self.stage;
+        let mut out = Vec::new();
+        for child in prim
+            .children
+            .iter()
+            .filter_map(|child| stage.prims.get(*child))
+        {
+            let Some(kind) = child
+                .type_name()
+                .and_then(crate::schema::physics::JointType::of)
+            else {
+                continue;
+            };
+            let data = crate::schema::physics::joint(child, kind, &mut self.issues);
+            for drive in &data.drives {
+                match self.drive(data.kind, drive) {
+                    Some(drive) => out.push(drive),
+                    None => self
+                        .tallies
+                        .joint_properties
+                        .push(format!("{}: drive {}", child.path, drive.instance)),
+                }
+            }
+        }
+        out
+    }
+
     /// The value attributes of mate `prim`.
     fn mate_values(&mut self, prim: &Prim<'_>) -> Values {
         let scale = self.scale;
@@ -224,15 +278,7 @@ impl super::Builder<'_, '_, '_, '_> {
         let entry = self.brep_entries.get(&key)?;
         let face_ir = entry.faces.get(&face)?.clone();
         let frame = product(&offset, &witness);
-        // The row frame's rows are the columns of the IR placement.
-        let mut rows = [[0.0; 4]; 3];
-        for (axis, row) in rows.iter_mut().enumerate() {
-            for (column, value) in row.iter_mut().take(3).enumerate() {
-                *value = frame[column][axis];
-            }
-            row[3] = frame[3][axis] * self.scale;
-        }
-        let local = Transform::affine(rows)?;
+        let local = self.row_transform(&frame)?;
         let frame = match &entry.body_transform {
             Some(placement) => placement.compose(local).ok()?,
             None => local,
@@ -268,6 +314,8 @@ impl super::Builder<'_, '_, '_, '_> {
             }
             let id = self.joint_id(&prim.path);
             let values = self.mate_values(prim);
+            let offsets = self.attachment_offsets(prim);
+            let drives = self.mate_drives(prim);
             let scale = self.scale;
             let driving =
                 token(prim, "cadMate:drivingParameter", &mut self.issues).and_then(|text| {
@@ -411,7 +459,7 @@ impl super::Builder<'_, '_, '_, '_> {
                                 detached: false,
                             },
                         ],
-                        None,
+                        offsets,
                     );
                     joint.set_frame_sense(Some(sense));
                     Some(joint)
@@ -421,6 +469,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 Some(mut joint) => {
                     joint.suppressed = !enabled;
                     joint.driving_parameter = driving;
+                    joint.drives = drives;
                     joint.native_ref = Some(prim.path.clone());
                     self.ir.model.assembly_joints.push(joint);
                     self.admit("usd_mate")?;

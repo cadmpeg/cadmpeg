@@ -372,7 +372,7 @@ impl super::Builder<'_, '_, '_, '_> {
 
     /// One drive in IR units, or `None` when the joint type has no degree of
     /// freedom for its instance.
-    fn drive(&self, kind: JointType, drive: &Drive) -> Option<JointDrive> {
+    pub(super) fn drive(&self, kind: JointType, drive: &Drive) -> Option<JointDrive> {
         let axis = match (kind, drive.instance.as_str()) {
             (JointType::Revolute, "angular") => DriveAxis::Rotation { axis: FrameAxis::Z },
             (JointType::Prismatic, "linear") => DriveAxis::Translation { axis: FrameAxis::Z },

@@ -175,6 +175,13 @@ class "CadMate" (
     uniform string[] cadMate:coupledJoints (
         doc = """The CADIR identities of the joints a gear or rack-and-pinion coupling acts on."""
     )
+    uniform matrix4d cadMate:attachmentOffset0 (
+        doc = """The attachment offset of the first connector, row-vector, translation in
+                 stage length units. Authored with cadMate:attachmentOffset1."""
+    )
+    uniform matrix4d cadMate:attachmentOffset1 (
+        doc = """The attachment offset of the second connector."""
+    )
     uniform string cadMate:drivingParameter (
         doc = """The CADIR identity of the design parameter that drives the mate."""
     )

@@ -79,31 +79,38 @@ fn a_mate_survives_a_write_once() {
 /// Agreement of a joint value after a write, per unit of its magnitude.
 const VALUE_TOLERANCE: f64 = 1e-12;
 
-/// Whether `left` and `right` agree, each value within `VALUE_TOLERANCE`.
-fn same_kind(left: &PairedJointKind, right: &PairedJointKind) -> bool {
-    fn close(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+/// Agreement of a joint drive value after a write, per unit of its
+/// magnitude: `UsdPhysics` drive attributes are binary32.
+const DRIVE_TOLERANCE: f64 = 1e-6;
+
+/// Whether `left` and `right` agree, each number within `tolerance` per unit
+/// of its magnitude.
+fn agree<T: serde::Serialize>(left: &T, right: &T, tolerance: f64) -> bool {
+    fn close(left: &serde_json::Value, right: &serde_json::Value, tolerance: f64) -> bool {
         match (left, right) {
             (serde_json::Value::Number(a), serde_json::Value::Number(b)) => {
                 let (a, b) = (
                     a.as_f64().unwrap_or(f64::NAN),
                     b.as_f64().unwrap_or(f64::NAN),
                 );
-                (a - b).abs() <= VALUE_TOLERANCE * a.abs().max(1.0)
+                (a - b).abs() <= tolerance * a.abs().max(1.0)
             }
             (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
-                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| close(a, b))
+                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| close(a, b, tolerance))
             }
             (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
                 a.len() == b.len()
                     && a.iter()
-                        .all(|(key, a)| b.get(key).is_some_and(|b| close(a, b)))
+                        .all(|(key, a)| b.get(key).is_some_and(|b| close(a, b, tolerance)))
             }
             (a, b) => a == b,
         }
     }
-    let left = serde_json::to_value(left).expect("a kind");
-    let right = serde_json::to_value(right).expect("a kind");
-    close(&left, &right)
+    close(
+        &serde_json::to_value(left).expect("a value"),
+        &serde_json::to_value(right).expect("a value"),
+        tolerance,
+    )
 }
 
 #[test]
@@ -197,8 +204,33 @@ fn every_joint_family_and_its_values_survive_a_write() {
     for (index, kind) in kinds.into_iter().enumerate() {
         let id = cadmpeg_ir::products::JointId::mint(format!("test:model:joint#{index}"))
             .expect("an id");
-        let mut joint = AssemblyJoint::paired(id, kind, connectors.clone(), *offset_frames);
+        let offsets = if index == 0 {
+            let shifted = |x: f64| {
+                cadmpeg_ir::transform::Transform::affine([
+                    [1.0, 0.0, 0.0, x],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 2.0],
+                ])
+                .expect("a transform")
+            };
+            Some([shifted(1.0), shifted(-3.0)])
+        } else {
+            *offset_frames
+        };
+        let mut joint = AssemblyJoint::paired(id, kind, connectors.clone(), offsets);
         joint.set_frame_sense(base.frame_sense());
+        if index == 1 {
+            joint.drives.push(
+                serde_json::from_value(serde_json::json!({
+                    "axis": {"kind": "rotation", "axis": "z"},
+                    "mode": "force",
+                    "target_position": 0.5,
+                    "stiffness": 10.0,
+                    "damping": 1.0
+                }))
+                .expect("a drive"),
+            );
+        }
         ir.model.assembly_joints.push(joint);
     }
     let (text, _) = encode(&ir);
@@ -214,6 +246,33 @@ fn every_joint_family_and_its_values_survive_a_write() {
         else {
             panic!("pairs");
         };
-        assert!(same_kind(left, right), "{left:?} != {right:?}");
+        assert!(agree(left, right, VALUE_TOLERANCE), "{left:?} != {right:?}");
+        assert!(
+            agree(&found.drives, &expected.drives, DRIVE_TOLERANCE),
+            "{:?}",
+            found.drives
+        );
+        let (
+            JointOperands::Pair {
+                offset_frames: found_offsets,
+                ..
+            },
+            JointOperands::Pair {
+                offset_frames: expected_offsets,
+                ..
+            },
+        ) = (found.operands(), expected.operands())
+        else {
+            panic!("pairs");
+        };
+        assert!(
+            agree(
+                &found_offsets.map(|pair| pair.map(cadmpeg_ir::transform::Transform::affine_rows)),
+                &expected_offsets
+                    .map(|pair| pair.map(cadmpeg_ir::transform::Transform::affine_rows)),
+                VALUE_TOLERANCE
+            ),
+            "{found_offsets:?}"
+        );
     }
 }

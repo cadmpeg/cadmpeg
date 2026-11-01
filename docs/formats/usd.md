@@ -1489,8 +1489,9 @@ A mate states its values with these attributes, each authored only for the types
 | `cadMate:family` | uniform string | the source family name of a native mate |
 | `cadMate:coupledJoints` | uniform `string[]` | the CADIR identities of the joints that a gear or rack-and-pinion coupling acts on, in order |
 | `cadMate:drivingParameter` | uniform string | the CADIR identity of the design parameter that drives the mate |
+| `cadMate:attachmentOffset0`, `cadMate:attachmentOffset1` | uniform matrix4d | the attachment offset of each connector, as a row-vector matrix with its translation in the length unit of the stage; both or neither are authored |
 
-A mate prim and a `UsdPhysics` joint prim have `cad:id`, the CADIR identity of the joint.
+A mate prim and a `UsdPhysics` joint prim have `cad:id`, the CADIR identity of the joint. A mate prim holds the `UsdPhysics` joint of its family, where one exists; the drives of the mate are the `PhysicsDriveAPI` instances of that joint.
 
 `CadGroundMate` fixes the composed placement of the one target of `rel cadMate:grounded`, with `cadMate:enabled`.
 

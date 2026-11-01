@@ -81,6 +81,18 @@ fn relative(left: &RowFrame, right: &RowFrame) -> RowFrame {
     out
 }
 
+/// The row-vector matrix of `transform`, with its origin in stage units.
+fn offset_text(transform: Transform) -> String {
+    let [r0, r1, r2] = transform.affine_rows();
+    let scale = super::MILLIMETRES_PER_UNIT;
+    matrix_text(&[
+        [r0[0], r1[0], r2[0]],
+        [r0[1], r1[1], r2[1]],
+        [r0[2], r1[2], r2[2]],
+        [r0[3] / scale, r1[3] / scale, r2[3] / scale],
+    ])
+}
+
 fn matrix_text(frame: &RowFrame) -> String {
     let row = |values: [f64; 3], last: f64| tuple(&[values[0], values[1], values[2], last]);
     format!(
@@ -542,6 +554,18 @@ impl Writer<'_> {
         if let JointOperands::Pair { kind, .. } = joint.operands() {
             for line in mate_values(kind) {
                 self.out.line(&line);
+            }
+        }
+        if let JointOperands::Pair {
+            offset_frames: Some(offsets),
+            ..
+        } = joint.operands()
+        {
+            for (side, offset) in offsets.iter().enumerate() {
+                self.out.line(&format!(
+                    "uniform matrix4d cadMate:attachmentOffset{side} = {}",
+                    offset_text(*offset)
+                ));
             }
         }
         if let Some(parameter) = &joint.driving_parameter {
