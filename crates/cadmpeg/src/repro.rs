@@ -11,6 +11,7 @@ use cadmpeg_registry::{
     InputCatalog,
 };
 use clap::Args;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 const MAX_REPRO_INPUT_BYTES: u64 = 256 * 1024 * 1024;
@@ -57,7 +58,6 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
         bail!("the cut does not reproduce the selected finding");
     }
     let bytes = serde_json::to_vec(&bundle)?;
-    use std::io::Write;
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
