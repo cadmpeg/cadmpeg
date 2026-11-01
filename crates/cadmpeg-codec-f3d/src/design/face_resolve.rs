@@ -970,7 +970,7 @@ fn loft_edge_profile_face_slot(
     Some(evidence?.1)
 }
 
-pub(super) fn resolved_historical_face_group(
+pub(crate) fn resolved_historical_face_group(
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,

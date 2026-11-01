@@ -317,6 +317,17 @@ pub(super) fn bind_face_selection(
     {
         return;
     }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
+        if let Some(resolved) = crate::design::face_resolve::resolved_historical_face_group(
+            scope,
+            scope.previous_history_state_id(),
+            group,
+            operands,
+        ) {
+            *selection = resolved;
+        }
+        return;
+    }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             scope,

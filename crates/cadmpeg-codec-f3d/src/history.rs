@@ -20,6 +20,7 @@ mod cache;
 pub(crate) mod compact_lineage;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
+mod face_recipe;
 mod loop_index;
 mod output_chain;
 mod recipe_index;
@@ -5121,6 +5122,7 @@ struct FaceOperandTransition<'a> {
 struct FaceOperandCaches<'a> {
     topology_queries: TopologyQueryCache<'a>,
     recipe_topologies: RecipeTopologyCache<'a>,
+    face_recipes: SnapshotCache<'a, AsmHistoricalTopology, face_recipe::FaceRecipeIndex>,
 }
 
 fn bind_historical_face_operand<'a>(
@@ -5142,10 +5144,19 @@ fn bind_historical_face_operand<'a>(
     let FaceOperandCaches {
         topology_queries,
         recipe_topologies,
+        face_recipes,
     } = caches;
     let stream = crate::ids::native_stream(&operand.id);
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
+    }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
+        operand.resolved_face_slots = face_recipes
+            .get(topology, face_recipe::FaceRecipeIndex::new)
+            .resolve(operand)
+            .into_iter()
+            .collect();
+        return Ok(());
     }
     if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
         operand.candidate_faces =
