@@ -226,6 +226,7 @@ pub(super) fn arrangement_region_matching_curve_members(
     )
 }
 
+#[derive(Clone, Copy)]
 enum CurveProgram<'a> {
     Ordered(&'a [cadmpeg_ir::sketches::SketchEntityId]),
     Members(&'a [cadmpeg_ir::sketches::SketchEntityId]),
