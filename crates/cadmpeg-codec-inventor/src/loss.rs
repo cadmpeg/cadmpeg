@@ -92,6 +92,8 @@ pub(crate) enum InventorLossCode {
     FeatureThreadDefinitionPartial,
     /// Thicken selections, construction controls, or thickness side remain native.
     FeatureThickenOperandsNative,
+    /// Thicken retains a construction form with unresolved operands.
+    FeatureThickenConstructionNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
     /// Attachment type-9 modes, Boolean controls, and states have no construction map.
@@ -249,6 +251,7 @@ impl InventorLossCode {
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
+        Self::FeatureThickenConstructionNative,
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
@@ -351,6 +354,7 @@ impl InventorLossCode {
             }
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
+            Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureSheetMetalAttachmentControlsNative => {
                 "feature.sheet-metal-attachment-controls-native"
@@ -466,6 +470,7 @@ impl InventorLossCode {
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
+            | Self::FeatureThickenConstructionNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
@@ -598,6 +603,7 @@ mod tests {
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
+                "feature.thicken-construction-native",
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",

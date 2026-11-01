@@ -4498,3 +4498,26 @@ type = "u32"
 source = "spec"
 anchor = "value u32 = 0"
 value = 0
+
+[[record]]
+name = "pm_dc_thicken_selection_tail"
+kind = "byte"
+section = "13"
+anchor = "eight-byte Thicken selection tail"
+size = 8
+note = "Offsets start after the versioned content header and stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thicken.rs"
+
+[[record.field]]
+name = "faces"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a face-collection reference"
+
+[[record.field]]
+name = "parameter"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a parameter reference, then ends"

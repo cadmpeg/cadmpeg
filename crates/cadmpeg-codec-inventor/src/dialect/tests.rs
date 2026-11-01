@@ -156,6 +156,7 @@ const CASES: &[Case] = &[
             schema: 31,
             meta_marker: "RSe Meta Stream Version 8",
             meta_version: 8,
+            design_version: 18,
         }),
         id: "inventor:cfb3-rse31-meta8",
         admitted: true,
@@ -168,6 +169,7 @@ const CASES: &[Case] = &[
             schema: 12,
             meta_marker: "RSe Meta Stream Version 8",
             meta_version: 8,
+            design_version: 18,
         }),
         id: "inventor:unknown",
         admitted: false,
@@ -180,6 +182,7 @@ const CASES: &[Case] = &[
             schema: 31,
             meta_marker: "RSe Meta Stream Version 8",
             meta_version: 9,
+            design_version: 18,
         }),
         id: "inventor:unknown",
         admitted: false,
@@ -192,6 +195,7 @@ const CASES: &[Case] = &[
             schema: 31,
             meta_marker: "RSe Meta Stream Version 9",
             meta_version: 8,
+            design_version: 18,
         }),
         id: "inventor:unknown",
         admitted: false,
@@ -490,6 +494,7 @@ fn the_charged_loss_names_the_declaration_that_diverged() {
         schema: 12,
         meta_marker: "RSe Meta Stream Version 9",
         meta_version: 9,
+        design_version: 18,
     }));
     let note = losses
         .iter()

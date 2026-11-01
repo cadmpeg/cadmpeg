@@ -125,6 +125,7 @@ pub(crate) struct EnvelopeDeclarations {
     pub(crate) meta_marker: &'static str,
     /// The `RSe` metadata stream version word.
     pub(crate) meta_version: u16,
+    pub(crate) design_version: u8,
 }
 
 impl Default for EnvelopeDeclarations {
@@ -133,6 +134,7 @@ impl Default for EnvelopeDeclarations {
             schema: 31,
             meta_marker: "RSe Meta Stream Version 8",
             meta_version: 8,
+            design_version: 18,
         }
     }
 }
@@ -197,9 +199,20 @@ pub(crate) fn primary_envelope_fixture_with_design(
     kernel: &[u8],
     design: &[([u8; 16], Vec<u8>)],
 ) -> Vec<u8> {
+    primary_envelope_fixture_with_design_version(kernel, design, 18)
+}
+
+pub(crate) fn primary_envelope_fixture_with_design_version(
+    kernel: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    design_version: u8,
+) -> Vec<u8> {
     assert!(!design.is_empty(), "a PmDc segment carries a record");
     primary_envelope_fixture_with_carrier_and_failures(
-        EnvelopeDeclarations::default(),
+        EnvelopeDeclarations {
+            design_version,
+            ..EnvelopeDeclarations::default()
+        },
         &kernel_carrier_fixture(kernel),
         design,
         false,
@@ -359,7 +372,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     } else {
         registry_fixture(
             &[&BREP_SEGMENT, &DESIGN_SEGMENT],
-            base.map_or(18, |base| base.design_version),
+            base.map_or(declarations.design_version, |base| base.design_version),
         )
     };
     let revisions = revision_fixture();
@@ -385,7 +398,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
             bulk_stream_fixture_at_version(
                 &payloads,
                 methods[1],
-                base.map_or(18, |base| base.design_version),
+                base.map_or(declarations.design_version, |base| base.design_version),
             ),
         ));
         streams.push((
