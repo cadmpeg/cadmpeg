@@ -196,6 +196,7 @@ impl Serialize for PersistentDesignLink {
         struct WireRef<'a> {
             id: &'a str,
             target: &'a cadmpeg_asm::brep::records::identity::NativeRowId,
+            #[serde(skip_serializing_if = "Option::is_none")]
             target_coedge: Option<u32>,
             design_id: &'a str,
             entity_kind: i64,
