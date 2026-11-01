@@ -351,7 +351,7 @@ PmDc references store a one-based record index in bits 0 through 30 and a qualif
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, `0x40000`, and `0x80000` do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, and `0x40000` do not mark construction geometry. Bit `0x80000` of a circle, ellipse, or spline, bit `0x200` of a line or circle, and bit `0x8000` of a line do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry. Bits `0x80000` and `0x200000` of a line mark construction geometry: a construction line bounds no profile loop.
 
 The planar entity types are:
 

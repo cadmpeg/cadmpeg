@@ -841,6 +841,18 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::marks_construction(source) != entity.construction
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch entity construction state does not match its entity flags"
+                    .into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
         if matches!(
             entity.geometry.definition(),
             cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse { .. }
