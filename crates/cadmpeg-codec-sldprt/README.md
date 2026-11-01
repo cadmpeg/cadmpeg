@@ -1,7 +1,8 @@
 # cadmpeg-codec-sldprt
 
-`cadmpeg-codec-sldprt` reads SolidWorks part documents into
-[`cadmpeg-ir`][ir] and writes supported IR changes back to `.sldprt`. It
+`cadmpeg-codec-sldprt` reads SolidWorks part documents, and the component
+structure of assembly documents, into [`cadmpeg-ir`][ir] and writes supported
+IR changes back to `.sldprt`. It
 transfers B-rep topology, analytic and NURBS carriers, display meshes,
 appearances, selected document attributes, Keywords XML feature history, and
 ResolvedFeatures sketch-entity records.
