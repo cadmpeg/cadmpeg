@@ -666,7 +666,24 @@ Feature-label class identifier `ecf481729c4d5f925f2192b4a83096ac` identifies Thi
 | 14 | Control record `c11c7b63ea4d840b68b76e8c67bcbc48` |
 | 15 | Result object collection |
 
-Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a dimensionless value; it is not a second thickness. Both parameters use the ownership rules of section 11. Part-operation value 3 selects a solid join, and value 2 selects a cut. Slot 0 supplies the selected support geometry through a selection list. Each non-null selection reference resolves in the same PmDc segment. These references do not identify faces of the final model body.
+A selection-list member of type `68888bbfd11105af000847b00524dc09` contains the versioned content header, a face-collection reference, and a parameter reference, then ends. The two references form the eight-byte Thicken selection tail. Control records in slots 13 and 14 use the feature-enumeration grammar.
+
+Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a dimensionless value. Both parameters use the ownership rules of section 11. Part-operation value 3 selects a solid join, and value 2 selects a cut. Slot 0 supplies the selected support geometry through a selection list. Each non-null selection reference resolves in the same PmDc segment and identifies a native selection-property record.
+
+In segment major versions 19 and 25, the following control tuple defines an in-place forward face offset:
+
+| Operand | Value |
+| --- | --- |
+| Slot 1 | Part-operation type 5, value 3 |
+| Slots 2, 3, 4, 7, 10, and 17 | False |
+| Slot 16 | True |
+| Slots 5, 8, and 11 | Null |
+| Slot 6 | Positive length parameter |
+| Slot 12 | Dimensionless parameter with value 10 |
+| Slot 13 | Enumeration type 3, value 3 |
+| Slot 14 | Enumeration type 1, value 0 |
+
+Slot 0 contains one selection wrapper. Its face collection contains one or more distinct face-item references. Each face item has a marker-2 integer list, metadata words `(1, 0x10000000)`, and one nonzero index. The indices are distinct within the collection. The wrapper's parameter reference identifies the parameter of the sole dimension in slot 9. That positive length parameter supplies the full displacement along the oriented input-face normal, in internal centimetres. Slot 15 contains one surface-body wrapper and identifies the offset result of the existing body.
 
 Feature-label class identifier `12963cb8d1118a2860008bb801f31bb0` identifies a Shell operation. Slot 1 identifies the removed-face collection. An empty collection removes no face. Collection members are non-null and distinct by record index. Slot 2 identifies a selection list. Slot 3 identifies the wall-thickness length parameter, with units as defined in section 11. Slot 4 stores a reference. Slot 9 identifies the result object collection, whose members identify the output bodies.
 

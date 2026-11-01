@@ -933,6 +933,7 @@ fn decode_container<'a>(
         losses.extend(unresolved.edge_treatment_losses);
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);
+        losses.extend(unresolved.thicken_losses);
         losses.extend(unresolved.plate_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
@@ -967,7 +968,10 @@ fn decode_container<'a>(
                 "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
             )));
         }
-        losses.extend(crate::feature::thicken_operand_losses(&ir.model.features));
+        losses.extend(crate::feature::thicken_operand_losses(
+            &ir.model.features,
+            &crate::feature::thicken_source_ids(&feature_inventory),
+        ));
         let partial_shells = ir
             .model
             .features
@@ -1465,6 +1469,7 @@ struct UnresolvedDesign {
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -1546,6 +1551,7 @@ fn project_design(
         edge_treatment_losses: features.edge_treatment_losses,
         loft_losses: features.loft_losses,
         split_losses: features.split_losses,
+        thicken_losses: features.thicken_losses,
         plate_losses: features.plate_losses,
         mirror_losses: features.mirror_losses,
     })

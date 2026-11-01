@@ -18,6 +18,7 @@ use crate::InventorCodec;
 
 mod combine;
 mod surface_extrusion;
+mod thicken;
 
 #[test]
 fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
