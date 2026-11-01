@@ -156,7 +156,7 @@ Parsed by:
 | 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
 | 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
 
-## `design_parameter_legacy_287_tail`
+## `design_parameter_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
 
@@ -167,9 +167,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `tail_prefix` | `bytes[2]` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` · value `[0, 1]` |
-| 2 | 1 | `family_marker` | `u8` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` · value `175` |
-| 3 | 9 | `zero_run_9` | `bytes[9]` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` |
+| 0 | 1 | `separator` | `u8` | little | spec | The twelve-byte parameter tail is · value `0` |
+| 1 | 1 | `collection_marker` | `u8` | little | spec | The twelve-byte parameter tail is · value `1` |
+| 2 | 4 | `collection_record_index` | `u32` | little | spec | The twelve-byte parameter tail is |
+| 6 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The twelve-byte parameter tail is |
 
 ## `design_parameter_owner_prefix`
 
@@ -7974,20 +7975,6 @@ Parsed by:
 | 11 | 11 | `length_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
 | 22 | 11 | `offset_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
 | 33 | 1 | `end_flag` | `u8` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` · value `1` |
-
-## `design_parameter_plain_tail`
-
-Spec §3.1 · layout: byte offsets · size: 12 B
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `reserved` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `0` |
-| 1 | 1 | `reference` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `1` |
-| 2 | 8 | `target` | `u64` | little | spec | The reference stores its complete u64 target and two zero flag bytes. |
-| 10 | 2 | `flags` | `bytes[2]` | little | spec | The reference stores its complete u64 target and two zero flag bytes. · value `[0, 0]` |
 
 ## `design_configuration_table_serializer_prefix`
 
