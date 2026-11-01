@@ -302,7 +302,7 @@ impl super::Builder<'_, '_, '_, '_> {
         let ids: Option<Vec<JointId>> = coupled
             .iter()
             .map(|target| {
-                let id = crate::ids::joint(target.as_deref()?);
+                let id = self.joint_id(target.as_deref()?);
                 self.ir
                     .model
                     .assembly_joints
@@ -493,7 +493,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 JointLimits::new(lower.map(factor), upper.map(factor))
             };
             let scale = self.scale;
-            let id = crate::ids::joint(&path);
+            let id = self.joint_id(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
                     let (grounded, world): (Vec<_>, Vec<_>) = connectors

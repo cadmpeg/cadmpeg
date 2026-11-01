@@ -127,7 +127,7 @@ impl super::Builder<'_, '_, '_, '_> {
             .and_then(crate::schema::physics::JointType::of)
             .is_some()
         {
-            let joint = crate::ids::joint(path);
+            let joint = self.joint_id(path);
             return model
                 .assembly_joints
                 .iter()

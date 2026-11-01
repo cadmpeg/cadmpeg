@@ -10,9 +10,10 @@
 
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointConnector, JointOperands, OperandContainer, PairedJointKind, PlaneSense,
-    PrototypeReference,
+    AssemblyJoint, JointConnector, JointLimits, JointOperands, OperandContainer, PairedJointKind,
+    PlaneSense, PrototypeReference, TangentContact,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use super::text::{quoted, real, tuple, Names};
@@ -102,9 +103,9 @@ fn is_identity(frame: &RowFrame, tolerance: f64) -> bool {
     }) && frame[3].iter().all(|value| value.abs() <= tolerance)
 }
 
-/// The mate type of a joint family, or `None` when no mate type states it.
-fn mate_type(joint: &AssemblyJoint) -> Option<&'static str> {
-    Some(match joint.operands() {
+/// The mate type of a joint family.
+fn mate_type(joint: &AssemblyJoint) -> &'static str {
+    match joint.operands() {
         JointOperands::Grounded { .. } => "CadGroundMate",
         JointOperands::Pair { kind, .. } => match kind {
             PairedJointKind::Fixed { .. } => "CadFastenedMate",
@@ -113,9 +114,177 @@ fn mate_type(joint: &AssemblyJoint) -> Option<&'static str> {
             PairedJointKind::Cylindrical { .. } => "CadCylindricalMate",
             PairedJointKind::PlaneCoincidence { .. } => "CadPlanarMate",
             PairedJointKind::Ball {} => "CadBallMate",
-            _ => return None,
+            PairedJointKind::Distance { .. } => "CadDistanceMate",
+            PairedJointKind::Parallel {} => "CadParallelMate",
+            PairedJointKind::Perpendicular {} => "CadPerpendicularMate",
+            PairedJointKind::Angle { .. } => "CadAngleMate",
+            PairedJointKind::AxisCoincidence {} => "CadConcentricMate",
+            PairedJointKind::PointOnAxis { .. } => "CadPointOnAxisMate",
+            PairedJointKind::Insert { .. } => "CadInsertMate",
+            PairedJointKind::Tangent { .. } => "CadTangentMate",
+            PairedJointKind::Screw { .. } => "CadScrewMate",
+            PairedJointKind::Gears { .. } => "CadGearMate",
+            PairedJointKind::RackPinion { .. } => "CadRackPinionMate",
+            PairedJointKind::Belt { .. } => "CadBeltMate",
+            PairedJointKind::Native { .. } => "CadNativeMate",
         },
-    })
+    }
+}
+
+/// The value attributes of a mate of joint family `kind` (spec §18.3):
+/// lengths in stage units and angles in degrees.
+fn mate_values(kind: &PairedJointKind) -> Vec<String> {
+    let length = |value: FiniteReal| real(value.get() / super::MILLIMETRES_PER_UNIT);
+    let angle = |value: FiniteReal| real(value.get().to_degrees());
+    let mut lines = Vec::new();
+    let mut scalar = |name: &str, value: Option<String>| {
+        if let Some(value) = value {
+            lines.push(format!("uniform double cadMate:{name} = {value}"));
+        }
+    };
+    let (angle_value, distance, distance2, offset) = match kind {
+        PairedJointKind::Fixed { angle: a, .. }
+        | PairedJointKind::Revolute { angle: a, .. }
+        | PairedJointKind::Angle { angle: a } => (*a, None, None, None),
+        PairedJointKind::Cylindrical {
+            angle: a,
+            distance: d,
+            ..
+        } => (*a, *d, None, None),
+        PairedJointKind::Native {
+            angle: a,
+            distance: d,
+            distance2: e,
+            ..
+        } => (*a, *d, *e, None),
+        PairedJointKind::Slider { distance: d, .. }
+        | PairedJointKind::Distance { distance: d }
+        | PairedJointKind::Screw { distance: d }
+        | PairedJointKind::PointOnAxis { distance: d } => (None, *d, None, None),
+        PairedJointKind::RackPinion {
+            distance: d,
+            distance2: e,
+            ..
+        }
+        | PairedJointKind::Gears {
+            distance: d,
+            distance2: e,
+            ..
+        }
+        | PairedJointKind::Belt {
+            distance: d,
+            distance2: e,
+        } => (None, *d, *e, None),
+        PairedJointKind::PlaneCoincidence { offset: o, .. }
+        | PairedJointKind::Insert { offset: o, .. } => (None, None, None, *o),
+        PairedJointKind::Ball {}
+        | PairedJointKind::Parallel {}
+        | PairedJointKind::Perpendicular {}
+        | PairedJointKind::AxisCoincidence {}
+        | PairedJointKind::Tangent { .. } => (None, None, None, None),
+    };
+    scalar("angle", angle_value.map(angle));
+    scalar("distance", distance.map(length));
+    scalar("distance2", distance2.map(length));
+    scalar("offset", offset.map(length));
+    match kind {
+        PairedJointKind::Gears {
+            ratio: Some(ratio), ..
+        } => scalar("ratio", Some(real(ratio.get()))),
+        PairedJointKind::RackPinion {
+            ratio: Some(ratio), ..
+        } => scalar(
+            "ratio",
+            Some(real(ratio.get().to_degrees() * super::MILLIMETRES_PER_UNIT)),
+        ),
+        _ => {}
+    }
+    if let PairedJointKind::Fixed {
+        translation_offset: Some(offset),
+        ..
+    }
+    | PairedJointKind::Slider {
+        translation_offset: Some(offset),
+        ..
+    }
+    | PairedJointKind::Native {
+        translation_offset: Some(offset),
+        ..
+    } = kind
+    {
+        lines.push(format!(
+            "uniform double3 cadMate:translationOffset = {}",
+            tuple(&offset.map(|value| value.get() / super::MILLIMETRES_PER_UNIT))
+        ));
+    }
+    let limits = |limits: &JointLimits, convert: &dyn Fn(f64) -> f64| {
+        let (low, high) = match limits {
+            JointLimits::Minimum { minimum } => (Some(minimum.get()), None),
+            JointLimits::Maximum { maximum } => (None, Some(maximum.get())),
+            JointLimits::Range(range) => (Some(range.minimum().get()), Some(range.maximum().get())),
+        };
+        tuple(&[
+            low.map_or(f64::NAN, convert),
+            high.map_or(f64::NAN, convert),
+        ])
+    };
+    let (angular, linear) = match kind {
+        PairedJointKind::Fixed {
+            angular_limits,
+            linear_limits,
+            ..
+        }
+        | PairedJointKind::Cylindrical {
+            angular_limits,
+            linear_limits,
+            ..
+        }
+        | PairedJointKind::Native {
+            angular_limits,
+            linear_limits,
+            ..
+        } => (angular_limits.as_ref(), linear_limits.as_ref()),
+        PairedJointKind::Revolute { angular_limits, .. } => (angular_limits.as_ref(), None),
+        PairedJointKind::Slider { linear_limits, .. } => (None, linear_limits.as_ref()),
+        _ => (None, None),
+    };
+    if let Some(angular) = angular {
+        lines.push(format!(
+            "uniform double2 cadMate:angularLimits = {}",
+            limits(angular, &f64::to_degrees)
+        ));
+    }
+    if let Some(linear) = linear {
+        lines.push(format!(
+            "uniform double2 cadMate:linearLimits = {}",
+            limits(linear, &|value| value / super::MILLIMETRES_PER_UNIT)
+        ));
+    }
+    if let PairedJointKind::Native { name, .. } = kind {
+        lines.push(format!("uniform string cadMate:family = {}", quoted(name)));
+    }
+    if let PairedJointKind::Tangent { contact } = kind {
+        let token = match contact {
+            TangentContact::Outside => "outside",
+            TangentContact::Inside => "inside",
+        };
+        lines.push(format!("uniform token cadMate:contact = {}", quoted(token)));
+    }
+    if let PairedJointKind::Gears { coupled_joints, .. }
+    | PairedJointKind::RackPinion { coupled_joints, .. } = kind
+    {
+        if !coupled_joints.is_empty() {
+            let ids: Vec<String> = coupled_joints
+                .iter()
+                .map(|joint| quoted(joint.as_str()))
+                .collect();
+            lines.push(format!(
+                "uniform string[] cadMate:coupledJoints = [{}]",
+                ids.join(", ")
+            ));
+        }
+    }
+    lines
 }
 
 impl Writer<'_> {
@@ -298,9 +467,7 @@ impl Writer<'_> {
         names: &mut Names,
         connectors: &mut Names,
     ) -> bool {
-        let Some(mate_type) = mate_type(joint) else {
-            return false;
-        };
+        let mate_type = mate_type(joint);
         let base = joint
             .native_ref
             .as_deref()
@@ -319,6 +486,10 @@ impl Writer<'_> {
             self.prim_head(&format!("def {mate_type}"), &name, &[]);
             self.out.open();
             self.out.line(&format!("rel cadMate:grounded = <{target}>"));
+            self.out.line(&format!(
+                "uniform string cad:id = {}",
+                quoted(joint.id.as_str())
+            ));
             if joint.suppressed {
                 self.out.line("uniform bool cadMate:enabled = 0");
             }
@@ -358,11 +529,26 @@ impl Writer<'_> {
             self.out
                 .line(&format!("rel cadMate:connector{side} = <{end}>"));
         }
+        self.out.line(&format!(
+            "uniform string cad:id = {}",
+            quoted(joint.id.as_str())
+        ));
         if flip {
             self.out.line("uniform bool cadMate:flip = 1");
         }
         if joint.suppressed {
             self.out.line("uniform bool cadMate:enabled = 0");
+        }
+        if let JointOperands::Pair { kind, .. } = joint.operands() {
+            for line in mate_values(kind) {
+                self.out.line(&line);
+            }
+        }
+        if let Some(parameter) = &joint.driving_parameter {
+            self.out.line(&format!(
+                "uniform string cadMate:drivingParameter = {}",
+                quoted(parameter.as_str())
+            ));
         }
         let mut inner = Names::default();
         self.joint(joint, &mut inner, Some("Joint"));

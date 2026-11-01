@@ -1457,6 +1457,41 @@ The direction sign `s` is `−1` when both connectors use `faceFrame`, and `+1` 
 | `CadPlanarMate` | translation along `x` and `y`, rotation about `z` |
 | `CadBallMate` | rotation about `x`, `y`, and `z` |
 
+These mate types state a relation between the connector frames other than a coincidence up to free motions:
+
+| Type | Relation |
+| --- | --- |
+| `CadDistanceMate` | the connectors are `cadMate:distance` apart |
+| `CadParallelMate` | the `z` axes are parallel |
+| `CadPerpendicularMate` | the `z` axes are perpendicular |
+| `CadAngleMate` | the `z` axes make the angle `cadMate:angle` |
+| `CadConcentricMate` | the `z` axes span one line, in either sense |
+| `CadPointOnAxisMate` | the origin of `C₀` is `cadMate:distance` from the line that the `z` axis of `C₁` spans |
+| `CadInsertMate` | the `z` axes span one line, and the origins are `cadMate:offset` apart along `z₀`, with the direction sign of the mate |
+| `CadTangentMate` | the cylinder of the face of `C₀`, whose axis is `z₀`, touches the plane of `C₁` on the side that `cadMate:contact` (`outside` or `inside`) names |
+| `CadScrewMate` | rotation about and translation along `z` are coupled by the pitch `cadMate:distance` |
+| `CadGearMate` | the rotation of `C₁` is `cadMate:ratio` times the rotation of `C₀`, in magnitude |
+| `CadRackPinionMate` | the rotation of the pinion is `cadMate:ratio` degrees per length unit of rack translation, in magnitude |
+| `CadBeltMate` | two pulley rotations are coupled through a belt |
+| `CadNativeMate` | the source joint family that `cadMate:family` names |
+
+A mate states its values with these attributes, each authored only for the types that have the value:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cadMate:angle` | uniform double | the angular offset, in degrees |
+| `cadMate:distance`, `cadMate:distance2` | uniform double | the primary and secondary linear offsets, in the length unit of the stage |
+| `cadMate:offset` | uniform double | the signed separation of a planar or insert mate along `z₀` |
+| `cadMate:translationOffset` | uniform double3 | the connector-local translation offset of a fastened, slider, or native mate |
+| `cadMate:angularLimits`, `cadMate:linearLimits` | uniform double2 | the lower and upper bounds, in degrees and in length units; `NaN` is an open bound |
+| `cadMate:ratio` | uniform double | the coupling ratio of a gear or rack-and-pinion mate |
+| `cadMate:contact` | uniform token | `outside` or `inside`, for a tangent mate |
+| `cadMate:family` | uniform string | the source family name of a native mate |
+| `cadMate:coupledJoints` | uniform `string[]` | the CADIR identities of the joints that a gear or rack-and-pinion coupling acts on, in order |
+| `cadMate:drivingParameter` | uniform string | the CADIR identity of the design parameter that drives the mate |
+
+A mate prim and a `UsdPhysics` joint prim have `cad:id`, the CADIR identity of the joint.
+
 `CadGroundMate` fixes the composed placement of the one target of `rel cadMate:grounded`, with `cadMate:enabled`.
 
 ### 18.4 CadBrepToleranceAPI

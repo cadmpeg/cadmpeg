@@ -363,6 +363,8 @@ struct Builder<'s, 'l, 'c, 'a> {
     pending_mates: Vec<usize>,
     /// The `CadSketch` prim and the sketch of each sketch read.
     sketch_prims: Vec<(String, cadmpeg_ir::sketches::SketchId)>,
+    /// The IR identity of each mate and joint prim, by path.
+    joint_ids: BTreeMap<String, cadmpeg_ir::products::JointId>,
     /// The IR identity of each occurrence, by prim path.
     occurrence_ids: BTreeMap<String, cadmpeg_ir::ids::OccurrenceId>,
     /// The definition key of each `cad:definition:id`: the path of the first
@@ -419,6 +421,7 @@ pub(crate) fn build<'a>(
         parameter_ids: BTreeMap::new(),
         feature_ids: BTreeMap::new(),
         occurrence_ids: BTreeMap::new(),
+        joint_ids: BTreeMap::new(),
         sketch_prims: Vec::new(),
         definition_ids: BTreeMap::new(),
         identified_definitions: BTreeMap::new(),
@@ -428,6 +431,7 @@ pub(crate) fn build<'a>(
         transferred: false,
     };
     let mut ordinal = 0_u32;
+    builder.joint_ids();
     builder.feature_ids();
     builder.parameter_ids();
     for root in stage.roots.clone() {
@@ -446,6 +450,7 @@ pub(crate) fn build<'a>(
     builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
     builder.joints(pending)?;
+    builder.couplings();
     builder.finish_physx()?;
     let transferred = builder.transferred;
     let issues = std::mem::take(&mut builder.issues);
@@ -1009,6 +1014,35 @@ impl Builder<'_, '_, '_, '_> {
         let id = mint(text.clone())?;
         self.used_ids.insert(text);
         Some(id)
+    }
+
+    /// Assigns the IR identity of each mate and `UsdPhysics` joint prim of
+    /// the stage: its `cad:id` when valid and unused, otherwise the identity
+    /// of its path.
+    fn joint_ids(&mut self) {
+        let stage = self.stage;
+        for prim in stage.prims.iter().filter(|prim| {
+            mates::is_mate_type(prim.type_name())
+                || prim
+                    .type_name()
+                    .and_then(crate::schema::physics::JointType::of)
+                    .is_some()
+        }) {
+            let id = self
+                .cad_id(&prim.path, |text| {
+                    cadmpeg_ir::products::JointId::mint(text).ok()
+                })
+                .unwrap_or_else(|| crate::ids::joint(&prim.path));
+            self.joint_ids.insert(prim.path.clone(), id);
+        }
+    }
+
+    /// The joint of the mate or joint prim at `path`.
+    fn joint_id(&self, path: &str) -> cadmpeg_ir::products::JointId {
+        self.joint_ids
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::joint(path))
     }
 
     /// The occurrence of the prim at `path`.

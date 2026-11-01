@@ -6,8 +6,10 @@
 //! resolve gives way to the `UsdPhysics` joints it holds.
 
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointConnector, JointOperand, PairedJointKind, PlaneSense,
+    AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, PairedJointKind, PlaneSense,
+    TangentContact,
 };
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::transform::Transform;
 
 use crate::brep::frame::{OriginRule, RowFrame};
@@ -26,6 +28,19 @@ enum MateType {
     Cylindrical,
     Planar,
     Ball,
+    Distance,
+    Parallel,
+    Perpendicular,
+    Angle,
+    Concentric,
+    PointOnAxis,
+    Insert,
+    Tangent,
+    Screw,
+    Gear,
+    RackPinion,
+    Belt,
+    Native,
     Ground,
 }
 
@@ -37,9 +52,38 @@ fn mate_type(type_name: Option<&str>) -> Option<MateType> {
         "CadCylindricalMate" => MateType::Cylindrical,
         "CadPlanarMate" => MateType::Planar,
         "CadBallMate" => MateType::Ball,
+        "CadDistanceMate" => MateType::Distance,
+        "CadParallelMate" => MateType::Parallel,
+        "CadPerpendicularMate" => MateType::Perpendicular,
+        "CadAngleMate" => MateType::Angle,
+        "CadConcentricMate" => MateType::Concentric,
+        "CadPointOnAxisMate" => MateType::PointOnAxis,
+        "CadInsertMate" => MateType::Insert,
+        "CadTangentMate" => MateType::Tangent,
+        "CadScrewMate" => MateType::Screw,
+        "CadGearMate" => MateType::Gear,
+        "CadRackPinionMate" => MateType::RackPinion,
+        "CadBeltMate" => MateType::Belt,
+        "CadNativeMate" => MateType::Native,
         "CadGroundMate" => MateType::Ground,
         _ => return None,
     })
+}
+
+/// The value attributes of a mate prim, in IR units (spec §18.3).
+#[derive(Default)]
+struct Values {
+    angle: Option<FiniteReal>,
+    distance: Option<FiniteReal>,
+    distance2: Option<FiniteReal>,
+    offset: Option<FiniteReal>,
+    ratio: Option<f64>,
+    translation: Option<[FiniteReal; 3]>,
+    angular_limits: Option<JointLimits>,
+    linear_limits: Option<JointLimits>,
+    contact: Option<TangentContact>,
+    family: Option<String>,
+    coupled: Vec<JointId>,
 }
 
 /// Whether a prim type is a mate type.
@@ -83,6 +127,49 @@ struct Resolved {
 }
 
 impl super::Builder<'_, '_, '_, '_> {
+    /// The value attributes of mate `prim`.
+    fn mate_values(&mut self, prim: &Prim<'_>) -> Values {
+        let scale = self.scale;
+        let mut scalar = |name: &str| {
+            vector(prim, &format!("cadMate:{name}"), 1, &mut self.issues)
+                .and_then(|value| value.first().copied())
+        };
+        let length = |value: f64| FiniteReal::new(value * scale);
+        let angle = |value: f64| FiniteReal::new(value.to_radians());
+        let mut values = Values {
+            angle: scalar("angle").and_then(angle),
+            distance: scalar("distance").and_then(length),
+            distance2: scalar("distance2").and_then(length),
+            offset: scalar("offset").and_then(length),
+            ratio: scalar("ratio"),
+            ..Values::default()
+        };
+        values.translation = vector(prim, "cadMate:translationOffset", 3, &mut self.issues)
+            .and_then(|value| {
+                let [x, y, z] = <[f64; 3]>::try_from(value.as_slice()).ok()?;
+                Some([length(x)?, length(y)?, length(z)?])
+            });
+        let mut limits = |name: &str, convert: &dyn Fn(f64) -> f64| {
+            let value = vector(prim, &format!("cadMate:{name}"), 2, &mut self.issues)?;
+            let bound = |value: f64| (!value.is_nan()).then(|| convert(value));
+            JointLimits::new(bound(*value.first()?), bound(*value.get(1)?))
+        };
+        values.angular_limits = limits("angularLimits", &f64::to_radians);
+        values.linear_limits = limits("linearLimits", &|value| value * scale);
+        values.contact = match token(prim, "cadMate:contact", &mut self.issues).as_deref() {
+            Some("outside") => Some(TangentContact::Outside),
+            Some("inside") => Some(TangentContact::Inside),
+            _ => None,
+        };
+        values.family = crate::schema::token(prim, "cadMate:family", &mut self.issues);
+        values.coupled = crate::schema::tokens(prim, "cadMate:coupledJoints", &mut self.issues)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| JointId::mint(id).ok())
+            .collect();
+        values
+    }
+
     /// The occurrence path and definition key of the `BrepArray` prim at
     /// `path`: its folding group, or the prim itself.
     fn brep_definition(&mut self, path: &str) -> Option<(String, String)> {
@@ -179,7 +266,18 @@ impl super::Builder<'_, '_, '_, '_> {
                     .joint_properties
                     .push(format!("{}: cadMate:tolerance", prim.path));
             }
-            let id = crate::ids::joint(&prim.path);
+            let id = self.joint_id(&prim.path);
+            let values = self.mate_values(prim);
+            let scale = self.scale;
+            let driving =
+                token(prim, "cadMate:drivingParameter", &mut self.issues).and_then(|text| {
+                    self.ir
+                        .model
+                        .parameters
+                        .iter()
+                        .find(|parameter| parameter.id.as_str() == text)
+                        .map(|parameter| parameter.id.clone())
+                });
             let joint = if kind == MateType::Ground {
                 single_target(prim, "cadMate:grounded")
                     .filter(|target| {
@@ -222,31 +320,79 @@ impl super::Builder<'_, '_, '_, '_> {
                     } else {
                         PlaneSense::Aligned
                     };
+                    let ratio = |value: Option<f64>| value.and_then(PositiveReal::new);
                     let paired = match kind {
                         MateType::Fastened => PairedJointKind::Fixed {
-                            angle: None,
-                            translation_offset: None,
-                            angular_limits: None,
-                            linear_limits: None,
+                            angle: values.angle,
+                            translation_offset: values.translation,
+                            angular_limits: values.angular_limits,
+                            linear_limits: values.linear_limits,
                         },
                         MateType::Revolute => PairedJointKind::Revolute {
-                            angle: None,
-                            angular_limits: None,
+                            angle: values.angle,
+                            angular_limits: values.angular_limits,
                         },
                         MateType::Slider => PairedJointKind::Slider {
-                            distance: None,
-                            translation_offset: None,
-                            linear_limits: None,
+                            distance: values.distance,
+                            translation_offset: values.translation,
+                            linear_limits: values.linear_limits,
                         },
                         MateType::Cylindrical => PairedJointKind::Cylindrical {
-                            angle: None,
-                            distance: None,
-                            angular_limits: None,
-                            linear_limits: None,
+                            angle: values.angle,
+                            distance: values.distance,
+                            angular_limits: values.angular_limits,
+                            linear_limits: values.linear_limits,
                         },
                         MateType::Planar => PairedJointKind::PlaneCoincidence {
                             sense,
-                            offset: None,
+                            offset: values.offset,
+                        },
+                        MateType::Distance => PairedJointKind::Distance {
+                            distance: values.distance,
+                        },
+                        MateType::Parallel => PairedJointKind::Parallel {},
+                        MateType::Perpendicular => PairedJointKind::Perpendicular {},
+                        MateType::Angle => PairedJointKind::Angle {
+                            angle: values.angle,
+                        },
+                        MateType::Concentric => PairedJointKind::AxisCoincidence {},
+                        MateType::PointOnAxis => PairedJointKind::PointOnAxis {
+                            distance: values.distance,
+                        },
+                        MateType::Insert => PairedJointKind::Insert {
+                            sense,
+                            offset: values.offset,
+                        },
+                        MateType::Tangent => PairedJointKind::Tangent {
+                            contact: values.contact?,
+                        },
+                        MateType::Screw => PairedJointKind::Screw {
+                            distance: values.distance,
+                        },
+                        MateType::Gear => PairedJointKind::Gears {
+                            distance: values.distance,
+                            distance2: values.distance2,
+                            ratio: ratio(values.ratio),
+                            coupled_joints: values.coupled,
+                        },
+                        MateType::RackPinion => PairedJointKind::RackPinion {
+                            distance: values.distance,
+                            distance2: values.distance2,
+                            ratio: ratio(values.ratio.map(|value| value.to_radians() / scale)),
+                            coupled_joints: values.coupled,
+                        },
+                        MateType::Belt => PairedJointKind::Belt {
+                            distance: values.distance,
+                            distance2: values.distance2,
+                        },
+                        MateType::Native => PairedJointKind::Native {
+                            name: values.family?,
+                            angle: values.angle,
+                            translation_offset: values.translation,
+                            distance: values.distance,
+                            distance2: values.distance2,
+                            angular_limits: values.angular_limits,
+                            linear_limits: values.linear_limits,
                         },
                         MateType::Ball | MateType::Ground => PairedJointKind::Ball {},
                     };
@@ -274,6 +420,7 @@ impl super::Builder<'_, '_, '_, '_> {
             match joint {
                 Some(mut joint) => {
                     joint.suppressed = !enabled;
+                    joint.driving_parameter = driving;
                     joint.native_ref = Some(prim.path.clone());
                     self.ir.model.assembly_joints.push(joint);
                     self.admit("usd_mate")?;
@@ -287,5 +434,58 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         }
         Ok(())
+    }
+}
+
+impl super::Builder<'_, '_, '_, '_> {
+    /// Drops from each coupling the coupled joints that the stage does not
+    /// give, after every joint is read.
+    pub(super) fn couplings(&mut self) {
+        let held: std::collections::BTreeSet<JointId> = self
+            .ir
+            .model
+            .assembly_joints
+            .iter()
+            .map(|joint| joint.id.clone())
+            .collect();
+        for joint in &mut self.ir.model.assembly_joints {
+            let cadmpeg_ir::products::JointOperands::Pair {
+                kind,
+                connectors,
+                offset_frames,
+                frame_sense,
+            } = joint.operands()
+            else {
+                continue;
+            };
+            let mut kind = kind.clone();
+            let (PairedJointKind::Gears { coupled_joints, .. }
+            | PairedJointKind::RackPinion { coupled_joints, .. }) = &mut kind
+            else {
+                continue;
+            };
+            let listed = coupled_joints.len();
+            coupled_joints.retain(|coupled| held.contains(coupled));
+            if coupled_joints.len() == listed {
+                continue;
+            }
+            self.tallies.joint_properties.push(format!(
+                "{}: {} coupled joints",
+                joint.id,
+                listed - coupled_joints.len()
+            ));
+            let mut rebuilt = AssemblyJoint::paired(
+                joint.id.clone(),
+                kind,
+                (**connectors).clone(),
+                *offset_frames,
+            );
+            rebuilt.set_frame_sense(*frame_sense);
+            rebuilt.suppressed = joint.suppressed;
+            rebuilt.driving_parameter = joint.driving_parameter.take();
+            rebuilt.drives = std::mem::take(&mut joint.drives);
+            rebuilt.native_ref = joint.native_ref.take();
+            *joint = rebuilt;
+        }
     }
 }

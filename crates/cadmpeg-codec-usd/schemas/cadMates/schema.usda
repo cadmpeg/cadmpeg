@@ -137,6 +137,47 @@ class "CadMate" (
         doc = """false = the mate is retained but asserts nothing, as UsdPhysics
                  jointEnabled."""
     )
+    uniform string cad:id (
+        doc = """The CADIR identity of the joint (docs/formats/usd.md §18)."""
+    )
+    uniform double cadMate:angle (
+        doc = """The angular offset, in degrees."""
+    )
+    uniform double cadMate:distance (
+        doc = """The primary linear offset, in the length unit of the stage."""
+    )
+    uniform double cadMate:distance2 (
+        doc = """The secondary linear offset, in the length unit of the stage."""
+    )
+    uniform double cadMate:offset (
+        doc = """The signed separation of a planar or insert mate along z0."""
+    )
+    uniform double3 cadMate:translationOffset (
+        doc = """The connector-local translation offset."""
+    )
+    uniform double2 cadMate:angularLimits (
+        doc = """Lower and upper bounds in degrees; NaN is an open bound."""
+    )
+    uniform double2 cadMate:linearLimits (
+        doc = """Lower and upper bounds in length units; NaN is an open bound."""
+    )
+    uniform double cadMate:ratio (
+        doc = """The coupling ratio of a gear (dimensionless) or rack-and-pinion mate
+                 (degrees of pinion rotation per length unit of rack translation)."""
+    )
+    uniform token cadMate:contact (
+        allowedTokens = ["outside", "inside"]
+        doc = """The side of the plane on which the cylinder of a tangent mate lies."""
+    )
+    uniform string cadMate:family (
+        doc = """The source joint family name of a native mate."""
+    )
+    uniform string[] cadMate:coupledJoints (
+        doc = """The CADIR identities of the joints a gear or rack-and-pinion coupling acts on."""
+    )
+    uniform string cadMate:drivingParameter (
+        doc = """The CADIR identity of the design parameter that drives the mate."""
+    )
     uniform double cadMate:tolerance = 0.000001 (
         doc = """SCALE-RELATIVE satisfaction tolerance (dimensionless). A length residual is
                  satisfied at <= tolerance * l, where l is the mate's characteristic length;
@@ -190,6 +231,97 @@ class CadBallMate "CadBallMate" (
     inherits = </CadMate>
     doc = """Origins coincide. Free: three rotations about the common origin. Cf. UsdPhysics
              SphericalJoint without cone limits."""
+)
+{
+}
+
+class CadDistanceMate "CadDistanceMate" (
+    inherits = </CadMate>
+    doc = """The connectors are cadMate:distance apart."""
+)
+{
+}
+
+class CadParallelMate "CadParallelMate" (
+    inherits = </CadMate>
+    doc = """The z axes are parallel."""
+)
+{
+}
+
+class CadPerpendicularMate "CadPerpendicularMate" (
+    inherits = </CadMate>
+    doc = """The z axes are perpendicular."""
+)
+{
+}
+
+class CadAngleMate "CadAngleMate" (
+    inherits = </CadMate>
+    doc = """The z axes make the angle cadMate:angle."""
+)
+{
+}
+
+class CadConcentricMate "CadConcentricMate" (
+    inherits = </CadMate>
+    doc = """The z axes span one line, in either sense."""
+)
+{
+}
+
+class CadPointOnAxisMate "CadPointOnAxisMate" (
+    inherits = </CadMate>
+    doc = """The origin of the first connector is cadMate:distance from the axis of the second."""
+)
+{
+}
+
+class CadInsertMate "CadInsertMate" (
+    inherits = </CadMate>
+    doc = """Coincident axes with planes cadMate:offset apart."""
+)
+{
+}
+
+class CadTangentMate "CadTangentMate" (
+    inherits = </CadMate>
+    doc = """The cylinder of the first connector touches the plane of the second."""
+)
+{
+}
+
+class CadScrewMate "CadScrewMate" (
+    inherits = </CadMate>
+    doc = """Rotation and translation along z coupled by the pitch cadMate:distance."""
+)
+{
+}
+
+class CadGearMate "CadGearMate" (
+    inherits = </CadMate>
+    doc = """Two rotations coupled by cadMate:ratio."""
+)
+{
+}
+
+class CadRackPinionMate "CadRackPinionMate" (
+    inherits = </CadMate>
+    doc = """Pinion rotation coupled to rack translation by cadMate:ratio."""
+)
+{
+}
+
+class CadBeltMate "CadBeltMate" (
+    inherits = </CadMate>
+    doc = """Two pulley rotations coupled through a belt."""
+)
+{
+}
+
+class CadNativeMate "CadNativeMate" (
+    inherits = </CadMate>
+    doc = """The source joint family that cadMate:family names."""
 )
 {
 }

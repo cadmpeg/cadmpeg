@@ -637,6 +637,10 @@ impl Writer<'_> {
         metadata.extend(settings_schemas);
         self.prim_head(&format!("def {joint_type}"), &name, &metadata);
         self.out.open();
+        self.out.line(&format!(
+            "uniform string cad:id = {}",
+            quoted(joint.id.as_str())
+        ));
         if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
             joint: joint.id.clone(),
         }) {
