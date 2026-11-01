@@ -1202,3 +1202,119 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
     )
     .is_err());
 }
+
+fn close_with_target(mut pose: XrefContainedPose, target: u64) -> XrefContainedPose {
+    let mut bytes = pose.frame_bytes.to_vec();
+    let count = cadmpeg_core::decode::View::u32_le_at(&bytes, 20).unwrap();
+    let mut at = 24;
+    for _ in 0..count {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+        at += 4;
+    }
+    assert_eq!(&bytes[at..at + 2], &[0, 0]);
+    at += 2 + std::mem::size_of::<[[f64; 4]; 4]>();
+    let start = at;
+    let count = cadmpeg_core::decode::View::u32_le_at(&bytes, at).unwrap();
+    at += 4;
+    for _ in 0..count {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+    }
+    let mut closing = 2_u32.to_le_bytes().to_vec();
+    closing.extend(local_reference(8506));
+    closing.extend(typed_cross_document_reference(target, PLACEMENT, ROLE));
+    bytes.splice(start..at, closing);
+    pose.frame_bytes = bytes.into();
+    pose
+}
+
+#[test]
+fn component_path_chain_keeps_a_child_local_pose_when_its_source_frame_agrees() {
+    let mut source = translation(5.0, 0.0, 0.0);
+    source[0][0] = 0.0;
+    source[0][1] = -1.0;
+    source[1][0] = 1.0;
+    source[1][1] = 0.0;
+    let mut world = source;
+    world[1][3] = 3.0;
+    let mut pose = close_with_target(retained(12, 496, &[], world), 496);
+    let mut bytes = pose.frame_bytes.to_vec();
+    let mut at = 24;
+    for _ in 0..2 {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+        at += 4;
+    }
+    bytes.splice(at..at + 11, inline_local(8506, PLACEMENT));
+    pose.frame_bytes = bytes.into();
+    let mut reference = reference(vec![pose]);
+    reference.transform = Some(source.try_into().unwrap());
+    let mut current_world = source;
+    current_world[0][3] = 10.0;
+    current_world[1][3] = 20.0;
+    let current_bytes = owned_carrier(13, &[], current_world);
+    let current = crate::xref::component_path_pose(
+        &current_bytes,
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    )
+    .unwrap();
+    reference.current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: current.carrier_record_index,
+        frame_bytes: current_bytes.into(),
+        transform: current.transform.map(|rows| rows.try_into().unwrap()),
+    });
+    let (ir, losses, _) = placed_reference_edit(reference, 100.0, |ir| {
+        ir.model.occurrences[3].parent = ir.model.occurrences[0].parent.clone();
+        ir.model.occurrences[3].transform = Transform::affine([
+            [0.0, -1.0, 0.0, 100.0],
+            [1.0, 0.0, 0.0, 200.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+    });
+    let world = ir.model.occurrences[3]
+        .transform
+        .compose(ir.model.occurrences[5].transform)
+        .unwrap();
+    for (row, expected) in world.rows().iter().zip([100.0, 230.0, 0.0]) {
+        assert!((row[3] - expected).abs() < 1e-9);
+    }
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
+}
+
+#[test]
+fn component_path_chain_places_a_nested_target_in_a_mixed_reference() {
+    let (ir, losses, _) = placed_reference(
+        reference(vec![
+            retained(11, 496, &[], translation(5.0, 0.0, 0.0)),
+            nested_retained(12, 497, translation(9.0, 0.0, 0.0)),
+        ]),
+        10.0,
+    );
+    let world = ir.model.occurrences[2]
+        .transform
+        .compose(ir.model.occurrences[3].transform)
+        .and_then(|world| world.compose(ir.model.occurrences[6].transform))
+        .unwrap();
+    assert!((world.rows()[0][3] - 90.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPose.kind(),
+            F3dLossCode::XrefContainedPose.kind()
+        ]
+    );
+}
+
+#[test]
+fn component_path_chain_requires_the_nested_target_in_a_mixed_reference() {
+    let pose = close_with_target(nested_retained(12, 497, translation(9.0, 0.0, 0.0)), 498);
+    let (ir, losses, _) = placed_reference(
+        reference(vec![
+            retained(11, 496, &[], translation(5.0, 0.0, 0.0)),
+            pose,
+        ]),
+        10.0,
+    );
+    assert!((ir.model.occurrences[6].transform.rows()[0][3] + 30.0).abs() < 1e-9);
+    assert!(losses.contains(&F3dLossCode::XrefContainedPoseNative.kind()));
+}

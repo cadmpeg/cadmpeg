@@ -2026,7 +2026,7 @@ fn modern_occurrence_placement(
     serializer_magic: Option<u32>,
 ) -> Option<OccurrencePlacement> {
     let (link_names, at) = occurrence_path(body)?;
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at, serializer_magic)?;
+    let ClosedPlacement { transform, .. } = placement_matrix_and_tail(body, at, serializer_magic)?;
     Some(OccurrencePlacement {
         frame_bytes: Vec::new(),
         occurrence_guid: None,
@@ -2041,6 +2041,7 @@ fn modern_occurrence_placement(
 struct ClosedPlacement {
     /// `None` is the stored identity form.
     transform: Option<[[f64; 4]; 4]>,
+    tail_offset: usize,
 }
 
 /// Read the optional identity marker, the matrix it selects, and the closing
@@ -2089,10 +2090,69 @@ fn placement_matrix_and_tail_with(
             cursor += 128;
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
-            return Some(ClosedPlacement { transform });
+            return Some(ClosedPlacement {
+                transform,
+                tail_offset: cursor,
+            });
         }
     }
     None
+}
+
+struct ClosingOccurrenceChain<'a> {
+    references: View<'a>,
+    count: usize,
+}
+
+fn component_path_closing_chain(body: &[u8]) -> Option<ClosingOccurrenceChain<'_>> {
+    let (_, at) = occurrence_path_members(body)?;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    let placement = [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .find_map(|magic| {
+            placement_matrix_and_tail_with(body, at + 1, magic, decode_orthonormal_matrix)
+        })?;
+    let mut view = View::over_retained(body);
+    view.seek(placement.tail_offset)?;
+    let count = view.u32_le()?;
+    let count = view.counted(u64::from(count), 1)?.get();
+    let start = view.position();
+    let mut end = start;
+    for _ in 0..count {
+        take_reference(body, &mut end)?;
+    }
+    Some(ClosingOccurrenceChain {
+        references: view.child(start, end)?,
+        count,
+    })
+}
+
+pub(crate) fn component_path_names_contained(body: &[u8], placement: u64, target: u64) -> bool {
+    let Some((members, _)) = occurrence_path_members(body) else {
+        return false;
+    };
+    let Some(elements) =
+        ordered_contained_elements(&members).or_else(|| nested_contained_elements(&members))
+    else {
+        return false;
+    };
+    elements.placement_record_index == placement
+        && elements.contained_record_index == target
+        && component_path_closing_chain(body)
+            .is_some_and(|chain| chain.names_contained(placement, target, elements.role))
+}
+
+impl ClosingOccurrenceChain<'_> {
+    fn names_contained(&self, placement: u64, target: u64, role: &str) -> bool {
+        if self.count != 2 {
+            return false;
+        }
+        let mut at = 0;
+        matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
+            && matches!(take_reference(self.references.window(), &mut at), Some(Reference::CrossDocument { target: record, target_type_guid, link_name, .. }) if record == target && target_type_guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) && link_name.eq_str(role))
+    }
 }
 
 /// The current pose that a `CommonData` component-path carrier stores for one
@@ -2133,7 +2193,8 @@ pub(crate) fn component_path_pose(
     if placement_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(ComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         placement_record_index,
@@ -2188,7 +2249,8 @@ pub(crate) fn contained_component_path_pose(
     if body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(ContainedPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         role: elements.role.to_owned(),
@@ -2363,7 +2425,8 @@ pub(crate) fn owned_component_path_pose(
         .iter()
         .map(|(owner, _)| typed_local_placement(owner))
         .collect::<Option<Vec<_>>>()?;
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(OwnedPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         role: role.to_owned(),
@@ -2462,7 +2525,8 @@ pub(crate) fn local_component_path_pose(
     if component_record_index == 0 || occurrence_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(LocalComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         component_record_index,
@@ -2522,7 +2586,7 @@ pub(crate) fn component_path_carrier(
     if body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } =
+    let ClosedPlacement { transform, .. } =
         placement_matrix_and_tail_with(body, at + 1, serializer_magic, decode_orthonormal_matrix)?;
     Some(ComponentPathCarrier {
         carrier_record_index: View::u64_le_at(body, 7)?,

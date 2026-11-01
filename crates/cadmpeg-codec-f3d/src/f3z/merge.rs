@@ -212,14 +212,41 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
+        let (legacy, qualified): (Vec<_>, Vec<_>) =
+            table.references.iter().cloned().partition(|reference| {
+                reference
+                    .contained_poses
+                    .iter()
+                    .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+                    && reference
+                        .owned_poses
+                        .iter()
+                        .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+            });
+        let legacy_table = XrefTable {
+            references: legacy,
+            ..Default::default()
+        };
+        let qualified_table = XrefTable {
+            references: qualified,
+            ..Default::default()
+        };
+        let mut left_identity = place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            &legacy_table,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+            ContainedPass::Ordered,
+            None,
+        )?;
         crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
-            &std::collections::BTreeSet::new(),
+            &self.operation_protected,
             &mut parent_report.losses,
         )?;
-        let mut left_identity = 0;
         for (boundary, member_table) in &self.component_path_tables {
             left_identity += place_contained_poses_with_protected(
                 self.ctx,
@@ -234,7 +261,7 @@ impl MergeSession<'_, '_> {
         left_identity += place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
-            table,
+            &qualified_table,
             &mut parent_report.losses,
             &mut self.operation_protected,
             ContainedPass::Ordered,
@@ -647,7 +674,20 @@ impl ContainedPass {
         match self {
             Self::Ordered => !xref::contained_pose_is_nested(pose),
             Self::Nested => {
-                nested_contained_only(reference) && pose.owner_record_indices.is_empty()
+                pose.owner_record_indices.is_empty()
+                    && xref::contained_pose_is_nested(pose)
+                    && (nested_contained_only(reference)
+                        || (reference.owned_poses.is_empty()
+                            && reference
+                                .placement_source
+                                .as_ref()
+                                .is_some_and(|placement| {
+                                    xref::component_path_names_contained(
+                                        &pose.frame_bytes,
+                                        placement.carrier_record_index,
+                                        pose.contained_record_index,
+                                    )
+                                })))
             }
         }
     }
@@ -657,7 +697,13 @@ impl ContainedPass {
     fn owns(self, reference: &XrefReference) -> bool {
         match self {
             Self::Ordered => !nested_contained_only(reference) || !reference.owned_poses.is_empty(),
-            Self::Nested => nested_contained_only(reference) && reference.owned_poses.is_empty(),
+            Self::Nested => {
+                reference.owned_poses.is_empty()
+                    && reference
+                        .contained_poses
+                        .iter()
+                        .any(|pose| self.reads(reference, pose))
+            }
         }
     }
 
@@ -671,7 +717,13 @@ impl ContainedPass {
                         .iter()
                         .any(|pose| self.reads(reference, pose))
             }
-            Self::Nested => nested_contained_only(reference) && reference.owned_poses.is_empty(),
+            Self::Nested => {
+                reference.owned_poses.is_empty()
+                    && reference
+                        .contained_poses
+                        .iter()
+                        .any(|pose| self.reads(reference, pose))
+            }
         }
     }
 }
@@ -683,6 +735,25 @@ fn nested_contained_only(reference: &XrefReference) -> bool {
             .contained_poses
             .iter()
             .all(xref::contained_pose_is_nested)
+}
+
+fn contained_frames_agree(
+    left: cadmpeg_ir::transform::Transform,
+    right: cadmpeg_ir::transform::Transform,
+) -> bool {
+    left.rows()
+        .iter()
+        .flatten()
+        .zip(right.rows().iter().flatten())
+        .enumerate()
+        .all(|(at, (a, b))| {
+            let tolerance = if at % 4 == 3 {
+                CONTAINED_POSE_TRANSLATION_MM
+            } else {
+                CONTAINED_POSE_ROTATION
+            };
+            (a - b).abs() <= tolerance
+        })
 }
 
 fn place_contained_poses_with_protected(
@@ -878,7 +949,12 @@ fn place_contained_poses_with_protected(
             }) || reference.owned_poses.iter().any(|pose| {
                 owners.starts_with(&pose.owner_record_indices)
                     && xref::component_path_has_inline_local_type(&pose.frame_bytes)
-            });
+            }) || (pass == ContainedPass::Nested
+                && !nested_contained_only(reference)
+                && reference
+                    .contained_poses
+                    .iter()
+                    .any(|pose| pass.reads(reference, pose)));
             qualified_constraints |= independent;
             let member_scopes = children
                 .get(&instance)
@@ -964,9 +1040,46 @@ fn place_contained_poses_with_protected(
                 else {
                     continue;
                 };
-                let stored = source_world
+                let mut stored = source_world
                     .compose(stored)
                     .map_err(|_| CodecError::malformed("F3Z contained source pose overflow"))?;
+                if independent
+                    && owners.is_empty()
+                    && reference.current_pose.is_some()
+                    && reference.owned_poses.is_empty()
+                    && reference
+                        .placement_source
+                        .as_ref()
+                        .is_some_and(|placement| {
+                            xref::component_path_names_contained(
+                                &pose.frame_bytes,
+                                placement.carrier_record_index,
+                                pose.contained_record_index,
+                            )
+                        })
+                {
+                    if let Some(source) =
+                        crate::design::components::neutral_affine(reference.transform.map_or(
+                            crate::xref::IDENTITY_ROWS,
+                            crate::records::xref::XrefPlacementTransform::rows,
+                        ))
+                    {
+                        let source_pose = source_world
+                            .compose(source)
+                            .and_then(|source| source.compose(*below))
+                            .map_err(|_| {
+                                CodecError::malformed("F3Z contained source frame overflow")
+                            })?;
+                        if contained_frames_agree(source_pose, stored) {
+                            stored = source_world
+                                .compose(ir.model.occurrences[instance].transform)
+                                .and_then(|world| world.compose(*below))
+                                .map_err(|_| {
+                                    CodecError::malformed("F3Z contained current frame overflow")
+                                })?;
+                        }
+                    }
+                }
                 if let Some(occurrence) = ir.model.occurrences.get(*target) {
                     protected.insert(occurrence.id.clone());
                 }
@@ -1026,21 +1139,9 @@ fn place_contained_poses_with_protected(
                 let Some(first) = poses.first().copied() else {
                     continue;
                 };
-                let agree = poses.iter().all(|pose| {
-                    pose.rows()
-                        .iter()
-                        .flatten()
-                        .zip(first.rows().iter().flatten())
-                        .enumerate()
-                        .all(|(at, (a, b))| {
-                            let tolerance = if at % 4 == 3 {
-                                CONTAINED_POSE_TRANSLATION_MM
-                            } else {
-                                CONTAINED_POSE_ROTATION
-                            };
-                            (a - b).abs() <= tolerance
-                        })
-                });
+                let agree = poses
+                    .iter()
+                    .all(|pose| contained_frames_agree(*pose, first));
                 if !agree || !first.is_proper_rigid() {
                     if own_pose {
                         owned_disagreeing += 1;
@@ -1067,7 +1168,16 @@ fn place_contained_poses_with_protected(
                 .contained_poses
                 .iter()
                 .enumerate()
-                .filter(move |_| pass.owns(reference))
+                .filter(move |(_, pose)| {
+                    pass.owns(reference)
+                        && match pass {
+                            ContainedPass::Ordered => {
+                                !(ContainedPass::Nested.places(reference)
+                                    && ContainedPass::Nested.reads(reference, pose))
+                            }
+                            ContainedPass::Nested => pass.reads(reference, pose),
+                        }
+                })
                 .map(move |(ordinal, _)| (reference.id.as_str(), ordinal))
         })
         .filter(|key| !bound.contains(key))
