@@ -46,7 +46,10 @@ fn model_entity_wins_when_native_id_collides() {
 #[test]
 fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let mut source_fidelity = crate::SourceFidelity::default();
+    let mut source_fidelity = crate::SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     annotations.note("missing", &stream, 0, None);

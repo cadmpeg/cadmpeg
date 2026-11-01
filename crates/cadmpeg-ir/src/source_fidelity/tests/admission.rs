@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{id, record, report};
+use super::{id, record, report, test_fidelity};
 use crate::hash::digest::Sha256Digest;
 use crate::provenance::SourceOwner;
-use crate::source_fidelity::{DecodeSidecar, RetainedSourceRecord, SourceFidelity};
+use crate::source_fidelity::{DecodeSidecar, RetainedSourceRecord};
 use crate::{CadIr, UnknownRecord};
 
 fn sidecar_wire() -> serde_json::Value {
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = test_fidelity();
     fidelity
         .insert_retained_record(id("a"), record(b"abc"))
         .unwrap();
@@ -26,7 +26,7 @@ fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evi
         .expect("test context");
     let invalid =
         UnknownRecord::retained(id("bad-link"), 0, vec![1], vec!["raw target text".into()]);
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = test_fidelity();
     let mut ir = CadIr::empty();
     let incoming = [
         UnknownRecord::retained(id("good"), 0, vec![2], vec![]),
@@ -36,7 +36,7 @@ fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evi
         .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
         .unwrap_err();
     assert!(error.to_string().contains("raw target text"), "{error}");
-    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(fidelity, test_fidelity());
     assert_eq!(ir, CadIr::empty());
     fidelity
         .retain_unknown_records(SourceOwner::Root, [invalid.clone()])
@@ -67,7 +67,7 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
     )
     .unwrap();
     let before = ir.clone();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = test_fidelity();
     let error = fidelity
         .attach_native_unknown_records(
             &mut ir,
@@ -85,7 +85,7 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
         "{error}"
     );
     assert_eq!(ir, before);
-    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(fidelity, test_fidelity());
 }
 
 #[test]
@@ -110,13 +110,13 @@ fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
     let mut expected_ir = prior.clone();
-    let mut expected_fidelity = SourceFidelity::default();
+    let mut expected_fidelity = test_fidelity();
     expected_fidelity
         .attach_native_unknown_records(&mut expected_ir, "synthetic", incoming.clone(), &ctx)
         .expect("plain attachment");
 
     let mut actual_ir = prior;
-    let mut actual_fidelity = SourceFidelity::default();
+    let mut actual_fidelity = test_fidelity();
     actual_fidelity
         .attach_native_unknown_records(&mut actual_ir, "synthetic", incoming, &ctx)
         .expect("charged attachment");
@@ -142,7 +142,7 @@ fn charged_unknown_limit_error(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
         .expect("test context");
-    SourceFidelity::default()
+    test_fidelity()
         .attach_native_unknown_records(
             &mut ir,
             "synthetic",
@@ -307,7 +307,7 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
         for invalid in &invalid_records {
             for existing in [false, true] {
                 let mut ir = CadIr::empty();
-                let mut fidelity = SourceFidelity::default();
+                let mut fidelity = test_fidelity();
                 if existing {
                     fidelity
                         .attach_native_unknown_records(
@@ -351,7 +351,7 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
     for attach in [false, true] {
         for collide_with_existing in [false, true] {
             let mut ir = CadIr::empty();
-            let mut fidelity = SourceFidelity::default();
+            let mut fidelity = test_fidelity();
             fidelity
                 .attach_native_unknown_records(
                     &mut ir,
@@ -395,7 +395,7 @@ fn attachment_preserves_existing_records_and_the_root_owner() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
     let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = test_fidelity();
     for name in ["a", "b"] {
         fidelity
             .attach_native_unknown_records(
@@ -454,7 +454,7 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
             &[serde_json::json!({"id": id("bad"), "links": [1]})],
         )
         .unwrap();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = test_fidelity();
     let before = ir.clone();
     let error = fidelity
         .attach_native_unknown_records(
@@ -466,14 +466,14 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
         .unwrap_err();
     assert!(error.to_string().contains("string"), "{error}");
     assert_eq!(ir, before);
-    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(fidelity, test_fidelity());
 }
 
 #[test]
 fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
     use crate::annotations::{AnnotationBuilder, StreamHandle};
     for record_collision in [false, true] {
-        let mut target = SourceFidelity::default();
+        let mut target = test_fidelity();
         target
             .insert_retained_record(id("existing"), record(b"original"))
             .unwrap();
@@ -486,7 +486,7 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         );
         target.annotations = existing.build();
         let before = target.clone();
-        let mut incoming = SourceFidelity::default();
+        let mut incoming = test_fidelity();
         incoming
             .insert_retained_record(
                 id(if record_collision { "existing" } else { "new" }),
@@ -535,7 +535,7 @@ fn attached_unknown_record_retains_its_native_text_once() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let mut fidelity = SourceFidelity::default();
+        let mut fidelity = test_fidelity();
         let mut ir = CadIr::empty();
         let result = fidelity.attach_native_unknown_records(
             &mut ir,
@@ -558,6 +558,6 @@ fn attached_unknown_record_retains_its_native_text_once() {
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "attach native unknown record");
     assert_eq!(limit.additional, needed);
-    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(fidelity, test_fidelity());
     assert_eq!(ir, CadIr::empty());
 }

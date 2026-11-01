@@ -28,7 +28,10 @@ fn decoded(ir: CadIr) -> Decoded {
             scope: crate::document::ContentScope::full(),
             geometry_transferred: true,
         }),
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::with_annotations(
+            crate::Annotations::default(),
+            crate::hash::digest::Sha256Digest::digest(b"test source"),
+        ),
     }
 }
 
@@ -480,7 +483,10 @@ fn a_decode_result_keeps_report_details_and_derives_scope_from_document() {
         Decoded {
             ir: unit_cube().expect("valid unit cube fixture"),
             body,
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::with_annotations(
+                crate::Annotations::default(),
+                crate::hash::digest::Sha256Digest::digest(b"test source"),
+            ),
         },
         FormatId::new("test"),
         DecodeDepth::Container,

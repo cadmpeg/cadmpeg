@@ -1273,7 +1273,10 @@ mod tests {
             let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
                 crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
                 report,
-                crate::SourceFidelity::with_annotations(builder.build()),
+                crate::SourceFidelity::with_annotations(
+                    builder.build(),
+                    crate::hash::digest::Sha256Digest::digest(b"test sidecar source"),
+                ),
             );
             let text = serde_json::to_string(&sidecar).expect("serialize sidecar");
             assert_eq!(

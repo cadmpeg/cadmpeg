@@ -30,7 +30,7 @@ fn a_successful_part_commits_its_stage() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let value = ctx
         .decode_part(&mut output, root, PartSpec::new("step.data"), |stage| {
             stage.insert_model(&ctx, point("step:model:point#1"))?;
@@ -50,7 +50,7 @@ fn a_failed_part_drops_its_stage_and_retains_its_bytes_once() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"ABCDEF", &arena, &DecodePolicy::service()).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let extent = root.child(2, 5).unwrap();
     let value = ctx
         .decode_part(&mut output, extent, PartSpec::new("step.entity"), |stage| {
@@ -88,7 +88,7 @@ fn a_given_up_part_has_one_home() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"ABCDEFGH", &arena, &DecodePolicy::service()).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let extent = root.child(2, 6).unwrap();
     ctx.decode_part(&mut output, extent, PartSpec::new("step.entity"), |_| {
         Err::<(), _>(CodecError::malformed("damaged entity"))
@@ -125,7 +125,7 @@ fn a_failed_part_names_its_dropped_records_in_order() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     ctx.decode_part(&mut output, root, PartSpec::new("step.entity"), |stage| {
         stage.insert_model(&ctx, point("step:model:point#zeta"))?;
         stage.insert_model(&ctx, point("step:model:point#alpha"))?;
@@ -158,7 +158,7 @@ fn a_part_loss_names_its_record_and_container_link() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let container = UnknownId::mint("step:native:entity#container").expect("native identity");
     output
         .insert_native(
@@ -200,7 +200,7 @@ fn a_part_link_outside_the_committed_output_is_malformed() {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
-        let mut output = PartOutput::new(CodecFormat::Step);
+        let mut output = PartOutput::new(CodecFormat::Step, &ctx);
         let error = ctx
             .decode_part(
                 &mut output,
@@ -220,7 +220,7 @@ fn the_part_identity_derives_from_codec_label_stream_and_offset() {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(b"ABCDEF", &arena, &DecodePolicy::service()).unwrap();
-        let mut output = PartOutput::new(CodecFormat::Step);
+        let mut output = PartOutput::new(CodecFormat::Step, &ctx);
         let mut spec = PartSpec::new(label);
         if let Some(stream) = stream {
             spec = spec.in_stream(crate::StreamName::try_from(stream.to_owned()).unwrap());
@@ -263,7 +263,7 @@ fn classes_default_to_the_request_and_can_be_narrowed() {
         let (ctx, root) =
             DecodeContext::from_root_bytes_at(b"AB", &arena, &DecodePolicy::service(), depth)
                 .unwrap();
-        let mut output = PartOutput::new(CodecFormat::Step);
+        let mut output = PartOutput::new(CodecFormat::Step, &ctx);
         let spec = narrowed.map_or(PartSpec::new("step.data"), |class| {
             PartSpec::new("step.data").holding([class])
         });
@@ -281,7 +281,7 @@ fn a_nested_failure_is_kept_by_a_successful_parent_and_dropped_with_a_failed_one
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
-        let mut output = PartOutput::new(CodecFormat::Step);
+        let mut output = PartOutput::new(CodecFormat::Step, &ctx);
         ctx.decode_part(&mut output, root, PartSpec::new("parent"), |stage| {
             ctx.decode_part(
                 stage,
@@ -315,7 +315,7 @@ fn a_part_scoped_limit_gives_up_only_the_part() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_decompressed_bytes_per_expand = 1;
     let (ctx, root) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let value = ctx
         .decode_part(&mut output, root, PartSpec::new("step.data"), |_| {
             assert!(ctx.begin_expand(ExpandSpec::Exact(2)).is_err());
@@ -338,7 +338,7 @@ fn a_session_scoped_limit_escapes_the_part() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     let error = ctx
         .decode_part(&mut output, root, PartSpec::new("step.data"), |stage| {
             stage.insert_model(&ctx, point("step:model:point#1"))
@@ -359,7 +359,7 @@ fn a_part_outside_the_root_stream_names_its_stream() {
     let mut writer = ctx.begin_expand(ExpandSpec::Exact(2)).unwrap();
     writer.write(b"XY").unwrap();
     let expanded = writer.finalize().unwrap();
-    let mut output = PartOutput::new(CodecFormat::Step);
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
     assert!(matches!(
         ctx.decode_part(&mut output, expanded, PartSpec::new("member"), |_| Ok(())),
         Err(CodecError::Malformed(_))
