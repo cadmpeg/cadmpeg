@@ -69,6 +69,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -107,6 +108,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut neutral_plane_report,
+        None,
     )
     .unwrap();
 
@@ -197,6 +199,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -240,6 +243,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -467,6 +471,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -491,6 +496,7 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
     assert!(!report
