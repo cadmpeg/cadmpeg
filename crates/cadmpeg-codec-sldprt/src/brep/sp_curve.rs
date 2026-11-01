@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
@@ -13,18 +13,18 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::FinitePoint2;
 
 use super::sweep::SweepKind;
-use super::typed::read_ref;
 use super::LEN_TO_MM;
+use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 const TAG: u8 = 0x89;
 
 /// One `00 89` record whose `b_curve` decodes.
 #[derive(Debug, Clone)]
 pub(super) struct SpCurve {
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     pub(super) offset: usize,
     /// The support surface's carrier `attr`.
-    pub(super) surface: u16,
+    pub(super) surface: u32,
     /// The `b_curve`, in the support's stored parameters.
     pub(super) pcurve: PcurveNurbs,
 }
@@ -32,10 +32,10 @@ pub(super) struct SpCurve {
 /// A `00 85` bounded curve on an `SP_CURVE` (spec §7.6).
 #[derive(Debug, Clone)]
 pub(super) struct SurfaceCurveCarrier {
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     pub(super) offset: usize,
     /// The support surface's carrier `attr`.
-    pub(super) surface: u16,
+    pub(super) surface: u32,
     pub(super) pcurve: PcurveGeometry,
     pub(super) parameter_range: [f64; 2],
     /// Start and end points, millimetres.
@@ -276,15 +276,43 @@ fn distinct_knots_at_or_below(knots: &[f64], value: f64) -> usize {
 
 /// The `surface` and `b_curve` references after the sense marker at
 /// `marker` (spec §7.6).
-fn support_refs(bytes: &[u8], marker: usize) -> Option<(u16, u16)> {
+fn support_refs(bytes: &[u8], marker: usize) -> Option<(u32, u32)> {
     let mut at = marker.checked_add(1)?;
-    let surface = u16::try_from(read_ref(bytes, &mut at)?).ok()?;
-    let b_curve = u16::try_from(read_ref(bytes, &mut at)?).ok()?;
+    let surface = read_ref(bytes, &mut at)?;
+    let b_curve = read_ref(bytes, &mut at)?;
     Some((surface, b_curve))
 }
 
+struct Header {
+    attr: u32,
+    surface: u32,
+    b_curve: u32,
+}
+
+fn native_header(bytes: &[u8], start: usize) -> Option<(Header, usize)> {
+    let mut at = start;
+    let attr = read_ref(bytes, &mut at)?;
+    (attr > 1).then_some(())?;
+    View::u32_be_at(bytes, at)?;
+    at += 4;
+    super::native_refs::<5>(bytes, &mut at)?;
+    matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+    let (surface, b_curve) = support_refs(bytes, at)?;
+    at += 1;
+    super::native_refs::<3>(bytes, &mut at)?;
+    View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+    Some((
+        Header {
+            attr,
+            surface,
+            b_curve,
+        },
+        at + 8,
+    ))
+}
+
 /// `00 89` records whose `b_curve` is in `pcurves`.
-pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u16, PcurveNurbs>) -> HashMap<u16, SpCurve> {
+pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap<u32, SpCurve> {
     let mut out = HashMap::new();
     if pcurves.is_empty() {
         return out;
@@ -293,32 +321,36 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u16, PcurveNurbs>) -> HashMap
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
-        let header = off + 2 + usize::from(bytes.get(off + 2) == Some(&0xff));
-        let Some(attr) = cadmpeg_core::decode::View::u16_be_at(bytes, header) else {
-            continue;
-        };
-        if attr <= 1 || out.contains_key(&attr) {
-            continue;
+        for start in super::record_starts(bytes, off, TAG) {
+            let native = native_header(bytes, start)
+                .map(|(header, _)| (header.attr, header.surface, header.b_curve));
+            let legacy = super::word_at(bytes, start)
+                .filter(|attr| (2..=0x7fff).contains(attr))
+                .and_then(|attr| {
+                    super::analytic_marker_candidates(bytes, start)?
+                        .into_iter()
+                        .filter(|marker| {
+                            *marker != start + crate::layout::compact_analytic_header::MARKER
+                        })
+                        .filter_map(|marker| support_refs(bytes, marker))
+                        .find_map(|(surface, b_curve)| {
+                            pcurves
+                                .contains_key(&b_curve)
+                                .then_some((attr, surface, b_curve))
+                        })
+                });
+            for (attr, surface, b_curve) in native.into_iter().chain(legacy) {
+                let Some(pcurve) = pcurves.get(&b_curve).filter(|_| surface > 1) else {
+                    continue;
+                };
+                out.entry(attr).or_insert_with(|| SpCurve {
+                    attr,
+                    offset: off,
+                    surface,
+                    pcurve: pcurve.clone(),
+                });
+            }
         }
-        let reading = super::analytic_marker_candidates(bytes, header)
-            .into_iter()
-            .flatten()
-            .filter_map(|marker| support_refs(bytes, marker))
-            .find_map(|(surface, b_curve)| {
-                (surface > 1).then_some((surface, pcurves.get(&b_curve)?))
-            });
-        let Some((surface, pcurve)) = reading else {
-            continue;
-        };
-        out.insert(
-            attr,
-            SpCurve {
-                attr,
-                offset: off,
-                surface,
-                pcurve: pcurve.clone(),
-            },
-        );
     }
     out
 }
@@ -462,6 +494,8 @@ pub(super) fn crosses_one_knot_line(
 
 #[cfg(test)]
 mod tests {
+    mod wide_references;
+
     use super::{crosses_one_knot_line, point_at};
     use crate::test_support::surfaces::ridged;
     use cadmpeg_core::CodecError;

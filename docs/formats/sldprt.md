@@ -2212,7 +2212,7 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
 BODY, SHELL, FACE, and REGION. Their node pointers use one big-endian u16 for
-values `0` through `0x7ffe`. A larger pointer uses two big-endian u16 values:
+values `0` through `0x7fff`. A larger pointer uses two big-endian u16 values:
 the first has its high bit set and carries the low fifteen bits, and the
 second carries the remaining high bits. The decoded value is
 `(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
@@ -2277,19 +2277,19 @@ companion deltas retain historical versions.
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
 The fixed body offsets above hold only while every pointer in the record is
-below `0x7fff`. A bare compact record stores its `attr` and every reference in
+at most `0x7fff`. A bare compact record stores its `attr` and every reference in
 the same variable-width pointer form as the XT ownership nodes, and so does a
 compact analytic carrier (§7.1). The `sequence`, the tolerance and the marker
 keep their widths, and each wide pointer moves the fields after it by two
 bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
 (attr 62078), FACE records whose own attr is in the 4-byte form, and
-narrow-attr FACE records carrying a pointer past `0x7ffe`. The deltas forms of
+narrow-attr FACE records carrying a pointer past `0x7fff`. The deltas forms of
 §4.3 keep their fixed three-byte cells.
 
-A record key is the u16 `attr`, so a pointer past `0xffff` has no key:
-a compact record that holds one does not frame, and a typed node whose own
-`attr` is past `0xffff` is neither framed nor counted. A framed FACE record
-that no decoded face carries is the loss `topology.face-records-unread`.
+A record key is the decoded stream-local `attr` in the 31-bit pointer domain.
+A wide record key and a wide reference use the same encoding. The optional
+first-of-type `ff` precedes the record key. A wide record key can also start
+with byte `ff`. The complete record fields determine the framing.
 
 ### 4.1 XT ownership nodes
 
@@ -2455,15 +2455,19 @@ identity. A LOOP belongs to the FACE named by its owning-FACE pointer.
 
 Top-level entity families include `00 4f` KEY nodes, `00 50` ATTRIB_DEF nodes,
 `00 51` ATTRIBUTE nodes, `00 52` INT_VALUES nodes, `00 53` REAL_VALUES
-nodes, and `00 54` CHAR_VALUES nodes. A `00 51` header is
+nodes, and `00 54` CHAR_VALUES nodes.
+
+ATTRIBUTE and value-array indices use the node pointer encoding of §4. The offsets below describe short pointers.
+
+A `00 51` header is
 `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`.
 
 Every node id and pointer in these records — a bare ATTRIBUTE's `attr`, `disc`
 and slots, a KEY, ATTRIB_DEF or INT_VALUES node id, and a REAL_VALUES `attr` —
-takes the variable-width pointer form of §4: past `0x7ffe` it is 4 bytes, and
+takes the variable-width pointer form of §4: past `0x7fff` it is 4 bytes, and
 each wide field moves the fields after it by two bytes. The counts, `seq` and
 the values keep their widths, so the u16 offsets in this section hold only
-while every pointer is below `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
+while every pointer is at most `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
 attr 48 319), following an ATTRIBUTE whose last slots are wide. The
 prefixed (deltas) ATTRIBUTE keeps its fixed header cells and `[01][hi][lo]`
 slots.
@@ -2640,9 +2644,9 @@ leave the body-history relation unresolved. A resolved relation adds that
 body to the named feature's output bodies without fabricating a body or
 replacing an explicit body scope.
 
-The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. A typed node candidate whose reference fields leave the u16 transmit-index space lies inside another record and claims no class. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
+The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
 
-An INT_VALUES node has a six-byte prefix: its element count is u32 BE at body +0
+An INT_VALUES node has a six-byte prefix in the short-index form: its element count is u32 BE at body +0
 and its transmit index is u16 BE at body +4. Exactly that many u32 BE values
 follow at body +6. The count determines the complete payload extent; values
 that contain node-tag byte patterns remain integer data. The extent ends at
@@ -2713,7 +2717,7 @@ Stream-scope support-geometry carriers encoding untrimmed surface/curve placemen
 00 TT  [ff]?  attr u16 BE  ordinal u32 BE  refs u16 BE[5]  marker u8 (0x2b|0x2d)  values f64 BE[n]
 ```
 
-The partition form uses the five adjacent u16 references shown above; its marker is at `hdr + 16`, where `hdr` is the attr offset after `00 TT` and the optional `ff`. The attr and the references are pointers (§4): past `0x7ffe` each takes the 4-byte form, and the marker moves two bytes later for each one. A deltas compact analytic record uses five `[hi][lo][01]` reference triples instead:
+The partition form uses the five adjacent u16 references shown above; its marker is at `hdr + 16`, where `hdr` is the attr offset after `00 TT` and the optional `ff`. The attr and the references are pointers (§4): past `0x7fff` each takes the 4-byte form, and the marker moves two bytes later for each one. A deltas compact analytic record uses five `[hi][lo][01]` reference triples instead:
 
 ```
 00 TT [ff]? attr u16 BE ordinal u32 BE refs [hi][lo][01][5] marker u8 (0x2b|0x2d) values f64 BE[n]
@@ -2765,7 +2769,7 @@ For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store 
 
 Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
-An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
+An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
 A bounded wrapper whose endpoint evaluations match its vertices has its two source parameters as the edge's parameter range. A line source stores signed distance parameters in metres along its unit direction. The neutral line uses millimetres and multiplies these parameters by 1000. Other analytic parameters and NURBS parameters retain their stored values, except that a circle or ellipse interval may be stored on any equivalent angular branch, such as `[-1.47, 0]` for an arc ending at the seam from below; the neutral interval moves by whole turns to start within `[0, 2π)`. The wrapper interval follows source-curve orientation. The neutral interval is ascending. An end matches a vertex when it lies within that vertex's bound: the linear resolution, or the vertex's stored tolerance when it is a tolerant vertex (§7.6) and stores more. When the endpoint evaluations match the edge's ordered vertices in the opposite order, the neutral edge reverses its canonical vertices and every incident coedge sense; an edge shorter than its vertices' bounds matches both ways and takes the order whose worse end is nearer, and a closed edge, whose one vertex matches both ways equally, keeps its stored order. If neither order matches, the neutral edge has no parameter range.
 

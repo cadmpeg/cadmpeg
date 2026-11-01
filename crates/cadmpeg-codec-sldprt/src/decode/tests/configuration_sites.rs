@@ -510,3 +510,30 @@ fn imported_body_streams_that_do_not_decode_are_reported() {
         "1 of 2 imported body stream(s) do not decode."
     );
 }
+
+#[test]
+fn imported_body_topology_preserves_wide_node_references() {
+    for base in [0x7ff0, 0xffe0, 0x17ee0, 0x17f00, 0x17fe0, 0x12b00, 0x12d00] {
+        let body = crate::test_support::parasolid::wide::triangle(base);
+        let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+        source.extend(local_bodies_block(0, &[body]));
+        let decoded = decode(source);
+        let model = &decoded.ir().model;
+        assert_eq!(model.bodies.len(), 1);
+        assert_eq!(model.faces.len(), 1);
+        assert_eq!(model.loops.len(), 1);
+        assert_eq!(model.coedges.len(), 3);
+        assert_eq!(model.vertices.len(), 3);
+        assert!(model
+            .points
+            .iter()
+            .any(|point| point.position().get().x == 1.0));
+        assert!(model
+            .points
+            .iter()
+            .any(|point| point.position().get().y == 1.0));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}
