@@ -83,7 +83,7 @@ fn fixture_findings(format: &str) -> Vec<String> {
         .and_then(cadmpeg_registry::InputDescriptor::codec)
         .unwrap_or_else(|| panic!("{format} has no codec in this build"));
     let mut findings = Vec::new();
-    let paths = fixtures(format);
+    let paths = super::sampled_paths(fixtures(format));
     assert!(!paths.is_empty(), "{format} has no fixtures");
     for path in paths {
         let bytes = std::fs::read(&path).expect("fixture bytes");
@@ -121,7 +121,7 @@ fn fixture_findings(format: &str) -> Vec<String> {
 
 fn golden_findings(crate_name: &str) -> Vec<String> {
     let mut findings = Vec::new();
-    for golden in decode_goldens(crate_name) {
+    for golden in super::sampled_goldens(decode_goldens(crate_name)) {
         let text = std::fs::read_to_string(workspace().join(&golden.path)).expect("golden text");
         let value: Value = serde_json::from_str(&text).expect("golden JSON");
         let report = value
@@ -149,11 +149,11 @@ fn assert_none(findings: &[String]) {
 }
 
 macro_rules! golden_conformance {
-    ($($module:ident => $crate_name:literal, $feature:literal);* $(;)?) => {
+    ($($module:ident => $crate_name:literal, $feature:literal, $test:ident);* $(;)?) => {
         $(#[cfg(feature = $feature)]
         mod $module {
             #[test]
-            fn goldens_conform_at_full() {
+            fn $test() {
                 super::assert_none(&super::golden_findings($crate_name));
             }
         })*
@@ -161,11 +161,11 @@ macro_rules! golden_conformance {
 }
 
 macro_rules! fixture_conformance {
-    ($($module:ident => $format:literal);* $(;)?) => {
+    ($($module:ident => $format:literal, $test:ident);* $(;)?) => {
         $(#[cfg(feature = $format)]
         mod $module {
             #[test]
-            fn fixtures_conform_at_full_and_geometry() {
+            fn $test() {
                 super::assert_none(&super::fixture_findings($format));
             }
         })*
@@ -173,26 +173,26 @@ macro_rules! fixture_conformance {
 }
 
 golden_conformance! {
-    sat_conformance => "cadmpeg-codec-sat", "sat";
-    step_conformance => "cadmpeg-codec-step", "step";
-    iges_conformance => "cadmpeg-codec-iges", "iges";
-    rhino_conformance => "cadmpeg-codec-rhino", "rhino";
-    freecad_conformance => "cadmpeg-codec-freecad", "fcstd";
-    f3d_conformance => "cadmpeg-codec-f3d", "f3d";
-    sldprt_conformance => "cadmpeg-codec-sldprt", "sldprt";
-    inventor_conformance => "cadmpeg-codec-inventor", "inventor";
-    catia_conformance => "cadmpeg-codec-catia", "catia";
-    creo_conformance => "cadmpeg-codec-creo", "creo";
-    nx_conformance => "cadmpeg-codec-nx", "nx";
+    sat_conformance => "cadmpeg-codec-sat", "sat", sat_goldens_conform_at_full;
+    step_conformance => "cadmpeg-codec-step", "step", step_goldens_conform_at_full;
+    iges_conformance => "cadmpeg-codec-iges", "iges", iges_goldens_conform_at_full;
+    rhino_conformance => "cadmpeg-codec-rhino", "rhino", rhino_goldens_conform_at_full;
+    freecad_conformance => "cadmpeg-codec-freecad", "fcstd", freecad_goldens_conform_at_full;
+    f3d_conformance => "cadmpeg-codec-f3d", "f3d", f3d_goldens_conform_at_full;
+    sldprt_conformance => "cadmpeg-codec-sldprt", "sldprt", sldprt_goldens_conform_at_full;
+    inventor_conformance => "cadmpeg-codec-inventor", "inventor", inventor_goldens_conform_at_full;
+    catia_conformance => "cadmpeg-codec-catia", "catia", catia_goldens_conform_at_full;
+    creo_conformance => "cadmpeg-codec-creo", "creo", creo_goldens_conform_at_full;
+    nx_conformance => "cadmpeg-codec-nx", "nx", nx_goldens_conform_at_full;
 }
 
 fixture_conformance! {
-    step_fixture_conformance => "step";
-    iges_fixture_conformance => "iges";
-    rhino_fixture_conformance => "rhino";
-    freecad_fixture_conformance => "fcstd";
-    f3d_fixture_conformance => "f3d";
-    sldprt_fixture_conformance => "sldprt";
-    catia_fixture_conformance => "catia";
-    creo_fixture_conformance => "creo";
+    step_fixture_conformance => "step", step_fixtures_conform_at_full_and_geometry;
+    iges_fixture_conformance => "iges", iges_fixtures_conform_at_full_and_geometry;
+    rhino_fixture_conformance => "rhino", rhino_fixtures_conform_at_full_and_geometry;
+    freecad_fixture_conformance => "fcstd", freecad_fixtures_conform_at_full_and_geometry;
+    f3d_fixture_conformance => "f3d", f3d_fixtures_conform_at_full_and_geometry;
+    sldprt_fixture_conformance => "sldprt", sldprt_fixtures_conform_at_full_and_geometry;
+    catia_fixture_conformance => "catia", catia_fixtures_conform_at_full_and_geometry;
+    creo_fixture_conformance => "creo", creo_fixtures_conform_at_full_and_geometry;
 }

@@ -185,9 +185,24 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
         [804]
     );
     assert_eq!(fidelity.retained_records().len(), 2);
-    assert!(native
-        .namespace("f3d")
-        .is_none_or(|namespace| !namespace.arenas().contains_key("unknowns")));
+    // #215 rule 1: each given-up part keeps one unknowns home.
+    let unknowns = namespace
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 2);
+    let mut stubbed: Vec<_> = unknowns
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::id)
+        .collect();
+    stubbed.sort_unstable();
+    let mut retained: Vec<_> = fidelity
+        .retained_records()
+        .keys()
+        .map(cadmpeg_ir::ids::UnknownId::as_str)
+        .collect();
+    retained.sort_unstable();
+    assert_eq!(stubbed, retained);
 }
 
 #[test]

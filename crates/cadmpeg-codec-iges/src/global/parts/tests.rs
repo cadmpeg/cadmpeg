@@ -137,7 +137,21 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     assert_eq!(global.sender_product(), None);
     assert_eq!(global.native_file_name(), None);
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native.namespace("iges").is_none());
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = &native
+        .namespace("iges")
+        .expect("one unknowns home")
+        .arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .first_key_value()
+            .expect("the global section is retained")
+            .0
+            .as_str()
+    );
     let global = scan
         .section(Section::Global)
         .next()
@@ -190,7 +204,21 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
         serde_json::to_value(expected_losses).expect("the partless losses serialize")
     );
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native.namespace("iges").is_none());
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = &native
+        .namespace("iges")
+        .expect("one unknowns home")
+        .arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .first_key_value()
+            .expect("the unreadable field is retained")
+            .0
+            .as_str()
+    );
     assert_eq!(fidelity.retained_records().len(), 1);
     let (_, failed) = fidelity
         .retained_records()

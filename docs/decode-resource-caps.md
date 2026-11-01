@@ -59,6 +59,23 @@ Zstandard decoder fuses the session as `RetainedBytes` / `AllocationFailed`.
 Only `cadmpeg-core` sets the fuse; codecs reach it through `DecodeContext`
 charges and `refuse_input_limit`.
 
+## Refusal scope
+
+Every resource refusal carries a `LimitScope`. A `Session` refusal is the
+fused session above: the whole file is refused. A `Part` refusal gives up
+only the independently framed part that raised it: the part runner rolls the
+part back, keeps the part's bytes in fidelity, charges `record.unreadable`,
+and decodes the rest. Cumulative charges are never refunded.
+
+`Session` is raised when `max_input_bytes`, `max_decompressed_bytes_total`,
+`max_retained_bytes` or `max_entities` runs out. `Part` is raised by
+`max_decompressed_bytes_per_expand`, `max_recursion_depth`, every fixed
+limit of the implementation, and every per-part allowance. The XML tree
+budgets, the tag-attribute and namespace limits in `tree.rs`, and the
+Zstandard window check raise `Part`; an allocator failure keeps the
+dimension's session scope. An input-output error is not a resource refusal
+and always refuses the session.
+
 A local work cap skips. The caller checks `WorkBudget::exhausted` (or its own
 counter), drops the item it was building, and adds a loss that names the
 bound. A partial result is not emitted as complete. Use
@@ -108,9 +125,9 @@ directly.
 `begin_expand` checks a declared expansion size against the per-expansion
 allowance and the remaining total allowance, and `ExpandWriter::write`
 charges each chunk. `open_zstd` checks each frame's window before it
-allocates a decoder: a window above the per-expansion allowance is a
-per-input bound, so the stream is `NotImplemented`, the session is not
-fused, and the caller skips that member and reports a loss. The bytes a
+allocates a decoder: a window above the per-expansion allowance raises a
+`Part`-scoped resource refusal, so the part runner gives up that stream and
+the caller reports the loss. The bytes a
 member actually expands still go through `begin_expand` and `write`. A
 codec that reads a declared size from the input compares it with
 `DecodeContext::per_expand_allowance()` before `begin_expand` and skips the
@@ -198,9 +215,9 @@ report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance: excess raises a `Part`-scoped resource refusal naming the allowance, so the part runner gives up that stream. A declared window above this constant is likewise refused for that stream. |
+| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess raises a `Part`-scoped resource refusal for that text.                                                                   |
+| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess raises a `Part`-scoped resource refusal.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
 | `cadmpeg-ir`             | `src/geometry.rs`                                  | `MAX_GEOMETRY_NESTING`                    | `256`                                                   | 1    | Placed curve, surface and pcurve basis chain depth. `try_new` refuses a deeper chain.                                                                                                                                                                                        |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_PATCHES`                             | `1_000_000`                                             | 4    | Patch-queue cap in NURBS surface start search, checked with the caller's `WorkBudget`. Exhaustion returns `None`; the caller owns the loss.                                                                                                                                  |
