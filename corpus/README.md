@@ -1,8 +1,11 @@
 # cadmpeg corpus
 
-This directory accepts contributor-authored CAD fixtures dedicated to the public domain under CC0-1.0. CAD files enter it only through the donation process below. Donation rules follow the clean-room policy in [LEGAL.md](../LEGAL.md).
+This directory holds the public specimens. A specimen is a CAD file that a CAD application wrote, checked in with its provenance and SHA-256, so that tests can check the codecs against real producer output. Every specimen in `manifest.toml` must pass `cadmpeg check`; `cargo test -p cadmpeg --test corpus_manifest` enforces it. Two acquisition classes are accepted.
 
-## What we accept
+1. **Contributor-authored CC0 donations.** You created the file from a blank or default template and dedicate it CC0-1.0. CAD files enter this class only through the donation process below. Donation rules follow the clean-room policy in [LEGAL.md](../LEGAL.md).
+2. **Third-party U.S. government public-domain specimens.** NIST-authored MBE PMI models and similar works that are not subject to U.S. copyright under 17 U.S.C. §105. These are not CC0 dedications by cadmpeg, and cadmpeg does not claim authorship. Stamp them `LicenseRef-NIST-PD`, keep the publisher disclaimer, and record the official download URL, SHA-256, and acquisition date. See [`nist-pmi/README.md`](nist-pmi/README.md). This class is maintainer-curated from the official publisher archives.
+
+## What we accept (CC0 donations)
 
 A donated file must meet all of these requirements:
 
@@ -28,7 +31,7 @@ The first accepted donation creates `corpus/manifest.toml`. Each later donation 
 
 ## Manifest format
 
-Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, and `sat`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, CC0 dedication, SHA-256, purpose, and optional expected topology. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal entry:
+Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, and `sat`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, license, SHA-256, purpose, and optional expected topology. CC0 donations use `license = "CC0-1.0"`. The NIST specimen track uses `license = "LicenseRef-NIST-PD"`; see [`nist-pmi/README.md`](nist-pmi/README.md). Spreadsheets and publisher README files that have no codec stay out of `[[file]]`. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal CC0 entry:
 
 ```toml
 [[file]]
