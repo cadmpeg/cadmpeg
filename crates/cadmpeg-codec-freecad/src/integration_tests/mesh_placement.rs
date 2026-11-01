@@ -330,12 +330,16 @@ fn application_mesh_nested_link_reports_withheld_placement() {
         ],
         &[],
     );
-    assert_eq!(result.ir().model.tessellations.len(), 2);
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "fcstd/geometry.mesh-placement-not-transferred"));
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string() == "fcstd/geometry.mesh-placement-not-transferred")
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -415,15 +419,25 @@ fn application_mesh_nested_link_fanout_has_a_shared_work_bound() {
         .map(|(name, kind, properties)| (name.as_str(), *kind, properties.clone()))
         .collect::<Vec<_>>();
     let result = decode(&object_refs, &[]);
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "fcstd/geometry.mesh-placement-bounded"));
-    assert_eq!(result.ir().model.tessellations.len(), 2);
+    // Links without a stated placement withhold before expansion, so the
+    // shared work bound is never reached. Every nested use is withheld.
+    assert!(!result.report().losses.iter().any(|loss| loss.code.to_string()
+        == "fcstd/geometry.mesh-placement-bounded"));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string()
+                == "fcstd/geometry.mesh-placement-not-transferred")
+            .count(),
+        601
+    );
+    assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_vertices(
         &result,
         0,
         [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, 0.0]],
     );
 }
+
