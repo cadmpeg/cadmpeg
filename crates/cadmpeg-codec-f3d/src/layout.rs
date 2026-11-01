@@ -7625,3 +7625,19 @@ pub(crate) mod dimension_annotation_genesis_metadata {
     /// Offset of `entity_genesis` (`u64`, little-endian). Spec §3.1.
     pub(crate) const ENTITY_GENESIS: usize = 49;
 }
+
+/// Byte offsets for the `pathless_external_placement_prefix` record.
+///
+/// Spec §1.4. Record length 25 B.
+///
+/// ```text
+/// Prefix through the control word; the metadata UUIDs follow.
+/// ```
+pub(crate) mod pathless_external_placement_prefix {
+    /// Offset of `empty_name` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const EMPTY_NAME: usize = 15;
+    /// Offset of `control` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const CONTROL: usize = 21;
+    /// Stated value of `control` (`u32`). Spec §1.4.
+    pub(crate) const CONTROL_VALUE: u32 = 0x0000_0001;
+}

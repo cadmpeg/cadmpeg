@@ -120,6 +120,20 @@ fn owned(entity_id: u64, owners: &[u64], world: [[f64; 4]; 4]) -> XrefOwnedPose 
     }
 }
 
+fn typed_owned(entity_id: u64, owners: &[u64], world: [[f64; 4]; 4]) -> XrefOwnedPose {
+    let mut pose = owned(entity_id, owners, world);
+    let mut bytes = pose.frame_bytes.to_vec();
+    let mut at = 24;
+    crate::bytes::take_reference(&bytes, &mut at).unwrap();
+    at += 4;
+    for target in std::iter::once(8506).chain(owners.iter().copied()) {
+        bytes.splice(at..at + 11, inline_local(target, PLACEMENT));
+        at += 55;
+    }
+    pose.frame_bytes = bytes.into();
+    pose
+}
+
 fn reference(contained_poses: Vec<XrefContainedPose>) -> XrefReference {
     with_owned(contained_poses, Vec::new())
 }
@@ -279,6 +293,30 @@ fn place_reference_stored_at(
     reference: XrefReference,
     stored_x: f64,
 ) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>, usize) {
+    let (ir, losses, count) = placed_reference(reference, stored_x);
+    (ir.model.occurrences[3].transform, losses, count)
+}
+
+fn placed_reference(
+    reference: XrefReference,
+    stored_x: f64,
+) -> (
+    cadmpeg_ir::CadIr,
+    Vec<cadmpeg_ir::report::loss::LossKind>,
+    usize,
+) {
+    placed_reference_edit(reference, stored_x, |_| {})
+}
+
+fn placed_reference_edit(
+    reference: XrefReference,
+    stored_x: f64,
+    prepare: impl FnOnce(&mut cadmpeg_ir::CadIr),
+) -> (
+    cadmpeg_ir::CadIr,
+    Vec<cadmpeg_ir::report::loss::LossKind>,
+    usize,
+) {
     const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
     const OUTER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9300";
     const PART: &str =
@@ -323,11 +361,13 @@ fn place_reference_stored_at(
             -30.0,
         ),
     ];
+    prepare(&mut ir);
+    let first_native = ir.model.occurrences[5].native_ref.clone().unwrap();
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![
             local_carrier(OWNER, 9222),
             local_carrier(OUTER, 9300),
-            local_carrier(&format!("{PART}496"), 496),
+            local_carrier(&first_native, 496),
             local_carrier(&format!("{PART}497"), 497),
         ];
         native.xref_references = vec![reference.clone()];
@@ -344,15 +384,8 @@ fn place_reference_stored_at(
         &mut losses,
     )
     .unwrap();
-    let instance = ir
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| occurrence.id.as_str() == "f3d:model:occurrence#owner:xref-0-0")
-        .unwrap()
-        .transform;
     (
-        instance,
+        ir,
         losses.into_iter().map(|loss| loss.code).collect(),
         left_identity,
     )
@@ -484,7 +517,7 @@ fn an_owned_external_occurrence_takes_its_own_pose_unless_a_contained_pose_place
             .is_none()
     );
 
-    // A contained pose wins over the instance's own carrier, which stays native.
+    // Independent carriers place the insertion and the contained instance.
     let (transform, losses) = place_reference(with_owned(
         vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
         vec![owned(11, &[9222], translation(20.0, 4.0, 0.0))],
@@ -623,7 +656,7 @@ fn a_nested_design_carrier_names_its_placement_and_the_nested_occurrence() {
 }
 
 #[test]
-fn a_nested_design_carrier_refuses_elements_of_the_wrong_kind() {
+fn a_nested_design_carrier_distinguishes_target_types_and_role_forms() {
     let magic: Option<u32> = None;
     let world = translation(20.0, 0.3, 5.0);
     let good = nested_carrier(11, false, 166, world);
@@ -637,7 +670,6 @@ fn a_nested_design_carrier_refuses_elements_of_the_wrong_kind() {
         changed.splice(at..at + from.len(), to.iter().copied());
         changed
     };
-    // The root component and the placement carry one role: that is not a nested design.
     let same_role = replace(
         &NESTED_ROLE
             .encode_utf16()
@@ -648,7 +680,9 @@ fn a_nested_design_carrier_refuses_elements_of_the_wrong_kind() {
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>(),
     );
-    assert!(crate::xref::contained_component_path_pose(&same_role, magic).is_none());
+    let ordered = crate::xref::contained_component_path_pose(&same_role, magic).unwrap();
+    assert_eq!(ordered.contained_record_index, 166);
+    assert_eq!(ordered.placement_record_index, 8506);
     // The component element is not a root component.
     let not_root = replace(ROOT_COMPONENT.as_bytes(), PLACEMENT.as_bytes());
     assert!(crate::xref::contained_component_path_pose(&not_root, magic).is_none());
@@ -708,4 +742,365 @@ fn nested_design_carriers_place_an_external_occurrence_off_the_identity() {
     let mut moved = reference(poses());
     moved.contained_poses[0].transform = Some(translation(24.0, 4.0, 0.0).try_into().unwrap());
     assert!(!crate::xref::contained_poses_match(&moved));
+}
+
+#[test]
+fn typed_component_paths_require_the_element_role_and_complete_tail() {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    for typed in [false, true] {
+        for placement_first in [false, true] {
+            let mut bytes = carrier(
+                11,
+                ROOT_COMPONENT,
+                ROLE,
+                496,
+                &[9222, 9300],
+                translation(23.0, 4.0, 0.0),
+            );
+            let mut members = Vec::new();
+            let mut end = 24;
+            for _ in 0..5 {
+                let reference = crate::bytes::take_owned_reference(&bytes, &mut end).unwrap();
+                let discriminator = cadmpeg_core::decode::View::u32_le_at(&bytes, end).unwrap();
+                end += 4;
+                members.push((reference, discriminator));
+            }
+            if placement_first {
+                members.swap(0, 2);
+                members.swap(1, 2);
+            }
+            let mut elements = Vec::new();
+            for (reference, discriminator) in members {
+                if let Some((target, _)) = reference.local() {
+                    elements.extend(if typed {
+                        inline_local(target, PLACEMENT)
+                    } else {
+                        local_reference(target)
+                    });
+                } else {
+                    let crate::bytes::Reference::CrossDocument {
+                        target,
+                        target_type_guid,
+                        link_name,
+                        ..
+                    } = reference
+                    else {
+                        unreachable!()
+                    };
+                    elements.extend(crate::test_support::typed_cross_document_reference(
+                        target,
+                        &target_type_guid,
+                        &link_name,
+                    ));
+                }
+                elements.extend_from_slice(&discriminator.to_le_bytes());
+            }
+            bytes.splice(24..end, elements);
+            let pose = crate::xref::contained_component_path_pose(&bytes, magic).unwrap();
+            assert_eq!(pose.contained_record_index, 496);
+            assert_eq!(pose.placement_record_index, 8506);
+            assert_eq!(pose.owner_record_indices, [9222, 9300]);
+            if typed {
+                for target in [8506, 9222, 9300] {
+                    let expected = inline_local(target, PLACEMENT);
+                    let at = bytes
+                        .windows(expected.len())
+                        .position(|window| window == expected)
+                        .unwrap();
+                    let mut bad = bytes.clone();
+                    bad.splice(
+                        at..at + expected.len(),
+                        inline_local(target, ROOT_COMPONENT),
+                    );
+                    assert!(crate::xref::contained_component_path_pose(&bad, magic).is_none());
+                }
+            }
+            bytes.push(0);
+            assert!(crate::xref::contained_component_path_pose(&bytes, magic).is_none());
+        }
+    }
+}
+
+#[test]
+fn independent_contained_world_poses_use_the_corrected_insertion_frame() {
+    let (ir, losses, _) = placed_reference(
+        with_owned(
+            vec![
+                retained(12, 496, &[9222], translation(33.0, 4.0, 0.0)),
+                retained(13, 497, &[9222], translation(12.0, 7.0, 0.0)),
+            ],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+    );
+    let insertion = ir.model.occurrences[3].transform;
+    let first = ir.model.occurrences[5].transform;
+    let second = ir.model.occurrences[6].transform;
+    assert!((insertion.rows()[0][3] - 195.0).abs() < 1e-9);
+    assert!((first.rows()[0][3] - 130.0).abs() < 1e-9);
+    assert!((first.rows()[1][3]).abs() < 1e-9);
+    assert!((second.rows()[0][3] + 80.0).abs() < 1e-9);
+    assert!((second.rows()[1][3] - 30.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPose.kind(),
+            F3dLossCode::XrefOwnedPose.kind()
+        ]
+    );
+}
+
+#[test]
+fn nested_component_paths_keep_typed_owners_and_refuse_owner_type_mismatch() {
+    for placement_first in [false, true] {
+        let mut bytes = nested_carrier(11, placement_first, 496, translation(24.0, 4.0, 0.0));
+        let mut end = 24;
+        for _ in 0..3 {
+            crate::bytes::take_reference(&bytes, &mut end).unwrap();
+            end += 4;
+        }
+        bytes[20..24].copy_from_slice(&4_u32.to_le_bytes());
+        let mut owner = inline_local(9222, PLACEMENT);
+        owner.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.splice(end..end, owner);
+        let pose = crate::xref::contained_component_path_pose(&bytes, None).unwrap();
+        assert_eq!(pose.owner_record_indices, [9222]);
+        let expected = inline_local(9222, PLACEMENT);
+        bytes.splice(
+            end..end + expected.len(),
+            inline_local(9222, ROOT_COMPONENT),
+        );
+        assert!(crate::xref::contained_component_path_pose(&bytes, None).is_none());
+    }
+}
+
+#[test]
+fn conflicting_contained_carriers_keep_the_child_and_place_the_insertion() {
+    let (ir, losses, _) = placed_reference(
+        with_owned(
+            vec![
+                retained(12, 496, &[9222], translation(33.0, 4.0, 0.0)),
+                retained(13, 496, &[9222], translation(34.0, 4.0, 0.0)),
+            ],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+    );
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 195.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPoseDisagrees.kind(),
+            F3dLossCode::XrefOwnedPose.kind()
+        ]
+    );
+}
+
+#[test]
+fn repeated_contained_design_records_keep_an_ambiguous_target_native() {
+    let (ir, losses, _) = placed_reference_edit(
+        with_owned(
+            vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+        |ir| {
+            let mut repeated = ir.model.occurrences[5].clone();
+            repeated.id =
+                OccurrenceId::mint("f3d:xref/role/occurrence-0/model:occurrence#repeated-child")
+                    .unwrap();
+            ir.model.occurrences.push(repeated);
+        },
+    );
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[7].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefOwnedPose.kind(),
+            F3dLossCode::XrefContainedPoseNative.kind()
+        ]
+    );
+}
+
+#[test]
+fn repeated_insertions_require_a_unique_owner_qualified_component_path() {
+    let (ir, losses, _) = placed_reference_edit(
+        with_owned(
+            vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+        |ir| {
+            let mut repeated = ir.model.occurrences[3].clone();
+            repeated.id = OccurrenceId::mint("f3d:model:occurrence#repeated-insertion").unwrap();
+            ir.model.occurrences.push(repeated);
+        },
+    );
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[7].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefOwnedPoseNative.kind(),
+            F3dLossCode::XrefContainedPoseNative.kind()
+        ]
+    );
+}
+
+fn locals_first(bytes: &[u8]) -> Vec<u8> {
+    let count = cadmpeg_core::decode::View::u32_le_at(bytes, 20).unwrap();
+    let mut at = 24;
+    let mut local = Vec::new();
+    let mut external = Vec::new();
+    for _ in 0..count {
+        let start = at;
+        let reference = crate::bytes::take_reference(bytes, &mut at).unwrap();
+        at += 4;
+        if reference.local().is_some() {
+            local.extend_from_slice(&bytes[start..at]);
+        } else {
+            external.extend_from_slice(&bytes[start..at]);
+        }
+    }
+    let mut result = bytes[..24].to_vec();
+    result.extend(local);
+    result.extend(external);
+    result.extend_from_slice(&bytes[at..]);
+    result
+}
+
+#[test]
+fn component_paths_admit_local_owners_before_the_cross_document_elements() {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let own = typed_owned(11, &[9222, 9300], translation(20.0, 4.0, 0.0));
+    let own_bytes = locals_first(&own.frame_bytes);
+    let parsed = crate::xref::owned_component_path_pose(&own_bytes, magic).unwrap();
+    assert_eq!(parsed.placement_record_index, 8506);
+    assert_eq!(parsed.owner_record_indices, [9222, 9300]);
+    let bytes = locals_first(&carrier(
+        12,
+        ROOT_COMPONENT,
+        ROLE,
+        496,
+        &[9222, 9300],
+        translation(33.0, 4.0, 0.0),
+    ));
+    let parsed = crate::xref::contained_component_path_pose(&bytes, magic).unwrap();
+    assert_eq!(parsed.contained_record_index, 496);
+    assert_eq!(parsed.owner_record_indices, [9222, 9300]);
+}
+
+#[test]
+fn contained_component_paths_follow_the_expanded_scope_of_a_shared_design() {
+    let (ir, losses, _) = placed_reference_edit(
+        with_owned(
+            vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+        |ir| {
+            ir.model.occurrences[5].native_ref = Some(
+                "f3d:xref/first/xref/shared/Design:design-component-occurrence#496".to_owned(),
+            );
+        },
+    );
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 130.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPose.kind(),
+            F3dLossCode::XrefOwnedPose.kind()
+        ]
+    );
+}
+
+#[test]
+fn contained_world_poses_use_the_inverse_of_the_rotated_insertion_frame() {
+    let mut pose = translation(20.0, 4.0, 0.0);
+    pose[0][0] = 0.0;
+    pose[0][1] = -1.0;
+    pose[1][0] = 1.0;
+    pose[1][1] = 0.0;
+    let (ir, _, _) = placed_reference(
+        with_owned(
+            vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+            vec![typed_owned(11, &[9222], pose)],
+        ),
+        10.0,
+    );
+    let local = ir.model.occurrences[5].transform.rows();
+    assert!(local[0][3].abs() < 1e-9);
+    assert!((local[1][3] + 130.0).abs() < 1e-9);
+}
+
+#[test]
+fn contained_component_paths_refuse_two_member_scopes_below_one_insertion() {
+    let (ir, losses, _) = placed_reference_edit(
+        with_owned(
+            vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+        |ir| {
+            ir.model.occurrences.push(occurrence(
+                "f3d:xref/other/model:occurrence#root",
+                Some("f3d:model:occurrence#owner:xref-0-0"),
+                None,
+                0.0,
+            ));
+        },
+    );
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefOwnedPose.kind(),
+            F3dLossCode::XrefContainedPoseNative.kind()
+        ]
+    );
+}
+
+#[test]
+fn owned_nested_component_paths_keep_the_saved_state_native() {
+    let mut bytes = nested_carrier(13, true, 497, translation(12.0, 7.0, 0.0));
+    let mut at = 24;
+    for _ in 0..3 {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+        at += 4;
+    }
+    bytes[20..24].copy_from_slice(&4_u32.to_le_bytes());
+    let mut owner = inline_local(9222, PLACEMENT);
+    owner.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.splice(at..at, owner);
+    let pose = crate::xref::contained_component_path_pose(&bytes, None).unwrap();
+    let nested = XrefContainedPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: bytes.into(),
+        contained_record_index: pose.contained_record_index,
+        owner_record_indices: pose.owner_record_indices,
+        transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+    };
+    let (ir, losses, _) = placed_reference(
+        with_owned(
+            vec![
+                retained(12, 496, &[9222], translation(33.0, 4.0, 0.0)),
+                nested,
+            ],
+            vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+        ),
+        10.0,
+    );
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 130.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[6].transform.rows()[0][3] + 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[6].transform.rows()[1][3]).abs() < 1e-9);
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPose.kind(),
+            F3dLossCode::XrefOwnedPose.kind(),
+            F3dLossCode::XrefContainedPoseNative.kind()
+        ]
+    );
 }

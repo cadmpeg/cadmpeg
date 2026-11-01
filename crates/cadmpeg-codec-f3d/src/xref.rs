@@ -1618,8 +1618,25 @@ macro_rules! xref_some {
 fn repeated_target_occurrence_placement_details(
     body: &[u8],
 ) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
-    let (link_names, path_target, mut at) = xref_some!(occurrence_target_path(body));
-    if xref_some!(View::u32_le_at(body, at)) == 0 {
+    use crate::layout::pathless_external_placement_prefix as pathless;
+    let (mut link_names, path_target, mut at) =
+        if let Some((names, target, at)) = occurrence_target_path(body) {
+            (names, Some(target), at)
+        } else {
+            let (tag, _) = xref_some!(lp_ascii_strict(body, 0, 3..=3));
+            if !tag.as_bytes().iter().all(u8::is_ascii_digit) {
+                return Ok(None);
+            }
+            if body
+                .get(pathless::EMPTY_NAME..pathless::CONTROL)
+                .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+            {
+                return Ok(None);
+            }
+            (Vec::new(), None, pathless::CONTROL)
+        };
+    let control = xref_some!(View::u32_le_at(body, at));
+    if control == 0 || (path_target.is_none() && control != pathless::CONTROL_VALUE) {
         return Ok(None);
     }
     at += 4;
@@ -1632,10 +1649,24 @@ fn repeated_target_occurrence_placement_details(
     at = next;
     if body.get(at) == Some(&0) {
         at += 1;
+    } else if path_target.is_none() {
+        return Ok(None);
     }
     let repeated_start = at;
     let repeated = xref_some!(take_owned_reference(body, &mut at));
-    if !same_external_target(&path_target, &repeated) {
+    if path_target
+        .as_ref()
+        .is_some_and(|target| !same_external_target(target, &repeated))
+    {
+        return Ok(None);
+    }
+    if path_target.is_none() {
+        if cross_document_target(&repeated, ROOT_COMPONENT_TYPE_GUID).is_none() {
+            return Ok(None);
+        }
+        link_names.push(xref_some!(repeated.link_name()).to_owned());
+    }
+    if repeated.target() == Some(0) {
         return Ok(None);
     }
     let role = xref_some!(repeated.link_name()).to_owned();
@@ -1670,7 +1701,7 @@ fn repeated_target_occurrence_placement_details(
     let (target, type_guid) =
         xref_some!(xref_some!(take_owned_reference(body, &mut at)).into_local());
     Ok(
-        (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+        (target != 0 && at == body.len()).then_some(RepeatedTargetPlacementDetails {
             occurrence_guid,
             carrier_record_index: xref_some!(View::u64_le_at(body, 7)),
             owner: XrefLocalOwner { target, type_guid },
@@ -2093,12 +2124,12 @@ pub(crate) fn component_path_pose(
     };
     // Both element orders occur: the cross-document element can precede or
     // follow the local element.
-    let (role, (placement_record_index, None)) = [(first, second), (second, first)]
-        .into_iter()
-        .find_map(|(document, placement)| Some((document.link_name()?, placement.local()?)))?
-    else {
-        return None;
-    };
+    let (role, placement_record_index) =
+        [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(document, placement)| {
+                Some((document.link_name()?, typed_local_placement(placement)?))
+            })?;
     if placement_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
@@ -2176,6 +2207,14 @@ pub(crate) fn contained_pose_is_nested(pose: &crate::records::xref::XrefContaine
         .is_some_and(|(members, _)| nested_contained_elements(&members).is_some())
 }
 
+pub(crate) fn component_path_has_inline_local_type(body: &[u8]) -> bool {
+    occurrence_path_members(body).is_some_and(|(members, _)| {
+        members
+            .iter()
+            .any(|(element, _)| element.local().is_some_and(|(_, guid)| guid.is_some()))
+    })
+}
+
 /// The elements of a contained-occurrence component path.
 struct ContainedElements<'a> {
     role: &'a str,
@@ -2188,78 +2227,67 @@ struct ContainedElements<'a> {
 /// The path of one role: root component, contained placement, this document's
 /// placement, then its local owners, innermost first.
 fn ordered_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
-    let [(component, _), (contained, _), (placement, _), owners @ ..] = members.as_slice() else {
-        return None;
-    };
-    let (component_record_index, role) =
-        cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
-    let (contained_record_index, contained_role) =
-        cross_document_target(contained, OCCURRENCE_PLACEMENT_TYPE_GUID)?;
-    let (placement_record_index, None) = placement.local()? else {
-        return None;
-    };
-    if contained_role != role || placement_record_index == 0 {
-        return None;
-    }
-    let owner_record_indices = owners
-        .iter()
-        .map(|(owner, _)| match owner.local()? {
-            (target, None) if target != 0 => Some(target),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(ContainedElements {
-        role,
-        component_record_index,
-        contained_record_index,
-        placement_record_index,
-        owner_record_indices,
-    })
+    contained_elements(members, false)
 }
 
-/// The path of a nested design: the occurrence placement in the referenced
-/// design comes last, and this document's placement and the root component of
-/// the design it places precede it in either order. The root component and
-/// the placement carry different roles.
 fn nested_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
-    let [(first, _), (second, _), (contained, _)] = members.as_slice() else {
+    contained_elements(members, true)
+}
+
+fn contained_elements(members: &PathMembers, nested: bool) -> Option<ContainedElements<'_>> {
+    let [(first, _), (second, _), (third, _), rest @ ..] = members.as_slice() else {
         return None;
     };
+    if nested && first.local().is_none() && second.local().is_none() {
+        return None;
+    }
+    let (component, contained, placement, owners) = if first.local().is_some() {
+        if second.local().is_some() {
+            let [(component, _), (contained, _)] = members.get(members.len().checked_sub(2)?..)?
+            else {
+                return None;
+            };
+            (
+                component,
+                contained,
+                first,
+                members.get(1..members.len() - 2)?,
+            )
+        } else {
+            (second, third, first, rest)
+        }
+    } else if second.local().is_some() {
+        (first, third, second, rest)
+    } else {
+        (first, second, third, rest)
+    };
+    let (component_record_index, component_role) =
+        cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
     let (contained_record_index, role) =
         cross_document_target(contained, OCCURRENCE_PLACEMENT_TYPE_GUID)?;
-    let (component, placement) =
-        [(first, second), (second, first)]
-            .into_iter()
-            .find_map(|(component, placement)| {
-                let component = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
-                let placement = typed_local_placement(placement)?;
-                Some((component, placement))
-            })?;
-    let (component_record_index, component_role) = component;
-    if component_role == role {
+    if (component_role != role) != nested {
         return None;
     }
     Some(ContainedElements {
         role,
         component_record_index,
         contained_record_index,
-        placement_record_index: placement,
-        owner_record_indices: Vec::new(),
+        placement_record_index: typed_local_placement(placement)?,
+        owner_record_indices: owners
+            .iter()
+            .map(|(owner, _)| typed_local_placement(owner))
+            .collect::<Option<Vec<_>>>()?,
     })
 }
 
 /// The target of a same-document occurrence-placement element, with or
 /// without its inline type.
 fn typed_local_placement(reference: &Reference<String, String>) -> Option<u64> {
-    match reference.local()? {
-        (target, None) if target != 0 => Some(target),
-        (target, Some(guid))
-            if target != 0 && guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) =>
-        {
-            Some(target)
-        }
-        _ => None,
-    }
+    let (target, guid) = reference.local()?;
+    (target != 0
+        && crate::records::component_path::DesignComponentPathElementKind::Occurrence
+            .admits_inline_type(guid))
+    .then_some(target)
 }
 
 /// The target and link name of a cross-document element of one target type.
@@ -2316,19 +2344,24 @@ pub(crate) fn owned_component_path_pose(
     let [(component, _), (placement, _), owners @ ..] = members.as_slice() else {
         return None;
     };
-    let (_, role) = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
-    let (placement_record_index, None) = placement.local()? else {
-        return None;
+    let (component, placement, owners) = if component.local().is_some() {
+        if placement.local().is_some() {
+            let (root, _) = members.last()?;
+            (root, component, members.get(1..members.len() - 1)?)
+        } else {
+            (placement, component, owners)
+        }
+    } else {
+        (component, placement, owners)
     };
+    let (_, role) = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
+    let placement_record_index = typed_local_placement(placement)?;
     if owners.is_empty() || placement_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
     let owner_record_indices = owners
         .iter()
-        .map(|(owner, _)| match owner.local()? {
-            (target, None) if target != 0 => Some(target),
-            _ => None,
-        })
+        .map(|(owner, _)| typed_local_placement(owner))
         .collect::<Option<Vec<_>>>()?;
     let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(OwnedPathPose {
