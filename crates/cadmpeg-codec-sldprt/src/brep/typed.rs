@@ -635,6 +635,77 @@ pub(super) fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     Some(u32::from(first & 0x7fff) | (u32::from(second) << 15))
 }
 
+/// The width of a pointer up to `0x7ffe` (spec §4).
+const NARROW_POINTER_LEN: usize = 2;
+
+/// The largest pointer value in the two-byte form (spec §4).
+const LAST_NARROW_POINTER: u32 = 0x7ffe;
+
+/// The high bit that marks the first cell of the four-byte form (spec §4).
+const WIDE_POINTER_FLAG: u16 = 0x8000;
+
+/// A cursor over a bare record body at its narrow-pointer offsets (spec §4).
+/// Read the fields in offset order.
+pub(super) struct NarrowLayout<'a> {
+    bytes: &'a [u8],
+    body: usize,
+    shift: usize,
+}
+
+impl<'a> NarrowLayout<'a> {
+    pub(super) fn new(bytes: &'a [u8], body: usize) -> Self {
+        Self {
+            bytes,
+            body,
+            shift: 0,
+        }
+    }
+
+    /// The position of the field at narrow offset `offset`.
+    pub(super) fn at(&self, offset: usize) -> Option<usize> {
+        self.body.checked_add(offset)?.checked_add(self.shift)
+    }
+
+    pub(super) fn is_narrow(&self) -> bool {
+        self.shift == 0
+    }
+
+    /// The pointer value at narrow offset `offset`. A four-byte cell holds a
+    /// value past `0x7ffe` and sets the high bit of its first u16.
+    pub(super) fn pointer_value(&mut self, offset: usize) -> Option<u32> {
+        let start = self.at(offset)?;
+        let mut end = start;
+        let value = read_ref(self.bytes, &mut end)?;
+        let width = end.checked_sub(start)?;
+        if width > NARROW_POINTER_LEN
+            && (value <= LAST_NARROW_POINTER
+                || View::u16_be_at(self.bytes, start)? & WIDE_POINTER_FLAG == 0)
+        {
+            return None;
+        }
+        self.shift = self
+            .shift
+            .checked_add(width.checked_sub(NARROW_POINTER_LEN)?)?;
+        Some(value)
+    }
+
+    /// The pointer at narrow offset `offset`. A value past `0xffff` has no
+    /// u16 key and gives `None`.
+    pub(super) fn pointer(&mut self, offset: usize) -> Option<u16> {
+        u16_from_ref(self.pointer_value(offset)?)
+    }
+
+    /// `N` adjacent pointers from narrow offset `offset`.
+    pub(super) fn pointers<const N: usize>(&mut self, offset: usize) -> Option<[u16; N]> {
+        let mut out = [0; N];
+        for (index, pointer) in out.iter_mut().enumerate() {
+            let cell = offset.checked_add(index.checked_mul(NARROW_POINTER_LEN)?)?;
+            *pointer = self.pointer(cell)?;
+        }
+        Some(out)
+    }
+}
+
 fn read_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
     let mut refs = [0; N];
     for reference in &mut refs {

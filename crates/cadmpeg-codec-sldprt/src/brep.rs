@@ -228,13 +228,9 @@ impl SurfaceCarrier {
     }
 }
 
-fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
+/// The `(attr, marker offset)` readings of a compact analytic header at `hdr`.
+fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<(u16, usize)>> {
     let mut candidates = Vec::new();
-
-    let partition_marker = hdr.checked_add(analytic::MARKER)?;
-    if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
-        candidates.push(partition_marker);
-    }
 
     // Deltas records encode each of the five references as [hi][lo][01].
     // The marker follows that fixed-width roster, so its position is not a
@@ -248,8 +244,30 @@ fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
             .and_then(|at| body.get(at))
             == Some(&1)
     });
+
+    let partition = if tripled_refs {
+        Some((
+            View::u16_be_at(body, hdr.checked_add(analytic::ATTR)?)?,
+            hdr.checked_add(analytic::MARKER)?,
+        ))
+    } else {
+        let mut layout = typed::NarrowLayout::new(body, hdr);
+        (|| {
+            let attr = layout.pointer(analytic::ATTR)?;
+            layout.pointers::<COMPACT_REF_COUNT>(analytic::REFS)?;
+            Some((attr, layout.at(analytic::MARKER)?))
+        })()
+    };
+    if let Some((attr, marker)) = partition {
+        if matches!(body.get(marker), Some(0x2b | 0x2d)) {
+            candidates.push((attr, marker));
+        }
+    }
     if tripled_refs && matches!(body.get(tripled_marker), Some(0x2b | 0x2d)) {
-        candidates.push(tripled_marker);
+        candidates.push((
+            View::u16_be_at(body, hdr.checked_add(analytic::ATTR)?)?,
+            tripled_marker,
+        ));
     }
 
     Some(candidates)
@@ -302,10 +320,9 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tag_end = off.checked_add(2)?;
     let has_ff = body.get(tag_end) == Some(&0xff);
     let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let attr = View::u16_be_at(body, hdr)?;
     let mut candidates = analytic_marker_candidates(body, hdr)?
         .into_iter()
-        .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
+        .filter_map(|(attr, marker_at)| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
     let carrier = candidates.next()?;
     candidates.next().is_none().then_some(carrier)
 }
@@ -543,6 +560,24 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
+    }
+
+    #[test]
+    fn a_compact_carrier_moves_its_marker_by_each_wide_pointer() {
+        // 0x9000 and 0x9001 take the four-byte form of spec §4.
+        let mut bytes = vec![0, tag::PLANE, 0x90, 0x00, 0x00, 0x01, 0, 0, 0, 0];
+        for cell in [[0x00, 0x01, 0, 0], [0x90, 0x01, 0x00, 0x01]] {
+            bytes.extend_from_slice(&cell);
+        }
+        bytes.extend_from_slice(&[0, 1, 0, 1, 0x2b]);
+        for value in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0_f64] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).unwrap() else {
+            panic!("expected surface carrier");
+        };
+        assert_eq!(carrier.attr, 0x9000);
+        assert_eq!(carrier.end, bytes.len());
     }
 
     #[test]

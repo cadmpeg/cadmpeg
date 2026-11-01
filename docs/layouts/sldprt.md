@@ -242,7 +242,7 @@ Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1
 
 Spec §4 · layout: byte offsets · size: 37 B
 
-Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
@@ -280,7 +280,7 @@ Parsed by:
 
 Spec §4 · layout: byte offsets · size: 30 B
 
-Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
@@ -314,7 +314,7 @@ Parsed by:
 
 Spec §4 · layout: byte offsets · size: 26 B
 
-Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
@@ -364,7 +364,7 @@ Parsed by:
 
 Spec §4 · layout: byte offsets · size: 14 B
 
-Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4).
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
@@ -394,7 +394,7 @@ Parsed by:
 
 Spec §4 · layout: byte offsets · size: 21 B
 
-Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4).
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
@@ -454,7 +454,7 @@ Unstated regions:
 
 Spec §7.1 · layout: byte offsets · size: 17 B
 
-Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
+Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five pointer references and places the marker at +16 when every pointer is narrow (§4); the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

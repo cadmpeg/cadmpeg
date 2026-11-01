@@ -741,7 +741,7 @@ anchor = "`face_bare` has a 37-byte body"
 size = 37
 endianness = "big"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
-note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4)."
 
 
 [[record.field]]
@@ -875,7 +875,7 @@ anchor = "`edge_bare` has a 30-byte body"
 size = 30
 endianness = "big"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
-note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4)."
 
 
 [[record.field]]
@@ -977,7 +977,7 @@ anchor = "`vertex_bare` has a 26-byte body"
 size = 26
 endianness = "big"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
-note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4)."
 
 
 [[record.field]]
@@ -1123,7 +1123,7 @@ section = "4"
 anchor = "`loop_bare` has a 14-byte body"
 size = 14
 endianness = "big"
-note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4)."
 
 [[record.field]]
 name = "attr"
@@ -1185,7 +1185,7 @@ section = "4"
 anchor = "`fin_bare` has a 21-byte body"
 size = 21
 endianness = "big"
-note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4)."
 
 [[record.field]]
 name = "attr"
@@ -1326,7 +1326,7 @@ section = "7.1"
 anchor = "00 TT [ff]? attr u16 BE ordinal u32 BE refs u16 BE[5] marker u8 (0x2b|0x2d) values f64 BE[n]"
 size = 17
 endianness = "big"
-note = "Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing."
+note = "Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five pointer references and places the marker at +16 when every pointer is narrow (§4); the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing."
 
 [[record.field]]
 name = "attr"

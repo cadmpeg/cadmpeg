@@ -27,6 +27,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
 
+use super::typed::NarrowLayout;
+
 use crate::layout::edge_bare as edge_body;
 use crate::layout::edge_tripled as edge_delta;
 use crate::layout::entity_common_header as entity_hdr;
@@ -240,26 +242,38 @@ fn parse_bridge(buf: &[u8], off: usize, plain: bool) -> Option<Bridge> {
             offset: off,
         });
     }
-    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
+    bare_bridge(buf, off, p, plain).map(|(bridge, _)| bridge)
+}
+
+/// The bare bridge whose body starts at `p`, with the end of its framing. A
+/// head with narrow pointers can carry tripled references.
+fn bare_bridge(buf: &[u8], off: usize, p: usize, plain: bool) -> Option<(Bridge, usize)> {
+    if p + face_body::LEN > buf.len() {
         return None;
     }
-    let attr = attr_at(buf, p)?;
-    let sequence = View::u32_be_at(buf, p + 2)?;
-    let attributes_head = View::u16_be_at(buf, p + 6)?;
-    let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
-    let (refs, marker) = if tripled {
-        (refs_tripled::<5>(buf, p + 16)?, *buf.get(p + 31)?)
+    let mut layout = NarrowLayout::new(buf, p);
+    let attr = layout.pointer(face_body::ATTR).filter(|attr| *attr != 0)?;
+    let sequence = View::u32_be_at(buf, layout.at(face_body::NODE_ID)?)?;
+    let attributes_head = layout.pointer(face_body::ATTRIBUTES_HEAD)?;
+    if !frames_on_tolerance(buf, layout.at(face_body::TOLERANCE)?, plain) {
+        return None;
+    }
+    let tripled = layout.is_narrow() && (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
+    let (refs, sense_at) = if tripled {
+        (refs_tripled::<5>(buf, p + face_body::REFS)?, p + 31)
     } else {
-        (refs_be::<5>(buf, p + 16)?, *buf.get(p + 26)?)
+        let refs = layout.pointers::<5>(face_body::REFS)?;
+        (refs, layout.at(face_body::SENSE)?)
     };
-    Some(Bridge {
+    let bridge = Bridge {
         attr,
         sequence,
         refs,
-        sense: parse_sense(marker)?,
+        sense: parse_sense(*buf.get(sense_at)?)?,
         attributes_head: (attributes_head > 1).then_some(attributes_head),
         offset: off,
-    })
+    };
+    Some((bridge, sense_at.checked_add(1)?))
 }
 
 fn parse_loop_candidates(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
@@ -270,28 +284,34 @@ fn parse_loop_candidates(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for (len, refs) in [
-        (
-            loop_body::LEN,
-            buf.get(p..p + loop_body::LEN)
-                .and_then(|_| refs_be::<4>(buf, p + loop_body::REFS)),
-        ),
-        (
-            loop_delta::LEN,
-            buf.get(p..p + loop_delta::LEN)
-                .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS)),
-        ),
-    ] {
-        if let Some(refs) = refs {
-            out.push((
-                Loop {
-                    attr,
-                    refs,
-                    offset: off,
-                },
-                p + len,
-            ));
-        }
+    let mut layout = NarrowLayout::new(buf, p);
+    let bare = (|| {
+        let attr = layout.pointer(loop_body::ATTR).filter(|attr| *attr != 0)?;
+        let refs = layout.pointers::<4>(loop_body::REFS)?;
+        Some((attr, refs, layout.at(loop_body::LEN)?))
+    })();
+    if let Some((attr, refs, end)) = bare {
+        out.push((
+            Loop {
+                attr,
+                refs,
+                offset: off,
+            },
+            end,
+        ));
+    }
+    if let Some(refs) = buf
+        .get(p..p + loop_delta::LEN)
+        .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS))
+    {
+        out.push((
+            Loop {
+                attr,
+                refs,
+                offset: off,
+            },
+            p + loop_delta::LEN,
+        ));
     }
     out
 }
@@ -339,21 +359,34 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
         }
     }
     let mut out = Vec::new();
-    if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
-        if let Some(refs) = refs_be::<6>(buf, p + 16) {
-            if let Some(end) = p.checked_add(edge_body::LEN) {
-                out.push((
-                    EdgeUse {
-                        attr,
-                        sequence,
-                        references: EdgeReferences::Bare(refs),
-                        tolerance_m: None,
-                        offset: off,
-                    },
-                    end,
-                ));
-            }
+    let mut layout = NarrowLayout::new(buf, p);
+    let bare = (|| {
+        let attr = layout.pointer(edge_body::ATTR).filter(|attr| *attr != 0)?;
+        let sequence = View::u32_be_at(buf, layout.at(edge_body::NODE_ID)?)?;
+        layout.pointer(edge_body::ATTRIBUTES_HEAD)?;
+        let tolerance = layout.at(edge_body::TOLERANCE)?;
+        if buf.get(tolerance..tolerance + MAGIC.len()) != Some(MAGIC.as_slice()) {
+            return None;
         }
+        let [r0, r1, r2, r3, r4, r5, _owner] = layout.pointers::<7>(edge_body::REFS)?;
+        Some((
+            attr,
+            sequence,
+            [r0, r1, r2, r3, r4, r5],
+            layout.at(edge_body::LEN)?,
+        ))
+    })();
+    if let Some((attr, sequence, refs, end)) = bare {
+        out.push((
+            EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare(refs),
+                tolerance_m: None,
+                offset: off,
+            },
+            end,
+        ));
     }
 
     // The 28-byte body check above keeps every candidate magic window in bounds.
@@ -420,11 +453,17 @@ fn parse_tolerant_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
             .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
     };
     let mut out = Vec::new();
-    if let (Some(tolerance), Some(refs)) = (
-        valued(p + edge_body::TOLERANCE),
-        refs_be::<6>(buf, p + edge_body::REFS),
-    ) {
-        if refs[3] == 1 && short(&refs) {
+    let mut layout = NarrowLayout::new(buf, p);
+    let bare = (|| {
+        let attr = layout.pointer(edge_body::ATTR).filter(|attr| *attr != 0)?;
+        let sequence = View::u32_be_at(buf, layout.at(edge_body::NODE_ID)?)?;
+        layout.pointer(edge_body::ATTRIBUTES_HEAD)?;
+        let tolerance = valued(layout.at(edge_body::TOLERANCE)?)?;
+        let refs = layout.pointers::<6>(edge_body::REFS)?;
+        Some((attr, sequence, tolerance, refs))
+    })();
+    if let Some((attr, sequence, tolerance, refs)) = bare {
+        if refs[3] == 1 {
             out.push(EdgeUse {
                 attr,
                 sequence,
@@ -499,21 +538,23 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if let (Some(refs), Some(marker)) = (
-        refs_be::<9>(buf, p + fin_body::REFS),
-        buf.get(p + fin_body::SENSE).copied(),
-    ) {
-        if let Some(sense) = parse_sense(marker) {
-            out.push((
-                Coedge {
-                    attr,
-                    refs,
-                    sense,
-                    offset: off,
-                },
-                p + fin_body::LEN,
-            ));
-        }
+    let mut layout = NarrowLayout::new(buf, p);
+    let bare = (|| {
+        let attr = layout.pointer(fin_body::ATTR).filter(|attr| *attr != 0)?;
+        let refs = layout.pointers::<9>(fin_body::REFS)?;
+        let sense = parse_sense(*buf.get(layout.at(fin_body::SENSE)?)?)?;
+        Some((attr, refs, sense, layout.at(fin_body::LEN)?))
+    })();
+    if let Some((attr, refs, sense, end)) = bare {
+        out.push((
+            Coedge {
+                attr,
+                refs,
+                sense,
+                offset: off,
+            },
+            end,
+        ));
     }
     if let (Some(refs), Some(marker)) = (
         refs_tripled::<9>(buf, p + fin_delta::REFS),
@@ -539,57 +580,83 @@ fn parse_vertex_candidates(buf: &[u8], off: usize) -> Vec<VertexReading> {
     let Some(p) = body_start(buf, off, 0x12) else {
         return Vec::new();
     };
-    let Some(attr) = attr_at(buf, p).filter(|attr| *attr > 1 && *attr <= MAX_SHORT_POINTER_INDEX)
-    else {
-        return Vec::new();
-    };
-    let Some(sequence) = View::u32_be_at(buf, p + vertex_body::NODE_ID) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for (len, tolerance_at, references, owner) in [
-        (
-            vertex_body::LEN,
-            vertex_body::TOLERANCE,
-            refs_be::<5>(buf, p + vertex_body::REFS),
-            View::u16_be_at(buf, p + vertex_body::OWNER),
-        ),
-        (
-            vertex_delta::LEN,
-            vertex_delta::TOLERANCE,
-            refs_tripled::<5>(buf, p + vertex_delta::REFS),
-            refs_tripled::<1>(buf, p + vertex_delta::OWNER).map(|refs| refs[0]),
-        ),
-    ] {
-        let Some(refs) = references else { continue };
-        let Some(owner) = owner else { continue };
-        let Some(tolerance) = View::f64_be_at(buf, p + tolerance_at) else {
-            continue;
-        };
-        if buf.get(p..p + len).is_none()
-            || refs
-                .iter()
-                .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
-            || owner > MAX_SHORT_POINTER_INDEX
-            || !tolerance.is_finite()
-        {
-            continue;
-        }
-        let accurate =
-            buf.get(p + tolerance_at..p + tolerance_at + MAGIC.len()) == Some(MAGIC.as_slice());
-        out.push(VertexReading {
-            record: VertexUse {
+    let mut layout = NarrowLayout::new(buf, p);
+    let bare = (|| {
+        let attr = layout.pointer(vertex_body::ATTR).filter(|attr| *attr > 1)?;
+        let sequence = View::u32_be_at(buf, layout.at(vertex_body::NODE_ID)?)?;
+        let refs = layout.pointers::<5>(vertex_body::REFS)?;
+        let tolerance_at = layout.at(vertex_body::TOLERANCE)?;
+        let owner = layout.pointer(vertex_body::OWNER)?;
+        Some((
+            attr,
+            sequence,
+            refs,
+            owner,
+            tolerance_at,
+            layout.at(vertex_body::LEN)?,
+        ))
+    })();
+    if let Some((attr, sequence, refs, owner, tolerance_at, end)) = bare {
+        out.extend(vertex_reading(
+            buf,
+            VertexUse {
                 attr,
                 refs,
                 sequence,
                 owner,
-                tolerance_m: (!accurate).then_some(tolerance),
+                tolerance_m: None,
                 offset: off,
             },
-            end: p + len,
-        });
+            tolerance_at,
+            end,
+        ));
+    }
+    let Some(attr) = attr_at(buf, p).filter(|attr| *attr > 1 && *attr <= MAX_SHORT_POINTER_INDEX)
+    else {
+        return out;
+    };
+    let tripled = (|| {
+        let sequence = View::u32_be_at(buf, p + vertex_delta::NODE_ID)?;
+        let refs = refs_tripled::<5>(buf, p + vertex_delta::REFS)?;
+        let owner = refs_tripled::<1>(buf, p + vertex_delta::OWNER)?[0];
+        buf.get(p..p + vertex_delta::LEN)?;
+        (refs
+            .iter()
+            .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+            && owner <= MAX_SHORT_POINTER_INDEX)
+            .then_some((sequence, refs, owner))
+    })();
+    if let Some((sequence, refs, owner)) = tripled {
+        out.extend(vertex_reading(
+            buf,
+            VertexUse {
+                attr,
+                refs,
+                sequence,
+                owner,
+                tolerance_m: None,
+                offset: off,
+            },
+            p + vertex_delta::TOLERANCE,
+            p + vertex_delta::LEN,
+        ));
     }
     out
+}
+
+/// The vertex reading of `record` with its tolerance slot at `tolerance_at`.
+/// A slot that holds the null-real sentinel stores no tolerance.
+fn vertex_reading(
+    buf: &[u8],
+    mut record: VertexUse,
+    tolerance_at: usize,
+    end: usize,
+) -> Option<VertexReading> {
+    let tolerance = View::f64_be_at(buf, tolerance_at).filter(|value| value.is_finite())?;
+    let accurate = buf.get(tolerance_at..tolerance_at + MAGIC.len()) == Some(MAGIC.as_slice());
+    record.tolerance_m = (!accurate).then_some(tolerance);
+    Some(VertexReading { record, end })
 }
 
 fn unsupported_vertex_prefix(buf: &[u8], off: usize) -> Option<VertexUse> {
@@ -989,22 +1056,24 @@ pub(super) fn point_class_attrs(body: &[u8], prefixed: bool) -> HashSet<u16> {
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     let p = body_start(buf, off, 0x1d)?;
-    let attr = attr_at(buf, p).filter(|attr| *attr > 1)?;
-    let (references, xyz_at) = if prefixed {
+    let (attr, references, xyz_at) = if prefixed {
         buf.get(p..p + world_pt_delta::LEN)?;
-        (
-            refs_tripled::<4>(buf, p + world_pt_delta::REFS)?,
-            p + world_pt_delta::XYZ,
-        )
-    } else {
-        buf.get(p..p + world_pt::LEN)?;
-        (refs_be::<4>(buf, p + world_pt::REFS)?, p + world_pt::XYZ)
-    };
-    if references[0] > 1
-        || references
+        let references = refs_tripled::<4>(buf, p + world_pt_delta::REFS)?;
+        if references
             .iter()
             .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
-    {
+        {
+            return None;
+        }
+        (attr_at(buf, p)?, references, p + world_pt_delta::XYZ)
+    } else {
+        let mut layout = NarrowLayout::new(buf, p);
+        let attr = layout.pointer(world_pt::ATTR)?;
+        let references = layout.pointers::<4>(world_pt::REFS)?;
+        buf.get(p..layout.at(world_pt::LEN)?)?;
+        (attr, references, layout.at(world_pt::XYZ)?)
+    };
+    if attr <= 1 || references[0] > 1 {
         return None;
     }
     let x = View::f64_be_at(buf, xyz_at)?;
@@ -1698,20 +1767,7 @@ fn bridge_end(buf: &[u8], off: usize, plain: bool) -> Option<usize> {
         parse_sense(*buf.get(p + 32)?)?;
         return p.checked_add(33);
     }
-    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
-        return None;
-    }
-    attr_at(buf, p)?;
-    let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
-    if tripled {
-        refs_tripled::<5>(buf, p + 16)?;
-        parse_sense(*buf.get(p + 31)?)?;
-        p.checked_add(32)
-    } else {
-        refs_be::<5>(buf, p + 16)?;
-        parse_sense(*buf.get(p + 26)?)?;
-        p.checked_add(27)
-    }
+    bare_bridge(buf, off, p, plain).map(|(_, end)| end)
 }
 
 /// The body-relative end of the edge-use framing the admitted `record`
@@ -2087,6 +2143,9 @@ fn scan_records(
 
 #[cfg(test)]
 mod scope_tests;
+
+#[cfg(test)]
+mod wide_pointer_tests;
 
 #[cfg(test)]
 mod tests {

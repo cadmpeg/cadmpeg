@@ -294,20 +294,15 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u16, PcurveNurbs>) -> HashMap
             continue;
         }
         let header = off + 2 + usize::from(bytes.get(off + 2) == Some(&0xff));
-        let Some(attr) = cadmpeg_core::decode::View::u16_be_at(bytes, header) else {
-            continue;
-        };
-        if attr <= 1 || out.contains_key(&attr) {
-            continue;
-        }
         let reading = super::analytic_marker_candidates(bytes, header)
             .into_iter()
             .flatten()
-            .filter_map(|marker| support_refs(bytes, marker))
-            .find_map(|(surface, b_curve)| {
-                (surface > 1).then_some((surface, pcurves.get(&b_curve)?))
+            .filter(|(attr, _)| *attr > 1 && !out.contains_key(attr))
+            .find_map(|(attr, marker)| {
+                let (surface, b_curve) = support_refs(bytes, marker)?;
+                (surface > 1).then_some((attr, surface, pcurves.get(&b_curve)?))
             });
-        let Some((surface, pcurve)) = reading else {
+        let Some((attr, surface, pcurve)) = reading else {
             continue;
         };
         out.insert(

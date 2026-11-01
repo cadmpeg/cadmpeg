@@ -233,6 +233,8 @@ pub(crate) mod world_point {
     pub(crate) const REFS: usize = 6;
     /// Offset of `xyz` (`f64[3]`, big-endian). Spec §4.
     pub(crate) const XYZ: usize = 14;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
 }
 
 /// Byte offsets for the `face_bare` record.
@@ -240,11 +242,15 @@ pub(crate) mod world_point {
 /// Spec §4. Record length 37 B.
 ///
 /// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 /// ```
 pub(crate) mod face_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 37;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `node_id` (`u32`, big-endian). Spec §4.
+    pub(crate) const NODE_ID: usize = 2;
     /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
     pub(crate) const ATTRIBUTES_HEAD: usize = 6;
     /// Offset of `tolerance` (`bytes[8]`). Spec §4.
@@ -284,11 +290,15 @@ pub(crate) mod face_tripled {
 /// Spec §4. Record length 30 B.
 ///
 /// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 /// ```
 pub(crate) mod edge_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 30;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `node_id` (`u32`, big-endian). Spec §4.
+    pub(crate) const NODE_ID: usize = 2;
     /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
     pub(crate) const ATTRIBUTES_HEAD: usize = 6;
     /// Offset of `tolerance` (`bytes[8]`). Spec §4.
@@ -320,11 +330,13 @@ pub(crate) mod edge_tripled {
 /// Spec §4. Record length 26 B.
 ///
 /// ```text
-/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01. Offsets assume narrow pointers (§4).
 /// ```
 pub(crate) mod vertex_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 26;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
     /// Offset of `node_id` (`u32`, big-endian). Spec §4.
     pub(crate) const NODE_ID: usize = 2;
     /// Offset of `refs` (`u16[5]`, big-endian). Spec §4.
@@ -376,11 +388,13 @@ pub(crate) mod world_point_tripled {
 /// Spec §4. Record length 14 B.
 ///
 /// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4).
 /// ```
 pub(crate) mod loop_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 14;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
     /// Offset of `refs` (`u16[4]`, big-endian). Spec §4.
     pub(crate) const REFS: usize = 6;
 }
@@ -404,11 +418,13 @@ pub(crate) mod loop_tripled {
 /// Spec §4. Record length 21 B.
 ///
 /// ```text
-/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body. Offsets assume narrow pointers (§4).
 /// ```
 pub(crate) mod fin_bare {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 21;
+    /// Offset of `attr` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTR: usize = 0;
     /// Offset of `refs` (`u16[9]`, big-endian). Spec §4.
     pub(crate) const REFS: usize = 2;
     /// Offset of `sense` (`u8`). Spec §4.
@@ -472,9 +488,11 @@ pub(crate) mod attribute_instance_00_51 {
 /// Spec §7.1. Record length 17 B.
 ///
 /// ```text
-/// Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
+/// Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five pointer references and places the marker at +16 when every pointer is narrow (§4); the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
 /// ```
 pub(crate) mod compact_analytic_header {
+    /// Offset of `attr` (`u16`, big-endian). Spec §7.1.
+    pub(crate) const ATTR: usize = 0;
     /// Offset of `refs` (`u16[5]`, big-endian). Spec §7.1.
     pub(crate) const REFS: usize = 6;
     /// Offset of `marker` (`u8`). Spec §7.1.
