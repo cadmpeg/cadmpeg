@@ -544,6 +544,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     let parameter =
         ParameterId::mint("synthetic:test:id#configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         driving: true,
         id: parameter.clone(),
         owner: None,
@@ -598,6 +599,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         children: cadmpeg_ir::features::TreeChildren::default(),
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature.clone(),
         ordinal: 0,
         name: None,

@@ -563,7 +563,7 @@ rewrite_enum!(VertexSelection, []; {
 
 rewrite_enum!(super::ConfigurationFeatureState, []; { Suppressed {}, Active {}, Definition { definition } });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, ordinal, name, suppressed, needs_recompute, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
+rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, needs_recompute, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

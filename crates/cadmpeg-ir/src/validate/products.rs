@@ -22,6 +22,55 @@ pub(super) fn check_products(
             add(definition.id.as_str(), ());
         }
     });
+    for (id, owner) in ir
+        .model
+        .features
+        .iter()
+        .map(|row| (row.id.as_str(), row.product_definition.as_ref()))
+        .chain(
+            ir.model
+                .parameters
+                .iter()
+                .map(|row| (row.id.as_str(), row.product_definition.as_ref())),
+        )
+    {
+        if let Some(owner) = owner {
+            if !definitions.contains(owner.as_str()) {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(id),
+                    format_args!("invalid product definition owner"),
+                );
+            }
+        }
+    }
+    for feature in &ir.model.features {
+        if let Some(owner) = &feature.product_definition {
+            if let Some(definition) = ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|row| &row.id == owner)
+            {
+                if feature
+                    .evaluation
+                    .outputs()
+                    .iter()
+                    .any(|body| !definition.bodies.contains(body))
+                {
+                    record_finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        Some(feature.id.as_str()),
+                        format_args!("feature output is not owned by its product definition"),
+                    );
+                }
+            }
+        }
+    }
     let occurrences = BorrowedIdentities::build(|add| {
         for occurrence in &ir.model.occurrences {
             add(occurrence.id.as_str(), ());
@@ -218,6 +267,7 @@ pub(super) fn check_products(
 #[cfg(test)]
 mod tests {
     mod admission;
+    mod history_owners;
     use super::check_products;
     use crate::document::CadIr;
     use crate::ids::OccurrenceId;

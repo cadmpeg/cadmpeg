@@ -166,6 +166,7 @@ mod tests {
             radius: NonNegativeLength::new(0.0).expect("radius"),
         };
         let feature = |id, ordinal, operation| Feature {
+            product_definition: None,
             needs_recompute: false,
             id,
             ordinal,

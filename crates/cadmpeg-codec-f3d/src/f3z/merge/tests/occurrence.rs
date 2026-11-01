@@ -24,6 +24,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
@@ -1486,4 +1487,39 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         let checked = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
     }
+}
+
+#[test]
+fn product_history_owner_rescopes_feature_and_parameter_links() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (mut component, _) = parameter_document(&ctx, 1.0);
+    let owner = crate::f3z::merge::define_member(&ctx, &mut component, "synthetic").unwrap();
+    let mut row = feature("f3d:model:feature#owned", 0);
+    row.product_definition = Some(owner.clone());
+    component.features.push(row);
+    for parameter in &mut component.parameters {
+        parameter.product_definition = Some(owner.clone());
+    }
+    super::super::scope_document_parameters(&ctx, &mut component).unwrap();
+    append_feature_history(&Model::default(), &mut component).unwrap();
+    let mut output = Model::default();
+    output
+        .extend_rewritten(
+            component,
+            &mut OccurrenceScope {
+                ctx: &ctx,
+                occurrence: "left",
+            },
+        )
+        .unwrap();
+    let rescoped = &output.product_definitions[0].id;
+    assert_ne!(rescoped, &owner);
+    assert!(output
+        .features
+        .iter()
+        .all(|row| row.product_definition.as_ref() == Some(rescoped)));
+    assert!(output
+        .parameters
+        .iter()
+        .all(|row| row.product_definition.as_ref() == Some(rescoped)));
 }

@@ -354,7 +354,7 @@ pub(crate) enum ScopeHistoryPredecessor<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum ComponentHistoryNamespace {
+pub(crate) enum ComponentHistoryNamespace {
     Aggregate,
     Component(u64),
 }
@@ -431,11 +431,19 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
-    fn component_namespace(
+    pub(crate) fn component_namespace(
         scope: &DesignParameterScope,
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
     ) -> Option<ComponentHistoryNamespace> {
-        let stream = native_stream(&scope.id)?;
+        Self::component_namespace_at(&scope.id, scope.record_index, component_naming_spaces)
+    }
+
+    pub(crate) fn component_namespace_at(
+        id: &str,
+        record_index: u32,
+        component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+    ) -> Option<ComponentHistoryNamespace> {
+        let stream = native_stream(id)?;
         let mut stream_spaces = component_naming_spaces
             .iter()
             .filter(|space| native_stream(&space.id) == Some(stream))
@@ -444,7 +452,7 @@ impl<'a> ScopeHistoryGraph<'a> {
             return Some(ComponentHistoryNamespace::Aggregate);
         }
         stream_spaces
-            .filter(|space| space.component_record_index <= u64::from(scope.record_index))
+            .filter(|space| space.component_record_index <= u64::from(record_index))
             .max_by_key(|space| space.component_record_index)
             .map(|space| ComponentHistoryNamespace::Component(space.component_record_index))
     }
@@ -1297,6 +1305,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
+                product_definition: None,
                 needs_recompute: false,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
@@ -1545,6 +1554,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             };
             NeutralParameter {
+                product_definition: None,
                 id: crate::ids::neutral_parameter_id(parameter),
                 owner: owner.cloned(),
                 ordinal: owner

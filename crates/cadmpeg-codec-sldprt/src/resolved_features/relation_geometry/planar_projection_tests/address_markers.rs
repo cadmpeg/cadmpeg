@@ -61,6 +61,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
         );
     }
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#compact-dimension").unwrap(),
         owner: None,

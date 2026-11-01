@@ -623,6 +623,7 @@ mod tests {
         )
         .unwrap();
         let parameter = NeutralParameter {
+            product_definition: None,
             driving: true,
             id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
             owner: None,
@@ -689,6 +690,7 @@ mod tests {
         )
         .unwrap();
         let feature = Feature {
+            product_definition: None,
             needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
             ordinal: 0,

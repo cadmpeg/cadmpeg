@@ -745,6 +745,7 @@ fn position_sketch_index_matches_the_candidate_scan() {
 fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
@@ -1004,6 +1005,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
 fn unique_unindexed_point_locus_is_projected() {
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
@@ -1131,6 +1133,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
@@ -1287,6 +1290,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
@@ -1400,6 +1404,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),

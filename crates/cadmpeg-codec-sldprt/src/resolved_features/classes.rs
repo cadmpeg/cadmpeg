@@ -865,6 +865,7 @@ mod idless_history_binding_tests {
             .expect("identity grammar");
         let features = vec![
             cadmpeg_ir::features::Feature {
+                product_definition: None,
                 id: profile_id.clone(),
                 ordinal: 0,
                 name: None,
@@ -883,6 +884,7 @@ mod idless_history_binding_tests {
                 native_ref: Some("profile-native".into()),
             },
             cadmpeg_ir::features::Feature {
+                product_definition: None,
                 id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrusion")
                     .expect("identity grammar"),
                 ordinal: 1,

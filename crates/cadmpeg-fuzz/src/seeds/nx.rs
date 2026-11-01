@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens NX PRT seed builders.
 
-
-
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
