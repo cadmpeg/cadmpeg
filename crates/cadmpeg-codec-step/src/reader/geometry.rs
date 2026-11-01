@@ -1537,7 +1537,7 @@ pub(super) fn decode(
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
+                source_object: Some(super::step_source_association(id)),
             });
             e.insert(curve_index);
         }
@@ -1593,7 +1593,7 @@ pub(super) fn decode(
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
+                source_object: Some(super::step_source_association(id)),
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"

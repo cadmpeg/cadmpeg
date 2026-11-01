@@ -45,7 +45,7 @@ fn retention_reference_index_stores_no_unrelated_record_ids() {
 
 #[test]
 fn retention_reference_index_keeps_point_curve_and_surface_uses() {
-    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=LINE('',#1,#3);#3=VECTOR('',#4,1.);#4=DIRECTION('',(1.,0.,0.));#5=PLANE('',#6);#6=AXIS2_PLACEMENT_3D('',#1,$,$);#7=ITEM(#1,#2,#5,#3);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=LINE('',#1,#3);#3=VECTOR('',#4,1.);#4=DIRECTION('',(1.,0.,0.));#5=PLANE('',#6);#6=AXIS2_PLACEMENT_3D('',#1,$,$);#7=TRIMMED_CURVE('',#2,(0.),(1.),.T.,.PARAMETER.);#8=RECTANGULAR_TRIMMED_SURFACE('',#5,0.,1.,0.,1.,.T.,.T.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("carrier references");

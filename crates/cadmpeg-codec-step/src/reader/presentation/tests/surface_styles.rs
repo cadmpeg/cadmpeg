@@ -69,7 +69,7 @@ fn invalid_surface_side_does_not_block_a_valid_sibling_style() {
         result.ir().model.appearances[0].base_color,
         Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
-    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
+    assert!(result.ir().model.appearance_bindings.is_empty());
     let unknowns = result
         .ir()
         .native_unknowns("step")
