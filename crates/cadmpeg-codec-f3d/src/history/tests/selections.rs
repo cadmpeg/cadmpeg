@@ -1322,7 +1322,7 @@ fn qualified_history_marker_remains_an_archived_record() {
     )
     .expect("qualified history marker is an archived record");
     let record = archive.get(&2).expect("marker revision is retained");
-    assert_eq!(record.name, "End-of-ASM-History-Section");
+    assert_eq!(record.name, "body");
     assert_eq!(record.index, 1);
     assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
 }
