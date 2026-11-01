@@ -294,10 +294,6 @@ fn decode_uses_the_active_configuration_source_site() {
     assert!(active_points
         .iter()
         .all(|point| point.position().get().x >= 10_000.0));
-    assert_eq!(
-        result.source_fidelity().metadata["active_parasolid_block"],
-        "Contents/Config-1-Partition"
-    );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -346,10 +342,6 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Second"
-    );
-    assert_eq!(
-        result.source_fidelity().metadata["active_parasolid_block"],
-        "Contents/Config-1-Partition"
     );
     assert!(!result.report().losses.iter().any(|loss| loss
         .message

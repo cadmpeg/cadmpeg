@@ -200,7 +200,6 @@
     },
     "source": {
       "attributes": {
-        "geometry_member_count": "0",
         "structure_member": "model.pvs"
       },
       "identity": {

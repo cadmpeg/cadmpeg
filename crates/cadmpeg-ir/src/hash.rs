@@ -98,11 +98,6 @@ impl From<DigestError> for cadmpeg_core::CodecError {
     }
 }
 
-/// Fidelity metadata key for the document fingerprint used by byte reuse.
-///
-/// This is a fact about a retained source image, never a document attribute.
-pub const DOCUMENT_FINGERPRINT_METADATA_KEY: &str = "document_local_sha256";
-
 /// Returns the machine-local content digest of the document for byte reuse.
 ///
 /// Covers scope, source identity, all document attributes, and canonical arena
@@ -862,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn document_local_sha256_is_independent_of_fidelity_fingerprints_and_retained_bytes() {
+    fn document_local_sha256_is_independent_of_decode_digest_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
         let hash = document_local_sha256(
@@ -875,9 +870,8 @@ mod tests {
         .unwrap();
 
         let (recorded, mut fidelity) = local_digest_fixture();
-        fidelity.metadata.insert(
-            super::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-            hash.clone(),
+        fidelity.decode_digest = Some(
+            super::digest::Sha256Digest::try_from(hash.clone()).expect("a digest parses"),
         );
         assert_eq!(
             document_local_sha256(

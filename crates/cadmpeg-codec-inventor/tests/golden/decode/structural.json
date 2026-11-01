@@ -178,9 +178,7 @@
     "source": {
       "attributes": {
         "cfb_major_version": "3",
-        "cfb_sector_size": "512",
-        "document_kind": "unknown",
-        "rse_segment_pairs": "0"
+        "document_kind": "unknown"
       },
       "identity": {
         "classification": "classified",

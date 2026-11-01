@@ -170,7 +170,6 @@ mod tests {
             .expect("test cache is empty");
         Container {
             data: UUID_FRAME.into(),
-            physical_size: cadmpeg_core::decode::u64_from_index(UUID_FRAME.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/UG_PART".to_owned(),

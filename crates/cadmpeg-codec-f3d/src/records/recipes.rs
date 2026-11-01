@@ -263,48 +263,7 @@ impl ConstructionRecipe {
                 )
             })
     }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            (
-                "record_index_offset",
-                self.record_index.and_then(|index| index.offset),
-            ),
-            (
-                "design_id_offset",
-                self.design.as_ref().and_then(|design| design.id.offset),
-            ),
-            (
-                "design_selector.byte_offset",
-                self.design
-                    .as_ref()
-                    .and_then(|design| design.selector)
-                    .and_then(|selector| selector.byte_offset),
-            ),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
-    }
 }
-impl DesignComponentNamingSpace {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("context_uuid_offset", self.context_uuid_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
-    }
-}
-
 /// Serialized Design selector carried by a construction recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

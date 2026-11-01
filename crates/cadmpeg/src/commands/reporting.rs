@@ -61,7 +61,7 @@ enum FidelitySection {
     Annotations,
     RetainedRecords,
     Unrepresented,
-    Metadata,
+    DecodeDigest,
 }
 
 pub(super) struct FidelityDiff {
@@ -84,7 +84,7 @@ impl FidelityDiff {
                     FidelitySection::Unrepresented,
                     left.unrepresented() != right.unrepresented(),
                 ),
-                (FidelitySection::Metadata, left.metadata != right.metadata),
+                (FidelitySection::DecodeDigest, left.decode_digest != right.decode_digest),
             ]
             .into_iter()
             .filter_map(|(section, changed)| changed.then_some(section))
@@ -104,7 +104,7 @@ impl Serialize for FidelityDiff {
             ("annotations_changed", FidelitySection::Annotations),
             ("retained_records_changed", FidelitySection::RetainedRecords),
             ("unrepresented_changed", FidelitySection::Unrepresented),
-            ("metadata_changed", FidelitySection::Metadata),
+            ("decode_digest_changed", FidelitySection::DecodeDigest),
         ] {
             state.serialize_field(name, &self.changed.contains(&section))?;
         }
@@ -180,7 +180,7 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
     for (section, label) in [
         (FidelitySection::Annotations, "annotations changed"),
         (FidelitySection::RetainedRecords, "retained records changed"),
-        (FidelitySection::Metadata, "layout metadata changed"),
+        (FidelitySection::DecodeDigest, "decode digest changed"),
         (
             FidelitySection::Unrepresented,
             "unrepresented classes changed",
@@ -589,7 +589,7 @@ mod tests {
                     "annotations_changed": false,
                     "retained_records_changed": false,
                     "unrepresented_changed": false,
-                    "metadata_changed": false
+                    "decode_digest_changed": false
                 }
             })
         );
@@ -605,7 +605,7 @@ mod tests {
                     "annotations_changed": true,
                     "retained_records_changed": false,
                     "unrepresented_changed": false,
-                    "metadata_changed": false
+                    "decode_digest_changed": false
                 }
             })
         );

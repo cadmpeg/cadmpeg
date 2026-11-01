@@ -385,7 +385,9 @@
       "model": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "schema": "AUTOMOTIVE_DESIGN"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -460,15 +462,6 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "290",
-      "bytes_typed": "2125",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "59",
-      "schema": "AUTOMOTIVE_DESIGN"
-    },
     "unrepresented": []
   }
 }

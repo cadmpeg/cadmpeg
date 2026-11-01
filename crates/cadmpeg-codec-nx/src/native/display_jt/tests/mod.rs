@@ -388,11 +388,9 @@ fn display_jt_index_requires_every_declared_header() {
         );
         data.push(2);
         data.extend_from_slice(&compressed);
-        let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
         let data_len = cadmpeg_core::decode::u64_from_index(data.len());
         let container = Container {
             data: data.clone().into(),
-            physical_size,
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -532,11 +530,9 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -654,11 +650,9 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     let compressed = encoder.finish().expect("required invariant");
     let mut data = vec![0; 33];
     data.extend_from_slice(&compressed);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -1794,11 +1788,9 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
             + 25
     ];
     data.extend_from_slice(&body);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = crate::container::Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(1),
         entries: vec![crate::container::DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),

@@ -75,6 +75,5 @@ fn complex_and_cut_short_callbacks_preserve_actual_independent_point_geometry() 
         .iter().any(|record| record.id.as_str().starts_with("step:file:omitted#")));
         assert_eq!(decoded.report().losses.iter().filter(|loss| loss.code.local_code() == "record.unreadable").count(), 1);
         assert!(!decoded.report().losses.iter().any(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind()));
-        assert_eq!(fidelity.metadata["bytes_unclassified"], "0");
     }
 }

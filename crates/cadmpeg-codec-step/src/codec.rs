@@ -445,7 +445,7 @@ fn decode_zip(
     let archive::OpenedRoot {
         archive,
         view: root_view,
-        data_start: root_data_offset,
+        data_start: _,
     } = archive::open_root(ctx, root)?;
     let (exchange, diagnostics) = parse::parse(root_view.window(), ctx)?;
     let resource_notes = archive::root_reference_notes(&archive, &exchange)?;
@@ -455,10 +455,7 @@ fn decode_zip(
         exchange,
         &diagnostics,
         ctx,
-        reader::Packaging::Zip {
-            entry_count,
-            root_data_offset,
-        },
+        reader::Packaging::Zip,
     )?;
     decoded.body.notes.push(format!(
         "container root {}; archive entries={entry_count}",

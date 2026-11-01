@@ -90,6 +90,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -243,6 +244,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -377,6 +379,7 @@ fn design_completeness_audits_typed_construction_families() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -471,6 +474,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -540,6 +544,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -657,6 +662,7 @@ fn design_completeness_recurses_through_pattern_operands() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -751,6 +757,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -883,6 +890,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1021,6 +1029,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1102,6 +1111,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1339,6 +1349,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1408,6 +1419,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1465,6 +1477,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -1650,7 +1663,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
         .store(&ctx, ir.native.namespace_mut("sldprt"))
         .unwrap();
         let mut report = super::empty_report(true);
-        append_design_losses(&ctx, &ir, &mut report).unwrap();
+        append_design_losses(&ctx, &ir, &mut report, None).unwrap();
         append_thin_operation_losses(&ambiguous_thin_features, &ir, &mut report);
         report
             .losses

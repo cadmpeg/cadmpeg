@@ -199,10 +199,6 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(sketch_header.entity_id.as_str(), "0_277");
     assert_eq!(sketch_header.class_tag.as_str(), "257");
     assert_eq!(
-        result.source_fidelity().metadata[&format!("{}.optional_slot_present", sketch_header.id)],
-        "true"
-    );
-    assert_eq!(
         sketch_header.module(),
         Some(crate::records::entity_header::DESIGN_MODULE_SKETCH)
     );

@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
+use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartSpec};
 use cadmpeg_ir::ContainerSummary;
@@ -814,9 +814,9 @@ fn decode_with_occurrence_limits(
     notes.extend(graph::summary_notes(&parse.references));
     let document_digest =
         document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
-    source_fidelity.metadata.insert(
-        DOCUMENT_FINGERPRINT_METADATA_KEY.to_owned(),
-        document_digest,
+    source_fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_digest)
+            .map_err(CodecError::malformed)?,
     );
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::decode::DecodeTransfer {

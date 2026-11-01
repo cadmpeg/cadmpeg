@@ -191,9 +191,9 @@ fn finalize_result(
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
     )?;
-    source_fidelity.metadata.insert(
-        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-        hash,
+    source_fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
+            .map_err(CodecError::malformed)?,
     );
     ir.source = Some(source);
     Ok(Decoded {

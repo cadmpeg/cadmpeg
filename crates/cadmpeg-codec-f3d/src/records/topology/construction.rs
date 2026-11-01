@@ -803,135 +803,6 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
     }
 }
 
-impl DesignConstructionOperandGroup {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("paired_byte_offset", self.paired_byte_offset),
-            ("role_offset", self.role_offset()),
-            ("frame.member_count_offset", self.frame.member_count_offset),
-            (
-                "frame.opaque_index_offset",
-                self.frame.opaque_index_offset(),
-            ),
-            (
-                "frame.opaque_scalar_offset",
-                self.frame.opaque_scalar_offset(),
-            ),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id), offset.to_string());
-            }
-        }
-        for (field, rows) in [
-            ("member_offsets", self.members()),
-            (
-                "frame.auxiliary_record_offsets",
-                self.frame.auxiliary_records.as_slice(),
-            ),
-            (
-                "frame.trailing_record_offsets",
-                self.frame.trailing_records(),
-            ),
-        ] {
-            for (index, row) in rows.iter().enumerate() {
-                if let Some(offset) = row.offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{field}.{index}", self.id), offset.to_string());
-                }
-            }
-        }
-        for path in self.frame.auxiliary_paths() {
-            for (field, offset) in [
-                ("byte_offset", path.byte_offset()),
-                ("entity_ref_offset", path.entity_ref_offset()),
-                (
-                    "scope_record_index_offset",
-                    path.scope_record_index_offset(),
-                ),
-                (
-                    "nested_record_index_offset",
-                    path.nested_record_index_offset(),
-                ),
-                ("following_byte_offset", path.following_byte_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.frame.path.{}.{field}", self.id, path.record_index()),
-                        offset.to_string(),
-                    );
-                }
-            }
-            if matches!(
-                path.placement,
-                DesignConstructionPathPlacement::Transform(_)
-            ) {
-                if let Some(offset) = path.byte_offset().and_then(|offset| offset.checked_add(33)) {
-                    fidelity.metadata.insert(
-                        format!(
-                            "{}.frame.path.{}.transform_offset",
-                            self.id,
-                            path.record_index()
-                        ),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-        for transform in self.frame.trailing_transforms() {
-            for (field, offset) in [
-                ("byte_offset", transform.byte_offset()),
-                ("transform_offset", transform.transform_offset()),
-                ("following_byte_offset", transform.following_byte_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!(
-                            "{}.frame.transform.{}.{field}",
-                            self.id,
-                            transform.record_index()
-                        ),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-        for transform in self.frame.trailing_dual_transforms() {
-            for (field, offset) in [
-                ("byte_offset", transform.byte_offset),
-                ("first_transform_offset", transform.first_transform_offset),
-                ("second_transform_offset", transform.second_transform_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!(
-                            "{}.frame.dual_transform.{}.{field}",
-                            self.id, transform.record_index
-                        ),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-        for flag in self.frame.trailing_flags() {
-            for (field, offset) in [
-                ("byte_offset", flag.byte_offset),
-                ("value_offset", flag.value_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.frame.flag.{}.{field}", self.id, flag.record_index),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-    }
-}
-
 /// Compact boolean record named by a construction-operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1949,12 +1820,14 @@ impl DesignConstructionTrackingPath {
     fn kind_offset(&self) -> Option<u64> {
         self.frame.map(|frame| frame.offset(94))
     }
+    #[cfg(test)]
     pub(crate) fn first_related_identity(&self) -> Option<Located<u64, Option<u64>>> {
         self.first_related_identity.map(|value| Located {
             value,
             offset: self.frame.map(|frame| frame.offset(110)),
         })
     }
+    #[cfg(test)]
     pub(crate) fn second_related_identity(&self) -> Option<Located<u64, Option<u64>>> {
         self.second_related_identity.map(|value| Located {
             value,
@@ -2264,73 +2137,6 @@ impl From<DesignConstructionPersistentIdentity> for DesignConstructionPersistent
             asset_id: value.asset_id,
             context_id: value.context_id,
             next_record_index: value.next_record_index,
-        }
-    }
-}
-
-impl DesignConstructionOperandIdentity {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        if let Some(offset) = self.following_byte_offset {
-            fidelity.metadata.insert(
-                format!("{}.following_byte_offset", self.id),
-                offset.to_string(),
-            );
-        }
-        for (index, wrapper) in self.wrappers.iter().enumerate() {
-            if let Some(offset) = wrapper.byte_offset {
-                fidelity.metadata.insert(
-                    format!("{}.wrapper_byte_offsets.{index}", self.id),
-                    offset.to_string(),
-                );
-            }
-        }
-        if let Some(path) = &self.tracking_path {
-            for (field, offset) in [
-                ("wrapper_byte_offset", path.wrapper_byte_offset()),
-                ("carrier_byte_offset", path.carrier_byte_offset()),
-                ("primary_identity_offset", path.primary_identity_offset()),
-                ("selector_offset", path.selector_offset()),
-                ("kind_offset", path.kind_offset()),
-                (
-                    "first_related_identity_offset",
-                    path.first_related_identity().and_then(|value| value.offset),
-                ),
-                (
-                    "second_related_identity_offset",
-                    path.second_related_identity()
-                        .and_then(|value| value.offset),
-                ),
-                ("following_byte_offset", path.following_byte_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.tracking_path.{field}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-        if let Some(persistent) = &self.persistent_identity {
-            for (field, offset) in [
-                ("local_id_offset", persistent.local_id_offset()),
-                ("asset_id_offset", persistent.asset_id_offset()),
-                ("context_id_offset", persistent.context_id_offset()),
-                ("tail_slot_offset", persistent.tail_slot_offset()),
-                ("next_byte_offset", persistent.next_byte_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.persistent_identity.{field}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-            if let Some(source) = persistent.source {
-                fidelity.metadata.insert(
-                    format!("{}.persistent_identity.tail_slot_present", self.id),
-                    source.tail_slot_present.to_string(),
-                );
-            }
         }
     }
 }

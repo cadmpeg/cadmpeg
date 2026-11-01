@@ -8718,11 +8718,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "a400bd78da98bf5df3cee4e11ad617df8ad1a3b84b3a65f18d67500ea1c79cb6",
-      "fcstd.archive_entry_count": "21",
-      "fcstd.object_count": "21"
-    },
+    "decode_digest": "a400bd78da98bf5df3cee4e11ad617df8ad1a3b84b3a65f18d67500ea1c79cb6",
     "retained_records": {
       "fcstd:native:entry#Angle.SavedGeometry.0.brp": {
         "bytes": {

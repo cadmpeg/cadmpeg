@@ -112,14 +112,6 @@ fn decode_container<'a>(
         "cfb_major_version".to_owned(),
         container.snapshot.major_version().to_string(),
     );
-    attributes.insert(
-        "cfb_sector_size".to_owned(),
-        container.snapshot.sector_size().to_string(),
-    );
-    attributes.insert(
-        "rse_segment_pairs".to_owned(),
-        container.rse.segments.len().to_string(),
-    );
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
     let mut property_set_count = 0;
@@ -2329,12 +2321,6 @@ fn apply_kernel_header(
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("kernel_save_format_version"),
             format!("{version}"),
-        );
-    }
-    if let Some(count) = header.entity_count {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("kernel_entity_count"),
-            format!("{count}"),
         );
     }
     if let Some(flags) = header.flags {

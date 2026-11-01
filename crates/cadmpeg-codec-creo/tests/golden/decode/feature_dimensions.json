@@ -369,26 +369,6 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "328",
-        "section.0.length": "140",
-        "section.0.name": "FeatDefs",
-        "section.0.offset": "76",
-        "section.0.raw_name": "FeatDefs",
-        "section.0.role": "model-data",
-        "section.1.length": "27",
-        "section.1.name": "MdlStatus",
-        "section.1.offset": "216",
-        "section.1.raw_name": "MdlStatus",
-        "section.1.role": "metadata",
-        "section.2.length": "85",
-        "section.2.name": "DEPDB_DATA",
-        "section.2.offset": "243",
-        "section.2.raw_name": "DEPDB_DATA",
-        "section.2.role": "metadata",
-        "section_count": "3",
-        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
