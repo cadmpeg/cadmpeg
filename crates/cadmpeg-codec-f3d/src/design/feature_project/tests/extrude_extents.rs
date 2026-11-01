@@ -44,7 +44,6 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
 
-
 #[test]
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     crate::test_support::with_decode_context(|decode_ctx| {
