@@ -56,6 +56,7 @@ jobs:
       step_cli: ${{ steps.scope.outputs.step_cli }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
+      inventor_cli: ${{ steps.scope.outputs.inventor_cli }}
       layout: ${{ steps.scope.outputs.layout }}
       static: ${{ steps.scope.outputs.static }}
       prose_only: ${{ steps.scope.outputs.prose_only }}
@@ -303,7 +304,7 @@ jobs:
         run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
-        if: contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg')
+        if: needs.changes.outputs.inventor_cli == 'true'
         # These two tooling tests need the default CLI built by the Rust gate.
         # The static job runs the remaining Python tests without a CLI build.
         run: |

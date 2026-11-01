@@ -133,7 +133,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     elif tested:
         return {'packages': [], 'rust': False, 'fuzz': False,
                 **dict.fromkeys(SINGLE_CODEC_GATES, False), 'schema': False,
-                'iges': False, 'layout': False, 'codec_scope': [], 'prose_only': False,
+                'iges': False, 'inventor_cli': False, 'layout': False, 'codec_scope': [], 'prose_only': False,
                 'full': False, 'static': False, 'audit': False}
     affected = set()
     tested_only = set()
@@ -217,6 +217,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         **gates,
         'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
+        'inventor_cli': full or 'cadmpeg-codec-inventor' in affected or cli_changed,
         'layout': layout and 'cadmpeg' not in affected and not full,
         'prose_only': bool(paths) and not full and all(
             path == 'README.md' or re.fullmatch(r'crates/cadmpeg-codec-[^/]+/README\.md', path)

@@ -102,6 +102,14 @@ class ScopeTests(unittest.TestCase):
             self.assertIn('cadmpeg', scope['packages'])
             self.assertTrue(scope['rust'])
             self.assertFalse(scope['iges'])
+            self.assertTrue(scope['inventor_cli'])
+
+    def test_inventor_cli_evidence_follows_its_dependencies(self):
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['inventor_cli'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['inventor_cli'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg/src/main.rs'])['inventor_cli'])
+        self.assertFalse(select(ROOT, ['crates/cadmpeg-codec-rhino/src/lib.rs'])['inventor_cli'])
+        self.assertFalse(select(ROOT, ['corpus/manifest.toml'])['inventor_cli'])
 
     def test_python_only_skips_rust(self):
         scope = select(ROOT, ['scripts/check-deny-census.py'])
@@ -264,6 +272,7 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['fuzz'])
         self.assertFalse(scope['static'])
         self.assertFalse(scope['audit'])
+        self.assertFalse(scope['inventor_cli'])
         self.assertTrue(select(ROOT, ['Cargo.toml'], tested=True)['full'])
 
     def test_single_codec_gates_follow_their_build_inputs(self):
