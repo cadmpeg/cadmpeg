@@ -105,6 +105,7 @@ pub(crate) enum NativeReason {
     Slots,
     Version,
     Slot(usize),
+    OffsetControl,
     Result,
 }
 
@@ -114,6 +115,9 @@ impl NativeReason {
             Self::Version => "segment version has unresolved construction semantics".to_owned(),
             Self::Slots => "property vector has unresolved arity".to_owned(),
             Self::Slot(slot) => format!("slot {slot} has unresolved construction operands"),
+            Self::OffsetControl => {
+                "slot 16 is false; its offset construction meaning is unresolved".to_owned()
+            }
             Self::Result => "result-body topology is unresolved".to_owned(),
         };
         crate::loss::InventorLossCode::FeatureThickenConstructionNative
@@ -152,20 +156,20 @@ pub(crate) fn operation<'a>(
         Some(PmDcFeaturePropertyKind::Boolean { value, .. }) => !value,
         _ => return Err(NativeReason::Slot(2)),
     };
-    for (slot, expected) in [
-        (3, false),
-        (4, false),
-        (7, false),
-        (10, false),
-        (16, true),
-        (17, false),
-    ] {
+    for (slot, expected) in [(3, false), (4, false), (7, false), (10, false), (17, false)] {
         if !matches!(
             property_at(slot).map(|property| &property.kind),
             Some(PmDcFeaturePropertyKind::Boolean { value, .. }) if *value == expected
         ) {
             return Err(NativeReason::Slot(slot));
         }
+    }
+    match property_at(16).map(|property| &property.kind) {
+        Some(PmDcFeaturePropertyKind::Boolean { value: true, .. }) => {}
+        Some(PmDcFeaturePropertyKind::Boolean { value: false, .. }) if offset => {
+            return Err(NativeReason::OffsetControl);
+        }
+        _ => return Err(NativeReason::Slot(16)),
     }
     if !matches!(
         property_at(9).map(|property| &property.kind),
