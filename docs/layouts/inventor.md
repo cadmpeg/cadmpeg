@@ -1662,3 +1662,42 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `faces` | `u32` | little | spec | a face-collection reference |
 | 4 | 4 | `parameter` | `u32` | little | spec | a parameter reference, then ends |
+
+## `pm_dc_extrusion_plane_surface_fields`
+
+Spec §13 · layout: byte offsets · size: 93 B
+
+Offsets start after the versioned content header and stamps. Segment major versions 15 through 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three packed references equal to 0 |
+| 12 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 13 | 4 | `form` | `u32` | little | spec | form 25 · value `25` |
+| 17 | 4 | `value` | `u32` | little | spec | value 0 · value `0` |
+| 21 | 24 | `origin` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+| 45 | 24 | `u_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+| 69 | 24 | `v_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+
+## `pm_dc_extrusion_plane_surface_fields_extended`
+
+Spec §13 · layout: byte offsets · size: 97 B
+
+Offsets start after the versioned content header and stamps. Segment major version 22 and later.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three packed references equal to 0 |
+| 12 | 4 | `extension` | `u32` | little | spec | zero extension from version 22 · value `0` |
+| 16 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 17 | 4 | `form` | `u32` | little | spec | form 25 · value `25` |
+| 21 | 4 | `value` | `u32` | little | spec | value 0 · value `0` |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+| 49 | 24 | `u_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
+| 73 | 24 | `v_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
