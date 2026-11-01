@@ -47,6 +47,7 @@
     "model": {
       "bodies": [
         {
+          "native_ref": "f3d:asm:body-native-key#1",
           "id": "f3d:brep:entity#1",
           "kind": "sheet",
           "regions": [
@@ -129,6 +130,7 @@
       ],
       "edges": [
         {
+          "native_ref": "f3d:asm:edge-ownership#10",
           "id": "f3d:brep:entity#10",
           "carrier": {
             "curve": "f3d:brep:entity#19",
@@ -141,6 +143,7 @@
           "end": "f3d:brep:entity#14"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#11",
           "id": "f3d:brep:entity#11",
           "carrier": {
             "param_range": [
@@ -152,6 +155,7 @@
           "end": "f3d:brep:entity#15"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#12",
           "id": "f3d:brep:entity#12",
           "carrier": {
             "param_range": [
@@ -165,14 +169,17 @@
       ],
       "vertices": [
         {
+          "native_ref": "f3d:asm:vertex-ownership#13",
           "id": "f3d:brep:entity#13",
           "point": "f3d:brep:entity#16"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#14",
           "id": "f3d:brep:entity#14",
           "point": "f3d:brep:entity#17"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#15",
           "id": "f3d:brep:entity#15",
           "point": "f3d:brep:entity#18"
         }
@@ -486,7 +493,6 @@
           {
             "id": "f3d:asm:body-native-key#1",
             "asm_body_key": 42,
-            "body": "f3d:brep:entity#1",
             "body_ordinal": 0,
             "record_index": 1,
             "source_brep": "Body1.smbh"
@@ -546,21 +552,21 @@
           {
             "id": "f3d:asm:edge-continuity#10",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#10",
+            "owner": "f3d:asm:edge-ownership#10",
             "record_index": 10,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#11",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#11",
+            "owner": "f3d:asm:edge-ownership#11",
             "record_index": 11,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#12",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#12",
+            "owner": "f3d:asm:edge-ownership#12",
             "record_index": 12,
             "sense": "forward"
           }
@@ -568,17 +574,14 @@
         "edge_ownerships": [
           {
             "id": "f3d:asm:edge-ownership#10",
-            "edge": "f3d:brep:entity#10",
             "record_index": 10
           },
           {
             "id": "f3d:asm:edge-ownership#11",
-            "edge": "f3d:brep:entity#11",
             "record_index": 11
           },
           {
             "id": "f3d:asm:edge-ownership#12",
-            "edge": "f3d:brep:entity#12",
             "record_index": 12
           }
         ],
@@ -616,23 +619,20 @@
           {
             "id": "f3d:asm:vertex-ownership#13",
             "endpoint_index": 0,
-            "owning_edge": "f3d:brep:entity#10",
-            "record_index": 13,
-            "vertex": "f3d:brep:entity#13"
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 13
           },
           {
             "id": "f3d:asm:vertex-ownership#14",
             "endpoint_index": 1,
-            "owning_edge": "f3d:brep:entity#10",
-            "record_index": 14,
-            "vertex": "f3d:brep:entity#14"
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 14
           },
           {
             "id": "f3d:asm:vertex-ownership#15",
             "endpoint_index": 0,
-            "owning_edge": "f3d:brep:entity#12",
-            "record_index": 15,
-            "vertex": "f3d:brep:entity#15"
+            "owner": "f3d:asm:edge-ownership#12",
+            "record_index": 15
           }
         ],
         "wire_topologies": [],
@@ -816,7 +816,7 @@
         }
       }
     },
-    "decode_digest": "f7819f5cf8b215b8c987a194d0c1c7a36b514daa34651929c3e7d3ea502bb077",
+    "decode_digest": "81326fafdb5425cb627f3586c3ebc098e47fbf2f06a4432c33f5c9952f9dbc21",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

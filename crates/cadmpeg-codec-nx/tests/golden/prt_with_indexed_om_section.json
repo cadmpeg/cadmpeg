@@ -33,7 +33,11 @@
                 "z": 30.0
               }
             },
-            "id": "nx:s0:crv#0"
+            "id": "nx:s0:crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:curve-record#5"
+            }
           }
         ],
         "drawings": [],
@@ -154,7 +158,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#3"
+            }
           },
           {
             "geometry": {
@@ -176,7 +184,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#1"
+            "id": "nx:s0:surf#1",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#4"
+            }
           }
         ],
         "tessellations": [],
@@ -345,12 +357,7 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:surf#1",
-                "nx:s0:crv#0"
-              ]
+              "id": "nx:container:parasolid#0"
             },
             {
               "id": "nx:om-section-0:record#0"
@@ -473,9 +480,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:derived:point-body#0": {

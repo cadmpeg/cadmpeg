@@ -334,7 +334,11 @@
             ],
             "v_periodic": false
           },
-          "id": "catia:zero-entity:surf#0"
+          "id": "catia:zero-entity:surf#0",
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-zero-entity-surface:16"
+          }
         }
       ],
       "tessellations": [],
@@ -384,10 +388,7 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#zero-entity",
-            "links": [
-              "catia:zero-entity:surf#0"
-            ]
+            "id": "catia:payload:unknown#zero-entity"
           }
         ],
         "value_blocks": [],
@@ -822,9 +823,6 @@
       "exactness": {
         "catia:payload:unknown#zero-entity": {
           "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          },
           "scope": "entity"
         }
       },

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -1750,7 +1749,6 @@
         {
           "id": "usd:stage:occurrence#/World",
           "name": "World",
-          "native_ref": "/World",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -1759,11 +1757,6 @@
             "definition": "usd:stage:definition#/World",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1788,7 +1781,6 @@
         {
           "id": "usd:stage:occurrence#/World/Ball",
           "name": "Ball",
-          "native_ref": "/World/Ball",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -1798,11 +1790,6 @@
             "definition": "usd:stage:definition#/World/Ball",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1827,7 +1814,6 @@
         {
           "id": "usd:stage:occurrence#/World/Box",
           "name": "Box",
-          "native_ref": "/World/Box",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -1837,11 +1823,6 @@
             "definition": "usd:stage:definition#/World/Box",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1866,7 +1847,6 @@
         {
           "id": "usd:stage:occurrence#/World/Can",
           "name": "Can",
-          "native_ref": "/World/Can",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -1876,11 +1856,6 @@
             "definition": "usd:stage:definition#/World/Can",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1905,7 +1880,6 @@
         {
           "id": "usd:stage:occurrence#/World/Frustum",
           "name": "Frustum",
-          "native_ref": "/World/Frustum",
           "ordinal": 5,
           "parent": {
             "kind": "occurrence",
@@ -1915,11 +1889,6 @@
             "definition": "usd:stage:definition#/World/Frustum",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1944,7 +1913,6 @@
         {
           "id": "usd:stage:occurrence#/World/Funnel",
           "name": "Funnel",
-          "native_ref": "/World/Funnel",
           "ordinal": 3,
           "parent": {
             "kind": "occurrence",
@@ -1954,11 +1922,6 @@
             "definition": "usd:stage:definition#/World/Funnel",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1983,7 +1946,6 @@
         {
           "id": "usd:stage:occurrence#/World/Pill",
           "name": "Pill",
-          "native_ref": "/World/Pill",
           "ordinal": 4,
           "parent": {
             "kind": "occurrence",
@@ -1993,11 +1955,6 @@
             "definition": "usd:stage:definition#/World/Pill",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -2022,7 +1979,6 @@
         {
           "id": "usd:stage:occurrence#/World/Sheet",
           "name": "Sheet",
-          "native_ref": "/World/Sheet",
           "ordinal": 6,
           "parent": {
             "kind": "occurrence",
@@ -2032,11 +1988,6 @@
             "definition": "usd:stage:definition#/World/Sheet",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -2248,7 +2199,6 @@
         {
           "id": "usd:stage:definition#/World",
           "kind": "group",
-          "native_ref": "/World",
           "source_name": "World"
         },
         {
@@ -2257,7 +2207,6 @@
           ],
           "id": "usd:stage:definition#/World/Ball",
           "kind": "group",
-          "native_ref": "/World/Ball",
           "source_name": "Ball"
         },
         {
@@ -2266,7 +2215,6 @@
           ],
           "id": "usd:stage:definition#/World/Box",
           "kind": "group",
-          "native_ref": "/World/Box",
           "source_name": "Box"
         },
         {
@@ -2275,7 +2223,6 @@
           ],
           "id": "usd:stage:definition#/World/Can",
           "kind": "group",
-          "native_ref": "/World/Can",
           "source_name": "Can"
         },
         {
@@ -2284,7 +2231,6 @@
           ],
           "id": "usd:stage:definition#/World/Frustum",
           "kind": "group",
-          "native_ref": "/World/Frustum",
           "source_name": "Frustum"
         },
         {
@@ -2293,7 +2239,6 @@
           ],
           "id": "usd:stage:definition#/World/Funnel",
           "kind": "group",
-          "native_ref": "/World/Funnel",
           "source_name": "Funnel"
         },
         {
@@ -2302,7 +2247,6 @@
           ],
           "id": "usd:stage:definition#/World/Pill",
           "kind": "group",
-          "native_ref": "/World/Pill",
           "source_name": "Pill"
         },
         {
@@ -2311,7 +2255,6 @@
           ],
           "id": "usd:stage:definition#/World/Sheet",
           "kind": "group",
-          "native_ref": "/World/Sheet",
           "source_name": "Sheet"
         }
       ],
@@ -3000,6 +2943,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "meters_per_unit": "0.01",
@@ -3045,10 +2992,14 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "unrepresented": []
   }
 }

@@ -477,7 +477,7 @@
               ]
             ],
             "member": null,
-            "neutral_links": [],
+            "native_links": [],
             "root": true,
             "source_instance": "iges:entity:directory#3",
             "world_transform": [
@@ -594,7 +594,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "74742787474080ef4c1fcc4c5140d1d13912264ab615937f1439ade6a62dac61",
+    "decode_digest": "b77c90529509058293fee2f36995a17a7c3a6be75a0c3b3d3f8cd49b473d8ca5",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

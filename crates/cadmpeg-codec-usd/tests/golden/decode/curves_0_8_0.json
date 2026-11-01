@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -502,7 +501,6 @@
         {
           "id": "usd:stage:occurrence#/Curves",
           "name": "Curves",
-          "native_ref": "/Curves",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -511,11 +509,6 @@
             "definition": "usd:stage:definition#/Curves",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -540,7 +533,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/Arc",
           "name": "Arc",
-          "native_ref": "/Curves/Arc",
           "ordinal": 5,
           "parent": {
             "kind": "occurrence",
@@ -550,11 +542,6 @@
             "definition": "usd:stage:definition#/Curves/Arc",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -579,7 +566,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/Bezier",
           "name": "Bezier",
-          "native_ref": "/Curves/Bezier",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -589,11 +575,6 @@
             "definition": "usd:stage:definition#/Curves/Bezier",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -618,7 +599,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/CatmullRom",
           "name": "CatmullRom",
-          "native_ref": "/Curves/CatmullRom",
           "ordinal": 4,
           "parent": {
             "kind": "occurrence",
@@ -628,11 +608,6 @@
             "definition": "usd:stage:definition#/Curves/CatmullRom",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -657,7 +632,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/Loop",
           "name": "Loop",
-          "native_ref": "/Curves/Loop",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -667,11 +641,6 @@
             "definition": "usd:stage:definition#/Curves/Loop",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -696,7 +665,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/Polyline",
           "name": "Polyline",
-          "native_ref": "/Curves/Polyline",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -706,11 +674,6 @@
             "definition": "usd:stage:definition#/Curves/Polyline",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -735,7 +698,6 @@
         {
           "id": "usd:stage:occurrence#/Curves/Splines",
           "name": "Splines",
-          "native_ref": "/Curves/Splines",
           "ordinal": 3,
           "parent": {
             "kind": "occurrence",
@@ -745,11 +707,6 @@
             "definition": "usd:stage:definition#/Curves/Splines",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -889,7 +846,6 @@
         {
           "id": "usd:stage:definition#/Curves",
           "kind": "group",
-          "native_ref": "/Curves",
           "source_name": "Curves"
         },
         {
@@ -898,7 +854,6 @@
           ],
           "id": "usd:stage:definition#/Curves/Arc",
           "kind": "object",
-          "native_ref": "/Curves/Arc",
           "source_name": "Arc"
         },
         {
@@ -907,7 +862,6 @@
           ],
           "id": "usd:stage:definition#/Curves/Bezier",
           "kind": "object",
-          "native_ref": "/Curves/Bezier",
           "source_name": "Bezier"
         },
         {
@@ -916,7 +870,6 @@
           ],
           "id": "usd:stage:definition#/Curves/CatmullRom",
           "kind": "object",
-          "native_ref": "/Curves/CatmullRom",
           "source_name": "CatmullRom"
         },
         {
@@ -925,7 +878,6 @@
           ],
           "id": "usd:stage:definition#/Curves/Loop",
           "kind": "object",
-          "native_ref": "/Curves/Loop",
           "source_name": "Loop"
         },
         {
@@ -934,7 +886,6 @@
           ],
           "id": "usd:stage:definition#/Curves/Polyline",
           "kind": "object",
-          "native_ref": "/Curves/Polyline",
           "source_name": "Polyline"
         },
         {
@@ -943,7 +894,6 @@
           ],
           "id": "usd:stage:definition#/Curves/Splines",
           "kind": "object",
-          "native_ref": "/Curves/Splines",
           "source_name": "Splines"
         }
       ],
@@ -1124,6 +1074,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Curves",
@@ -1192,10 +1146,14 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "unrepresented": []
   }
 }

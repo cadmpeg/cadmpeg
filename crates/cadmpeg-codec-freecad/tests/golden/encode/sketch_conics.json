@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 10607,
-      "payload_sha256": "4d1b8a28c5175e8bc5cfd30324ff4f1b6b925c6ed408f137c69dd5ad677e2f5a"
+      "payload_len": 10637,
+      "payload_sha256": "d795b48b39ad4363ea774a997502ffd739381162c303c8bd2beb3de2953166b8"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -25,7 +25,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 27,
+        "attributes": 22,
         "bodies": 1,
         "coedges": 0,
         "colliders": 0,
@@ -88,11 +88,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
+        "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -102,9 +104,12 @@
         "feature_result_topologies": "dropped",
         "features": "written",
         "loops": "written",
+        "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
@@ -113,11 +118,13 @@
         "procedural_surfaces": "written",
         "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
@@ -135,16 +142,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "native.records-omitted",
@@ -313,12 +310,12 @@
                 "fcstd:native:property#ConicWitness:_ElementMapVersion": "written",
                 "fcstd:native:property#ConicWitness:_ExternalGeoVersion": "regenerated",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "written",
+                "fcstd:native:property#CorpusMetadata:Label2": "written",
+                "fcstd:native:property#CorpusMetadata:License": "written",
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated"
+                "fcstd:native:property#CorpusMetadata:Purpose": "written",
+                "fcstd:native:property#CorpusMetadata:Visibility": "written"
               }
             },
             "shape_payloads": {

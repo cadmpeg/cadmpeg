@@ -764,7 +764,7 @@
               ]
             ],
             "member": null,
-            "neutral_links": [],
+            "native_links": [],
             "root": true,
             "source_instance": "iges:entity:directory#9",
             "world_transform": [
@@ -816,7 +816,7 @@
               ]
             ],
             "member": null,
-            "neutral_links": [],
+            "native_links": [],
             "root": false,
             "source_instance": "iges:entity:directory#5",
             "world_transform": [
@@ -868,8 +868,8 @@
               ]
             ],
             "member": "iges:entity:directory#1",
-            "neutral_links": [
-              "iges:model:curve#D1"
+            "native_links": [
+              "iges:entity:directory#1"
             ],
             "root": false,
             "source_instance": "iges:entity:directory#5",
@@ -1025,7 +1025,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "iges:product:occurrence#9/5/D1 member iges:entity:directory#1: product membership of carrier iges:model:curve#D1 has no neutral body owner",
+        "message": "iges:product:occurrence#9/5/D1 member iges:entity:directory#1: product membership of carrier iges:entity:directory#1 has no neutral body owner",
         "severity": "warning"
       }
     ],
@@ -1049,7 +1049,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "73adc4e1463df60a5179eb5d38709e449dc59c2f8f07b76a169003c4e641afa4",
+    "decode_digest": "82a7b929f3db0590aad429437db3cf2455a0d9ba89dcf0022128566554f4aed1",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

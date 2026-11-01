@@ -2,48 +2,33 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 35779,
-      "payload_sha256": "368663934d07e42b888b5cd9b3aa439d6d58d94a9a7cc6ca51883e44e1db0680"
+      "payload_len": 27192,
+      "payload_sha256": "c2f85493e3b9ba7fa500e096b05566355038bc7b5dfd52c530af831ab97cbfd4"
     },
     {
-      "name": "Body.Shape.brp",
-      "payload_len": 6047,
-      "payload_sha256": "24c9c43bd6140589e0e280324c7b91d12722126231a0aa84eb47066c3ab92c0d"
+      "name": "AdditiveBox.brp",
+      "payload_len": 5040,
+      "payload_sha256": "1a002dc178bf010dc4a22188b44d773a5559ebf80fd659d4ff5f2fdde04d1bff"
     },
     {
-      "name": "Body.Shape.Map.txt",
-      "payload_len": 268,
-      "payload_sha256": "94bd618a1edcc5492f0dd0322b8acda56e98c7bb271903c8543731171e3be3e2"
+      "name": "Body.brp",
+      "payload_len": 1975,
+      "payload_sha256": "53f7cf3c4d0b02c0d9c27867038138c951335d67071d2823cc4b266ec9f6e227"
     },
     {
-      "name": "AdditiveBox.AddSubShape.brp",
-      "payload_len": 8717,
-      "payload_sha256": "e9b62e37300706d75df899a85944f4be846813449bbf3a89c189cd41ff07abf8"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     },
     {
-      "name": "AdditiveBox.Shape.brp",
-      "payload_len": 8939,
-      "payload_sha256": "1009429a64fc95d7b54115182ed242f055a01b405aa1af33d4289c622b5bfdd5"
+      "name": "GuiDocument.xml",
+      "payload_len": 453,
+      "payload_sha256": "5826f69d0f84ad22e70607aabed40fb5d34c51ce4215de7835c4eb8bf9b0c6bf"
     },
     {
-      "name": "AdditiveBox.SuppressedShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "Sketch.InternalShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "Sketch.Shape.brp",
-      "payload_len": 489,
-      "payload_sha256": "a844f07b5bb7ef4c9b264bdd15e75479f69ad52b20af49418e62d5f0c87f78d4"
-    },
-    {
-      "name": "Sketch.Shape.Map.txt",
-      "payload_len": 133,
-      "payload_sha256": "406e44cc60ef5442ba90aa1b30d499f387cdaa4991035651a8e0e6c66ed78426"
+      "name": "Sketch.brp",
+      "payload_len": 231,
+      "payload_sha256": "8a840c4bfd903c559f06011a70ed7a66b85987fc921e119212de8c78f8022b32"
     }
   ],
   "report": {
@@ -55,7 +40,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 31,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -71,21 +56,19 @@
         "mass_properties": 0,
         "native.fcstd.applications": 11,
         "native.fcstd.attachments": 11,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 4,
         "native.fcstd.design_census": 3,
         "native.fcstd.document": 1,
         "native.fcstd.element_maps": 2,
         "native.fcstd.entries": 9,
         "native.fcstd.extensions": 6,
-        "native.fcstd.logical_ledger": 295,
         "native.fcstd.objects": 11,
-        "native.fcstd.physical_ledger": 64,
         "native.fcstd.properties": 144,
         "native.fcstd.shape_payloads": 6,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 104,
         "occurrences": 0,
-        "parameters": 3,
+        "parameters": 5,
         "pcurves": 48,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -116,20 +99,494 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "articulations": "omitted",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "written",
+        "bodies": "written",
+        "coedges": "written",
+        "colliders": "omitted",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "mass_properties": "omitted",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "reported",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "rigid_bodies": "omitted",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "solver_settings": "omitted",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "reported"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "presentation.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 8 native record(s) from `fcstd.entries`: fcstd:native:entry#AdditiveBox.AddSubShape.brp, fcstd:native:entry#AdditiveBox.Shape.brp, fcstd:native:entry#AdditiveBox.SuppressedShape.brp, fcstd:native:entry#Body.Shape.Map.txt, fcstd:native:entry#Body.Shape.brp, fcstd:native:entry#Sketch.InternalShape.brp, fcstd:native:entry#Sketch.Shape.Map.txt, fcstd:native:entry#Sketch.Shape.brp",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 20 native record(s) from `fcstd.properties`: fcstd:native:property#AdditiveBox:AddSubShape, fcstd:native:property#AdditiveBox:BaseFeature, fcstd:native:property#AdditiveBox:ExpressionEngine, fcstd:native:property#AdditiveBox:PreviewShape, fcstd:native:property#AdditiveBox:SuppressedShape, fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Placement, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Sketch:ExpressionEngine, fcstd:native:property#Sketch:ExternalGeo, fcstd:native:property#Sketch:ExternalGeometry, fcstd:native:property#Sketch:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp, fcstd:native:shape-payload#AdditiveBox:SuppressedShape:AdditiveBox.SuppressedShape.brp, fcstd:native:shape-payload#Sketch:InternalShape:Sketch.InternalShape.brp",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#AdditiveBox": "regenerated",
+                "fcstd:native:application#Body": "regenerated",
+                "fcstd:native:application#Origin": "regenerated",
+                "fcstd:native:application#Origin001": "regenerated",
+                "fcstd:native:application#Sketch": "regenerated",
+                "fcstd:native:application#XY_Plane": "regenerated",
+                "fcstd:native:application#XZ_Plane": "regenerated",
+                "fcstd:native:application#X_Axis": "regenerated",
+                "fcstd:native:application#YZ_Plane": "regenerated",
+                "fcstd:native:application#Y_Axis": "regenerated",
+                "fcstd:native:application#Z_Axis": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#AdditiveBox": "written",
+                "fcstd:native:attachment#Body": "written",
+                "fcstd:native:attachment#Origin": "written",
+                "fcstd:native:attachment#Origin001": "written",
+                "fcstd:native:attachment#Sketch": "written",
+                "fcstd:native:attachment#XY_Plane": "written",
+                "fcstd:native:attachment#XZ_Plane": "written",
+                "fcstd:native:attachment#X_Axis": "written",
+                "fcstd:native:attachment#YZ_Plane": "written",
+                "fcstd:native:attachment#Y_Axis": "written",
+                "fcstd:native:attachment#Z_Axis": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#AdditiveBox:Shape:AdditiveBox.Shape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Body:Shape:Body.Shape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Sketch:Shape:Sketch.Shape.brp:families": "regenerated"
+              }
+            },
+            "design_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#AdditiveBox:projection": "regenerated",
+                "fcstd:native:design-census#Body:projection": "regenerated",
+                "fcstd:native:design-census#Sketch:projection": "regenerated"
+              }
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:element-map#Body:Shape:map": "written",
+                "fcstd:native:element-map#Sketch:Shape:map": "written"
+              }
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:extension#AdditiveBox:0%3ASuppressibleExtension": "written",
+                "fcstd:native:extension#AdditiveBox:1%3AAttachExtension": "written",
+                "fcstd:native:extension#AdditiveBox:2%3APreviewExtension": "written",
+                "fcstd:native:extension#Body:0%3AOriginGroupExtension": "written",
+                "fcstd:native:extension#Origin:0%3AGeoFeatureGroupExtension": "written",
+                "fcstd:native:extension#Sketch:0%3AAttachExtension": "written"
+              }
+            },
+            "gui_documents": {
+              "disposition": "dropped"
+            },
+            "gui_properties": {
+              "disposition": "dropped"
+            },
+            "gui_view_providers": {
+              "disposition": "dropped"
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#AdditiveBox": "regenerated",
+                "fcstd:native:object#Body": "regenerated",
+                "fcstd:native:object#Origin": "written",
+                "fcstd:native:object#Origin001": "written",
+                "fcstd:native:object#Sketch": "regenerated",
+                "fcstd:native:object#XY_Plane": "written",
+                "fcstd:native:object#XZ_Plane": "written",
+                "fcstd:native:object#X_Axis": "written",
+                "fcstd:native:object#YZ_Plane": "written",
+                "fcstd:native:object#Y_Axis": "written",
+                "fcstd:native:object#Z_Axis": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#AdditiveBox:AttacherEngine": "written",
+                "fcstd:native:property#AdditiveBox:AttacherType": "regenerated",
+                "fcstd:native:property#AdditiveBox:AttachmentOffset": "regenerated",
+                "fcstd:native:property#AdditiveBox:AttachmentSupport": "written",
+                "fcstd:native:property#AdditiveBox:FuzzyTolerance": "regenerated",
+                "fcstd:native:property#AdditiveBox:Height": "regenerated",
+                "fcstd:native:property#AdditiveBox:Label": "regenerated",
+                "fcstd:native:property#AdditiveBox:Label2": "regenerated",
+                "fcstd:native:property#AdditiveBox:Length": "regenerated",
+                "fcstd:native:property#AdditiveBox:MapMode": "regenerated",
+                "fcstd:native:property#AdditiveBox:MapPathParameter": "regenerated",
+                "fcstd:native:property#AdditiveBox:MapReversed": "regenerated",
+                "fcstd:native:property#AdditiveBox:Placement": "regenerated",
+                "fcstd:native:property#AdditiveBox:Refine": "regenerated",
+                "fcstd:native:property#AdditiveBox:Shape": "regenerated",
+                "fcstd:native:property#AdditiveBox:ShapeMaterial": "written",
+                "fcstd:native:property#AdditiveBox:Suppressed": "regenerated",
+                "fcstd:native:property#AdditiveBox:Visibility": "regenerated",
+                "fcstd:native:property#AdditiveBox:Width": "regenerated",
+                "fcstd:native:property#AdditiveBox:_Body": "written",
+                "fcstd:native:property#AdditiveBox:_ElementMapVersion": "written",
+                "fcstd:native:property#Body:AllowCompound": "regenerated",
+                "fcstd:native:property#Body:Group": "regenerated",
+                "fcstd:native:property#Body:Label": "regenerated",
+                "fcstd:native:property#Body:Label2": "regenerated",
+                "fcstd:native:property#Body:Origin": "regenerated",
+                "fcstd:native:property#Body:Shape": "regenerated",
+                "fcstd:native:property#Body:ShapeMaterial": "written",
+                "fcstd:native:property#Body:Tip": "regenerated",
+                "fcstd:native:property#Body:Visibility": "regenerated",
+                "fcstd:native:property#Body:_ElementMapVersion": "written",
+                "fcstd:native:property#Body:_GroupTouched": "written",
+                "fcstd:native:property#Origin001:Label": "written",
+                "fcstd:native:property#Origin001:Label2": "written",
+                "fcstd:native:property#Origin001:Placement": "regenerated",
+                "fcstd:native:property#Origin001:Role": "written",
+                "fcstd:native:property#Origin001:Visibility": "written",
+                "fcstd:native:property#Origin001:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin:Group": "written",
+                "fcstd:native:property#Origin:Label": "written",
+                "fcstd:native:property#Origin:Label2": "written",
+                "fcstd:native:property#Origin:OriginFeatures": "written",
+                "fcstd:native:property#Origin:Placement": "regenerated",
+                "fcstd:native:property#Origin:Visibility": "written",
+                "fcstd:native:property#Origin:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin:_GroupTouched": "written",
+                "fcstd:native:property#Sketch:ArcFitTolerance": "regenerated",
+                "fcstd:native:property#Sketch:AttacherEngine": "written",
+                "fcstd:native:property#Sketch:AttacherType": "regenerated",
+                "fcstd:native:property#Sketch:AttachmentOffset": "regenerated",
+                "fcstd:native:property#Sketch:AttachmentSupport": "written",
+                "fcstd:native:property#Sketch:Constraints": "regenerated",
+                "fcstd:native:property#Sketch:Exports": "written",
+                "fcstd:native:property#Sketch:ExternalTypes": "written",
+                "fcstd:native:property#Sketch:FullyConstrained": "regenerated",
+                "fcstd:native:property#Sketch:Geometry": "regenerated",
+                "fcstd:native:property#Sketch:Label": "regenerated",
+                "fcstd:native:property#Sketch:Label2": "regenerated",
+                "fcstd:native:property#Sketch:MakeInternals": "regenerated",
+                "fcstd:native:property#Sketch:MapMode": "regenerated",
+                "fcstd:native:property#Sketch:MapPathParameter": "regenerated",
+                "fcstd:native:property#Sketch:MapReversed": "regenerated",
+                "fcstd:native:property#Sketch:Placement": "regenerated",
+                "fcstd:native:property#Sketch:Shape": "regenerated",
+                "fcstd:native:property#Sketch:ShapeMaterial": "written",
+                "fcstd:native:property#Sketch:Visibility": "regenerated",
+                "fcstd:native:property#Sketch:_ElementMapVersion": "written",
+                "fcstd:native:property#Sketch:_ExternalGeoVersion": "regenerated",
+                "fcstd:native:property#XY_Plane:Label": "written",
+                "fcstd:native:property#XY_Plane:Label2": "written",
+                "fcstd:native:property#XY_Plane:Placement": "regenerated",
+                "fcstd:native:property#XY_Plane:Role": "written",
+                "fcstd:native:property#XY_Plane:Visibility": "written",
+                "fcstd:native:property#XY_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#XZ_Plane:Label": "written",
+                "fcstd:native:property#XZ_Plane:Label2": "written",
+                "fcstd:native:property#XZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#XZ_Plane:Role": "written",
+                "fcstd:native:property#XZ_Plane:Visibility": "written",
+                "fcstd:native:property#XZ_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#X_Axis:Label": "written",
+                "fcstd:native:property#X_Axis:Label2": "written",
+                "fcstd:native:property#X_Axis:Placement": "regenerated",
+                "fcstd:native:property#X_Axis:Role": "written",
+                "fcstd:native:property#X_Axis:Visibility": "written",
+                "fcstd:native:property#X_Axis:_ElementMapVersion": "written",
+                "fcstd:native:property#YZ_Plane:Label": "written",
+                "fcstd:native:property#YZ_Plane:Label2": "written",
+                "fcstd:native:property#YZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#YZ_Plane:Role": "written",
+                "fcstd:native:property#YZ_Plane:Visibility": "written",
+                "fcstd:native:property#YZ_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#Y_Axis:Label": "written",
+                "fcstd:native:property#Y_Axis:Label2": "written",
+                "fcstd:native:property#Y_Axis:Placement": "regenerated",
+                "fcstd:native:property#Y_Axis:Role": "written",
+                "fcstd:native:property#Y_Axis:Visibility": "written",
+                "fcstd:native:property#Y_Axis:_ElementMapVersion": "written",
+                "fcstd:native:property#Z_Axis:Label": "written",
+                "fcstd:native:property#Z_Axis:Label2": "written",
+                "fcstd:native:property#Z_Axis:Placement": "regenerated",
+                "fcstd:native:property#Z_Axis:Role": "written",
+                "fcstd:native:property#Z_Axis:Visibility": "written",
+                "fcstd:native:property#Z_Axis:_ElementMapVersion": "written"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp": "regenerated"
+              }
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#AdditiveBox:Shape:AdditiveBox.Shape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:2": "regenerated"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: the typed property has no independent projection"
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

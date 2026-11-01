@@ -1,14 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [
         {
           "id": "usd:stage:articulation#/Arm",
-          "native_ref": "/Arm",
           "root": {
             "kind": "occurrence",
             "occurrence": "usd:stage:occurrence#/Arm"
@@ -18,7 +16,6 @@
       "assembly_joints": [
         {
           "id": "usd:stage:joint#/Arm/Grip",
-          "native_ref": "/Arm/Grip",
           "operands": {
             "arity": "pair",
             "connectors": [
@@ -96,7 +93,6 @@
         },
         {
           "id": "usd:stage:joint#/Arm/Shoulder",
-          "native_ref": "/Arm/Shoulder",
           "operands": {
             "arity": "pair",
             "connectors": [
@@ -188,7 +184,6 @@
           "enabled": true,
           "id": "usd:stage:collider#/Arm/Base/Geom",
           "material": "usd:stage:physical-material#/Arm/Rubber",
-          "native_ref": "/Arm/Base/Geom",
           "shape": {
             "kind": "convex_decomposition"
           },
@@ -209,7 +204,6 @@
         {
           "id": "usd:stage:occurrence#/Arm",
           "name": "Arm",
-          "native_ref": "/Arm",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -218,11 +212,6 @@
             "definition": "usd:stage:definition#/Arm",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -247,7 +236,6 @@
         {
           "id": "usd:stage:occurrence#/Arm/Base",
           "name": "Base",
-          "native_ref": "/Arm/Base",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -257,11 +245,6 @@
             "definition": "usd:stage:definition#/Arm/Base",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -286,7 +269,6 @@
         {
           "id": "usd:stage:occurrence#/Arm/Base/Geom",
           "name": "Geom",
-          "native_ref": "/Arm/Base/Geom",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -296,11 +278,6 @@
             "definition": "usd:stage:definition#/Arm/Base/Geom",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -325,7 +302,6 @@
         {
           "id": "usd:stage:occurrence#/Arm/Finger",
           "name": "Finger",
-          "native_ref": "/Arm/Finger",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -335,11 +311,6 @@
             "definition": "usd:stage:definition#/Arm/Finger",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -364,7 +335,6 @@
         {
           "id": "usd:stage:occurrence#/Arm/Link",
           "name": "Link",
-          "native_ref": "/Arm/Link",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -374,11 +344,6 @@
             "definition": "usd:stage:definition#/Arm/Link",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -408,7 +373,6 @@
           "dynamic_friction": 0.800000011920929,
           "id": "usd:stage:physical-material#/Arm/Rubber",
           "name": "Rubber",
-          "native_ref": "/Arm/Rubber",
           "static_friction": 0.8999999761581421
         }
       ],
@@ -421,8 +385,7 @@
           },
           "gravity_magnitude": 9810.0,
           "id": "usd:stage:physics-scene#/Arm/Scene",
-          "name": "Scene",
-          "native_ref": "/Arm/Scene"
+          "name": "Scene"
         }
       ],
       "pmi": [],
@@ -435,13 +398,11 @@
         {
           "id": "usd:stage:definition#/Arm",
           "kind": "group",
-          "native_ref": "/Arm",
           "source_name": "Arm"
         },
         {
           "id": "usd:stage:definition#/Arm/Base",
           "kind": "group",
-          "native_ref": "/Arm/Base",
           "source_name": "Base"
         },
         {
@@ -450,19 +411,16 @@
           ],
           "id": "usd:stage:definition#/Arm/Base/Geom",
           "kind": "object",
-          "native_ref": "/Arm/Base/Geom",
           "source_name": "Geom"
         },
         {
           "id": "usd:stage:definition#/Arm/Finger",
           "kind": "group",
-          "native_ref": "/Arm/Finger",
           "source_name": "Finger"
         },
         {
           "id": "usd:stage:definition#/Arm/Link",
           "kind": "group",
-          "native_ref": "/Arm/Link",
           "source_name": "Link"
         }
       ],
@@ -472,7 +430,6 @@
           "enabled": true,
           "id": "usd:stage:rigid-body#/Arm/Base",
           "kinematic": false,
-          "native_ref": "/Arm/Base",
           "target": {
             "kind": "occurrence",
             "occurrence": "usd:stage:occurrence#/Arm/Base"
@@ -482,7 +439,6 @@
           "enabled": true,
           "id": "usd:stage:rigid-body#/Arm/Finger",
           "kinematic": false,
-          "native_ref": "/Arm/Finger",
           "target": {
             "kind": "occurrence",
             "occurrence": "usd:stage:occurrence#/Arm/Finger"
@@ -492,7 +448,6 @@
           "enabled": true,
           "id": "usd:stage:rigid-body#/Arm/Link",
           "kinematic": false,
-          "native_ref": "/Arm/Link",
           "target": {
             "kind": "occurrence",
             "occurrence": "usd:stage:occurrence#/Arm/Link"
@@ -507,7 +462,6 @@
       "solver_settings": [
         {
           "id": "usd:stage:solver-settings#/Arm.PhysxArticulationAPI",
-          "native_ref": "/Arm",
           "schema": "PhysxArticulationAPI",
           "solver": "physx",
           "target": {
@@ -527,7 +481,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Base.PhysxRigidBodyAPI",
-          "native_ref": "/Arm/Base",
           "schema": "PhysxRigidBodyAPI",
           "solver": "physx",
           "target": {
@@ -565,7 +518,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Base/Geom.PhysxCollisionAPI",
-          "native_ref": "/Arm/Base/Geom",
           "schema": "PhysxCollisionAPI",
           "solver": "physx",
           "target": {
@@ -590,7 +542,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Base/Geom.PhysxConvexDecompositionCollisionAPI",
-          "native_ref": "/Arm/Base/Geom",
           "schema": "PhysxConvexDecompositionCollisionAPI",
           "solver": "physx",
           "target": {
@@ -606,7 +557,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Grip.PhysxJointAPI",
-          "native_ref": "/Arm/Grip",
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
@@ -636,7 +586,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Grip.PhysxMimicJointAPI%3AtransX",
-          "native_ref": "/Arm/Grip",
           "schema": "PhysxMimicJointAPI:transX",
           "solver": "physx",
           "target": {
@@ -679,7 +628,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Rubber.PhysxMaterialAPI",
-          "native_ref": "/Arm/Rubber",
           "schema": "PhysxMaterialAPI",
           "solver": "physx",
           "target": {
@@ -695,7 +643,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Scene.PhysxSceneAPI",
-          "native_ref": "/Arm/Scene",
           "schema": "PhysxSceneAPI",
           "solver": "physx",
           "target": {
@@ -724,7 +671,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysicsJointStateAPI%3Aangular",
-          "native_ref": "/Arm/Shoulder",
           "schema": "PhysicsJointStateAPI:angular",
           "solver": "physx",
           "target": {
@@ -745,7 +691,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxJointAPI",
-          "native_ref": "/Arm/Shoulder",
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
@@ -779,7 +724,6 @@
         },
         {
           "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxLimitAPI%3Aangular",
-          "native_ref": "/Arm/Shoulder",
           "schema": "PhysxLimitAPI:angular",
           "solver": "physx",
           "target": {
@@ -871,6 +815,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Arm",
@@ -917,10 +865,14 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "unrepresented": []
   }
 }

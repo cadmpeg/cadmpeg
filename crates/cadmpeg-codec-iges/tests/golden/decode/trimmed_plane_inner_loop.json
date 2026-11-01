@@ -710,7 +710,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "start",
                 "position": [
                   0.0,
@@ -719,7 +718,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "end",
                 "position": [
                   0.0,
@@ -729,8 +727,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#15",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D15:0:0"
+            "tolerance": 0.001
           },
           {
             "id": "iges:topology:boundary-vertex#D15_1_0",
@@ -742,7 +739,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D9",
                 "endpoint": "start",
                 "position": [
                   0.25,
@@ -751,7 +747,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D9",
                 "endpoint": "end",
                 "position": [
                   0.25,
@@ -761,8 +756,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#15",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D15:1:0"
+            "tolerance": 0.001
           }
         ],
         "cards": [
@@ -1997,7 +1991,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "3b6f20316286d4b4c1a149b796039111f5d500eabebbb95b6105750ef276d92b",
+    "decode_digest": "0ae5db09a9ebfadbbb4935e01d87365183ef3a77c547d8cb1545446ebc4067ab",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

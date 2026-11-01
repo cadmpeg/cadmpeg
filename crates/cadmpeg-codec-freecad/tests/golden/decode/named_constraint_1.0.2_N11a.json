@@ -1,16 +1,487 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "native_ref": "fcstd:native:property#0:Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0; CAD Fixture Recipes v1.23; generated with FreeCAD 1.0.2"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "native_ref": "fcstd:native:property#0:Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "native_ref": "fcstd:native:property#0:CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "native_ref": "fcstd:native:property#0:CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-10-28T19:12:04Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "native_ref": "fcstd:native:property#0:Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#0:Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "N11a"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "native_ref": "fcstd:native:property#0:LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "native_ref": "fcstd:native:property#0:LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-10-28T19:12:04Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#0:License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "native_ref": "fcstd:native:property#0:LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:f96234b795f3267ecee09753d466723b5727d379f621fae0d32bcd46e9129c89"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "native_ref": "fcstd:native:property#0:ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "native_ref": "fcstd:native:property#0:TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UseHasher:property",
+          "name": "UseHasher",
+          "native_ref": "fcstd:native:property#0:UseHasher",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:AllowCompound:property",
+          "name": "AllowCompound",
+          "native_ref": "fcstd:native:property#Body:AllowCompound",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Body:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Origin:property",
+          "name": "Origin",
+          "native_ref": "fcstd:native:property#Body:Origin",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#Origin"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Body:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Dimensions:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Dimensions:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Dimensions"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Dimensions:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Dimensions:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Dimensions"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Pad:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Pad:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pad"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Pad:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Pad:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pad"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:ArcFitTolerance:property",
+          "name": "ArcFitTolerance",
+          "native_ref": "fcstd:native:property#Sketch:ArcFitTolerance",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 1e-6
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:AttacherType:property",
+          "name": "AttacherType",
+          "native_ref": "fcstd:native:property#Sketch:AttacherType",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:FullyConstrained:property",
+          "name": "FullyConstrained",
+          "native_ref": "fcstd:native:property#Sketch:FullyConstrained",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Sketch:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:MakeInternals:property",
+          "name": "MakeInternals",
+          "native_ref": "fcstd:native:property#Sketch:MakeInternals",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:MapPathParameter:property",
+          "name": "MapPathParameter",
+          "native_ref": "fcstd:native:property#Sketch:MapPathParameter",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 0.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:MapReversed:property",
+          "name": "MapReversed",
+          "native_ref": "fcstd:native:property#Sketch:MapReversed",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Sketch:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Body:Shape:Body.Shape.brp:34%40location1"
           ]
@@ -18,6 +489,7 @@
         {
           "id": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:24",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:24"
           ],
@@ -26,6 +498,7 @@
         {
           "id": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Pad:Shape:Pad.Shape.brp:24%40location1"
           ],
@@ -34,6 +507,7 @@
         {
           "id": "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:9%40location1",
           "kind": "wire",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:9%40location1"
           ],
@@ -1717,6 +2191,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17",
           "tolerance": 1e-7
         },
@@ -1730,6 +2205,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14%40location19",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17",
           "tolerance": 1e-7
         },
@@ -1743,6 +2219,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:15%40location16",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17",
           "tolerance": 1e-7
         },
@@ -1756,6 +2233,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:20%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17",
           "tolerance": 1e-7
         },
@@ -1769,6 +2247,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21%40location19",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17",
           "tolerance": 1e-7
         },
@@ -1782,6 +2261,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22%40location16",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17",
           "tolerance": 1e-7
         },
@@ -1795,6 +2275,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:25%40location19",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17",
           "tolerance": 1e-7
         },
@@ -1808,6 +2289,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26%40location16",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17",
           "tolerance": 1e-7
         },
@@ -1821,6 +2303,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17",
           "tolerance": 1e-7
         },
@@ -1834,6 +2317,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:32",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17",
           "tolerance": 1e-7
         },
@@ -1847,6 +2331,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7%40location19",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17",
           "tolerance": 1e-7
         },
@@ -1860,6 +2345,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%40location16",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17",
           "tolerance": 1e-7
         },
@@ -1873,6 +2359,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
           "tolerance": 1e-7
         },
@@ -1886,6 +2373,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
           "tolerance": 1e-7
         },
@@ -1899,6 +2387,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:14",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
           "tolerance": 1e-7
         },
@@ -1912,6 +2401,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
           "tolerance": 1e-7
         },
@@ -1925,6 +2415,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
           "tolerance": 1e-7
         },
@@ -1938,6 +2429,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
           "tolerance": 1e-7
         },
@@ -1951,6 +2443,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
           "tolerance": 1e-7
         },
@@ -1964,6 +2457,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
           "tolerance": 1e-7
         },
@@ -1977,6 +2471,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:32",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
           "tolerance": 1e-7
         },
@@ -1990,6 +2485,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
           "tolerance": 1e-7
         },
@@ -2003,6 +2499,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
           "tolerance": 1e-7
         },
@@ -2016,6 +2513,7 @@
           },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:9",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
           "tolerance": 1e-7
         },
@@ -2029,6 +2527,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12",
           "tolerance": 1e-7
         },
@@ -2042,6 +2541,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14",
           "tolerance": 1e-7
         },
@@ -2055,6 +2555,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14",
           "tolerance": 1e-7
         },
@@ -2068,6 +2569,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12",
           "tolerance": 1e-7
         },
@@ -2081,6 +2583,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14",
           "tolerance": 1e-7
         },
@@ -2094,6 +2597,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12",
           "tolerance": 1e-7
         },
@@ -2107,6 +2611,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14",
           "tolerance": 1e-7
         },
@@ -2120,6 +2625,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
           "tolerance": 1e-7
         },
@@ -2133,6 +2639,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:32",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14",
           "tolerance": 1e-7
         },
@@ -2146,6 +2653,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12",
           "tolerance": 1e-7
         },
@@ -2159,6 +2667,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
           "tolerance": 1e-7
         },
@@ -2172,6 +2681,7 @@
           },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14",
           "tolerance": 1e-7
         },
@@ -2185,6 +2695,7 @@
           },
           "end": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:2%40location1",
           "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:9",
           "start": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -2198,6 +2709,7 @@
           },
           "end": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:7",
           "start": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -2211,6 +2723,7 @@
           },
           "end": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:6%40location1",
           "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -2224,6 +2737,7 @@
           },
           "end": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:2",
           "start": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
@@ -2237,6 +2751,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1",
@@ -2250,6 +2765,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:17%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:30",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:2",
@@ -2263,6 +2779,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:3",
@@ -2276,6 +2793,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:23",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:4",
@@ -2289,6 +2807,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:30%40location18%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:5",
@@ -2302,6 +2821,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:32%40location15%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:6%4076889a8b8100da92",
@@ -2315,6 +2835,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:30",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
@@ -2328,6 +2849,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:3",
@@ -2341,6 +2863,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:23",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:4",
@@ -2354,6 +2877,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location7%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:5",
@@ -2367,6 +2891,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location9%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
@@ -2380,6 +2905,7 @@
               "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
@@ -2393,6 +2919,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:30",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2",
@@ -2406,6 +2933,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:3",
@@ -2419,6 +2947,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:23",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:4",
@@ -2432,6 +2961,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location11%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
@@ -2445,6 +2975,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location13%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5",
@@ -2458,6 +2989,7 @@
               "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1",
@@ -2480,14 +3012,11 @@
           "id": "fcstd:design:feature#Body",
           "name": "Body",
           "native_ref": "fcstd:native:object#Body",
+          "needs_recompute": false,
           "ordinal": 0,
           "outputs": [
             "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1"
           ],
-          "source_properties": {
-            "Tip": "fcstd:native:object#Pad",
-            "Visibility": "true"
-          },
           "source_tag": "PartDesign::Body",
           "suppressed": null
         },
@@ -2499,10 +3028,8 @@
           "id": "fcstd:design:feature#Dimensions",
           "name": "Dimensions",
           "native_ref": "fcstd:native:object#Dimensions",
-          "ordinal": 8,
-          "source_properties": {
-            "Visibility": "true"
-          },
+          "needs_recompute": false,
+          "ordinal": 1,
           "source_tag": "Spreadsheet::Sheet",
           "suppressed": null
         },
@@ -2531,7 +3058,10 @@
                 "side": {
                   "termination": {
                     "kind": "blind",
-                    "length": 10.0
+                    "length": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Pad:Length"
+                    }
                   }
                 }
               },
@@ -2549,21 +3079,17 @@
             "refine": true
           },
           "dependencies": [
-            "fcstd:design:feature#Sketch",
-            "fcstd:design:feature#Body"
+            "fcstd:design:feature#Sketch"
           ],
           "id": "fcstd:design:feature#Pad",
           "name": "Pad",
           "native_ref": "fcstd:native:object#Pad",
-          "ordinal": 10,
+          "needs_recompute": false,
+          "ordinal": 3,
           "outputs": [
             "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:24",
             "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
           ],
-          "source_properties": {
-            "Suppressed": "false",
-            "Visibility": "true"
-          },
           "source_tag": "PartDesign::Pad",
           "suppressed": false
         },
@@ -2575,20 +3101,14 @@
               "space": "planar"
             }
           },
-          "dependencies": [
-            "fcstd:design:feature#Dimensions"
-          ],
           "id": "fcstd:design:feature#Sketch",
           "name": "Sketch",
           "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 9,
+          "needs_recompute": false,
+          "ordinal": 2,
           "outputs": [
             "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:9%40location1"
           ],
-          "source_properties": {
-            "MapMode": "5",
-            "Visibility": "false"
-          },
           "source_tag": "Sketcher::SketchObject",
           "suppressed": null
         }
@@ -2605,7 +3125,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:10%40location1",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -2618,7 +3139,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:17%40location1",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:17%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:17%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:31"
         },
         {
           "boundary": {
@@ -2631,7 +3153,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:24%40location1",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2644,7 +3167,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:28%40location1",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2657,7 +3181,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:30%40location18",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:30%40location18%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:30%40location18%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2670,7 +3195,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:32%40location15",
-          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:32%40location15%3A1"
+          "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:32%40location15%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -2683,7 +3209,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:12",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:31"
         },
         {
           "boundary": {
@@ -2696,7 +3223,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:17",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2709,7 +3237,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:20",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2722,7 +3251,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location7",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location7%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location7%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2735,7 +3265,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location9",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location9%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%40location9%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -2748,7 +3279,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1"
+          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -2761,7 +3293,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:12%40location1",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%40location1%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:31"
         },
         {
           "boundary": {
@@ -2774,7 +3307,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:17%40location1",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%40location1%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2787,7 +3321,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:20%40location1",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2800,7 +3335,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22%40location11",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location11%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location11%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -2813,7 +3349,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22%40location13",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location13%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%40location13%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2826,48 +3363,66 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7%40location1",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location1%3A1"
+          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:34"
         }
       ],
       "occurrences": [],
       "parameters": [
         {
-          "expression": "'width",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "\"width\""
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Dimensions:cell:A1",
           "name": "A1",
           "native_ref": "fcstd:native:property#Dimensions:cells",
           "ordinal": 0,
           "owner": "fcstd:design:feature#Dimensions",
-          "properties": {
-            "address": "A1"
-          },
           "value": {
             "kind": "string",
             "value": "width"
           }
         },
         {
-          "expression": "=30 mm",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "=30 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Dimensions:cell:B1",
           "name": "w",
           "native_ref": "fcstd:native:property#Dimensions:cells",
           "ordinal": 1,
           "owner": "fcstd:design:feature#Dimensions",
-          "properties": {
-            "address": "B1",
-            "alias": "w"
-          },
           "value": {
             "kind": "length",
             "value": 30.0
           }
         },
         {
-          "expression": "10.0000000000000000",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "10 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Pad:Length",
           "name": "Length",
           "native_ref": "fcstd:native:property#Pad:Length",
-          "ordinal": 8,
+          "ordinal": 0,
           "owner": "fcstd:design:feature#Pad",
           "value": {
             "kind": "length",
@@ -2875,11 +3430,19 @@
           }
         },
         {
-          "expression": "10.0000000000000000",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "10 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Pad:Length2",
           "name": "Length2",
           "native_ref": "fcstd:native:property#Pad:Length2",
-          "ordinal": 9,
+          "ordinal": 1,
           "owner": "fcstd:design:feature#Pad",
           "value": {
             "kind": "length",
@@ -2887,18 +3450,82 @@
           }
         },
         {
-          "dependencies": [
-            "fcstd:design:parameter#Dimensions:cell:B1"
-          ],
-          "expression": "Dimensions.w",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "0 mm"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#Pad:Offset",
+          "name": "Offset",
+          "native_ref": "fcstd:native:property#Pad:Offset",
+          "ordinal": 2,
+          "owner": "fcstd:design:feature#Pad",
+          "value": {
+            "kind": "length",
+            "value": 0.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "0 rad"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#Pad:TaperAngle",
+          "name": "TaperAngle",
+          "native_ref": "fcstd:native:property#Pad:TaperAngle",
+          "ordinal": 3,
+          "owner": "fcstd:design:feature#Pad",
+          "value": {
+            "kind": "angle",
+            "value": 0.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "0 rad"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#Pad:TaperAngle2",
+          "name": "TaperAngle2",
+          "native_ref": "fcstd:native:property#Pad:TaperAngle2",
+          "ordinal": 4,
+          "owner": "fcstd:design:feature#Pad",
+          "value": {
+            "kind": "angle",
+            "value": 0.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Dimensions:cell:B1"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Sketch:constraint:10",
           "name": "Constraint10",
           "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 10,
+          "ordinal": 1,
           "owner": "fcstd:design:feature#Sketch",
           "properties": {
             "expression_native_ref": "fcstd:native:property#Sketch:ExpressionEngine",
-            "is_driving": "1",
             "source_name": "width"
           },
           "value": {
@@ -2907,14 +3534,21 @@
           }
         },
         {
-          "expression": "20.0000000000000000",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "20 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Sketch:constraint:11",
           "name": "Constraint11",
           "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 9,
+          "ordinal": 0,
           "owner": "fcstd:design:feature#Sketch",
           "properties": {
-            "is_driving": "1",
             "source_name": "height"
           },
           "value": {
@@ -2928,6 +3562,7 @@
       "points": [
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:1%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -2940,6 +3575,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:11%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:19",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -2952,6 +3588,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:12%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:9",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -2964,6 +3601,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:18%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:17",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -2976,6 +3614,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:19%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:7",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -2988,6 +3627,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:2%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3000,6 +3640,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:4%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:21",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3012,6 +3653,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:5%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:11",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3024,6 +3666,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3036,6 +3679,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3048,6 +3692,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:17",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -3060,6 +3705,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:7",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -3072,6 +3718,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:21",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3084,6 +3731,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:11",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3096,6 +3744,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:19",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -3108,6 +3757,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:9",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -3120,6 +3770,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3132,6 +3783,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3144,6 +3796,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:7",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -3156,6 +3809,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:17",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -3168,6 +3822,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:11",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3180,6 +3835,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:21",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3192,6 +3848,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:9",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -3204,6 +3861,7 @@
         },
         {
           "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:19",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -3216,6 +3874,7 @@
         },
         {
           "id": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:3",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3228,6 +3887,7 @@
         },
         {
           "id": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:8",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -3240,6 +3900,7 @@
         },
         {
           "id": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:6",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -3252,6 +3913,7 @@
         },
         {
           "id": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:4",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -3272,6 +3934,7 @@
         {
           "body": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1",
           "id": "fcstd:model:region#Body:Shape:Body.Shape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1"
           ]
@@ -3279,6 +3942,7 @@
         {
           "body": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:24",
           "id": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:24",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23"
           ]
@@ -3286,6 +3950,7 @@
         {
           "body": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1",
           "id": "fcstd:model:region#Pad:Shape:Pad.Shape.brp:24%40location1",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1"
           ]
@@ -3293,6 +3958,7 @@
         {
           "body": "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:9%40location1",
           "id": "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Sketch:Shape:Sketch.Shape.brp:9%40location1"
           ]
@@ -3328,6 +3994,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#Body:Shape:Body.Shape.brp:34%40location1"
         },
         {
@@ -3358,6 +4025,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:2",
           "region": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:24"
         },
         {
@@ -3388,6 +4056,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#Pad:Shape:Pad.Shape.brp:24%40location1"
         },
         {
@@ -3410,6 +4079,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:1",
           "region": "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:9%40location1"
         }
       ],
@@ -3444,9 +4114,11 @@
               "fcstd:design:sketch-entity#Sketch:1"
             ],
             "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:10"
+            "parameter": {
+              "kind": "parameter",
+              "value": "fcstd:design:parameter#Sketch:constraint:10"
+            }
           },
-          "driving": true,
           "id": "fcstd:design:sketch-constraint#Sketch:10",
           "label_distance": 10.0,
           "label_position": 0.0,
@@ -3462,9 +4134,11 @@
               "fcstd:design:sketch-entity#Sketch:2"
             ],
             "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:11"
+            "parameter": {
+              "kind": "parameter",
+              "value": "fcstd:design:parameter#Sketch:constraint:11"
+            }
           },
-          "driving": true,
           "id": "fcstd:design:sketch-constraint#Sketch:11",
           "label_distance": 10.0,
           "label_position": 0.0,
@@ -4322,141 +4996,169 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:1%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:11%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:12%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:17",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:18%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:7",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:19%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:2%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:21",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:4%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:11",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:5%40location17",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:16",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:6",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:17",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:7",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13%40location6",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:21",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:11",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:19",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:9",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8%40location6",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location12",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location14",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:7",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location12",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:17",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location14",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:11",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location12",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:21",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location14",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location12",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14",
+          "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location14",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:3",
           "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:8",
           "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:4",
           "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
@@ -4469,7 +5171,6 @@
           "annotations": 0,
           "applications": 11,
           "attachments": 9,
-          "byte_coverage": 1,
           "carrier_census": 4,
           "design_census": 4,
           "document": 1,
@@ -4481,38 +5182,35 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 280,
           "objects": 11,
-          "physical_ledger": 85,
           "product_nodes": 0,
           "properties": 135,
           "shape_payloads": 6,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 111
         }
       },
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "fbfc86a7e74495e2fa9aad0f0e42f6ae017ea04a36153e2e7e1695a659e1102c",
-          "byte_coverage": "56da93b53ddffa2acdb0119fbea79e1b14329103f26fb07b11b28cc8c0b4d6a6",
+          "applications": "b2b5f013ebad66560cec69603fe912ba62697a244bed9bf5ab417c608af30b5d",
           "carrier_census": "40b842fa017f509a88a02d3128a97d06d9abd372a0f525974976e455bd21dcb4",
-          "design_census": "4e601f197718fb4075ffdc26c1bd0d762b18cad88bddaf52456429da690b8453",
+          "design_census": "c948c598db18ed7934d9e2ad8f39e271df21519e2e85bb500a3489f834927902",
           "document": "2e6acdbebff7ae368640a81e9fb07c5a87f677df1be160be8c1da041a19dcf34",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "element_maps": "39979d4ffbe5cc9781de4628dcacb76ba4fe4a1e73f7bb61a3139fb0e59f9d81",
-          "entries": "fb67cebd92f20b6522b39e44eb6296af194d6664fd55c5e33eb662fbfd5f6aab",
-          "extensions": "58f71917c2ba5d018c154283d0fe95b8b698c0ea841176c9ec2560f7564f8a46",
+          "element_maps": "49017b57312920658c770d46cb51c15dc6bff3174f5e9d1af6adac27519a0b38",
+          "entries": "769d4a8e23a421a645837225bae321911900067049866bb9be8dce774f493472",
+          "extensions": "7164cdc916336759ab547662862455432eb4a85c0574b22ea238db432451e260",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "3001f98cb38a8823c736349c702bb4e4a01b6690e61926e41390cefc873191e8",
-          "objects": "cd5276375d9d397955acfce625aa06dca7ee35c68a6e8ffa5b1445c5ee639020",
-          "physical_ledger": "4b1e475828e2d1336a8bcaacdf8dbe5da9867a1f82075553435108089fbbda6e",
+          "objects": "3258aba9cfe81be32e0fe79a540d007bb285c0b41035e83aff7129e5a572b4cc",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "08f56a83a2a88ff20828f0a29344325c31b677cff5e7b98fbe04f2e8dab6b395",
+          "properties": "c939e1dbf4e4c18a47f1a82cdd20927caeed7050b7523176818b6d20e8ef9d50",
           "shape_payloads": "b5a70d235862a358e6da2c8565693bc095db1dc0a7a045095a12d8d295a13373",
-          "string_tables": "e3527a79d26357133f68aadc09e66c4a75617ae7a3612597b21c590a050b41bd"
+          "string_tables": "f484f6f25535df2e47dc9f26c372ebce03e8bb3aeb29c6573696534f78fdce03",
+          "topology_uses": "f9f60b1d38758c49c0f555775508d65062f54606809c818d3a319d6eef3d7704"
         }
       },
       "__arena_values": {
@@ -5088,16 +5786,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher,Spreadsheet",
-        "archive_entry_count": "12",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "11",
-        "physical_archive_bytes": "8291",
-        "physical_ledger_spans": "85",
         "program_version": "1.0R39319 (Git)"
       },
       "identity": {
@@ -5140,22 +5837,268 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Body:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimensions:columnWidths (Spreadsheet::PropertyColumnWidths) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimensions:rowHeights (Spreadsheet::PropertyRowHeights) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:UpToShape (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Sketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Sketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Sketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Sketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Sketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
       "document root=Document",
       "document kind=part-design",
       "object count=11",
-      "physical ledger spans=85 coverage=exact",
       "ProgramVersion=1.0R39319 (Git)"
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "2ce48860446a5cff94ded5f47cb235a1b5cff3b85082c515eef64d2d47c8a052",
+    "retained_records": {
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      }
+    },
+    "unrepresented": []
   }
 }

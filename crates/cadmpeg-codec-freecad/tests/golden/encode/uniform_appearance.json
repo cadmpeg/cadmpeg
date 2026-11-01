@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 5164,
-      "payload_sha256": "985c5ebb32d2454b1e67d1f5a5402f25193f90a07d528c4d55dc3c2bd97bd83b"
+      "payload_len": 5194,
+      "payload_sha256": "c1832a10c77b0499e4431577c89adf45e8b6f20875b52b09a4929297b7ce8280"
     },
     {
       "name": "Box.LineColorArray",
@@ -40,7 +40,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 16,
+        "attributes": 13,
         "bodies": 1,
         "coedges": 24,
         "colliders": 0,
@@ -103,11 +103,13 @@
       "arenas": {
         "appearance_bindings": "reported",
         "appearances": "reported",
+        "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -117,9 +119,12 @@
         "feature_result_topologies": "dropped",
         "features": "written",
         "loops": "written",
+        "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
@@ -128,11 +133,13 @@
         "procedural_surfaces": "written",
         "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
@@ -150,16 +157,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Box:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "metadata.native-property-not-transferred",
@@ -783,12 +780,12 @@
                 "fcstd:native:property#0:Uid": "written",
                 "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#Box:Label": "regenerated",
-                "fcstd:native:property#Box:Label2": "regenerated",
+                "fcstd:native:property#Box:Label": "written",
+                "fcstd:native:property#Box:Label2": "written",
                 "fcstd:native:property#Box:Placement": "regenerated",
                 "fcstd:native:property#Box:Shape": "regenerated",
                 "fcstd:native:property#Box:ShapeMaterial": "written",
-                "fcstd:native:property#Box:Visibility": "regenerated"
+                "fcstd:native:property#Box:Visibility": "written"
               }
             },
             "shape_payloads": {

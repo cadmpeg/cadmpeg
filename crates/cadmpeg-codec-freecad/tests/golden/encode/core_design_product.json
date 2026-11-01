@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 47984,
-      "payload_sha256": "e3af4217e6354c0ecc708db571be68e897f6122d855c685cdb4b3a03b7f4086d"
+      "payload_len": 48777,
+      "payload_sha256": "a581a18c9db3f8a986527ab3581df273ba1795db521573e50690f624ba75798f"
     },
     {
       "name": "Box.brp",
@@ -45,7 +45,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 96,
+        "attributes": 59,
         "bodies": 5,
         "coedges": 84,
         "colliders": 0,
@@ -109,11 +109,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
-        "assembly_joints": "reported",
+        "articulations": "omitted",
+        "assembly_joints": "written",
         "assets": "dropped",
         "attributes": "reported",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -121,28 +123,33 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "reported",
+        "features": "written",
         "loops": "written",
-        "occurrences": "reported",
-        "parameters": "reported",
+        "mass_properties": "omitted",
+        "occurrences": "written",
+        "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
         "presentation_layers": "dropped",
         "procedural_curves": "written",
         "procedural_surfaces": "written",
-        "product_definitions": "reported",
+        "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
-        "sketch_constraints": "reported",
-        "sketch_entities": "reported",
-        "sketches": "reported",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
-        "spreadsheets": "reported",
+        "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
         "tessellations": "dropped",
@@ -163,7 +170,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
+        "message": "attribute fcstd:model:attribute#Box:AttacherType:property conflicts with operation property AttacherType",
         "severity": "warning"
       },
       {
@@ -173,7 +180,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:ElementCount:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Box:Label2:property conflicts with operation property Label2",
         "severity": "warning"
       },
       {
@@ -183,7 +190,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:Label2:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Box:MapPathParameter:property conflicts with operation property MapPathParameter",
         "severity": "warning"
       },
       {
@@ -193,7 +200,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkClaimChild:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Box:MapReversed:property conflicts with operation property MapReversed",
         "severity": "warning"
       },
       {
@@ -203,7 +210,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChange:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Cut:Label2:property conflicts with operation property Label2",
         "severity": "warning"
       },
       {
@@ -213,7 +220,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChangeTouched:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Cylinder:AttacherType:property conflicts with operation property AttacherType",
         "severity": "warning"
       },
       {
@@ -223,7 +230,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkExecute:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Cylinder:FirstAngle:property conflicts with operation property FirstAngle",
         "severity": "warning"
       },
       {
@@ -233,7 +240,87 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkTransform:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Cylinder:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Cylinder:MapPathParameter:property conflicts with operation property MapPathParameter",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Cylinder:MapReversed:property conflicts with operation property MapReversed",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Cylinder:SecondAngle:property conflicts with operation property SecondAngle",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#DesignedFeature:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Occurrence:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Occurrence:LinkTransform:property conflicts with operation property LinkTransform",
         "severity": "warning"
       },
       {
@@ -253,7 +340,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:Scale:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Product:Id:property conflicts with operation property Id",
         "severity": "warning"
       },
       {
@@ -263,7 +350,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:ScaleVector:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Product:Label2:property conflicts with operation property Label2",
         "severity": "warning"
       },
       {
@@ -273,7 +360,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:ShowElement:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Product:License:property conflicts with operation property License",
         "severity": "warning"
       },
       {
@@ -283,7 +370,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:Visibility:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Product:LicenseURL:property conflicts with operation property LicenseURL",
         "severity": "warning"
       },
       {
@@ -293,7 +380,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Occurrence:_LinkOwner:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Product:Origin:property conflicts with operation property Origin",
         "severity": "warning"
       },
       {
@@ -303,7 +390,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Origin001:Label:property conflicts with operation property Label",
+        "message": "attribute fcstd:model:attribute#Profile:ArcFitTolerance:property conflicts with operation property ArcFitTolerance",
         "severity": "warning"
       },
       {
@@ -313,7 +400,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Origin:Label:property conflicts with operation property Label",
+        "message": "attribute fcstd:model:attribute#Profile:AttacherType:property conflicts with operation property AttacherType",
         "severity": "warning"
       },
       {
@@ -323,7 +410,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:Id:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:FullyConstrained:property conflicts with operation property FullyConstrained",
         "severity": "warning"
       },
       {
@@ -333,7 +420,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:Label2:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:Label2:property conflicts with operation property Label2",
         "severity": "warning"
       },
       {
@@ -343,7 +430,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:License:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:MakeInternals:property conflicts with operation property MakeInternals",
         "severity": "warning"
       },
       {
@@ -353,7 +440,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:LicenseURL:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:MapPathParameter:property conflicts with operation property MapPathParameter",
         "severity": "warning"
       },
       {
@@ -363,7 +450,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:Origin:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:MapReversed:property conflicts with operation property MapReversed",
         "severity": "warning"
       },
       {
@@ -373,78 +460,8 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Product:Visibility:property target has no emitted object",
+        "message": "attribute fcstd:model:attribute#Profile:_ExternalGeoVersion:property conflicts with operation property _ExternalGeoVersion",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XY_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#X_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#YZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Y_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Z_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "feature.not-transferred",
-          "kind": "parametric_record_omitted",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "object Origin property OriginFeatures refers to an omitted record and is removed",
-        "severity": "error"
       },
       {
         "code": {
@@ -463,7 +480,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 37 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Cut:ExpressionEngine, fcstd:native:property#DesignedFeature:BaseFeature, fcstd:native:property#DesignedFeature:PreviewShape, fcstd:native:property#DesignedFeature:Profile, fcstd:native:property#DesignedFeature:SuppressedShape, fcstd:native:property#Occurrence:ColoredElements, fcstd:native:property#Occurrence:ElementCount, fcstd:native:property#Occurrence:ElementList, fcstd:native:property#Occurrence:ExpressionEngine, fcstd:native:property#Occurrence:Label2, fcstd:native:property#Occurrence:LinkCopyOnChangeGroup, fcstd:native:property#Occurrence:LinkCopyOnChangeSource, fcstd:native:property#Occurrence:LinkExecute, fcstd:native:property#Occurrence:LinkPlacement, fcstd:native:property#Occurrence:PlacementList, fcstd:native:property#Occurrence:Scale, fcstd:native:property#Occurrence:ScaleList, fcstd:native:property#Occurrence:ScaleVector, fcstd:native:property#Occurrence:ShowElement, fcstd:native:property#Occurrence:Visibility, fcstd:native:property#Occurrence:VisibilityList, fcstd:native:property#Occurrence:_LinkOwner, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Product:Visibility, fcstd:native:property#Profile:ExternalGeo, fcstd:native:property#Profile:ExternalGeometry, fcstd:native:property#Profile:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "message": "the fcstd write omits 31 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Cut:ExpressionEngine, fcstd:native:property#Cylinder:ExpressionEngine, fcstd:native:property#DesignedFeature:BaseFeature, fcstd:native:property#DesignedFeature:ExpressionEngine, fcstd:native:property#DesignedFeature:PreviewShape, fcstd:native:property#DesignedFeature:Profile, fcstd:native:property#DesignedFeature:SuppressedShape, fcstd:native:property#Occurrence:ColoredElements, fcstd:native:property#Occurrence:ElementList, fcstd:native:property#Occurrence:ExpressionEngine, fcstd:native:property#Occurrence:LinkCopyOnChangeGroup, fcstd:native:property#Occurrence:LinkCopyOnChangeSource, fcstd:native:property#Occurrence:LinkPlacement, fcstd:native:property#Occurrence:PlacementList, fcstd:native:property#Occurrence:ScaleList, fcstd:native:property#Occurrence:VisibilityList, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Profile:ExpressionEngine, fcstd:native:property#Profile:ExternalGeo, fcstd:native:property#Profile:ExternalGeometry, fcstd:native:property#Profile:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -651,7 +668,6 @@
                 "fcstd:native:property#Box:AttacherType": "regenerated",
                 "fcstd:native:property#Box:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Box:AttachmentSupport": "written",
-                "fcstd:native:property#Box:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Box:Height": "regenerated",
                 "fcstd:native:property#Box:Label": "regenerated",
                 "fcstd:native:property#Box:Label2": "regenerated",
@@ -666,12 +682,12 @@
                 "fcstd:native:property#Box:Width": "regenerated",
                 "fcstd:native:property#Box:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "written",
+                "fcstd:native:property#CorpusMetadata:Label2": "written",
+                "fcstd:native:property#CorpusMetadata:License": "written",
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Purpose": "written",
+                "fcstd:native:property#CorpusMetadata:Visibility": "written",
                 "fcstd:native:property#Cut:Base": "regenerated",
                 "fcstd:native:property#Cut:History": "written",
                 "fcstd:native:property#Cut:Label": "regenerated",
@@ -688,7 +704,6 @@
                 "fcstd:native:property#Cylinder:AttacherType": "regenerated",
                 "fcstd:native:property#Cylinder:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Cylinder:AttachmentSupport": "written",
-                "fcstd:native:property#Cylinder:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Cylinder:FirstAngle": "regenerated",
                 "fcstd:native:property#Cylinder:Height": "regenerated",
                 "fcstd:native:property#Cylinder:Label": "regenerated",
@@ -703,7 +718,6 @@
                 "fcstd:native:property#Cylinder:ShapeMaterial": "written",
                 "fcstd:native:property#Cylinder:Visibility": "regenerated",
                 "fcstd:native:property#Cylinder:_ElementMapVersion": "written",
-                "fcstd:native:property#DesignedFeature:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DesignedFeature:Label": "regenerated",
                 "fcstd:native:property#DesignedFeature:Label2": "regenerated",
                 "fcstd:native:property#DesignedFeature:Length": "regenerated",
@@ -714,24 +728,33 @@
                 "fcstd:native:property#DesignedFeature:Visibility": "regenerated",
                 "fcstd:native:property#DesignedFeature:_Body": "written",
                 "fcstd:native:property#DesignedFeature:_ElementMapVersion": "written",
+                "fcstd:native:property#Occurrence:ElementCount": "regenerated",
                 "fcstd:native:property#Occurrence:Label": "regenerated",
+                "fcstd:native:property#Occurrence:Label2": "regenerated",
                 "fcstd:native:property#Occurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#Occurrence:LinkCopyOnChange": "regenerated",
                 "fcstd:native:property#Occurrence:LinkCopyOnChangeTouched": "regenerated",
+                "fcstd:native:property#Occurrence:LinkExecute": "regenerated",
                 "fcstd:native:property#Occurrence:LinkTransform": "regenerated",
                 "fcstd:native:property#Occurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#Occurrence:Placement": "regenerated",
-                "fcstd:native:property#Origin001:Label": "regenerated",
-                "fcstd:native:property#Origin001:Label2": "regenerated",
+                "fcstd:native:property#Occurrence:Scale": "regenerated",
+                "fcstd:native:property#Occurrence:ScaleVector": "regenerated",
+                "fcstd:native:property#Occurrence:ShowElement": "regenerated",
+                "fcstd:native:property#Occurrence:Visibility": "regenerated",
+                "fcstd:native:property#Occurrence:_LinkOwner": "regenerated",
+                "fcstd:native:property#Origin001:Label": "written",
+                "fcstd:native:property#Origin001:Label2": "written",
                 "fcstd:native:property#Origin001:Placement": "regenerated",
-                "fcstd:native:property#Origin001:Role": "regenerated",
-                "fcstd:native:property#Origin001:Visibility": "regenerated",
+                "fcstd:native:property#Origin001:Role": "written",
+                "fcstd:native:property#Origin001:Visibility": "written",
                 "fcstd:native:property#Origin001:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:Group": "written",
-                "fcstd:native:property#Origin:Label": "regenerated",
-                "fcstd:native:property#Origin:Label2": "regenerated",
+                "fcstd:native:property#Origin:Label": "written",
+                "fcstd:native:property#Origin:Label2": "written",
+                "fcstd:native:property#Origin:OriginFeatures": "written",
                 "fcstd:native:property#Origin:Placement": "regenerated",
-                "fcstd:native:property#Origin:Visibility": "regenerated",
+                "fcstd:native:property#Origin:Visibility": "written",
                 "fcstd:native:property#Origin:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:_GroupTouched": "written",
                 "fcstd:native:property#Parameters:Label": "regenerated",
@@ -754,6 +777,7 @@
                 "fcstd:native:property#Product:Placement": "regenerated",
                 "fcstd:native:property#Product:Type": "regenerated",
                 "fcstd:native:property#Product:Uid": "written",
+                "fcstd:native:property#Product:Visibility": "regenerated",
                 "fcstd:native:property#Product:_ElementMapVersion": "written",
                 "fcstd:native:property#Product:_GroupTouched": "written",
                 "fcstd:native:property#Profile:ArcFitTolerance": "regenerated",
@@ -763,7 +787,6 @@
                 "fcstd:native:property#Profile:AttachmentSupport": "written",
                 "fcstd:native:property#Profile:Constraints": "regenerated",
                 "fcstd:native:property#Profile:Exports": "written",
-                "fcstd:native:property#Profile:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Profile:ExternalTypes": "written",
                 "fcstd:native:property#Profile:FullyConstrained": "regenerated",
                 "fcstd:native:property#Profile:Geometry": "regenerated",
@@ -779,41 +802,41 @@
                 "fcstd:native:property#Profile:Visibility": "regenerated",
                 "fcstd:native:property#Profile:_ElementMapVersion": "written",
                 "fcstd:native:property#Profile:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#XY_Plane:Label": "regenerated",
-                "fcstd:native:property#XY_Plane:Label2": "regenerated",
+                "fcstd:native:property#XY_Plane:Label": "written",
+                "fcstd:native:property#XY_Plane:Label2": "written",
                 "fcstd:native:property#XY_Plane:Placement": "regenerated",
-                "fcstd:native:property#XY_Plane:Role": "regenerated",
-                "fcstd:native:property#XY_Plane:Visibility": "regenerated",
+                "fcstd:native:property#XY_Plane:Role": "written",
+                "fcstd:native:property#XY_Plane:Visibility": "written",
                 "fcstd:native:property#XY_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#XZ_Plane:Label": "regenerated",
-                "fcstd:native:property#XZ_Plane:Label2": "regenerated",
+                "fcstd:native:property#XZ_Plane:Label": "written",
+                "fcstd:native:property#XZ_Plane:Label2": "written",
                 "fcstd:native:property#XZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#XZ_Plane:Role": "regenerated",
-                "fcstd:native:property#XZ_Plane:Visibility": "regenerated",
+                "fcstd:native:property#XZ_Plane:Role": "written",
+                "fcstd:native:property#XZ_Plane:Visibility": "written",
                 "fcstd:native:property#XZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#X_Axis:Label": "regenerated",
-                "fcstd:native:property#X_Axis:Label2": "regenerated",
+                "fcstd:native:property#X_Axis:Label": "written",
+                "fcstd:native:property#X_Axis:Label2": "written",
                 "fcstd:native:property#X_Axis:Placement": "regenerated",
-                "fcstd:native:property#X_Axis:Role": "regenerated",
-                "fcstd:native:property#X_Axis:Visibility": "regenerated",
+                "fcstd:native:property#X_Axis:Role": "written",
+                "fcstd:native:property#X_Axis:Visibility": "written",
                 "fcstd:native:property#X_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#YZ_Plane:Label": "regenerated",
-                "fcstd:native:property#YZ_Plane:Label2": "regenerated",
+                "fcstd:native:property#YZ_Plane:Label": "written",
+                "fcstd:native:property#YZ_Plane:Label2": "written",
                 "fcstd:native:property#YZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#YZ_Plane:Role": "regenerated",
-                "fcstd:native:property#YZ_Plane:Visibility": "regenerated",
+                "fcstd:native:property#YZ_Plane:Role": "written",
+                "fcstd:native:property#YZ_Plane:Visibility": "written",
                 "fcstd:native:property#YZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#Y_Axis:Label": "regenerated",
-                "fcstd:native:property#Y_Axis:Label2": "regenerated",
+                "fcstd:native:property#Y_Axis:Label": "written",
+                "fcstd:native:property#Y_Axis:Label2": "written",
                 "fcstd:native:property#Y_Axis:Placement": "regenerated",
-                "fcstd:native:property#Y_Axis:Role": "regenerated",
-                "fcstd:native:property#Y_Axis:Visibility": "regenerated",
+                "fcstd:native:property#Y_Axis:Role": "written",
+                "fcstd:native:property#Y_Axis:Visibility": "written",
                 "fcstd:native:property#Y_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#Z_Axis:Label": "regenerated",
-                "fcstd:native:property#Z_Axis:Label2": "regenerated",
+                "fcstd:native:property#Z_Axis:Label": "written",
+                "fcstd:native:property#Z_Axis:Label2": "written",
                 "fcstd:native:property#Z_Axis:Placement": "regenerated",
-                "fcstd:native:property#Z_Axis:Role": "regenerated",
-                "fcstd:native:property#Z_Axis:Visibility": "regenerated",
+                "fcstd:native:property#Z_Axis:Role": "written",
+                "fcstd:native:property#Z_Axis:Visibility": "written",
                 "fcstd:native:property#Z_Axis:_ElementMapVersion": "written"
               }
             },

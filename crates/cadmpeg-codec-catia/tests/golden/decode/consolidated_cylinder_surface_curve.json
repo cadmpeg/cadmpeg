@@ -635,14 +635,7 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#brep-stream",
-            "links": [
-              "catia:standard:surf#0",
-              "catia:standard:surf#1",
-              "catia:consolidated:cylinder#2",
-              "catia:standard:circle#0",
-              "catia:consolidated:curve#1"
-            ]
+            "id": "catia:payload:unknown#brep-stream"
           }
         ],
         "value_blocks": [],
@@ -1188,9 +1181,6 @@
         },
         "catia:payload:unknown#brep-stream": {
           "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          },
           "scope": "entity"
         },
         "catia:standard:body#unbound-points": {
