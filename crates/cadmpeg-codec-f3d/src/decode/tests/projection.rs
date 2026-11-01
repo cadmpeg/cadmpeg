@@ -1359,7 +1359,12 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = mesh_texture_asset(&ctx, scan, &file, &asset);
             if admitted {
-                assert_eq!(result.unwrap().id, asset);
+                let projected = result.unwrap();
+                assert_eq!(projected.id, asset);
+                assert_eq!(
+                    projected.native_ref.as_deref(),
+                    Some("f3d:FusionAssetName[Active]/Textures/a.png:mesh-texture#0")
+                );
             } else {
                 assert!(matches!(
                     result,
