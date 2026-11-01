@@ -55,3 +55,158 @@ pub(crate) fn body_type() -> TypeRegistration<'static> {
         &[350],
     )
 }
+
+/// Body-container record of [`history_only_design`].
+#[derive(Clone, Copy)]
+pub(crate) enum HistoryOnlyContainer<'a> {
+    /// No registered Body container.
+    Absent,
+    /// A version-4 container that lists these Body entities.
+    Lists(&'a [u64]),
+    /// A registered version-4 container whose frame has no membership.
+    Malformed,
+    /// A container that lists these entities, registered at another version.
+    OtherVersion(&'a [u64]),
+    /// An admitted empty list and a second registered container with no membership.
+    ListsAndMalformed,
+}
+
+/// Design with one body-map pair `(0, 350)` naming `blob`, an optional browser
+/// node for entity 350, and one Body-container form.
+pub(crate) fn history_only_design(
+    blob: &str,
+    hidden: Option<bool>,
+    container: HistoryOnlyContainer<'_>,
+) -> (Vec<u8>, Vec<u8>) {
+    history_only_pairs_design(blob, &[(0, 350, hidden)], container)
+}
+
+/// Design with one body map naming `blob` and holding one pair per
+/// `(selector, entity, hidden flag)` row. A row with no flag has no browser node.
+pub(crate) fn history_only_pairs_design(
+    blob: &str,
+    pairs: &[(u64, u64, Option<bool>)],
+    container: HistoryOnlyContainer<'_>,
+) -> (Vec<u8>, Vec<u8>) {
+    const COMPONENT: u64 = 40;
+    let mut bulk = Vec::new();
+    let mut records = Vec::new();
+    records.push((900, u64_from_index(bulk.len())));
+    indexed_header(&mut bulk, *b"256", 900);
+    bulk.extend_from_slice(&[0; 10]);
+    bulk.extend_from_slice(&u32::try_from(pairs.len()).unwrap().to_le_bytes());
+    for (selector, entity, _) in pairs {
+        bulk.extend_from_slice(&selector.to_le_bytes());
+        bulk.extend_from_slice(&entity.to_le_bytes());
+    }
+    bulk.extend_from_slice(&1793_u64.to_le_bytes());
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    super::lp_utf16(&mut bulk, blob);
+    let mut nodes = Vec::new();
+    for (ordinal, (_, entity, hidden)) in (0_u32..).zip(pairs) {
+        let Some(hidden) = hidden else {
+            continue;
+        };
+        let record = 100 + ordinal;
+        nodes.push(u64::from(record));
+        records.push((u64::from(record), u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"257", record);
+        bulk.extend_from_slice(&[0; 10]);
+        super::lp_utf16(&mut bulk, &format!("11111111-2222-8333-A444-{record:012}"));
+        bulk.push(u8::from(*hidden));
+        bulk.extend_from_slice(&[1, 1]);
+        bulk.extend_from_slice(&entity.to_le_bytes());
+    }
+    let entities = pairs
+        .iter()
+        .map(|(_, entity, _)| *entity)
+        .collect::<Vec<_>>();
+    for entity in &entities {
+        records.push((*entity, u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"258", u32::try_from(*entity).unwrap());
+    }
+    let mut frame = |bulk: &mut Vec<u8>, class_tag: [u8; 3], record: u32, tail: Option<&[u64]>| {
+        records.push((u64::from(record), u64_from_index(bulk.len())));
+        indexed_header(bulk, class_tag, record);
+        let Some(bodies) = tail else {
+            bulk.extend_from_slice(&[7; 9]);
+            return;
+        };
+        bulk.extend_from_slice(&u32::try_from(bodies.len()).unwrap().to_le_bytes());
+        let references = bodies
+            .iter()
+            .map(|body| {
+                (
+                    *body,
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+                )
+            })
+            .chain([(COMPONENT, crate::records::body_ownership::COMPONENT_GUID)]);
+        for (target, guid) in references {
+            bulk.push(1);
+            bulk.extend_from_slice(&target.to_le_bytes());
+            lp_ascii(bulk, guid);
+            bulk.extend_from_slice(&[0, 0]);
+        }
+    };
+    let mut containers = Vec::new();
+    let mut other_version = Vec::new();
+    match container {
+        HistoryOnlyContainer::Absent => {}
+        HistoryOnlyContainer::Lists(bodies) => {
+            containers.push(501);
+            frame(&mut bulk, *b"260", 501, Some(bodies));
+        }
+        HistoryOnlyContainer::Malformed => {
+            containers.push(501);
+            frame(&mut bulk, *b"260", 501, None);
+        }
+        HistoryOnlyContainer::OtherVersion(bodies) => {
+            other_version.push(501);
+            frame(&mut bulk, *b"261", 501, Some(bodies));
+        }
+        HistoryOnlyContainer::ListsAndMalformed => {
+            containers.extend([501, 502]);
+            frame(&mut bulk, *b"260", 501, Some(&[]));
+            frame(&mut bulk, *b"260", 502, None);
+        }
+    }
+    let mut types = vec![
+        (
+            crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+            crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+            "Body",
+            &[900][..],
+        ),
+        (
+            crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+            "Fusion",
+            &nodes,
+        ),
+        (
+            body_type().0,
+            body_type().1,
+            body_type().2,
+            body_type().3,
+            &entities,
+        ),
+        (
+            crate::records::body_ownership::COMPONENT_GUID,
+            crate::records::body_ownership::CONTAINER_BASE_GUID,
+            1,
+            "Body",
+            &[COMPONENT][..],
+        ),
+        container_type(&containers),
+    ];
+    if !other_version.is_empty() {
+        let mut registration = container_type(&other_version);
+        registration.2 = 3;
+        types.push(registration);
+    }
+    let meta = super::streams_test::design_metastream_with_records(&types, &records);
+    (bulk, meta)
+}

@@ -59,6 +59,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
             DesignBodyBinding::try_from(DesignBodyBindingWire {
                 component_owner: None,
                 component_owner_unresolved: false,
+                history_only: false,
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,
@@ -101,6 +102,61 @@ fn body_bounds_valid_binding_order_has_no_finding() {
         super::super::validate_body_bounds(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
+}
+
+fn history_only_binding(
+    extra: serde_json::Value,
+) -> Result<crate::records::bodies::DesignBodyBinding, serde_json::Error> {
+    let mut value = serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:design-body-binding#50",
+        "stream": "Design/BulkStream.dat",
+        "pair_count": 1,
+        "pair_ordinal": 0,
+        "asm_body_key": 1,
+        "asm_body_key_offset": 50,
+        "entity_suffix": 1,
+        "entity_suffix_offset": 58,
+        "blob_name": "BREP.body",
+        "blob_name_offset": 60,
+        "history_only": true,
+    });
+    for (key, field) in extra.as_object().unwrap() {
+        value[key] = field.clone();
+    }
+    serde_json::from_value(value)
+}
+
+#[test]
+fn history_only_binding_names_no_solved_body_or_owner_and_no_retained_key() {
+    assert!(history_only_binding(serde_json::json!({})).is_ok());
+    assert!(history_only_binding(serde_json::json!({"body": "f3d:brep:entity#1"})).is_err());
+    assert!(history_only_binding(serde_json::json!({"component_owner_unresolved": true})).is_err());
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native
+            .design_body_bindings
+            .push(history_only_binding(serde_json::json!({})).unwrap());
+        let findings = |native: &crate::native::F3dNative| {
+            let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
+            findings
+        };
+        assert!(findings(&native).is_empty());
+        native.body_native_keys.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:asm:body-native-key#1",
+                "body": "f3d:brep:entity#1",
+                "asm_body_key": 1,
+                "body_ordinal": 0,
+                "record_index": 1,
+                "source_brep": "BREP.body",
+            }))
+            .unwrap(),
+        );
+        assert_eq!(findings(&native).len(), 1);
+    });
 }
 
 #[test]
