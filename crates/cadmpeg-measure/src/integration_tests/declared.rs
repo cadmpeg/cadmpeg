@@ -33,7 +33,7 @@ fn definition(ir: &mut CadIr, bodies: Vec<BodyId>) -> ProductDefinitionId {
         label: None,
         description: None,
         part_number: None,
-        bom_properties: Default::default(),
+        bom_properties: std::collections::BTreeMap::new(),
         bodies,
         sketches: Vec::new(),
         native_ref: None,
