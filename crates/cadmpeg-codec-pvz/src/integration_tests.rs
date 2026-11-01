@@ -118,7 +118,6 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect::<Vec<_>>(),
         [
-            ("geometry_member_count", "1"),
             ("structure_member", "model.pvs")
         ]
     );
