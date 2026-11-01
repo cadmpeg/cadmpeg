@@ -635,6 +635,16 @@ unrelated preceding feature as the pattern seed.
 
 **Need.** We must know the framing to add or remove a relation row. Without it, the writer refuses both.
 
+### DI-48. Class of a repeated class token
+
+**Question.** Which feature-input class does a repeated class token name, and which of the class and the `Type` token selects the Boolean operation of an extrusion?
+
+**Known.** `sldprt.md` §2 "Keywords `Feature` elements use the `Type` attribute" gives the class of instances with the same `Type` token and the same class token. `sldprt.md` §2 "An extrusion feature-input object stores a little-endian u32 form code" gives the place of the class token. A repeated class token is the archive map index of its class with the high bit set. On native parts, the `Boss-Extrude` instances after the first carry the repeated class token that a `Cut-Extrude` instance carries, and the archive walk reads `moICE_c` for those objects. The first `Boss-Extrude` instance declares `moExtrusion_c`. One such `Boss-Extrude` instance stores form code `5`.
+
+**Need.** We must bind each history feature to its own class, and give an extrusion its Boolean operation.
+
+**Conflict.** The decoder gives an unbound instance the class of its `Type` siblings, so these `Boss-Extrude` instances take `moExtrusion_c`. The serialized feature-input lanes do not hold the archive class map, so a validator cannot find the class of a repeated class token from them. The decoder maps form code `5` under `moICE_c` to a cut, and the `Type` token gives a boss.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
