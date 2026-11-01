@@ -228,11 +228,6 @@ pub enum AppearanceTarget {
         /// Identity of a record in that arena.
         id: String,
     },
-    /// Native presentation carrier without a neutral geometry arena.
-    Source {
-        /// Native source entity identity.
-        source_id: String,
-    },
 }
 
 impl AppearanceTarget {

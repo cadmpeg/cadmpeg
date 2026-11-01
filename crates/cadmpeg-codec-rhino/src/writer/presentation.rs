@@ -66,9 +66,6 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
             arena: *arena,
             id: id.clone(),
         },
-        AppearanceTarget::Source { source_id } => AttributeTarget::Source {
-            source_id: source_id.clone(),
-        },
     };
     ir.model.attributes.iter().find_map(|attribute| {
         if attribute.target != attribute_target || attribute.name != "name" {

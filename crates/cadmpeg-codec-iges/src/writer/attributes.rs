@@ -52,7 +52,6 @@ fn native_encoding_matches(
 
 fn owners(
     ir: &CadIr,
-    record: &NativeRecord,
     fields: &fields::Fields<'_>,
     targets: &Targets,
 ) -> Option<Vec<usize>> {
@@ -68,7 +67,7 @@ fn owners(
             }
         }
         Some(owners)
-    } else if fields.is_self_owned(record) {
+    } else if fields.is_self_owned() {
         Some(Vec::new())
     } else {
         fields
@@ -108,7 +107,6 @@ fn target_id<'a>(ir: &CadIr, target: &'a AttributeTarget) -> Option<&'a str> {
         AttributeTarget::Record { arena, id } => {
             ir.model.contains_record(*arena, id).then_some(id.as_str())
         }
-        AttributeTarget::Source { source_id } => Some(source_id),
     }
 }
 
@@ -422,7 +420,7 @@ pub(super) fn append(
                     let mut complete = true;
                     let mut unchanged = groups.len() == 1;
                     for fields in groups {
-                        let Some(owners) = owners(ir, record, &fields, &targets) else {
+                        let Some(owners) = owners(ir, &fields, &targets) else {
                             omitted(
                                 &mut result.losses,
                                 record.id(),
@@ -439,7 +437,7 @@ pub(super) fn append(
                                     &entity,
                                     |native| properties::encode(record, native, &targets),
                                     |native| {
-                                        self::owners(ir, record, native, &targets).as_ref()
+                                        self::owners(ir, native, &targets).as_ref()
                                             == Some(&owners)
                                     },
                                 );

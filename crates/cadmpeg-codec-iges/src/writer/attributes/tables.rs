@@ -271,7 +271,7 @@ pub(super) fn append(
                     fields::Family::Definition,
                     &entity,
                     |native| definition(record, native, targets),
-                    |native| fields.is_self_owned(record) && native.is_self_owned(record),
+                    |native| fields.is_self_owned() && native.is_self_owned(),
                 );
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
@@ -314,7 +314,7 @@ pub(super) fn append(
                     fields::Family::Instance,
                     &entity,
                     |native| instance(record, definition, *index, native, targets),
-                    |native| fields.is_self_owned(record) && native.is_self_owned(record),
+                    |native| fields.is_self_owned() && native.is_self_owned(),
                 );
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))

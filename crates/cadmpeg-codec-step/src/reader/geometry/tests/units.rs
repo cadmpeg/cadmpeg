@@ -262,15 +262,6 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             .count(),
         2
     );
-    assert!(result
-        .ir()
-        .model
-        .appearance_bindings
-        .iter()
-        .all(|binding| !matches!(
-            binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Source { .. }
-        )));
     assert!(!result
         .ir()
         .model

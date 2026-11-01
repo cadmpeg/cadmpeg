@@ -299,13 +299,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Self::Drawing(id) => id.visit_identity_references(ctx, visitor),
             Self::ViewPresentation(id) => id.visit_identity_references(ctx, visitor),
             Self::Record { id, .. } => visitor(id),
-            Self::Source { source_id } => {
-                if crate::ids::Identity::admit_text(source_id.clone()).is_ok() {
-                    visitor(source_id)
-                } else {
-                    Ok(())
-                }
-            }
         }
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
@@ -345,13 +338,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Self::Record { arena, id } => Self::Record {
                 arena,
                 id: map.identity(&id)?,
-            },
-            Self::Source { source_id } => Self::Source {
-                source_id: if crate::ids::Identity::admit_text(source_id.clone()).is_ok() {
-                    map.identity(&source_id)?
-                } else {
-                    source_id
-                },
             },
         })
     }
