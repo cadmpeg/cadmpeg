@@ -88,7 +88,6 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
     crate::decode::Scan::new(
         crate::container::Container {
             data: Vec::new().into(),
-            physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
             fastload_table: None,

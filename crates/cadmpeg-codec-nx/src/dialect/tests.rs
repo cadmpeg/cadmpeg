@@ -32,7 +32,6 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
     let empty: &[u8] = &[];
     Container {
         data: empty.into(),
-        physical_size: 0,
         layout: if legacy_cfb {
             crate::container::ContainerLayout::LegacyCfb { version }
         } else {
