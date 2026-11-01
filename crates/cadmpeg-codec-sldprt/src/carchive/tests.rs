@@ -554,15 +554,20 @@ fn a_text_writes_a_normal_and_a_font_identifier_per_character() {
     let arena = DecodeArena::new();
     let (ctx, _root) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
-    let mut bytes = text_head(1);
-    put_f64s(&mut bytes, &[1.0, 2.0, 3.0]);
+    // Two characters: three f64 and a u32 each, then a normal and a font
+    // identifier each, then the flags and u32 0.
+    let mut bytes = text_head_of(&TEXT_AB, 2);
+    put_f64s(&mut bytes, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
     put_u32(&mut bytes, 1);
+    put_u32(&mut bytes, 2);
     put_f64s(&mut bytes, &[-1.0, 0.0]);
     bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    put_f64s(&mut bytes, &[0.0, -1.0]);
+    bytes.extend_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
     put_u32(&mut bytes, 1);
     put_u32(&mut bytes, 0);
     bytes.extend(text_after_characters());
-    bytes.extend_from_slice(&TEXT);
+    bytes.extend_from_slice(&TEXT_AB);
     bytes.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
     let mut reader = reader_over(&ctx, &bytes);
     super::rules::sketch::dimtext(&mut reader).expect("text with a vertical normal");
@@ -609,10 +614,18 @@ fn a_text_on_a_path_finds_its_frame_after_a_line_reference_gap() {
 /// The text `A` as a Unicode `CString`.
 const TEXT: [u8; 6] = [0xff, 0xfe, 0xff, 0x01, b'A', 0];
 
+/// The text `AB` as a Unicode `CString`.
+const TEXT_AB: [u8; 8] = [0xff, 0xfe, 0xff, 0x02, b'A', 0, b'B', 0];
+
 /// A `moDimText_c` up to its character data: the text, its position, u32
 /// `3`, a null format with empty outlines, two u32 and the character count.
 fn text_head(characters: u32) -> Vec<u8> {
-    let mut bytes = TEXT.to_vec();
+    text_head_of(&TEXT, characters)
+}
+
+/// [`text_head`] for the text `text`.
+fn text_head_of(text: &[u8], characters: u32) -> Vec<u8> {
+    let mut bytes = text.to_vec();
     put_f64s(&mut bytes, &[1.0, 2.0, 3.0]);
     put_u32(&mut bytes, 3);
     bytes.extend_from_slice(&[0, 0]);
