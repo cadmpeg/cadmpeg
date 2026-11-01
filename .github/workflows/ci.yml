@@ -347,6 +347,38 @@ jobs:
         with:
           tool: cargo-nextest
 
+      - name: Install compiler cache
+        id: install_compiler_cache
+        continue-on-error: true
+        uses: taiki-e/install-action@v2.87.32
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+
+      - name: Select compiler cache key
+        id: compiler_cache_key
+        if: steps.install_compiler_cache.outcome == 'success'
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler cache
+        id: compiler_cache
+        if: steps.install_compiler_cache.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/compiler-cache
+          key: workspace-sccache-v1-0.16.0-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ steps.compiler_cache_key.outputs.week }}
+          restore-keys: |
+            workspace-sccache-v1-0.16.0-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
+
+      - name: Enable workspace compiler cache
+        id: enable_compiler_cache
+        if: steps.install_compiler_cache.outcome == 'success'
+        run: |
+          echo "RUSTC_WORKSPACE_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=$RUNNER_TEMP/compiler-cache" >> "$GITHUB_ENV"
+          echo "SCCACHE_CACHE_SIZE=400M" >> "$GITHUB_ENV"
+
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation.
@@ -386,6 +418,18 @@ jobs:
         # Reuses the library builds the Rust gate made; on its own job this
         # would pay for the whole workspace again.
         run: python3 scripts/ci_cargo.py test --doc
+
+      - name: Finish compiler cache
+        if: ${{ !cancelled() && steps.enable_compiler_cache.outcome == 'success' }}
+        run: sccache --stop-server || true
+
+      - name: Save compiler cache
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.enable_compiler_cache.outcome == 'success' && steps.compiler_cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/compiler-cache
+          key: workspace-sccache-v1-0.16.0-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ steps.compiler_cache_key.outputs.week }}
 
   layout:
     needs: changes
