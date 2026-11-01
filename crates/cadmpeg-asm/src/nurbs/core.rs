@@ -182,12 +182,22 @@ pub(super) fn owned_surface_cache(
         )
         .transpose()
         .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker)));
-        return surface_block(tokens, cache_marker?).map(|(surface, _)| Ok(surface));
+        return surface_cache_with_fit(tokens, cache_marker?).map(Ok);
     }
     scope
         .owned_marker_positions()
         .into_iter()
-        .find_map(|pos| surface_block(tokens, pos).map(|(surface, _)| Ok(surface)))
+        .find_map(|pos| surface_cache_with_fit(tokens, pos).map(Ok))
+}
+
+fn surface_cache_with_fit(tokens: &[Token], marker: usize) -> Option<NurbsSurface> {
+    let (mut surface, end) = surface_block(tokens, marker)?;
+    if let Some(Token::Double(value)) = tokens.get(end) {
+        surface.set_cache_fit_tolerance(Some(
+            cadmpeg_ir::geometry::FitTolerance::try_new(value * LEN_TO_MM).ok()?,
+        ));
+    }
+    Some(surface)
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
@@ -642,6 +652,44 @@ mod tests {
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn selected_surface_cache_retains_its_fit_in_model_units() {
+        use crate::sab::Token;
+        let mut tokens = vec![Token::Ident("nubs".into()), Token::Long(1), Token::Long(1)];
+        tokens.extend([
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ]);
+        for _ in 0..2 {
+            tokens.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
+        }
+        for point in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.push(Token::Double(0.025));
+        let surface = super::surface_cache_with_fit(&tokens, 0).expect("cache with fit");
+        assert_eq!(surface.cache_fit_tolerance().expect("fit").get(), 0.25);
+        tokens.pop();
+        assert!(super::surface_cache_with_fit(&tokens, 0)
+            .expect("cache")
+            .cache_fit_tolerance()
+            .is_none());
+    }
 
     #[test]
     fn cacheless_surface_does_not_borrow_a_referenced_support_cache() {

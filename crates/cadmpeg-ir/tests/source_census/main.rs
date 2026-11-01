@@ -406,6 +406,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "ProceduralCurveDefinitionWire::Exact",
     ),
     (
+        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
+        "NurbsSurface",
+        "cache_fit_tolerance",
+        "NurbsSurfaceWire",
+    ),
+    (
         "crates/cadmpeg-ir/src/geometry.rs",
         "ProceduralCurveDefinition",
         "version",
@@ -846,6 +852,7 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
     ("HoleShapeWire", "HoleShape"),
+    ("NurbsSurfaceWire", "NurbsSurface"),
     ("SweepCircularRegionWire", "SweepCircularRegion"),
     ("TreeChildrenWire", "TreeChildren"),
     // `TSplineSubtransform` writes its `Inline` form by delegating to
