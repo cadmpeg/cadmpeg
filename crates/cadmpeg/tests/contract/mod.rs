@@ -32,6 +32,11 @@ fn sampled_paths(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
 
 mod conformance;
 mod golden_data;
+mod support;
+
+mod cut_short;
+mod damaged_part;
+mod no_unexpected_give_ups;
 
 #[cfg(feature = "step")]
 mod one_home;
