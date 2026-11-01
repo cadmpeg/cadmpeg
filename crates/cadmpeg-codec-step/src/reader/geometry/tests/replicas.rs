@@ -75,9 +75,10 @@ fn placement_projection_keeps_reciprocal_normalization_bits() {
 
 #[test]
 fn placement_2d_axes_keep_hypot_normalization_bits() {
+    use cadmpeg_ir::math::portable::Portable;
     use cadmpeg_ir::units::HypotDirection2;
     let old_normalize = |u: f64, v: f64| {
-        let length = u.hypot(v);
+        let length = u.portable_hypot(v);
         Point2::new(u / length, v / length)
     };
     let source_x = old_normalize(3.0, 4.0);

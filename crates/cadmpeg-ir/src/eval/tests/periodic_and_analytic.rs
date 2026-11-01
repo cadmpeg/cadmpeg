@@ -1,3 +1,4 @@
+use crate::math::portable::Portable;
 use cadmpeg_test_support::edit;
 
 use crate::examples::unit_cube;
@@ -269,8 +270,8 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
         0.5,
     )
     .unwrap();
-    assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
-    assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
+    assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.portable_cosh());
+    assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.portable_sinh());
     assert_eq!(point.z, 3.0);
 }
 

@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::test_support::appearance::sldprt_with_body_and_material;
@@ -485,8 +486,14 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         .unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
         let endpoints = [
-            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
-            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
+            cadmpeg_ir::math::Point2::new(
+                100.0 + 800.0 * 0.25f64.portable_cos(),
+                800.0 * 0.25f64.portable_sin(),
+            ),
+            cadmpeg_ir::math::Point2::new(
+                100.0 + 800.0 * 1.25f64.portable_cos(),
+                800.0 * 1.25f64.portable_sin(),
+            ),
         ];
         for entity in &mut ir_edit.model.sketch_entities {
             edit::replace(&mut entity.geometry, |previous| {
