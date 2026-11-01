@@ -275,10 +275,6 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["offset_store_control_count"], "1");
-    assert_eq!(attributes["classified_offset_store_control_count"], "0");
-    assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Other
             && loss

@@ -12,13 +12,12 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{offset_store_control_counts, Scan};
+use super::Scan;
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{FaceLoopFailure, Graph, Node};
-use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -1661,62 +1660,6 @@ pub(super) fn source_meta(
     parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    insert_source_attribute(&mut attributes, "file_size", scan.container.physical_size);
-    insert_source_attribute(
-        &mut attributes,
-        "directory_entries",
-        scan.container.entries.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "header_entry_count",
-        scan.container.entry_count(crate::container::Region::Header),
-    );
-    if let crate::container::ContainerLayout::Modern {
-        footer: Some(footer),
-        ..
-    } = scan.container.layout
-    {
-        insert_source_attribute(
-            &mut attributes,
-            "footer_entry_count",
-            scan.container.entry_count(crate::container::Region::Footer),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "footer_fingerprint",
-            format_args!("{:08x}", assemble_u32_be(footer.fingerprint)),
-        );
-    }
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
-    if control_count != 0 {
-        insert_source_attribute(&mut attributes, "offset_store_control_count", control_count);
-        insert_source_attribute(
-            &mut attributes,
-            "classified_offset_store_control_count",
-            classified_control_count,
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "unclassified_offset_store_control_count",
-            control_count - classified_control_count,
-        );
-    }
-    insert_source_attribute(
-        &mut attributes,
-        "partition_streams",
-        scan.count(StreamKind::Partition),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "deltas_streams",
-        scan.count(StreamKind::Deltas),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "plain_streams",
-        scan.count(StreamKind::Plain),
-    );
     for (index, path) in scan
         .container
         .external_reference_paths()
@@ -1727,13 +1670,6 @@ pub(super) fn source_meta(
             &mut attributes,
             format_args!("external_reference.{index}"),
             path,
-        );
-    }
-    if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
-        insert_source_attribute(
-            &mut attributes,
-            "rmfastload_active_object_count",
-            table.object_ids.as_slice().len(),
         );
     }
     let mut preview_count = 0usize;
@@ -1778,20 +1714,8 @@ pub(super) fn source_meta(
             format_args!("jpeg_preview_{preview_count}_components"),
             components,
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_byte_len"),
-            payload.len(),
-        );
-
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_sha256"),
-            LowerHex(&sha256(payload)),
-        );
         preview_count += 1;
     }
-    insert_source_attribute(&mut attributes, "jpeg_preview_count", preview_count);
     for (index, (ordinal, stream)) in scan
         .streams
         .iter()
@@ -1806,14 +1730,6 @@ pub(super) fn source_meta(
             uncached = crate::records::DeltasRecords::read(&stream.inflated)?;
             &uncached
         };
-        let census = owner.census();
-        for (key, value) in [
-            ("instances", census.instance_count()),
-            ("schemas", census.schema_count()),
-            ("bytes_decoded", census.bytes_decoded()),
-        ] {
-            insert_source_attribute(&mut attributes, format_args!("deltas.{index}.{key}"), value);
-        }
         insert_source_attribute(
             &mut attributes,
             format_args!("deltas.{index}.selection"),
@@ -1824,23 +1740,11 @@ pub(super) fn source_meta(
             format_args!("deltas.{index}.grammar"),
             "sequential_owned_records",
         );
-        if let crate::records::deltas::DeltasEnd::Stopped { offset, reason } = owner.end() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.stop_offset"),
-                offset,
-            );
+        if let crate::records::deltas::DeltasEnd::Stopped { reason, .. } = owner.end() {
             insert_source_attribute(
                 &mut attributes,
                 format_args!("deltas.{index}.stop_reason"),
                 format_args!("{reason:?}"),
-            );
-        }
-        for (name, count) in census.full_counts() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.full.{name}"),
-                count,
             );
         }
     }
@@ -1875,7 +1779,6 @@ mod tests {
         Scan::new(
             Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,

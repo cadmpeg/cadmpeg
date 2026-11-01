@@ -704,7 +704,6 @@ mod tests {
         let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
             data: data.into(),
-            physical_size: len,
             layout: crate::container::test_modern_layout(0x06),
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),

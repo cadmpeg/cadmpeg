@@ -74,15 +74,10 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["jpeg_preview_count"], "1");
     assert_eq!(attributes["jpeg_preview_0_width"], "247");
     assert_eq!(attributes["jpeg_preview_0_height"], "185");
     assert_eq!(attributes["jpeg_preview_0_precision"], "8");
     assert_eq!(attributes["jpeg_preview_0_components"], "3");
-    assert_eq!(
-        attributes["jpeg_preview_0_byte_len"],
-        preview.len().to_string()
-    );
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
     assert_eq!(

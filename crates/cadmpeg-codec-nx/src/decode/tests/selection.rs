@@ -974,15 +974,6 @@ fn decode_retains_every_rmfastload_active_body() {
 
     assert_eq!(result.ir().model.bodies.len(), 2);
     assert_eq!(result.ir().model.faces.len(), 100);
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get("rmfastload_active_body_count"))
-            .map(String::as_str),
-        Some("2")
-    );
     assert!(result
         .report()
         .losses
@@ -1057,15 +1048,6 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
             .and_then(|source| source.attributes.get("active_body_selector"))
             .map(String::as_str),
         Some("terminal_feature_body_lineage")
-    );
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get("feature_terminal_body_count"))
-            .map(String::as_str),
-        Some("2")
     );
     assert!(result
         .report()
