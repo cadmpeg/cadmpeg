@@ -436,7 +436,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "start",
                 "position": [
                   0.0,
@@ -445,7 +444,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "end",
                 "position": [
                   0.0,
@@ -455,8 +453,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#9",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D9:0:0"
+            "tolerance": 0.001
           }
         ],
         "cards": [
@@ -1247,7 +1244,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "284c5a3e95f750b13f974ba1ca7c9931dcd2e5aec7ce949819f98d077f021517",
+    "decode_digest": "2cc9bc2ef7577d7c2882616ca87b08d6430d642f92d41b8bf8403c6ab9a436fc",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

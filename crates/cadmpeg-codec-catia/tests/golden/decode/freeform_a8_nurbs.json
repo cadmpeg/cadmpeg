@@ -170,10 +170,7 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#freeform",
-            "links": [
-              "catia:a8:surf#0"
-            ]
+            "id": "catia:payload:unknown#freeform"
           }
         ],
         "value_blocks": [],
@@ -590,9 +587,6 @@
       "exactness": {
         "catia:payload:unknown#freeform": {
           "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          },
           "scope": "entity"
         }
       },

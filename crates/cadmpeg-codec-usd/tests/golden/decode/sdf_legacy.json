@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -20,7 +19,6 @@
         {
           "id": "usd:stage:occurrence#/Legacy",
           "name": "Legacy",
-          "native_ref": "/Legacy",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -29,11 +27,6 @@
             "definition": "usd:stage:definition#/Legacy",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -68,7 +61,6 @@
         {
           "id": "usd:stage:definition#/Legacy",
           "kind": "group",
-          "native_ref": "/Legacy",
           "source_name": "Legacy"
         }
       ],
@@ -88,6 +80,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "meters_per_unit": "0.01",
@@ -133,10 +129,14 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "unrepresented": []
   }
 }

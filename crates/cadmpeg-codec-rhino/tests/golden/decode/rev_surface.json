@@ -241,10 +241,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:surface#record-000000-offset-177"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],

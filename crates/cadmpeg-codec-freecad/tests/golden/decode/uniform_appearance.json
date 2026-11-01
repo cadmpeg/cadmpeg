@@ -560,57 +560,6 @@
               "value": true
             }
           ]
-        },
-        {
-          "id": "fcstd:model:attribute#Box:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Box:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Box:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Box:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Box"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Box:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Box:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
         }
       ],
       "bodies": [

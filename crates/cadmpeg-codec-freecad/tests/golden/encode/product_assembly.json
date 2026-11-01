@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 76289,
-      "payload_sha256": "8324e7cba2e68daf483d07a04cf76f76fec02768220c93cf519f4ce4f2262304"
+      "payload_len": 79929,
+      "payload_sha256": "a88ed2c362f4a4449b35e2a0a54a69d673824d810bd91dbfdc9fbc568f830336"
     },
     {
       "name": "BracketPrototype.brp",
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 174,
+        "attributes": 124,
         "bodies": 2,
         "coedges": 30,
         "colliders": 0,
@@ -98,11 +98,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
-        "assembly_joints": "reported",
+        "articulations": "omitted",
+        "assembly_joints": "written",
         "assets": "dropped",
         "attributes": "reported",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -110,28 +112,33 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "reported",
+        "features": "written",
         "loops": "written",
-        "occurrences": "reported",
-        "parameters": "reported",
+        "mass_properties": "omitted",
+        "occurrences": "written",
+        "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "reported",
         "presentation_layers": "dropped",
         "procedural_curves": "written",
         "procedural_surfaces": "written",
-        "product_definitions": "reported",
+        "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
-        "sketch_constraints": "reported",
-        "sketch_entities": "reported",
-        "sketches": "reported",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
-        "spreadsheets": "reported",
+        "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
         "tessellations": "dropped",
@@ -174,1166 +181,6 @@
         },
         "message": "native property fcstd:native:property#RevoluteJoint:Reference2 refers to an omitted object",
         "severity": "info"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:Id:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:License:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:LicenseURL:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:Origin:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Assembly:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExternalOccurrence:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#GroundBracket:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:ElementList:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:LinkMode:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Origin001:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Origin:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:ElementList:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PrototypeGroup:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PrototypeGroup:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#RevoluteJoint:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XY_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#X_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#YZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Y_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Z_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
       },
       {
         "code": {
@@ -1437,13 +284,843 @@
       },
       {
         "code": {
-          "code": "feature.not-transferred",
-          "kind": "parametric_record_omitted",
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "object Origin property OriginFeatures refers to an omitted record and is removed",
-        "severity": "error"
+        "message": "attribute fcstd:model:attribute#Assembly:Id:property conflicts with operation property Id",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:License:property conflicts with operation property License",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:LicenseURL:property conflicts with operation property LicenseURL",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:Origin:property conflicts with operation property Origin",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:ElementCount:property conflicts with operation property ElementCount",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkExecute:property conflicts with operation property LinkExecute",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:ShowElement:property conflicts with operation property ShowElement",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketPrototype:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketPrototype:PartNumber:property conflicts with operation property PartNumber",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ElementCount:property conflicts with operation property ElementCount",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkExecute:property conflicts with operation property LinkExecute",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ShowElement:property conflicts with operation property ShowElement",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ElementCount:property conflicts with operation property ElementCount",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkExecute:property conflicts with operation property LinkExecute",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ShowElement:property conflicts with operation property ShowElement",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#OccurrenceGroup:ElementList:property conflicts with operation property ElementList",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#OccurrenceGroup:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#OccurrenceGroup:LinkMode:property conflicts with operation property LinkMode",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#OccurrenceGroup:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:ElementCount:property conflicts with operation property ElementCount",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:ElementList:property conflicts with operation property ElementList",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkExecute:property conflicts with operation property LinkExecute",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:ShowElement:property conflicts with operation property ShowElement",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:Scale:property conflicts with operation property Scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkClaimChild:property conflicts with operation property LinkClaimChild",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkCopyOnChange:property conflicts with operation property LinkCopyOnChange",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkTransform:property conflicts with operation property LinkTransform",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinPrototype:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinPrototype:PartNumber:property conflicts with operation property PartNumber",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PrototypeGroup:Label2:property conflicts with operation property Label2",
+        "severity": "warning"
       },
       {
         "code": {
@@ -1472,7 +1149,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 54 native record(s) from `fcstd.properties`: fcstd:native:property#Assembly:Visibility, fcstd:native:property#BracketOccurrence:PlacementList, fcstd:native:property#BracketOccurrence:ScaleList, fcstd:native:property#BracketOccurrence:ScaleVector, fcstd:native:property#BracketOccurrence:Visibility, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalOccurrence:PlacementList, fcstd:native:property#ExternalOccurrence:ScaleList, fcstd:native:property#ExternalOccurrence:ScaleVector, fcstd:native:property#ExternalOccurrence:Visibility, fcstd:native:property#GroundBracket:ExpressionEngine, fcstd:native:property#NestedBracketOccurrence:PlacementList, fcstd:native:property#NestedBracketOccurrence:ScaleList, fcstd:native:property#NestedBracketOccurrence:ScaleVector, fcstd:native:property#NestedBracketOccurrence:Visibility, fcstd:native:property#OccurrenceGroup:Visibility, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#PinArray:PlacementList, fcstd:native:property#PinArray:ScaleList, fcstd:native:property#PinArray:ScaleVector, fcstd:native:property#PinArray:Visibility, fcstd:native:property#PinArray_i0:ScaleVector, fcstd:native:property#PinArray_i0:Visibility, fcstd:native:property#PinArray_i1:ScaleVector, fcstd:native:property#PinArray_i1:Visibility, fcstd:native:property#PinArray_i2:ScaleVector, fcstd:native:property#PinArray_i2:Visibility, fcstd:native:property#PinOccurrence:ColoredElements, fcstd:native:property#PinOccurrence:ElementCount, fcstd:native:property#PinOccurrence:ElementList, fcstd:native:property#PinOccurrence:ExpressionEngine, fcstd:native:property#PinOccurrence:Label2, fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup, fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource, fcstd:native:property#PinOccurrence:LinkExecute, fcstd:native:property#PinOccurrence:LinkPlacement, fcstd:native:property#PinOccurrence:PlacementList, fcstd:native:property#PinOccurrence:Scale, fcstd:native:property#PinOccurrence:ScaleList, fcstd:native:property#PinOccurrence:ScaleVector, fcstd:native:property#PinOccurrence:ShowElement, fcstd:native:property#PinOccurrence:Visibility, fcstd:native:property#PinOccurrence:VisibilityList, fcstd:native:property#PinOccurrence:_LinkOwner, fcstd:native:property#PrototypeGroup:Visibility, fcstd:native:property#RevoluteJoint:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "message": "the fcstd write omits 28 native record(s) from `fcstd.properties`: fcstd:native:property#BracketOccurrence:PlacementList, fcstd:native:property#BracketOccurrence:ScaleList, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalOccurrence:PlacementList, fcstd:native:property#ExternalOccurrence:ScaleList, fcstd:native:property#GroundBracket:ExpressionEngine, fcstd:native:property#NestedBracketOccurrence:PlacementList, fcstd:native:property#NestedBracketOccurrence:ScaleList, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#PinArray:PlacementList, fcstd:native:property#PinArray:ScaleList, fcstd:native:property#PinOccurrence:ColoredElements, fcstd:native:property#PinOccurrence:ElementList, fcstd:native:property#PinOccurrence:ExpressionEngine, fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup, fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource, fcstd:native:property#PinOccurrence:LinkPlacement, fcstd:native:property#PinOccurrence:PlacementList, fcstd:native:property#PinOccurrence:ScaleList, fcstd:native:property#PinOccurrence:VisibilityList, fcstd:native:property#RevoluteJoint:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -1681,6 +1358,7 @@
                 "fcstd:native:property#Assembly:Placement": "regenerated",
                 "fcstd:native:property#Assembly:Type": "regenerated",
                 "fcstd:native:property#Assembly:Uid": "written",
+                "fcstd:native:property#Assembly:Visibility": "regenerated",
                 "fcstd:native:property#Assembly:_ElementMapVersion": "written",
                 "fcstd:native:property#Assembly:_GroupTouched": "written",
                 "fcstd:native:property#BracketOccurrence:ColoredElements": "written",
@@ -1700,7 +1378,9 @@
                 "fcstd:native:property#BracketOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#BracketOccurrence:Placement": "regenerated",
                 "fcstd:native:property#BracketOccurrence:Scale": "regenerated",
+                "fcstd:native:property#BracketOccurrence:ScaleVector": "regenerated",
                 "fcstd:native:property#BracketOccurrence:ShowElement": "regenerated",
+                "fcstd:native:property#BracketOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#BracketOccurrence:VisibilityList": "written",
                 "fcstd:native:property#BracketOccurrence:_LinkOwner": "regenerated",
                 "fcstd:native:property#BracketPrototype:ExpressionEngine": "regenerated",
@@ -1713,12 +1393,12 @@
                 "fcstd:native:property#BracketPrototype:Visibility": "regenerated",
                 "fcstd:native:property#BracketPrototype:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "written",
+                "fcstd:native:property#CorpusMetadata:Label2": "written",
+                "fcstd:native:property#CorpusMetadata:License": "written",
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Purpose": "written",
+                "fcstd:native:property#CorpusMetadata:Visibility": "written",
                 "fcstd:native:property#ExternalOccurrence:ColoredElements": "written",
                 "fcstd:native:property#ExternalOccurrence:ElementCount": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:ElementList": "written",
@@ -1736,15 +1416,17 @@
                 "fcstd:native:property#ExternalOccurrence:LinkedObject": "written",
                 "fcstd:native:property#ExternalOccurrence:Placement": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:Scale": "regenerated",
+                "fcstd:native:property#ExternalOccurrence:ScaleVector": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:ShowElement": "regenerated",
+                "fcstd:native:property#ExternalOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:VisibilityList": "written",
                 "fcstd:native:property#ExternalOccurrence:_LinkOwner": "regenerated",
-                "fcstd:native:property#GroundBracket:Label": "regenerated",
-                "fcstd:native:property#GroundBracket:Label2": "regenerated",
+                "fcstd:native:property#GroundBracket:Label": "written",
+                "fcstd:native:property#GroundBracket:Label2": "written",
                 "fcstd:native:property#GroundBracket:ObjectToGround": "written",
                 "fcstd:native:property#GroundBracket:Placement": "regenerated",
                 "fcstd:native:property#GroundBracket:Proxy": "written",
-                "fcstd:native:property#GroundBracket:Visibility": "regenerated",
+                "fcstd:native:property#GroundBracket:Visibility": "written",
                 "fcstd:native:property#NestedBracketOccurrence:ColoredElements": "written",
                 "fcstd:native:property#NestedBracketOccurrence:ElementCount": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:ElementList": "written",
@@ -1762,7 +1444,9 @@
                 "fcstd:native:property#NestedBracketOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:Placement": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:Scale": "regenerated",
+                "fcstd:native:property#NestedBracketOccurrence:ScaleVector": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:ShowElement": "regenerated",
+                "fcstd:native:property#NestedBracketOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:VisibilityList": "written",
                 "fcstd:native:property#NestedBracketOccurrence:_LinkOwner": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:ColoredElements": "written",
@@ -1772,19 +1456,21 @@
                 "fcstd:native:property#OccurrenceGroup:Label2": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:LinkMode": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:Placement": "regenerated",
+                "fcstd:native:property#OccurrenceGroup:Visibility": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:VisibilityList": "written",
                 "fcstd:native:property#OccurrenceGroup:_LinkOwner": "regenerated",
-                "fcstd:native:property#Origin001:Label": "regenerated",
-                "fcstd:native:property#Origin001:Label2": "regenerated",
+                "fcstd:native:property#Origin001:Label": "written",
+                "fcstd:native:property#Origin001:Label2": "written",
                 "fcstd:native:property#Origin001:Placement": "regenerated",
-                "fcstd:native:property#Origin001:Role": "regenerated",
-                "fcstd:native:property#Origin001:Visibility": "regenerated",
+                "fcstd:native:property#Origin001:Role": "written",
+                "fcstd:native:property#Origin001:Visibility": "written",
                 "fcstd:native:property#Origin001:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:Group": "written",
-                "fcstd:native:property#Origin:Label": "regenerated",
-                "fcstd:native:property#Origin:Label2": "regenerated",
+                "fcstd:native:property#Origin:Label": "written",
+                "fcstd:native:property#Origin:Label2": "written",
+                "fcstd:native:property#Origin:OriginFeatures": "written",
                 "fcstd:native:property#Origin:Placement": "regenerated",
-                "fcstd:native:property#Origin:Visibility": "regenerated",
+                "fcstd:native:property#Origin:Visibility": "written",
                 "fcstd:native:property#Origin:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:_GroupTouched": "written",
                 "fcstd:native:property#PinArray:ColoredElements": "written",
@@ -1804,7 +1490,9 @@
                 "fcstd:native:property#PinArray:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray:Placement": "regenerated",
                 "fcstd:native:property#PinArray:Scale": "regenerated",
+                "fcstd:native:property#PinArray:ScaleVector": "regenerated",
                 "fcstd:native:property#PinArray:ShowElement": "regenerated",
+                "fcstd:native:property#PinArray:Visibility": "regenerated",
                 "fcstd:native:property#PinArray:VisibilityList": "written",
                 "fcstd:native:property#PinArray:_LinkOwner": "regenerated",
                 "fcstd:native:property#PinArray_i0:ExpressionEngine": "regenerated",
@@ -1819,6 +1507,8 @@
                 "fcstd:native:property#PinArray_i0:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i0:Placement": "regenerated",
                 "fcstd:native:property#PinArray_i0:Scale": "regenerated",
+                "fcstd:native:property#PinArray_i0:ScaleVector": "regenerated",
+                "fcstd:native:property#PinArray_i0:Visibility": "regenerated",
                 "fcstd:native:property#PinArray_i0:_LinkOwner": "regenerated",
                 "fcstd:native:property#PinArray_i1:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PinArray_i1:Label": "regenerated",
@@ -1832,6 +1522,8 @@
                 "fcstd:native:property#PinArray_i1:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i1:Placement": "regenerated",
                 "fcstd:native:property#PinArray_i1:Scale": "regenerated",
+                "fcstd:native:property#PinArray_i1:ScaleVector": "regenerated",
+                "fcstd:native:property#PinArray_i1:Visibility": "regenerated",
                 "fcstd:native:property#PinArray_i1:_LinkOwner": "regenerated",
                 "fcstd:native:property#PinArray_i2:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PinArray_i2:Label": "regenerated",
@@ -1845,14 +1537,24 @@
                 "fcstd:native:property#PinArray_i2:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i2:Placement": "regenerated",
                 "fcstd:native:property#PinArray_i2:Scale": "regenerated",
+                "fcstd:native:property#PinArray_i2:ScaleVector": "regenerated",
+                "fcstd:native:property#PinArray_i2:Visibility": "regenerated",
                 "fcstd:native:property#PinArray_i2:_LinkOwner": "regenerated",
+                "fcstd:native:property#PinOccurrence:ElementCount": "regenerated",
                 "fcstd:native:property#PinOccurrence:Label": "regenerated",
+                "fcstd:native:property#PinOccurrence:Label2": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkCopyOnChange": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkCopyOnChangeTouched": "regenerated",
+                "fcstd:native:property#PinOccurrence:LinkExecute": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkTransform": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#PinOccurrence:Placement": "regenerated",
+                "fcstd:native:property#PinOccurrence:Scale": "regenerated",
+                "fcstd:native:property#PinOccurrence:ScaleVector": "regenerated",
+                "fcstd:native:property#PinOccurrence:ShowElement": "regenerated",
+                "fcstd:native:property#PinOccurrence:Visibility": "regenerated",
+                "fcstd:native:property#PinOccurrence:_LinkOwner": "regenerated",
                 "fcstd:native:property#PinPrototype:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PinPrototype:Label": "regenerated",
                 "fcstd:native:property#PinPrototype:Label2": "regenerated",
@@ -1866,16 +1568,17 @@
                 "fcstd:native:property#PrototypeGroup:Group": "regenerated",
                 "fcstd:native:property#PrototypeGroup:Label": "regenerated",
                 "fcstd:native:property#PrototypeGroup:Label2": "regenerated",
+                "fcstd:native:property#PrototypeGroup:Visibility": "regenerated",
                 "fcstd:native:property#PrototypeGroup:_GroupTouched": "written",
-                "fcstd:native:property#RevoluteJoint:Angle": "regenerated",
-                "fcstd:native:property#RevoluteJoint:AngleMax": "regenerated",
-                "fcstd:native:property#RevoluteJoint:AngleMin": "regenerated",
-                "fcstd:native:property#RevoluteJoint:Detach1": "regenerated",
-                "fcstd:native:property#RevoluteJoint:EnableAngleMax": "regenerated",
-                "fcstd:native:property#RevoluteJoint:EnableAngleMin": "regenerated",
+                "fcstd:native:property#RevoluteJoint:Angle": "written",
+                "fcstd:native:property#RevoluteJoint:AngleMax": "written",
+                "fcstd:native:property#RevoluteJoint:AngleMin": "written",
+                "fcstd:native:property#RevoluteJoint:Detach1": "written",
+                "fcstd:native:property#RevoluteJoint:EnableAngleMax": "written",
+                "fcstd:native:property#RevoluteJoint:EnableAngleMin": "written",
                 "fcstd:native:property#RevoluteJoint:JointType": "written",
-                "fcstd:native:property#RevoluteJoint:Label": "regenerated",
-                "fcstd:native:property#RevoluteJoint:Label2": "regenerated",
+                "fcstd:native:property#RevoluteJoint:Label": "written",
+                "fcstd:native:property#RevoluteJoint:Label2": "written",
                 "fcstd:native:property#RevoluteJoint:Offset1": "written",
                 "fcstd:native:property#RevoluteJoint:Offset2": "written",
                 "fcstd:native:property#RevoluteJoint:Placement1": "written",
@@ -1883,43 +1586,43 @@
                 "fcstd:native:property#RevoluteJoint:Proxy": "written",
                 "fcstd:native:property#RevoluteJoint:Reference1": "written",
                 "fcstd:native:property#RevoluteJoint:Reference2": "written",
-                "fcstd:native:property#RevoluteJoint:Suppressed": "regenerated",
-                "fcstd:native:property#RevoluteJoint:Visibility": "regenerated",
-                "fcstd:native:property#XY_Plane:Label": "regenerated",
-                "fcstd:native:property#XY_Plane:Label2": "regenerated",
+                "fcstd:native:property#RevoluteJoint:Suppressed": "written",
+                "fcstd:native:property#RevoluteJoint:Visibility": "written",
+                "fcstd:native:property#XY_Plane:Label": "written",
+                "fcstd:native:property#XY_Plane:Label2": "written",
                 "fcstd:native:property#XY_Plane:Placement": "regenerated",
-                "fcstd:native:property#XY_Plane:Role": "regenerated",
-                "fcstd:native:property#XY_Plane:Visibility": "regenerated",
+                "fcstd:native:property#XY_Plane:Role": "written",
+                "fcstd:native:property#XY_Plane:Visibility": "written",
                 "fcstd:native:property#XY_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#XZ_Plane:Label": "regenerated",
-                "fcstd:native:property#XZ_Plane:Label2": "regenerated",
+                "fcstd:native:property#XZ_Plane:Label": "written",
+                "fcstd:native:property#XZ_Plane:Label2": "written",
                 "fcstd:native:property#XZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#XZ_Plane:Role": "regenerated",
-                "fcstd:native:property#XZ_Plane:Visibility": "regenerated",
+                "fcstd:native:property#XZ_Plane:Role": "written",
+                "fcstd:native:property#XZ_Plane:Visibility": "written",
                 "fcstd:native:property#XZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#X_Axis:Label": "regenerated",
-                "fcstd:native:property#X_Axis:Label2": "regenerated",
+                "fcstd:native:property#X_Axis:Label": "written",
+                "fcstd:native:property#X_Axis:Label2": "written",
                 "fcstd:native:property#X_Axis:Placement": "regenerated",
-                "fcstd:native:property#X_Axis:Role": "regenerated",
-                "fcstd:native:property#X_Axis:Visibility": "regenerated",
+                "fcstd:native:property#X_Axis:Role": "written",
+                "fcstd:native:property#X_Axis:Visibility": "written",
                 "fcstd:native:property#X_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#YZ_Plane:Label": "regenerated",
-                "fcstd:native:property#YZ_Plane:Label2": "regenerated",
+                "fcstd:native:property#YZ_Plane:Label": "written",
+                "fcstd:native:property#YZ_Plane:Label2": "written",
                 "fcstd:native:property#YZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#YZ_Plane:Role": "regenerated",
-                "fcstd:native:property#YZ_Plane:Visibility": "regenerated",
+                "fcstd:native:property#YZ_Plane:Role": "written",
+                "fcstd:native:property#YZ_Plane:Visibility": "written",
                 "fcstd:native:property#YZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#Y_Axis:Label": "regenerated",
-                "fcstd:native:property#Y_Axis:Label2": "regenerated",
+                "fcstd:native:property#Y_Axis:Label": "written",
+                "fcstd:native:property#Y_Axis:Label2": "written",
                 "fcstd:native:property#Y_Axis:Placement": "regenerated",
-                "fcstd:native:property#Y_Axis:Role": "regenerated",
-                "fcstd:native:property#Y_Axis:Visibility": "regenerated",
+                "fcstd:native:property#Y_Axis:Role": "written",
+                "fcstd:native:property#Y_Axis:Visibility": "written",
                 "fcstd:native:property#Y_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#Z_Axis:Label": "regenerated",
-                "fcstd:native:property#Z_Axis:Label2": "regenerated",
+                "fcstd:native:property#Z_Axis:Label": "written",
+                "fcstd:native:property#Z_Axis:Label2": "written",
                 "fcstd:native:property#Z_Axis:Placement": "regenerated",
-                "fcstd:native:property#Z_Axis:Role": "regenerated",
-                "fcstd:native:property#Z_Axis:Visibility": "regenerated",
+                "fcstd:native:property#Z_Axis:Role": "written",
+                "fcstd:native:property#Z_Axis:Visibility": "written",
                 "fcstd:native:property#Z_Axis:_ElementMapVersion": "written"
               }
             },

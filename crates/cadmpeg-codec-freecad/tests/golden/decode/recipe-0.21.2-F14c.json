@@ -1,16 +1,329 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "native_ref": "fcstd:native:property#0:Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0; CAD Fixture Recipes v1.23; generated with FreeCAD 0.21.2"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "native_ref": "fcstd:native:property#0:Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "native_ref": "fcstd:native:property#0:CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "native_ref": "fcstd:native:property#0:CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-10-28T19:05:09Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "native_ref": "fcstd:native:property#0:Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#0:Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "F14c"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "native_ref": "fcstd:native:property#0:LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "native_ref": "fcstd:native:property#0:LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-10-28T19:05:09Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#0:License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "native_ref": "fcstd:native:property#0:LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:f96234b795f3267ecee09753d466723b5727d379f621fae0d32bcd46e9129c89"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "native_ref": "fcstd:native:property#0:ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "native_ref": "fcstd:native:property#0:TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveBox:AttacherType:property",
+          "name": "AttacherType",
+          "native_ref": "fcstd:native:property#AdditiveBox:AttacherType",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveBox"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Attacher::AttachEngine3D"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveBox:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#AdditiveBox:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveBox"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveBox:MapPathParameter:property",
+          "name": "MapPathParameter",
+          "native_ref": "fcstd:native:property#AdditiveBox:MapPathParameter",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveBox"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 0.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveBox:MapReversed:property",
+          "name": "MapReversed",
+          "native_ref": "fcstd:native:property#AdditiveBox:MapReversed",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveBox"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveBox:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#AdditiveBox:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveBox"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Body:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Origin:property",
+          "name": "Origin",
+          "native_ref": "fcstd:native:property#Body:Origin",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#Origin"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Body:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Body:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Body"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34"
           ],
@@ -19,6 +332,7 @@
         {
           "id": "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1"
           ],
@@ -47,6 +361,7 @@
         {
           "id": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1"
           ]
@@ -63,7 +378,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A4",
@@ -79,7 +394,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A4",
@@ -95,7 +410,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A1",
@@ -111,7 +426,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A1",
@@ -127,7 +442,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A3",
@@ -143,7 +458,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A3",
@@ -159,7 +474,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A2",
@@ -175,7 +490,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A2",
@@ -191,7 +506,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A4",
@@ -207,7 +522,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A4",
@@ -223,7 +538,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A1",
@@ -239,7 +554,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A1",
@@ -255,7 +570,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1%3A3",
@@ -271,7 +586,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A3",
@@ -287,7 +602,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1%3A2",
@@ -303,7 +618,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A2",
@@ -319,7 +634,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A4",
@@ -335,7 +650,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A4",
@@ -351,7 +666,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A1",
@@ -367,7 +682,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A1",
@@ -383,7 +698,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1%3A3",
@@ -399,7 +714,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1%3A3",
@@ -415,7 +730,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1%3A2",
@@ -431,7 +746,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1%3A2",
@@ -447,7 +762,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A4",
@@ -463,7 +778,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A4",
@@ -479,7 +794,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A1",
@@ -495,7 +810,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A1",
@@ -511,7 +826,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A3",
@@ -527,7 +842,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A3",
@@ -543,7 +858,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A2",
@@ -559,7 +874,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A2",
@@ -575,7 +890,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A4",
@@ -591,7 +906,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A4",
@@ -607,7 +922,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A1",
@@ -623,7 +938,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A1",
@@ -639,7 +954,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1%3A3",
@@ -655,7 +970,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A3",
@@ -671,7 +986,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1%3A2",
@@ -687,7 +1002,7 @@
                 0.0,
                 10.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A2",
@@ -703,7 +1018,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A4",
@@ -719,7 +1034,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A4",
@@ -735,7 +1050,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A1",
@@ -751,7 +1066,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A1",
@@ -767,7 +1082,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1%3A3",
@@ -783,7 +1098,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1%3A3",
@@ -799,7 +1114,7 @@
                 0.0,
                 30.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1%3A2",
@@ -815,7 +1130,7 @@
                 0.0,
                 20.0
               ],
-              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1%3A2",
@@ -1725,6 +2040,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:13",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:30",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
           "tolerance": 1e-7
         },
@@ -1738,6 +2054,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:15",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:8",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
           "tolerance": 1e-7
         },
@@ -1751,6 +2068,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:17",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:26",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
           "tolerance": 1e-7
         },
@@ -1764,6 +2082,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:18",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:18",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
           "tolerance": 1e-7
         },
@@ -1777,6 +2096,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:21",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:15",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
           "tolerance": 1e-7
         },
@@ -1790,6 +2110,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:22",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:5",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
           "tolerance": 1e-7
         },
@@ -1803,6 +2124,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:25",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:20",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
           "tolerance": 1e-7
         },
@@ -1816,6 +2138,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:26",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:10",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
           "tolerance": 1e-7
         },
@@ -1829,6 +2152,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:3",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:29",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
           "tolerance": 1e-7
         },
@@ -1842,6 +2166,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:5",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:12",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
           "tolerance": 1e-7
         },
@@ -1855,6 +2180,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:7",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:25",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
           "tolerance": 1e-7
         },
@@ -1868,6 +2194,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
           "id": "fcstd:model:edge#AdditiveBox:AddSubShape:PartShape1.brp:8",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:22",
           "start": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
           "tolerance": 1e-7
         },
@@ -1881,6 +2208,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:30",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -1894,6 +2222,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:8",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
           "tolerance": 1e-7
         },
@@ -1907,6 +2236,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:26",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
           "tolerance": 1e-7
         },
@@ -1920,6 +2250,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:18",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -1933,6 +2264,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:15",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -1946,6 +2278,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:5",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -1959,6 +2292,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:20",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -1972,6 +2306,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:10",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -1985,6 +2320,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:29",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -1998,6 +2334,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:12",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -2011,6 +2348,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:25",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -2024,6 +2362,7 @@
           },
           "end": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
           "id": "fcstd:model:edge#AdditiveBox:Shape:PartShape2.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:22",
           "start": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -2037,6 +2376,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:30",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
           "tolerance": 1e-7
         },
@@ -2050,6 +2390,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
           "tolerance": 1e-7
         },
@@ -2063,6 +2404,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
           "tolerance": 1e-7
         },
@@ -2076,6 +2418,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
           "tolerance": 1e-7
         },
@@ -2089,6 +2432,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
           "tolerance": 1e-7
         },
@@ -2102,6 +2446,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
           "tolerance": 1e-7
         },
@@ -2115,6 +2460,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
           "tolerance": 1e-7
         },
@@ -2128,6 +2474,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
           "tolerance": 1e-7
         },
@@ -2141,6 +2488,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
           "tolerance": 1e-7
         },
@@ -2154,6 +2502,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
           "tolerance": 1e-7
         },
@@ -2167,6 +2516,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
           "tolerance": 1e-7
         },
@@ -2180,6 +2530,7 @@
           },
           "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
           "tolerance": 1e-7
         }
@@ -2193,6 +2544,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:1",
@@ -2206,6 +2558,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:6",
@@ -2219,6 +2572,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:2",
@@ -2232,6 +2586,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:4",
@@ -2245,6 +2600,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:5",
@@ -2258,6 +2614,7 @@
               "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33",
           "surface": "fcstd:model:surface#AdditiveBox:AddSubShape:PartShape1.brp:3",
@@ -2271,6 +2628,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:1",
@@ -2284,6 +2642,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:6",
@@ -2297,6 +2656,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:2",
@@ -2310,6 +2670,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:4",
@@ -2323,6 +2684,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:5",
@@ -2336,6 +2698,7 @@
               "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1",
           "surface": "fcstd:model:surface#AdditiveBox:Shape:PartShape2.brp:3",
@@ -2349,6 +2712,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:1",
@@ -2362,6 +2726,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:2",
@@ -2375,6 +2740,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:3",
@@ -2388,6 +2754,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:4",
@@ -2401,6 +2768,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:5",
@@ -2414,6 +2782,7 @@
               "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
           "surface": "fcstd:model:surface#Body:Shape:PartShape.brp:6",
@@ -2451,30 +2820,32 @@
                 ]
               ],
               "solid": {
-                "height": 10.0,
+                "height": {
+                  "kind": "parameter",
+                  "value": "fcstd:design:parameter#AdditiveBox:Height"
+                },
                 "kind": "box",
-                "length": 20.0,
-                "width": 30.0
+                "length": {
+                  "kind": "parameter",
+                  "value": "fcstd:design:parameter#AdditiveBox:Length"
+                },
+                "width": {
+                  "kind": "parameter",
+                  "value": "fcstd:design:parameter#AdditiveBox:Width"
+                }
               }
             },
             "refine": false
           },
-          "dependencies": [
-            "fcstd:design:feature#Body"
-          ],
           "id": "fcstd:design:feature#AdditiveBox",
           "name": "AdditiveBox",
           "native_ref": "fcstd:native:object#AdditiveBox",
-          "ordinal": 8,
+          "needs_recompute": false,
+          "ordinal": 1,
           "outputs": [
             "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
           ],
-          "source_properties": {
-            "MapMode": "5",
-            "Support": "fcstd:native:object#XZ_Plane",
-            "Visibility": "true"
-          },
           "source_tag": "PartDesign::AdditiveBox",
           "suppressed": null
         },
@@ -2492,14 +2863,11 @@
           "id": "fcstd:design:feature#Body",
           "name": "Body",
           "native_ref": "fcstd:native:object#Body",
+          "needs_recompute": false,
           "ordinal": 0,
           "outputs": [
             "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
           ],
-          "source_properties": {
-            "Tip": "fcstd:native:object#AdditiveBox",
-            "Visibility": "true"
-          },
           "source_tag": "PartDesign::Body",
           "suppressed": null
         }
@@ -2516,7 +2884,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:10",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:10%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -2529,7 +2898,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:20",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:20%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -2542,7 +2912,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:24",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:24%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2555,7 +2926,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:28",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:28%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2568,7 +2940,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:30",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:30%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2581,7 +2954,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:AddSubShape:PartShape1.brp:32",
-          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:AddSubShape:PartShape1.brp:32%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -2594,7 +2968,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:10%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -2607,7 +2982,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:20%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -2620,7 +2996,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:24%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2633,7 +3010,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:28%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2646,7 +3024,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:30%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:30%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2659,7 +3038,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#AdditiveBox:Shape:PartShape2.brp:32%40location1",
-          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1"
+          "id": "fcstd:model:loop#AdditiveBox:Shape:PartShape2.brp:32%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -2672,7 +3052,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -2685,7 +3066,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:20%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -2698,7 +3080,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -2711,7 +3094,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -2724,7 +3108,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -2737,21 +3122,70 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location1",
-          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1"
+          "id": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:4"
         }
       ],
       "occurrences": [],
       "parameters": [
         {
-          "expression": "20.0000000000000000",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "10 mm"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#AdditiveBox:Height",
+          "name": "Height",
+          "native_ref": "fcstd:native:property#AdditiveBox:Height",
+          "ordinal": 0,
+          "owner": "fcstd:design:feature#AdditiveBox",
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "20 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#AdditiveBox:Length",
           "name": "Length",
           "native_ref": "fcstd:native:property#AdditiveBox:Length",
-          "ordinal": 8,
+          "ordinal": 1,
           "owner": "fcstd:design:feature#AdditiveBox",
           "value": {
             "kind": "length",
             "value": 20.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "30 mm"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#AdditiveBox:Width",
+          "name": "Width",
+          "native_ref": "fcstd:native:property#AdditiveBox:Width",
+          "ordinal": 2,
+          "owner": "fcstd:design:feature#AdditiveBox",
+          "value": {
+            "kind": "length",
+            "value": 30.0
           }
         }
       ],
@@ -2768,7 +3202,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2791,7 +3225,7 @@
               "v": 20.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2814,7 +3248,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2837,7 +3271,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2860,7 +3294,7 @@
               "v": -30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2883,7 +3317,7 @@
               "v": 20.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2906,7 +3340,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2929,7 +3363,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2952,7 +3386,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2975,7 +3409,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -2998,7 +3432,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3021,7 +3455,30 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3044,7 +3501,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3067,7 +3524,7 @@
               "v": 30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:25%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3090,7 +3547,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3113,58 +3570,12 @@
               "v": 30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:26%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 0.0,
                 20.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                10.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3A3%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                10.0
               ]
             },
             "source": "general"
@@ -3182,7 +3593,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3205,7 +3616,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3228,7 +3639,7 @@
               "v": -30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3251,7 +3662,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3274,7 +3685,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3297,7 +3708,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3320,7 +3731,30 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:AddSubShape:PartShape1.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3343,7 +3777,7 @@
               "v": 20.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3366,7 +3800,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3389,7 +3823,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3412,7 +3846,7 @@
               "v": -30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3435,7 +3869,7 @@
               "v": 20.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3458,7 +3892,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3481,7 +3915,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3504,7 +3938,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3527,7 +3961,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3550,7 +3984,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3573,7 +4007,30 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3596,7 +4053,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3619,7 +4076,7 @@
               "v": 30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:25%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3642,7 +4099,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3665,58 +4122,12 @@
               "v": 30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:26%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2820.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 0.0,
                 20.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                10.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3A3%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                10.0
               ]
             },
             "source": "general"
@@ -3734,7 +4145,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3757,7 +4168,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3780,7 +4191,7 @@
               "v": -30.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3803,7 +4214,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3826,7 +4237,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A2%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -3849,12 +4260,35 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3A3%3A1",
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2830.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 0.0,
                 30.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#AdditiveBox:Shape:PartShape2.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2810.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
               ]
             },
             "source": "general"
@@ -3865,6 +4299,7 @@
       "points": [
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3877,6 +4312,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:7",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -3889,6 +4325,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:17",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -3901,6 +4338,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:9",
           "position": {
             "x": 20.0,
             "y": 30.0,
@@ -3913,6 +4351,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:19",
           "position": {
             "x": 20.0,
             "y": 30.0,
@@ -3925,6 +4364,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3937,6 +4377,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 30.0,
@@ -3949,6 +4390,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 30.0,
@@ -3961,6 +4403,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3973,6 +4416,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:7",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -3985,6 +4429,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:17",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -3997,6 +4442,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:9",
           "position": {
             "x": 20.0,
             "y": 30.0,
@@ -4009,6 +4455,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:19",
           "position": {
             "x": 20.0,
             "y": 30.0,
@@ -4021,6 +4468,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -4033,6 +4481,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 30.0,
@@ -4045,6 +4494,7 @@
         },
         {
           "id": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 30.0,
@@ -4057,6 +4507,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": -10.0,
@@ -4069,6 +4520,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:11%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:7",
           "position": {
             "x": 20.0,
             "y": -10.0,
@@ -4081,6 +4533,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:12%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:17",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -4093,6 +4546,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:14%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:9",
           "position": {
             "x": 20.0,
             "y": -10.000000000000014,
@@ -4105,6 +4559,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:16%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:19",
           "position": {
             "x": 20.0,
             "y": -1.3e-14,
@@ -4117,6 +4572,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:2%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -4129,6 +4585,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:4%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": -10.000000000000014,
@@ -4141,6 +4598,7 @@
         },
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:6%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": -1.3e-14,
@@ -4161,6 +4619,7 @@
         {
           "body": "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
           "id": "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#AdditiveBox:AddSubShape:PartShape1.brp:33"
           ]
@@ -4168,6 +4627,7 @@
         {
           "body": "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1",
           "id": "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#AdditiveBox:Shape:PartShape2.brp:33%40location1"
           ]
@@ -4175,6 +4635,7 @@
         {
           "body": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
           "id": "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1"
           ]
@@ -4210,6 +4671,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:2",
           "region": "fcstd:model:region#AdditiveBox:AddSubShape:PartShape1.brp:34"
         },
         {
@@ -4240,6 +4702,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:2",
           "region": "fcstd:model:region#AdditiveBox:Shape:PartShape2.brp:34%40location1"
         },
         {
@@ -4270,6 +4733,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:2",
           "region": "fcstd:model:region#Body:Shape:PartShape.brp:34%40location1"
         }
       ],
@@ -4736,121 +5200,145 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:6",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:11",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:7",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:11",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:12",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:17",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:12",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:14",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:9",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:14",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:16",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:19",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:16",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:2",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:16",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:2",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:4",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:11",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:AddSubShape:PartShape1.brp:6",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:AddSubShape:PartShape1.brp:topology-use:21",
           "point": "fcstd:model:point#AdditiveBox:AddSubShape:PartShape1.brp:6",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:6",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:7",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:17",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:9",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:14%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:19",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:16",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:11",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#AdditiveBox:Shape:PartShape2.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#AdditiveBox:Shape:PartShape2.brp:topology-use:21",
           "point": "fcstd:model:point#AdditiveBox:Shape:PartShape2.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:6",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:7",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:11%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:17",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:12%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:14%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:9",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:14%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:16%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:19",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:16%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:16",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:2%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:11",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:4%40location4",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:6%40location4",
+          "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:21",
           "point": "fcstd:model:point#Body:Shape:PartShape.brp:6%40location4",
           "tolerance": 1e-7
         }
@@ -4863,7 +5351,6 @@
           "annotations": 0,
           "applications": 9,
           "attachments": 8,
-          "byte_coverage": 1,
           "carrier_census": 3,
           "design_census": 2,
           "document": 1,
@@ -4875,38 +5362,35 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 186,
           "objects": 9,
-          "physical_ledger": 29,
           "product_nodes": 0,
           "properties": 91,
           "shape_payloads": 3,
-          "string_tables": 0
+          "string_tables": 0,
+          "topology_uses": 102
         }
       },
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "e56009b6b983f7c6768b7bc60f520cc714c5388e8881f1402ec46a4f68fd2e23",
-          "byte_coverage": "bc2480c48249742f7174d160d4cd8b3e136a9431f325cb2223e9ba886f2789b3",
+          "applications": "cae4fceb18eb17645e4698dc1a6e62f79c5856c6b6efd6b75cfcf97ffebf3bda",
           "carrier_census": "fe4f9c79bd7923900478bc231a58f64616ab4ec3e61a249712c9f5b887d5d186",
-          "design_census": "31fc41df69c2df5c5503bc192db1464804fddb50bbaaa9cd92253f091f176da0",
+          "design_census": "a08896a751e1e0ff41d115c9518c0680c95bbd2ac9aaeac7afcf7734031cc8a9",
           "document": "109068a11cb4418acaf363ac1c5ed8a7aa9a2e5ff06e9153c38e9a59fadf952e",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "d8d5395362067a988c29dc3c27806e8de7786960be746e5cd5479dd7309bc5f1",
-          "extensions": "e25e59dd2b1b0189a606b5dd33e0200938203075d98bd8005b2ee31574c2f5b5",
+          "entries": "438f4cbe6690ddb0c10a3447bef7f5f5408e1a1afec1bdcebcdd942dd8e0ffee",
+          "extensions": "8634e01ca42de8e9619d189f4afb9bfab4e1f7845ffb7e8a821544a87d54d8f0",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "ae84948a1d64b7a92885f89ad3d10524c0f9e9d4e9e01e0ada9d60cdf1095399",
-          "objects": "b1073b088c4e460c118f862522f628d0c2ee9ca2c359e8ca29b94611fcbcf2b1",
-          "physical_ledger": "07f2396dd420d355f7999c554891589c24092f847c78b04334dad9288bef4484",
+          "objects": "f61371e0feac7a68823efc0c464ba91fe979ca8f1cafa28a1ff31095e86bbcf2",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "4d5c42ac2b66f8fcfeb5aef36bdc7b47297d4df6753a3290e724a2b8588a458f",
+          "properties": "f408ca776dd9c1ad7ea11f32bc5d25400b1e00be7c37ea58871bb6ac7522a8b0",
           "shape_payloads": "1703c19b80597bb18e454b95a712f77342408e2bab154f739e1cd158b0df1b37",
-          "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "topology_uses": "4276faeb5af590e33a94e3978d4aa10e82b648eb4a796d3895305cdba7af06df"
         }
       },
       "__arena_values": {
@@ -5423,16 +5907,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign",
-        "archive_entry_count": "4",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "9",
-        "physical_archive_bytes": "5288",
-        "physical_ledger_spans": "29",
         "program_version": "0.21R33771 (Git)"
       },
       "identity": {
@@ -5475,22 +5958,148 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#AdditiveBox:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
       "document root=Document",
       "document kind=part-design",
       "object count=9",
-      "physical ledger spans=29 coverage=exact",
       "ProgramVersion=0.21R33771 (Git)"
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "bb34c8df9b878c9d6bb524a8fbe82cd49410ed4142333711c74c0751841170ce",
+    "retained_records": {
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      }
+    },
+    "unrepresented": []
   }
 }

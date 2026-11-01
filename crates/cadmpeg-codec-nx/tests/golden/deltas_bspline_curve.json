@@ -38,7 +38,11 @@
                 ]
               }
             },
-            "id": "nx:s0:nurbs-crv#0"
+            "id": "nx:s0:nurbs-crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:nurbs-curve-record#389"
+            }
           }
         ],
         "drawings": [],
@@ -116,7 +120,11 @@
               ],
               "v_periodic": false
             },
-            "id": "nx:s0:nurbs-surf#0"
+            "id": "nx:s0:nurbs-surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:nurbs-surface-record#53"
+            }
           }
         ],
         "tessellations": [],
@@ -136,11 +144,7 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:nurbs-surf#0",
-                "nx:s0:nurbs-crv#0"
-              ]
+              "id": "nx:container:parasolid#0"
             },
             {
               "id": "nx:container:parasolid#1"
@@ -304,9 +308,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:container:parasolid#1": {

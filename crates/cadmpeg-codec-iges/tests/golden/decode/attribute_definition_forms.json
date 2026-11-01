@@ -5,76 +5,7 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "iges:application:attribute#D3:0:0",
-          "name": "iges.attribute_table.default.attributes.0.values.0",
-          "native_ref": "iges:product:attribute-definition#D3",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#3"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 42
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D3:1:0",
-          "name": "iges.attribute_table.default.attributes.1.values.0",
-          "native_ref": "iges:product:attribute-definition#D3",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#3"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "STEEL"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:0:0",
-          "name": "iges.attribute_table.default.attributes.0.values.0",
-          "native_ref": "iges:product:attribute-definition#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 3.5
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:1:0",
-          "name": "iges.attribute_table.default.attributes.1.values.0",
-          "native_ref": "iges:product:attribute-definition#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -747,7 +678,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "5ea0c69f5d2fa3c84fd664f3ba15d15cf149ad73587fbbc380f73fde116cd089",
+    "decode_digest": "3b7351ea3a17b65738751d4f6d10768048b8767fd05e78afdb574b893c71d4b3",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -682,7 +681,6 @@
         {
           "id": "usd:stage:occurrence#/Scene",
           "name": "Scene",
-          "native_ref": "/Scene",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -691,11 +689,6 @@
             "definition": "usd:stage:definition#/Scene",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -720,7 +713,6 @@
         {
           "id": "usd:stage:occurrence#/Scene/Box",
           "name": "Box",
-          "native_ref": "/Scene/Box",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -730,11 +722,6 @@
             "definition": "usd:stage:definition#/Scene/Box",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -759,7 +746,6 @@
         {
           "id": "usd:stage:occurrence#/Scene/Robot",
           "name": "Robot",
-          "native_ref": "/Scene/Robot",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -769,11 +755,6 @@
             "definition": "usd:stage:definition#/Scene/Robot",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -798,7 +779,6 @@
         {
           "id": "usd:stage:occurrence#/Scene/Robot:arc0",
           "name": "./robot/payload.usd",
-          "native_ref": "/Scene/Robot payload @./robot/payload.usd@",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -812,11 +792,6 @@
             "object": "/Robot",
             "scope": "external"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -841,7 +816,6 @@
         {
           "id": "usd:stage:occurrence#/Scene/Shelf",
           "name": "Shelf",
-          "native_ref": "/Scene/Shelf",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -851,11 +825,6 @@
             "definition": "usd:stage:definition#/Scene/Shelf",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -880,7 +849,6 @@
         {
           "id": "usd:stage:occurrence#/Scene/Shelf:arc0",
           "name": "shelf.usda",
-          "native_ref": "/Scene/Shelf reference @shelf.usda@",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -893,11 +861,6 @@
             },
             "scope": "external"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -997,7 +960,6 @@
         {
           "id": "usd:stage:definition#/Scene",
           "kind": "group",
-          "native_ref": "/Scene",
           "source_name": "Scene"
         },
         {
@@ -1006,19 +968,16 @@
           ],
           "id": "usd:stage:definition#/Scene/Box",
           "kind": "group",
-          "native_ref": "/Scene/Box",
           "source_name": "Box"
         },
         {
           "id": "usd:stage:definition#/Scene/Robot",
           "kind": "group",
-          "native_ref": "/Scene/Robot",
           "source_name": "Robot"
         },
         {
           "id": "usd:stage:definition#/Scene/Shelf",
           "kind": "group",
-          "native_ref": "/Scene/Shelf",
           "source_name": "Shelf"
         }
       ],
@@ -1237,6 +1196,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Scene",
@@ -1355,10 +1318,14 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "unrepresented": []
   }
 }

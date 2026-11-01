@@ -830,7 +830,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#500"
+            }
           },
           {
             "geometry": {
@@ -851,7 +855,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#1"
+            "id": "nx:s0:surf#1",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#501"
+            }
           },
           {
             "geometry": {
@@ -872,7 +880,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#10"
+            "id": "nx:s0:surf#10",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#510"
+            }
           },
           {
             "geometry": {
@@ -893,7 +905,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#11"
+            "id": "nx:s0:surf#11",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#511"
+            }
           },
           {
             "geometry": {
@@ -914,7 +930,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#12"
+            "id": "nx:s0:surf#12",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#512"
+            }
           },
           {
             "geometry": {
@@ -935,7 +955,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#13"
+            "id": "nx:s0:surf#13",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#513"
+            }
           },
           {
             "geometry": {
@@ -956,7 +980,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#14"
+            "id": "nx:s0:surf#14",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#514"
+            }
           },
           {
             "geometry": {
@@ -977,7 +1005,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#15"
+            "id": "nx:s0:surf#15",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#515"
+            }
           },
           {
             "geometry": {
@@ -998,7 +1030,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#16"
+            "id": "nx:s0:surf#16",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#516"
+            }
           },
           {
             "geometry": {
@@ -1019,7 +1055,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#17"
+            "id": "nx:s0:surf#17",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#517"
+            }
           },
           {
             "geometry": {
@@ -1040,7 +1080,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#18"
+            "id": "nx:s0:surf#18",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#518"
+            }
           },
           {
             "geometry": {
@@ -1061,7 +1105,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#19"
+            "id": "nx:s0:surf#19",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#519"
+            }
           },
           {
             "geometry": {
@@ -1082,7 +1130,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#2"
+            "id": "nx:s0:surf#2",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#502"
+            }
           },
           {
             "geometry": {
@@ -1103,7 +1155,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#20"
+            "id": "nx:s0:surf#20",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#520"
+            }
           },
           {
             "geometry": {
@@ -1124,7 +1180,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#21"
+            "id": "nx:s0:surf#21",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#521"
+            }
           },
           {
             "geometry": {
@@ -1145,7 +1205,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#22"
+            "id": "nx:s0:surf#22",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#522"
+            }
           },
           {
             "geometry": {
@@ -1166,7 +1230,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#23"
+            "id": "nx:s0:surf#23",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#523"
+            }
           },
           {
             "geometry": {
@@ -1187,7 +1255,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#24"
+            "id": "nx:s0:surf#24",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#524"
+            }
           },
           {
             "geometry": {
@@ -1208,7 +1280,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#25"
+            "id": "nx:s0:surf#25",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#525"
+            }
           },
           {
             "geometry": {
@@ -1229,7 +1305,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#26"
+            "id": "nx:s0:surf#26",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#526"
+            }
           },
           {
             "geometry": {
@@ -1250,7 +1330,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#27"
+            "id": "nx:s0:surf#27",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#527"
+            }
           },
           {
             "geometry": {
@@ -1271,7 +1355,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#28"
+            "id": "nx:s0:surf#28",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#528"
+            }
           },
           {
             "geometry": {
@@ -1292,7 +1380,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#29"
+            "id": "nx:s0:surf#29",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#529"
+            }
           },
           {
             "geometry": {
@@ -1313,7 +1405,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#3"
+            "id": "nx:s0:surf#3",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#503"
+            }
           },
           {
             "geometry": {
@@ -1334,7 +1430,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#30"
+            "id": "nx:s0:surf#30",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#530"
+            }
           },
           {
             "geometry": {
@@ -1355,7 +1455,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#31"
+            "id": "nx:s0:surf#31",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#531"
+            }
           },
           {
             "geometry": {
@@ -1376,7 +1480,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#32"
+            "id": "nx:s0:surf#32",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#532"
+            }
           },
           {
             "geometry": {
@@ -1397,7 +1505,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#33"
+            "id": "nx:s0:surf#33",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#533"
+            }
           },
           {
             "geometry": {
@@ -1418,7 +1530,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#34"
+            "id": "nx:s0:surf#34",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#534"
+            }
           },
           {
             "geometry": {
@@ -1439,7 +1555,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#35"
+            "id": "nx:s0:surf#35",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#535"
+            }
           },
           {
             "geometry": {
@@ -1460,7 +1580,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#36"
+            "id": "nx:s0:surf#36",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#536"
+            }
           },
           {
             "geometry": {
@@ -1481,7 +1605,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#37"
+            "id": "nx:s0:surf#37",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#537"
+            }
           },
           {
             "geometry": {
@@ -1502,7 +1630,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#38"
+            "id": "nx:s0:surf#38",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#538"
+            }
           },
           {
             "geometry": {
@@ -1523,7 +1655,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#39"
+            "id": "nx:s0:surf#39",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#539"
+            }
           },
           {
             "geometry": {
@@ -1544,7 +1680,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#4"
+            "id": "nx:s0:surf#4",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#504"
+            }
           },
           {
             "geometry": {
@@ -1565,7 +1705,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#40"
+            "id": "nx:s0:surf#40",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#540"
+            }
           },
           {
             "geometry": {
@@ -1586,7 +1730,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#41"
+            "id": "nx:s0:surf#41",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#541"
+            }
           },
           {
             "geometry": {
@@ -1607,7 +1755,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#42"
+            "id": "nx:s0:surf#42",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#542"
+            }
           },
           {
             "geometry": {
@@ -1628,7 +1780,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#43"
+            "id": "nx:s0:surf#43",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#543"
+            }
           },
           {
             "geometry": {
@@ -1649,7 +1805,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#44"
+            "id": "nx:s0:surf#44",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#544"
+            }
           },
           {
             "geometry": {
@@ -1670,7 +1830,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#45"
+            "id": "nx:s0:surf#45",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#545"
+            }
           },
           {
             "geometry": {
@@ -1691,7 +1855,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#46"
+            "id": "nx:s0:surf#46",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#546"
+            }
           },
           {
             "geometry": {
@@ -1712,7 +1880,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#47"
+            "id": "nx:s0:surf#47",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#547"
+            }
           },
           {
             "geometry": {
@@ -1733,7 +1905,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#48"
+            "id": "nx:s0:surf#48",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#548"
+            }
           },
           {
             "geometry": {
@@ -1754,7 +1930,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#49"
+            "id": "nx:s0:surf#49",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#549"
+            }
           },
           {
             "geometry": {
@@ -1775,7 +1955,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#5"
+            "id": "nx:s0:surf#5",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#505"
+            }
           },
           {
             "geometry": {
@@ -1796,7 +1980,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#6"
+            "id": "nx:s0:surf#6",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#506"
+            }
           },
           {
             "geometry": {
@@ -1817,7 +2005,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#7"
+            "id": "nx:s0:surf#7",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#507"
+            }
           },
           {
             "geometry": {
@@ -1838,7 +2030,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#8"
+            "id": "nx:s0:surf#8",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#508"
+            }
           },
           {
             "geometry": {
@@ -1859,7 +2055,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#9"
+            "id": "nx:s0:surf#9",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#509"
+            }
           }
         ],
         "tessellations": [],
@@ -1870,59 +2070,7 @@
         "nx": {
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:surf#1",
-                "nx:s0:surf#2",
-                "nx:s0:surf#3",
-                "nx:s0:surf#4",
-                "nx:s0:surf#5",
-                "nx:s0:surf#6",
-                "nx:s0:surf#7",
-                "nx:s0:surf#8",
-                "nx:s0:surf#9",
-                "nx:s0:surf#10",
-                "nx:s0:surf#11",
-                "nx:s0:surf#12",
-                "nx:s0:surf#13",
-                "nx:s0:surf#14",
-                "nx:s0:surf#15",
-                "nx:s0:surf#16",
-                "nx:s0:surf#17",
-                "nx:s0:surf#18",
-                "nx:s0:surf#19",
-                "nx:s0:surf#20",
-                "nx:s0:surf#21",
-                "nx:s0:surf#22",
-                "nx:s0:surf#23",
-                "nx:s0:surf#24",
-                "nx:s0:surf#25",
-                "nx:s0:surf#26",
-                "nx:s0:surf#27",
-                "nx:s0:surf#28",
-                "nx:s0:surf#29",
-                "nx:s0:surf#30",
-                "nx:s0:surf#31",
-                "nx:s0:surf#32",
-                "nx:s0:surf#33",
-                "nx:s0:surf#34",
-                "nx:s0:surf#35",
-                "nx:s0:surf#36",
-                "nx:s0:surf#37",
-                "nx:s0:surf#38",
-                "nx:s0:surf#39",
-                "nx:s0:surf#40",
-                "nx:s0:surf#41",
-                "nx:s0:surf#42",
-                "nx:s0:surf#43",
-                "nx:s0:surf#44",
-                "nx:s0:surf#45",
-                "nx:s0:surf#46",
-                "nx:s0:surf#47",
-                "nx:s0:surf#48",
-                "nx:s0:surf#49"
-              ]
+              "id": "nx:container:parasolid#0"
             }
           ]
         }
@@ -2027,9 +2175,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:s0:face#300": {

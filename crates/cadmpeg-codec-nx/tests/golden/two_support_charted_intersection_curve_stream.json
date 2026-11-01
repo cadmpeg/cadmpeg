@@ -41,7 +41,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:crv#0"
+            "id": "nx:s0:crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:curve-record#9"
+            }
           },
           {
             "geometry": {
@@ -268,7 +272,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#6"
+            }
           },
           {
             "geometry": {
@@ -289,7 +297,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#1"
+            "id": "nx:s0:surf#1",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#13"
+            }
           }
         ],
         "tessellations": [],
@@ -428,13 +440,7 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:surf#1",
-                "nx:s0:crv#0",
-                "nx:s0:intersection-crv#0"
-              ]
+              "id": "nx:container:parasolid#0"
             }
           ]
         }
@@ -539,9 +545,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:s0:crv#0": {

@@ -30,7 +30,11 @@
               "z": 0.0
             }
           },
-          "id": "catia:e5:curve#0"
+          "id": "catia:e5:curve#0",
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-e5-circle:32"
+          }
         }
       ],
       "drawings": [],
@@ -79,7 +83,11 @@
               "z": 0.0
             }
           },
-          "id": "catia:e5:surf#0"
+          "id": "catia:e5:surf#0",
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-e5-surface:000000"
+          }
         }
       ],
       "tessellations": [],
@@ -129,11 +137,7 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#e5",
-            "links": [
-              "catia:e5:surf#0",
-              "catia:e5:curve#0"
-            ]
+            "id": "catia:payload:unknown#e5"
           }
         ],
         "value_blocks": [],
@@ -543,9 +547,6 @@
       "exactness": {
         "catia:payload:unknown#e5": {
           "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          },
           "scope": "entity"
         }
       },

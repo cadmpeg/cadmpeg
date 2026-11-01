@@ -10,6 +10,7 @@
         {
           "id": "rhino:object:body#record-000000-offset-177",
           "kind": "general",
+          "native_ref": "rhino:object:record#000000",
           "regions": [
             "rhino:object:region#record-000000-offset-177"
           ],
@@ -151,10 +152,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:body#record-000000-offset-177"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],

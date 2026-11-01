@@ -1600,7 +1600,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#500"
+            }
           },
           {
             "geometry": {
@@ -1621,1057 +1625,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#1"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 10.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#10"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 11.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#11"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 12.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#12"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 13.000000000000002,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#13"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 14.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#14"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 15.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#15"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 16.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#16"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 17.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#17"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 18.000000000000004,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#18"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 19.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#19"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#2"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 20.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#20"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 21.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#21"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 22.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#22"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 23.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#23"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 24.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#24"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 25.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#25"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 26.000000000000004,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#26"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 27.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#27"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 28.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#28"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 29.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#29"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 3.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#3"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 30.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#30"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 31.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#31"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 32.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#32"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 33.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#33"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 34.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#34"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 35.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#35"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 36.00000000000001,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#36"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 37.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#37"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 38.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#38"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 39.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#39"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 4.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#4"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 40.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#40"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 41.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#41"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 42.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#42"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 43.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#43"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 44.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#44"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 45.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#45"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 46.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#46"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 47.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#47"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 48.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#48"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 49.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#49"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 5.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#5"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 6.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#6"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 7.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#7"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 8.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#8"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 9.000000000000002,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s0:surf#9"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s1:surf#0"
-          },
-          {
-            "geometry": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "id": "nx:s1:surf#1"
+            "id": "nx:s0:surf#1",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#501"
+            }
           },
           {
             "geometry": {
@@ -2692,7 +1650,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#10"
+            "id": "nx:s0:surf#10",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#510"
+            }
           },
           {
             "geometry": {
@@ -2713,7 +1675,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#11"
+            "id": "nx:s0:surf#11",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#511"
+            }
           },
           {
             "geometry": {
@@ -2734,7 +1700,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#12"
+            "id": "nx:s0:surf#12",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#512"
+            }
           },
           {
             "geometry": {
@@ -2755,7 +1725,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#13"
+            "id": "nx:s0:surf#13",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#513"
+            }
           },
           {
             "geometry": {
@@ -2776,7 +1750,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#14"
+            "id": "nx:s0:surf#14",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#514"
+            }
           },
           {
             "geometry": {
@@ -2797,7 +1775,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#15"
+            "id": "nx:s0:surf#15",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#515"
+            }
           },
           {
             "geometry": {
@@ -2818,7 +1800,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#16"
+            "id": "nx:s0:surf#16",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#516"
+            }
           },
           {
             "geometry": {
@@ -2839,7 +1825,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#17"
+            "id": "nx:s0:surf#17",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#517"
+            }
           },
           {
             "geometry": {
@@ -2860,7 +1850,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#18"
+            "id": "nx:s0:surf#18",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#518"
+            }
           },
           {
             "geometry": {
@@ -2881,7 +1875,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#19"
+            "id": "nx:s0:surf#19",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#519"
+            }
           },
           {
             "geometry": {
@@ -2902,7 +1900,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#2"
+            "id": "nx:s0:surf#2",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#502"
+            }
           },
           {
             "geometry": {
@@ -2923,7 +1925,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#20"
+            "id": "nx:s0:surf#20",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#520"
+            }
           },
           {
             "geometry": {
@@ -2944,7 +1950,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#21"
+            "id": "nx:s0:surf#21",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#521"
+            }
           },
           {
             "geometry": {
@@ -2965,7 +1975,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#22"
+            "id": "nx:s0:surf#22",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#522"
+            }
           },
           {
             "geometry": {
@@ -2986,7 +2000,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#23"
+            "id": "nx:s0:surf#23",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#523"
+            }
           },
           {
             "geometry": {
@@ -3007,7 +2025,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#24"
+            "id": "nx:s0:surf#24",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#524"
+            }
           },
           {
             "geometry": {
@@ -3028,7 +2050,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#25"
+            "id": "nx:s0:surf#25",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#525"
+            }
           },
           {
             "geometry": {
@@ -3049,7 +2075,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#26"
+            "id": "nx:s0:surf#26",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#526"
+            }
           },
           {
             "geometry": {
@@ -3070,7 +2100,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#27"
+            "id": "nx:s0:surf#27",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#527"
+            }
           },
           {
             "geometry": {
@@ -3091,7 +2125,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#28"
+            "id": "nx:s0:surf#28",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#528"
+            }
           },
           {
             "geometry": {
@@ -3112,7 +2150,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#29"
+            "id": "nx:s0:surf#29",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#529"
+            }
           },
           {
             "geometry": {
@@ -3133,7 +2175,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#3"
+            "id": "nx:s0:surf#3",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#503"
+            }
           },
           {
             "geometry": {
@@ -3154,7 +2200,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#30"
+            "id": "nx:s0:surf#30",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#530"
+            }
           },
           {
             "geometry": {
@@ -3175,7 +2225,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#31"
+            "id": "nx:s0:surf#31",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#531"
+            }
           },
           {
             "geometry": {
@@ -3196,7 +2250,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#32"
+            "id": "nx:s0:surf#32",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#532"
+            }
           },
           {
             "geometry": {
@@ -3217,7 +2275,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#33"
+            "id": "nx:s0:surf#33",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#533"
+            }
           },
           {
             "geometry": {
@@ -3238,7 +2300,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#34"
+            "id": "nx:s0:surf#34",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#534"
+            }
           },
           {
             "geometry": {
@@ -3259,7 +2325,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#35"
+            "id": "nx:s0:surf#35",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#535"
+            }
           },
           {
             "geometry": {
@@ -3280,7 +2350,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#36"
+            "id": "nx:s0:surf#36",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#536"
+            }
           },
           {
             "geometry": {
@@ -3301,7 +2375,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#37"
+            "id": "nx:s0:surf#37",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#537"
+            }
           },
           {
             "geometry": {
@@ -3322,7 +2400,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#38"
+            "id": "nx:s0:surf#38",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#538"
+            }
           },
           {
             "geometry": {
@@ -3343,7 +2425,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#39"
+            "id": "nx:s0:surf#39",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#539"
+            }
           },
           {
             "geometry": {
@@ -3364,7 +2450,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#4"
+            "id": "nx:s0:surf#4",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#504"
+            }
           },
           {
             "geometry": {
@@ -3385,7 +2475,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#40"
+            "id": "nx:s0:surf#40",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#540"
+            }
           },
           {
             "geometry": {
@@ -3406,7 +2500,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#41"
+            "id": "nx:s0:surf#41",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#541"
+            }
           },
           {
             "geometry": {
@@ -3427,7 +2525,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#42"
+            "id": "nx:s0:surf#42",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#542"
+            }
           },
           {
             "geometry": {
@@ -3448,7 +2550,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#43"
+            "id": "nx:s0:surf#43",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#543"
+            }
           },
           {
             "geometry": {
@@ -3469,7 +2575,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#44"
+            "id": "nx:s0:surf#44",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#544"
+            }
           },
           {
             "geometry": {
@@ -3490,7 +2600,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#45"
+            "id": "nx:s0:surf#45",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#545"
+            }
           },
           {
             "geometry": {
@@ -3511,7 +2625,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#46"
+            "id": "nx:s0:surf#46",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#546"
+            }
           },
           {
             "geometry": {
@@ -3532,7 +2650,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#47"
+            "id": "nx:s0:surf#47",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#547"
+            }
           },
           {
             "geometry": {
@@ -3553,7 +2675,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#48"
+            "id": "nx:s0:surf#48",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#548"
+            }
           },
           {
             "geometry": {
@@ -3574,7 +2700,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#49"
+            "id": "nx:s0:surf#49",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#549"
+            }
           },
           {
             "geometry": {
@@ -3595,7 +2725,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#5"
+            "id": "nx:s0:surf#5",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#505"
+            }
           },
           {
             "geometry": {
@@ -3616,7 +2750,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#6"
+            "id": "nx:s0:surf#6",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#506"
+            }
           },
           {
             "geometry": {
@@ -3637,7 +2775,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#7"
+            "id": "nx:s0:surf#7",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#507"
+            }
           },
           {
             "geometry": {
@@ -3658,7 +2800,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#8"
+            "id": "nx:s0:surf#8",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#508"
+            }
           },
           {
             "geometry": {
@@ -3679,7 +2825,1261 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s1:surf#9"
+            "id": "nx:s0:surf#9",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#509"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#500"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#1",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#501"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#10",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#510"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 11.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#11",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#511"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 12.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#12",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#512"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 13.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#13",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#513"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 14.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#14",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#514"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 15.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#15",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#515"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 16.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#16",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#516"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 17.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#17",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#517"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 18.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#18",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#518"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 19.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#19",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#519"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#2",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#502"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#20",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#520"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 21.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#21",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#521"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 22.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#22",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#522"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 23.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#23",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#523"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 24.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#24",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#524"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 25.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#25",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#525"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 26.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#26",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#526"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 27.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#27",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#527"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 28.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#28",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#528"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 29.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#29",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#529"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 3.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#3",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#503"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 30.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#30",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#530"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 31.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#31",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#531"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 32.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#32",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#532"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 33.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#33",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#533"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 34.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#34",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#534"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 35.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#35",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#535"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 36.00000000000001,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#36",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#536"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 37.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#37",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#537"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 38.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#38",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#538"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 39.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#39",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#539"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 4.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#4",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#504"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#40",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#540"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 41.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#41",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#541"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#42",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#542"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 43.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#43",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#543"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 44.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#44",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#544"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 45.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#45",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#545"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 46.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#46",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#546"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 47.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#47",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#547"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 48.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#48",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#548"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 49.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#49",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#549"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 5.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#5",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#505"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 6.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#6",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#506"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 7.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#7",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#507"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 8.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#8",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#508"
+            }
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 9.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#9",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s1:surface-record#509"
+            }
           }
         ],
         "tessellations": [],
@@ -4203,114 +4603,10 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:surf#1",
-                "nx:s0:surf#2",
-                "nx:s0:surf#3",
-                "nx:s0:surf#4",
-                "nx:s0:surf#5",
-                "nx:s0:surf#6",
-                "nx:s0:surf#7",
-                "nx:s0:surf#8",
-                "nx:s0:surf#9",
-                "nx:s0:surf#10",
-                "nx:s0:surf#11",
-                "nx:s0:surf#12",
-                "nx:s0:surf#13",
-                "nx:s0:surf#14",
-                "nx:s0:surf#15",
-                "nx:s0:surf#16",
-                "nx:s0:surf#17",
-                "nx:s0:surf#18",
-                "nx:s0:surf#19",
-                "nx:s0:surf#20",
-                "nx:s0:surf#21",
-                "nx:s0:surf#22",
-                "nx:s0:surf#23",
-                "nx:s0:surf#24",
-                "nx:s0:surf#25",
-                "nx:s0:surf#26",
-                "nx:s0:surf#27",
-                "nx:s0:surf#28",
-                "nx:s0:surf#29",
-                "nx:s0:surf#30",
-                "nx:s0:surf#31",
-                "nx:s0:surf#32",
-                "nx:s0:surf#33",
-                "nx:s0:surf#34",
-                "nx:s0:surf#35",
-                "nx:s0:surf#36",
-                "nx:s0:surf#37",
-                "nx:s0:surf#38",
-                "nx:s0:surf#39",
-                "nx:s0:surf#40",
-                "nx:s0:surf#41",
-                "nx:s0:surf#42",
-                "nx:s0:surf#43",
-                "nx:s0:surf#44",
-                "nx:s0:surf#45",
-                "nx:s0:surf#46",
-                "nx:s0:surf#47",
-                "nx:s0:surf#48",
-                "nx:s0:surf#49"
-              ]
+              "id": "nx:container:parasolid#0"
             },
             {
-              "id": "nx:container:parasolid#1",
-              "links": [
-                "nx:s1:surf#0",
-                "nx:s1:surf#1",
-                "nx:s1:surf#2",
-                "nx:s1:surf#3",
-                "nx:s1:surf#4",
-                "nx:s1:surf#5",
-                "nx:s1:surf#6",
-                "nx:s1:surf#7",
-                "nx:s1:surf#8",
-                "nx:s1:surf#9",
-                "nx:s1:surf#10",
-                "nx:s1:surf#11",
-                "nx:s1:surf#12",
-                "nx:s1:surf#13",
-                "nx:s1:surf#14",
-                "nx:s1:surf#15",
-                "nx:s1:surf#16",
-                "nx:s1:surf#17",
-                "nx:s1:surf#18",
-                "nx:s1:surf#19",
-                "nx:s1:surf#20",
-                "nx:s1:surf#21",
-                "nx:s1:surf#22",
-                "nx:s1:surf#23",
-                "nx:s1:surf#24",
-                "nx:s1:surf#25",
-                "nx:s1:surf#26",
-                "nx:s1:surf#27",
-                "nx:s1:surf#28",
-                "nx:s1:surf#29",
-                "nx:s1:surf#30",
-                "nx:s1:surf#31",
-                "nx:s1:surf#32",
-                "nx:s1:surf#33",
-                "nx:s1:surf#34",
-                "nx:s1:surf#35",
-                "nx:s1:surf#36",
-                "nx:s1:surf#37",
-                "nx:s1:surf#38",
-                "nx:s1:surf#39",
-                "nx:s1:surf#40",
-                "nx:s1:surf#41",
-                "nx:s1:surf#42",
-                "nx:s1:surf#43",
-                "nx:s1:surf#44",
-                "nx:s1:surf#45",
-                "nx:s1:surf#46",
-                "nx:s1:surf#47",
-                "nx:s1:surf#48",
-                "nx:s1:surf#49"
-              ]
+              "id": "nx:container:parasolid#1"
             }
           ]
         }
@@ -4456,16 +4752,10 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:container:parasolid#1": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:s0:face#300": {
