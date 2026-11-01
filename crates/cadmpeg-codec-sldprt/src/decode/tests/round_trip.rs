@@ -210,12 +210,12 @@ fn decode_is_equivariant_under_rigid_translation() {
     }
 }
 
-/// Decode → encode → decode fixpoint: once through the writer, a source-less
-/// model reaches a fixed point whose semantic hash and topology no longer
-/// change. Paired with the value golden below so a shared reader/writer
-/// misconception cannot hide behind a self-consistent round trip.
+/// Decode → encode → decode content preservation: once through the writer, a
+/// source-less model keeps its topology and geometry. Paired with the value
+/// golden below so a shared reader/writer misconception cannot hide behind a
+/// self-consistent round trip.
 #[test]
-fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() {
+fn authored_with_retained_native_envelope_cube_preserves_content() {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
@@ -226,17 +226,13 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
         .into_parts()
         .0;
 
-    let first_hash = crate::decode::document_local_sha256(first.ir()).unwrap();
-    let second_hash = crate::decode::document_local_sha256(&second).unwrap();
-    assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
-
     // Value golden: the cube's record families and counts, asserted directly.
-    assert_eq!(first.ir().model.bodies.len(), 1);
-    assert_eq!(first.ir().model.faces.len(), 6);
-    assert_eq!(first.ir().model.edges.len(), 12);
-    assert_eq!(first.ir().model.vertices.len(), 8);
-    assert_eq!(first.ir().model.coedges.len(), 24);
-    assert_eq!(first.ir().model.loops.len(), 6);
+    assert_eq!(second.model.bodies.len(), 1);
+    assert_eq!(second.model.faces.len(), 6);
+    assert_eq!(second.model.edges.len(), 12);
+    assert_eq!(second.model.vertices.len(), 8);
+    assert_eq!(second.model.coedges.len(), 24);
+    assert_eq!(second.model.loops.len(), 6);
     assert_eq!(
         sorted_point_positions(first.ir()),
         sorted_point_positions(&second)

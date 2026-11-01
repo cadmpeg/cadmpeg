@@ -102,7 +102,10 @@ mod tests {
 
     #[test]
     fn untyped_flags_follow_the_owned_record_and_union_across_sidecar_roundtrip() {
-        let mut fidelity = SourceFidelity::default();
+        let mut fidelity = SourceFidelity::with_annotations(
+            cadmpeg_ir::Annotations::default(),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"sldprt retention test"),
+        );
         for id in ["sldprt:file:source-image#0", "sldprt:file:block#17"] {
             fidelity
                 .insert_retained_record(
