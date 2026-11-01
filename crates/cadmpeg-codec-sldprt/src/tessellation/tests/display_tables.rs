@@ -226,6 +226,33 @@ fn display_table_channel_bytes_refuse_retained_limit_before_copy() {
 }
 
 #[test]
+fn rejected_candidate_tables_charge_no_channel_bytes() {
+    // Each candidate opens with a strip descriptor whose data runs to one
+    // shared descriptor of another kind, so the candidates overlap.
+    const CANDIDATES: usize = 64;
+    const SPAN: usize = 64 * 1024;
+    let mut payload = table();
+    let candidates_at = payload.len();
+    let terminator_at = candidates_at + CANDIDATES * 16 + SPAN;
+    for index in 0..CANDIDATES {
+        let data = candidates_at + index * 16 + 16;
+        let count = u32::try_from((terminator_at - data) / 4).expect("count fits u32");
+        payload.extend(descriptor(4, 8, count, &[]));
+    }
+    payload.resize(terminator_at, 0);
+    payload.extend(descriptor(4, 9, 0, &[]));
+    payload.extend(table());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+    let tables = parse_table_sequence(&ctx, &payload, 0, payload.len())
+        .expect("rejected candidates stay within the retained budget")
+        .expect("table sequence");
+    assert_eq!(tables.len(), 2);
+}
+
+#[test]
 fn display_table_sequence_collects_consecutive_tables() {
     let mut payload = table();
     payload.extend(table());
