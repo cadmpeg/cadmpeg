@@ -84,7 +84,7 @@ pub(super) fn decode(
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let characteristic_values = characteristic_values(exchange, geometry, &mut losses, ctx)?;
     for (id, record) in exchange.entities("DATUM") {
-        let identification = named_parameter(record, "DATUM", 0)
+        let identification = datum_identification_parameter(record)
             .and_then(|value| {
                 decode_text(
                     exchange,
@@ -552,26 +552,14 @@ pub(super) fn decode(
         } else {
             (None, None)
         };
-        // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
-        // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
-        // system as a separate aggregate.
-        let datum_system = first_matching(
-            record
-                .partials
-                .iter()
-                .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
-                .into_iter()
-                .flat_map(|partial| partial.parameters.iter()),
-            ctx,
-            |id| {
-                annotations.get(id).is_some_and(|index| {
-                    matches!(
-                        ir.model.pmi[index.get()].definition,
-                        PmiDefinition::DatumSystem { .. }
-                    )
-                })
-            },
-        )?
+        let datum_system = first_matching(datum_system_parameter(record), ctx, |id| {
+            annotations.get(id).is_some_and(|index| {
+                matches!(
+                    ir.model.pmi[index.get()].definition,
+                    PmiDefinition::DatumSystem { .. }
+                )
+            })
+        })?
         .and_then(|id| {
             annotations
                 .get(id)
@@ -1509,6 +1497,35 @@ fn datum_target_form(value: &str) -> cadmpeg_ir::DatumTargetForm {
     }
 }
 
+fn datum_identification_parameter(record: &RawRecord) -> Option<&Value> {
+    if record.simple_name() == Some("DATUM") {
+        record.parameter(4)
+    } else {
+        named_parameter(record, "DATUM", 0)
+    }
+}
+
+fn datum_system_parameter(record: &RawRecord) -> Option<&Value> {
+    match record.simple_name() {
+        Some(name) if is_datum_referenced_tolerance_name(name) => record.parameter(4),
+        _ => named_parameter(record, "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE", 0),
+    }
+}
+
+fn is_datum_referenced_tolerance_name(name: &str) -> bool {
+    matches!(
+        name,
+        "ANGULARITY_TOLERANCE"
+            | "CIRCULAR_RUNOUT_TOLERANCE"
+            | "COAXIALITY_TOLERANCE"
+            | "CONCENTRICITY_TOLERANCE"
+            | "PARALLELISM_TOLERANCE"
+            | "PERPENDICULARITY_TOLERANCE"
+            | "SYMMETRY_TOLERANCE"
+            | "TOTAL_RUNOUT_TOLERANCE"
+    )
+}
+
 fn datum_target_identification_parameter(record: &RawRecord) -> Option<&Value> {
     record
         .partials
@@ -1827,6 +1844,18 @@ fn characteristic_values(
         let parameters = representation_items
             .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
         let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
+        let limits = values
+            .iter()
+            .filter_map(|(name, _)| name.as_deref())
+            .filter(|name| {
+                name.eq_ignore_ascii_case("upper limit") || name.eq_ignore_ascii_case("lower limit")
+            })
+            .count();
+        if limits > 0 {
+            losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} omits {limits} limit measure(s)"
+            )));
+        }
         let mut named_count = 0usize;
         let mut named_first = None;
         for (name, value) in &values {

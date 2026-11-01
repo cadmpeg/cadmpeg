@@ -1488,6 +1488,98 @@ fn complex_datum_reads_identification_from_its_named_partial() {
 }
 
 #[test]
+fn simple_datum_reads_identification_from_its_fifth_attribute() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=DATUM('',$,#5,.F.,'A');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let datum = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("simple datum");
+    assert_eq!(datum.name, None);
+    assert!(matches!(
+        &datum.definition,
+        PmiDefinition::Datum { identification } if identification == "A"
+    ));
+}
+
+#[test]
+fn simple_datum_referenced_tolerance_links_its_datum_system() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('face','',#5,.T.);
+#7=DATUM('',$,#5,.F.,'A');
+#8=DATUM_SYSTEM('system','',#5,.F.,(#20));
+#11=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(1.5),#1) REPRESENTATION_ITEM(''));
+#12=PERPENDICULARITY_TOLERANCE('perpendicular','',#11,#6,(#8));
+#13=POSITION_TOLERANCE('position','',#11,#6);
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,$);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let tolerance = |name: &str| {
+        result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .map(|annotation| annotation.definition.clone())
+            .expect("geometric tolerance")
+    };
+    assert!(matches!(
+        tolerance("perpendicular"),
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Perpendicularity,
+            datum_system: Some(system),
+            ..
+        } if system.as_str() == "step:presentation:pmi#8"
+    ));
+    assert!(matches!(
+        tolerance("position"),
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Position,
+            datum_system: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn dimensional_limit_measures_record_a_loss() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'diameter');
+#11=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(35.),#1) REPRESENTATION_ITEM('nominal value'));
+#12=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(35.2),#1) REPRESENTATION_ITEM('upper limit'));
+#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(34.8),#1) REPRESENTATION_ITEM('lower limit'));
+#14=SHAPE_DIMENSION_REPRESENTATION('',(#11,#12,#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let limits = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::DimensionalLimitsOmitted.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(limits.len(), 1, "{:#?}", result.report().losses);
+    assert!(limits[0].message.contains("#15 omits 2 limit measure"));
+}
+
+#[test]
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
 
