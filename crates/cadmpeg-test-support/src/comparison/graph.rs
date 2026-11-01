@@ -104,6 +104,9 @@ fn append(
             .ok_or_else(|| format!("{arena} has a record without a string id"))?;
         value.remove("native_ref");
         value.remove("source");
+        // D21 makes the source-object association identity-only, so a
+        // writer-minted identity is not content.
+        value.remove("source_object");
         if let Some(ordinal) = value.get("ordinal") {
             let ordinal = ordinal
                 .as_u64()
