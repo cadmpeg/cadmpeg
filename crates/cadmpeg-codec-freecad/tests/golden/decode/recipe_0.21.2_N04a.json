@@ -3833,7 +3833,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "1cb5a7cd158a56c0231e8ae93f527a71bcbf6f9e421cd9cc4f57dc2cef6f181d",
+    "decode_digest": "ea81d20f6f99fa32d1a4d076a16165afd044452cd58b487196bc2b79213137a3",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

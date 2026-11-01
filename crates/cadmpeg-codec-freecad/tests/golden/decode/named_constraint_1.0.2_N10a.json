@@ -5965,7 +5965,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "1cefe12d3fd8cb92c9e1c98430c2c2bfa50941ad70b3ebe66d620fec140a411f",
+    "decode_digest": "c965847aa2a1ba6c1bacc43ae0c911db1610e57497ab5ca19fea5e6aed33ada4",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

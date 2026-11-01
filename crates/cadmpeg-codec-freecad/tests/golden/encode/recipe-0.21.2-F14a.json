@@ -499,7 +499,7 @@
     "notes": [],
     "synthesis_cause": {
       "cause": "patch_declined",
-      "reason": "unsupported writer content: the typed property has no independent projection"
+      "reason": "unsupported writer content: current uncarried typed records require FCStd graph regeneration"
     },
     "write_path": {
       "fidelity": {

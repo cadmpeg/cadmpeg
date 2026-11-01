@@ -2879,7 +2879,7 @@
         }
       }
     },
-    "decode_digest": "8c271e6d7ff228ab2e7d7e7833f224fe731bc2a028f89fc616250a38142ea2c8",
+    "decode_digest": "9a37e0d3423b38c5af498252068e5221f5be8f238ad8b556977f7900a88f74dd",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243:prefix": {
         "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
