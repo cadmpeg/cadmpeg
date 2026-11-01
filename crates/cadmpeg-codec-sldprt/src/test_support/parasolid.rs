@@ -502,14 +502,30 @@ fn remove_array_type_markers(bytes: &mut Vec<u8>) {
     }
 }
 
+/// Bytes of a bare `00 86` `B_CURVE` record with short pointers, its tag
+/// and its body (`sldprt.md` §2).
+const B_CURVE_RECORD_LEN: usize = 2 + crate::layout::parasolid_b_curve_short::LEN;
+
+/// A bare `00 86` `B_CURVE` record `wrapper_attr` whose `nurbs` pointer names
+/// `descriptor_attr`: node identifier 1, null pointers, sense `+`.
+fn b_curve(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x86];
+    be16(&mut b, wrapper_attr);
+    be32(&mut b, 1);
+    for _ in 0..5 {
+        be16(&mut b, 1);
+    }
+    b.push(0x2b);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 1);
+    b
+}
+
 pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 2);
@@ -533,7 +549,7 @@ pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Ve
 
 pub(crate) fn typed_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let mut bytes = nurbs_curve_carrier(wrapper_attr, descriptor_attr);
-    let descriptor = bytes.split_off(14);
+    let descriptor = bytes.split_off(B_CURVE_RECORD_LEN);
     bytes.truncate(4);
     be32(&mut bytes, 0x1a);
     for reference in [
@@ -556,10 +572,7 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut bytes = vec![0x00, 0x86];
-    be16(&mut bytes, wrapper_attr);
-    be16(&mut bytes, descriptor_attr);
-    bytes.extend_from_slice(&[0u8; 8]);
+    let mut bytes = b_curve(wrapper_attr, descriptor_attr);
     bytes.extend_from_slice(&[0x00, 0x88]);
     be16(&mut bytes, descriptor_attr);
     be16(&mut bytes, 2);
@@ -600,10 +613,7 @@ pub(crate) fn linear_nurbs_curve_carrier_through(
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 1);

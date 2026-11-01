@@ -2282,7 +2282,7 @@ keep their widths, and each wide pointer moves the fields after it by two
 bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
 (attr 62078), FACE records whose own attr is in the 4-byte form, and
 narrow-attr FACE records carrying a pointer past `0x7ffe`. The deltas forms of
-§4.3 keep their fixed `[hi][lo][01]` cells.
+§4.3 keep their fixed three-byte cells.
 
 A record key is the u16 `attr`, so a pointer past `0xffff` has no key:
 a compact record that holds one does not frame, and a typed node whose own
@@ -2404,6 +2404,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                                             |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                                     |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                                                  |
+| `00 86`                | tripled     | none     | five ref triples at body +6, sense byte at body +21, NURBS cell `[hi][lo][00]` at body +22, data cell at body +25 |
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
@@ -2754,7 +2755,7 @@ The compact form has a nonzero count. The descriptor reference role selects its 
 
 For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store `[x*w, y*w, z*w, w]` per pole. Surface control grids use native index `u*n_v + v`. A trailing zero-multiplicity array entry is not part of the knot vector; its paired f64 slot is physically present but ignored.
 
-Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
+Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
 An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
