@@ -20,6 +20,30 @@ pub(crate) mod indexed_design_record_header {
     pub(crate) const RECORD_INDEX: usize = 7;
 }
 
+/// Byte offsets for the `construction_operand_extended_path_prefix` record.
+///
+/// Spec §3.1. Record length 65 B.
+///
+/// ```text
+/// Offsets are relative to the path record's indexed header. The placement follows the prefix.
+/// ```
+pub(crate) mod construction_operand_extended_path_prefix {
+    /// Offset of `zero_run` (`bytes[28]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `prefix_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_VALUE: usize = 39;
+    /// Stated value of `prefix_value` (`u32`). Spec §3.1.
+    pub(crate) const PREFIX_VALUE_VALUE: u32 = 0x0000_0003;
+    /// Offset of `trailing_zero_run` (`bytes[13]`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO_RUN: usize = 43;
+    /// Offset of `entity_marker` (`u8`). Spec §3.1.
+    pub(crate) const ENTITY_MARKER: usize = 56;
+    /// Stated value of `entity_marker` (`u8`). Spec §3.1.
+    pub(crate) const ENTITY_MARKER_VALUE: u8 = 1;
+    /// Offset of `entity_reference` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ENTITY_REFERENCE: usize = 57;
+}
+
 /// Byte offsets for the `sketch_container_visibility_member_prefix` record.
 ///
 /// Spec §3.1. Record length 37 B.

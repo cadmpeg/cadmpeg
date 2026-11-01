@@ -413,6 +413,8 @@ impl DesignOperandRole {
     pub(crate) const PROFILE: Self = Self(0x0000_0041_0000_0000);
     /// Extrude face operand run.
     pub(crate) const FACES: Self = Self(0x0000_0011_0000_0000);
+    /// Pattern seed carried by occurrence paths instead of members.
+    pub(crate) const PATH_SEED: Self = Self(0x0000_0100_0000_0000);
 
     // These codes have scope-dependent meanings and no single semantic name.
     /// Scope-dependent role code 0x5.
