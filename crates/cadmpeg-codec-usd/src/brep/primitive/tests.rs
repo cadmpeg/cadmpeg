@@ -2,6 +2,7 @@
 
 use super::{cube, plane, revolved, sphere, Axis, Segment};
 use crate::brep::Brep;
+use cadmpeg_ir::math::portable::Portable;
 
 /// The uses of each edge: `(forward, reversed)`.
 fn uses(brep: &Brep) -> Vec<(usize, usize)> {
@@ -62,7 +63,7 @@ fn a_cone_ends_at_an_apex_vertex() {
     );
     closed(&brep);
     let cone = &brep.analytic_surfaces[1];
-    assert_eq!(cone.params, [1.0, 0.5_f64.atan()]);
+    assert_eq!(cone.params, [1.0, 0.5_f64.portable_atan()]);
     assert_eq!(cone.frame.axis, [0.0, 0.0, -1.0]);
 }
 
