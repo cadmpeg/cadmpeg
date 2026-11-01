@@ -1835,6 +1835,38 @@ fn blend_boundary(
 /// tolerance: the stream's linear resolution, `1e-8` m.
 pub(super) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 
+/// Whether an edge runs against an open NURBS curve that stores no range, from
+/// the parameters of its two vertices on the curve (spec §7.2). `None` on a
+/// periodic curve, when the vertices coincide, when either vertex has no single
+/// parameter, or when the two parameters are equal.
+fn vertex_parameter_reversal(
+    ctx: &DecodeContext<'_>,
+    carrier: &CurveCarrier,
+    endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    let (Some([start, end]), Some(SolvedCurveGeometry::Nurbs(curve))) =
+        (endpoints, carrier.geometry.solved())
+    else {
+        return Ok(None);
+    };
+    if curve.periodic() || start.distance(end) <= LINEAR_RESOLUTION_MM {
+        return Ok(None);
+    }
+    Ok(
+        match (
+            nurbs_parameter_at_point(ctx, curve, start)?,
+            nurbs_parameter_at_point(ctx, curve, end)?,
+        ) {
+            (InverseResolution::Unique(first), InverseResolution::Unique(second))
+                if first != second =>
+            {
+                Some(second < first)
+            }
+            _ => None,
+        },
+    )
+}
+
 /// Whether an edge runs against an open NURBS curve that stores no range,
 /// from the curve's points at the two ends of its knot domain. Each end
 /// matches a vertex within that vertex's `bounds` entry. When both orders
@@ -2981,8 +3013,8 @@ fn decode_graph(
             ),
         );
         // An edge without a resolved range takes its direction from the ends of
-        // its curve's domain, and else from a compact analytic curve's
-        // orientation marker.
+        // its curve's domain, else from its vertices' parameters on a NURBS
+        // curve, and else from a compact analytic curve's orientation marker.
         let against_curve = match parameter_range {
             Some((_, reversed)) => reversed,
             None => {
@@ -3003,7 +3035,20 @@ fn decode_graph(
                     })
                     .transpose()?
                     .flatten();
-                domain_reversed.unwrap_or_else(|| {
+                let inverse_reversed = match domain_reversed {
+                    Some(reversed) => Some(reversed),
+                    None => carrier
+                        .map(|carrier| {
+                            vertex_parameter_reversal(
+                                ctx,
+                                carrier,
+                                edge_endpoint_positions.get(&e).copied(),
+                            )
+                        })
+                        .transpose()?
+                        .flatten(),
+                };
+                inverse_reversed.unwrap_or_else(|| {
                     carrier.is_some_and(|carrier| carrier.runs_against_edges(forward_linked))
                 })
             }
