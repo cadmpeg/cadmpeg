@@ -2226,6 +2226,9 @@ fin, previous, next, curve, next-on-curve, previous-on-curve, and owner.
 The complete VERTEX has five pointers before tolerance and its owner pointer
 after tolerance. A bare POINT stores its transmit index at body +0 and node ID at body +2.
 POINT has exactly four pointers before its coordinate vector.
+A node tag or stream boundary after the coordinate vector delimits a
+complete POINT when a wide index beginning with `ff` also frames a
+first-of-type prefix.
 Coordinate bytes do not extend that pointer list. Coordinates are finite
 big-endian f64 values in metres, with no format magnitude limit. A deltas
 POINT in the tripled form has no bare-pointer fallback.
