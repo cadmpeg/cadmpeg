@@ -1,0 +1,112 @@
+#usda 1.0
+(
+    defaultPrim = "Arm"
+    kilogramsPerUnit = 1
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+def Xform "Arm" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+)
+{
+    bool physxArticulation:enabledSelfCollisions = 0
+    int physxArticulation:solverPositionIterationCount = 32
+
+    def PhysicsScene "Scene" (
+        prepend apiSchemas = ["PhysxSceneAPI"]
+    )
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 981
+        uniform token physxScene:solverType = "TGS"
+        uniform uint physxScene:timeStepsPerSecond = 120
+        float physxScene:bounceThreshold = 20
+    }
+
+    def Material "Rubber" (
+        prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.8
+        float physics:staticFriction = 0.9
+        uniform token physxMaterial:frictionCombineMode = "max"
+    }
+
+    def Xform "Base" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyAPI"]
+    )
+    {
+        float physxRigidBody:linearDamping = 0.1
+        float physxRigidBody:maxAngularVelocity = 360
+        float physxRigidBody:maxLinearVelocity = inf
+        float physxRigidBody:sleepThreshold = 0.5
+
+        def Mesh "Geom" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI", "PhysxCollisionAPI", "PhysxConvexDecompositionCollisionAPI"]
+        )
+        {
+            int[] faceVertexCounts = [3, 3, 3, 3]
+            int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+            rel material:binding:physics = </Arm/Rubber>
+            uniform token physics:approximation = "convexDecomposition"
+            float physxCollision:contactOffset = 0.2
+            float physxCollision:restOffset = -inf
+            uniform uint physxConvexDecompositionCollision:maxConvexHulls = 8
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 2)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def Xform "Link" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, 2)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "Finger" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def PhysicsRevoluteJoint "Shoulder" (
+        prepend apiSchemas = ["PhysxJointAPI", "PhysxLimitAPI:angular", "PhysicsJointStateAPI:angular"]
+    )
+    {
+        rel physics:body0 = </Arm/Base>
+        rel physics:body1 = </Arm/Link>
+        uniform token physics:axis = "X"
+        point3f physics:localPos0 = (0, 0, 2)
+        float physics:lowerLimit = -90
+        float physics:upperLimit = 90
+        float physxJoint:armature = 0.01
+        float physxJoint:jointFriction = 0.05
+        float physxJoint:maxJointVelocity = 180
+        float physxLimit:angular:damping = 2
+        float physxLimit:angular:stiffness = 100
+        float state:angular:physics:position = 30
+    }
+
+    def PhysicsPrismaticJoint "Grip" (
+        prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:transX"]
+    )
+    {
+        rel physics:body0 = </Arm/Link>
+        rel physics:body1 = </Arm/Finger>
+        uniform token physics:axis = "X"
+        point3f physics:localPos0 = (0, 0, 2)
+        float physics:lowerLimit = 0
+        float physics:upperLimit = 3
+        float physxJoint:armature = 0.5
+        float physxJoint:maxJointVelocity = 10
+        float physxMimicJoint:transX:gearing = 0.02
+        float physxMimicJoint:transX:offset = 1
+        rel physxMimicJoint:transX:referenceJoint = </Arm/Shoulder>
+        uniform token physxMimicJoint:transX:referenceJointAxis = "rotX"
+    }
+}

@@ -38,3 +38,13 @@ pub(crate) fn entry_fixture(
 }
 
 pub(crate) mod topology;
+
+pub(crate) fn non_placement_losses(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+) -> Vec<&cadmpeg_ir::report::loss::LossNote> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() != "feature.primitive-placement-unresolved")
+        .collect()
+}

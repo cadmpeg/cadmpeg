@@ -1,0 +1,44 @@
+#usda 1.0
+(
+    defaultPrim = "Surfaces"
+    metersPerUnit = 0.001
+    upAxis = "Z"
+)
+
+def Xform "Surfaces"
+{
+    def NurbsPatch "Bilinear"
+    {
+        int uVertexCount = 2
+        int vVertexCount = 3
+        int uOrder = 2
+        int vOrder = 3
+        double[] uKnots = [0, 0, 1, 1]
+        double[] vKnots = [0, 0, 0, 1, 1, 1]
+        double2 uRange = (0, 1)
+        double2 vRange = (0, 1)
+        point3f[] points = [(0, 0, 0), (10, 0, 0), (0, 5, 2), (10, 5, 2), (0, 10, 0), (10, 10, 0)]
+        double[] pointWeights = [1, 1, 0.5, 0.5, 1, 1]
+        color3f[] primvars:displayColor = [(0.2, 0.4, 0.8)]
+    }
+
+    def NurbsPatch "Trimmed" (
+        doc = "A plane with one trim loop."
+    )
+    {
+        int uVertexCount = 2
+        int vVertexCount = 2
+        int uOrder = 2
+        int vOrder = 2
+        double[] uKnots = [0, 0, 1, 1]
+        double[] vKnots = [0, 0, 1, 1]
+        uniform token orientation = "leftHanded"
+        point3f[] points = [(0, 0, 5), (10, 0, 5), (0, 10, 5), (10, 10, 5)]
+        int[] trimCurve:counts = [1]
+        int[] trimCurve:orders = [2]
+        int[] trimCurve:vertexCounts = [5]
+        double[] trimCurve:knots = [0, 0, 1, 2, 3, 4, 4]
+        double2[] trimCurve:ranges = [(0, 4)]
+        double3[] trimCurve:points = [(0.1, 0.1, 1), (0.9, 0.1, 1), (0.9, 0.9, 1), (0.1, 0.9, 1), (0.1, 0.1, 1)]
+    }
+}

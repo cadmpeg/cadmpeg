@@ -507,6 +507,21 @@ pub(super) fn check_references(
             {
                 ref_error(findings, &owner, "occurrence", id.as_str());
             }
+            AppearanceTarget::TriangleGroup {
+                tessellation,
+                group,
+            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
+                None => ref_error(findings, &owner, "tessellation", tessellation),
+                Some(mesh)
+                    if !mesh
+                        .triangle_groups()
+                        .iter()
+                        .any(|candidate| candidate.source_id.as_deref() == Some(group)) =>
+                {
+                    ref_error(findings, &owner, "triangle group", group);
+                }
+                Some(_) => {}
+            },
             AppearanceTarget::Record { arena, id } => {
                 if !ir.model.contains_record(*arena, id) {
                     ref_error(findings, &owner, "record in named neutral arena", id);
@@ -3142,6 +3157,16 @@ fn check_feature_references(
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                if construction
+                    .extent()
+                    .is_some_and(|extent| !extent.angles_within_turn())
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "revolution angular travel must not exceed one turn",
+                    );
+                }
             }
             FeatureOperation::Sweep {
                 path,

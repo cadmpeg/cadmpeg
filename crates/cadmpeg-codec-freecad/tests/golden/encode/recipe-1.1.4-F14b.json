@@ -1,0 +1,135 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 35779,
+      "payload_sha256": "368663934d07e42b888b5cd9b3aa439d6d58d94a9a7cc6ca51883e44e1db0680"
+    },
+    {
+      "name": "Body.Shape.brp",
+      "payload_len": 6047,
+      "payload_sha256": "24c9c43bd6140589e0e280324c7b91d12722126231a0aa84eb47066c3ab92c0d"
+    },
+    {
+      "name": "Body.Shape.Map.txt",
+      "payload_len": 268,
+      "payload_sha256": "94bd618a1edcc5492f0dd0322b8acda56e98c7bb271903c8543731171e3be3e2"
+    },
+    {
+      "name": "AdditiveBox.AddSubShape.brp",
+      "payload_len": 8717,
+      "payload_sha256": "e9b62e37300706d75df899a85944f4be846813449bbf3a89c189cd41ff07abf8"
+    },
+    {
+      "name": "AdditiveBox.Shape.brp",
+      "payload_len": 8939,
+      "payload_sha256": "1009429a64fc95d7b54115182ed242f055a01b405aa1af33d4289c622b5bfdd5"
+    },
+    {
+      "name": "AdditiveBox.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Sketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Sketch.Shape.brp",
+      "payload_len": 489,
+      "payload_sha256": "a844f07b5bb7ef4c9b264bdd15e75479f69ad52b20af49418e62d5f0c87f78d4"
+    },
+    {
+      "name": "Sketch.Shape.Map.txt",
+      "payload_len": 133,
+      "payload_sha256": "406e44cc60ef5442ba90aa1b30d499f387cdaa4991035651a8e0e6c66ed78426"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 4,
+        "coedges": 72,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 36,
+        "drawings": 0,
+        "edges": 36,
+        "faces": 18,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 3,
+        "loops": 18,
+        "mass_properties": 0,
+        "native.fcstd.applications": 11,
+        "native.fcstd.attachments": 11,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 4,
+        "native.fcstd.design_census": 3,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 2,
+        "native.fcstd.entries": 9,
+        "native.fcstd.extensions": 6,
+        "native.fcstd.logical_ledger": 295,
+        "native.fcstd.objects": 11,
+        "native.fcstd.physical_ledger": 64,
+        "native.fcstd.properties": 144,
+        "native.fcstd.shape_payloads": 6,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 3,
+        "pcurves": 48,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 25,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 4,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 4,
+        "sketch_constraints": 2,
+        "sketch_entities": 2,
+        "sketches": 1,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 18,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 25,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

@@ -510,3 +510,60 @@ fn knit_completeness_resolves_the_canonical_bound_gap_tolerance() {
         assert!(super::super::feature_definition_is_incomplete_with_parameters(&definition, &[],));
     }
 }
+
+#[test]
+fn thread_is_complete_only_with_every_field_and_a_proven_modeled_state() {
+    use cadmpeg_core::text::NonBlankString;
+    use cadmpeg_ir::features::{
+        CosmeticThreadExtent, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let resolved = || {
+        FaceSelection::historical(
+            cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#thread")
+                .expect("identity grammar"),
+            vec![cadmpeg_ir::ids::HistoricalFaceId::mint("test:model:face#1")
+                .expect("identity grammar")],
+            "test:model:native#thread".into(),
+        )
+        .expect("historical face selection")
+    };
+    let thread = |face: FaceSelection,
+                  modeled: Option<bool>,
+                  pitch: Option<PositiveLength>| {
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            face,
+            standard: NonBlankString::new("Profile".to_owned()),
+            designation: NonBlankString::new("D5".to_owned()),
+            diameter: Some(cadmpeg_ir::Dimension::Literal(
+                PositiveLength::new(5.0).expect("positive diameter"),
+            )),
+            pitch: pitch.map(cadmpeg_ir::Dimension::Literal),
+            modeled,
+            extent: Some(CosmeticThreadExtent::Through {}),
+        })
+    };
+    let pitch = PositiveLength::new(0.8);
+    assert!(!feature_definition_is_incomplete(&thread(
+        resolved(),
+        Some(false),
+        pitch
+    )));
+    // An absent modeled state is a gap, never a default.
+    assert!(feature_definition_is_incomplete(&thread(
+        resolved(),
+        None,
+        pitch
+    )));
+    assert!(feature_definition_is_incomplete(&thread(
+        FaceSelection::Native("test:model:native#thread".into()),
+        Some(false),
+        pitch
+    )));
+    assert!(feature_definition_is_incomplete(&thread(
+        resolved(),
+        Some(false),
+        None
+    )));
+}

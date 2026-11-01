@@ -1,0 +1,113 @@
+{
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 0,
+        "coedges": 0,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 2,
+        "drawings": 0,
+        "edges": 0,
+        "faces": 0,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 0,
+        "loops": 0,
+        "mass_properties": 0,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 0,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 0,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 1,
+        "product_definitions": 0,
+        "regions": 0,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 0,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 1,
+        "surfaces": 1,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 0,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "usd:usda-1.0"
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "export.carrier-not-written",
+          "kind": "geometry_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "2 curves with no line or NURBS form and 1 surfaces that no face uses were not written",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.omitted",
+          "kind": "subd_omitted",
+          "namespace": "export",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.omitted",
+          "kind": "procedural_reduced",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the usd write does not represent model arena `procedural_surfaces`: 1 record(s) omitted",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "USDA 1.0 text layer, metre units"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "path": "synthesized"
+    }
+  },
+  "usda": [
+    "#usda 1.0",
+    "(",
+    "    metersPerUnit = 1",
+    "    upAxis = \"Z\"",
+    ")",
+    ""
+  ]
+}

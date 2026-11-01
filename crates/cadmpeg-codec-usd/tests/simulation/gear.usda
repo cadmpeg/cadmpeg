@@ -1,0 +1,59 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    kilogramsPerUnit = 1
+    upAxis = "Z"
+)
+def Xform "World"
+{
+    def PhysicsScene "Scene"
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 0
+    }
+    def Xform "A" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        vector3f physics:angularVelocity = (0, 0, 90)
+    }
+    def Xform "B" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+        double3 xformOp:translate = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        
+    }
+    def PhysicsRevoluteJoint "HingeA"
+    {
+        rel physics:body1 = </World/A>
+        uniform token physics:axis = "Z"
+        point3f physics:localPos0 = (0, 0, 0)
+    }
+    def PhysicsRevoluteJoint "HingeB"
+    {
+        rel physics:body1 = </World/B>
+        uniform token physics:axis = "Z"
+        point3f physics:localPos0 = (1, 0, 0)
+    }
+    def PhysxPhysicsGearJoint "Gear"
+    {
+        rel physics:body0 = </World/A>
+        rel physics:body1 = </World/B>
+        float physics:gearRatio = 2
+        rel physics:hinge0 = </World/HingeA>
+        rel physics:hinge1 = </World/HingeB>
+    }
+}

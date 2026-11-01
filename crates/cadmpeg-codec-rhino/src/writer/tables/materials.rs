@@ -188,6 +188,7 @@ fn bound_appearance<'a>(ir: &'a CadIr, identity: &str) -> Option<&'a Appearance>
             AppearanceTarget::Surface(id) => id.as_str(),
             AppearanceTarget::Occurrence(id) => id.as_str(),
             AppearanceTarget::Tessellation(id) => id.as_str(),
+            AppearanceTarget::TriangleGroup { tessellation, .. } => tessellation.as_str(),
             AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
                 id.as_str()
             }

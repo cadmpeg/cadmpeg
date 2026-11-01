@@ -1007,12 +1007,12 @@ fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
         .expect("complete rank-two frame");
     assert_eq!(
         slots,
-        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
     assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal(), Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }
 
 #[test]
@@ -1026,7 +1026,7 @@ fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
     let systems = plane_local_systems(&payload);
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
-    assert_eq!(systems[0].frame().normal(), Some([0.0, 0.0, -1.0]));
+    assert_eq!(systems[0].frame().normal(), Some([1.0, 0.0, 0.0]));
 }
 
 #[test]

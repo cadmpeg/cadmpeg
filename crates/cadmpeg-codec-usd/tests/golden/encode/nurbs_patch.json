@@ -1,0 +1,122 @@
+{
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 2,
+        "coedges": 0,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 0,
+        "drawings": 0,
+        "edges": 0,
+        "faces": 2,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 0,
+        "loops": 0,
+        "mass_properties": 0,
+        "occurrences": 3,
+        "parameters": 0,
+        "pcurves": 0,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 0,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 3,
+        "regions": 2,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 2,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 2,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 0,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "usd:usda-1.0"
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "export.vertex-precision",
+          "kind": "mesh_vertex_precision",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "9 points were written as binary32 coordinates, which round them",
+        "severity": "info"
+      }
+    ],
+    "notes": [
+      "USDA 1.0 text layer, metre units"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "path": "synthesized"
+    }
+  },
+  "usda": [
+    "#usda 1.0",
+    "(",
+    "    defaultPrim = \"Surfaces\"",
+    "    metersPerUnit = 1",
+    "    upAxis = \"Z\"",
+    ")",
+    "",
+    "def Xform \"Surfaces\"",
+    "{",
+    "    def NurbsPatch \"Bilinear\"",
+    "    {",
+    "        float3[] extent = [(0, 0, 0), (0.01, 0.01, 0.002)]",
+    "        int uVertexCount = 2",
+    "        int vVertexCount = 3",
+    "        int uOrder = 2",
+    "        int vOrder = 3",
+    "        double[] uKnots = [0, 0, 1, 1]",
+    "        double[] vKnots = [0, 0, 0, 1, 1, 1]",
+    "        double[] pointWeights = [1, 1, 0.5, 0.5, 1, 1]",
+    "        point3f[] points = [(0, 0, 0), (0.01, 0, 0), (0, 0.005, 0.002), (0.01, 0.005, 0.002), (0, 0.01, 0), (0.01, 0.01, 0)]",
+    "        color3f[] primvars:displayColor = [(0.2, 0.4, 0.8)] (",
+    "            interpolation = \"constant\"",
+    "        )",
+    "    }",
+    "    def NurbsPatch \"Trimmed\"",
+    "    {",
+    "        float3[] extent = [(0, 0, 0.005), (0.01, 0.01, 0.005)]",
+    "        int uVertexCount = 2",
+    "        int vVertexCount = 2",
+    "        int uOrder = 2",
+    "        int vOrder = 2",
+    "        double[] uKnots = [0, 0, 1, 1]",
+    "        double[] vKnots = [0, 0, 1, 1]",
+    "        point3f[] points = [(0, 0, 0.005), (0.01, 0, 0.005), (0, 0.01, 0.005), (0.01, 0.01, 0.005)]",
+    "        uniform token orientation = \"leftHanded\"",
+    "    }",
+    "}"
+  ]
+}

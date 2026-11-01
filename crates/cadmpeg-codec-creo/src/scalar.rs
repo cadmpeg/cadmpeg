@@ -79,6 +79,96 @@ pub(crate) fn admitted_scalar_body(
         .then_some(remaining)
 }
 
+fn repeat_scalar_slots(values: &mut [f64], slot: &mut usize, token: u8) -> Option<()> {
+    let count = match token {
+        0xe4..=0xe6 => usize::from(token - 0xe3),
+        _ => return None,
+    };
+    let previous = *values.get(slot.checked_sub(1)?)?;
+    let end = slot.checked_add(count)?;
+    values.get_mut(*slot..end)?.fill(previous);
+    *slot = end;
+    Some(())
+}
+
+pub(crate) const COMPACT_PLANE_ORIGIN_REFUSAL: &str =
+    "compact plane rotation requires exactly twelve finite slots and no trailing bytes";
+
+/// Expand a compact plane rotation and origin into two support directions.
+pub(crate) fn decode_compact_plane_rotation(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<Result<FiniteVector<12>, &'static str>> {
+    let mut values = [0.0; 12];
+    let mut slot = 0usize;
+    let mut view = View::over_retained(body);
+    let mut repeated = false;
+    while slot < 9 {
+        match view.u8()? {
+            token @ 0xe4..=0xe6 => {
+                repeat_scalar_slots(&mut values, &mut slot, token)?;
+                repeated = true;
+            }
+            token @ (0x18 | 0x0f | 0x10) => {
+                values[slot] = match token {
+                    0x0f => 1.0,
+                    0x10 => -1.0,
+                    _ => 0.0,
+                };
+                slot += 1;
+            }
+            _ => return None,
+        }
+    }
+    repeated.then_some(())?;
+    let [u, v, normal] =
+        [0, 1, 2].map(|column| [values[column], values[column + 3], values[column + 6]]);
+    if ![u, v, normal]
+        .into_iter()
+        .all(|axis| axis.into_iter().map(|value| value * value).sum::<f64>() == 1.0)
+        || crate::vecmath::cross(u, v) != normal
+    {
+        return None;
+    }
+    let origin = (|| {
+        while slot < values.len() {
+            let cursor = view.read_len();
+            match view.u8()? {
+                token @ 0xe4..=0xe6 => {
+                    repeat_scalar_slots(&mut values, &mut slot, token)?;
+                }
+                0x18 => {
+                    values[slot] = 0.0;
+                    slot += 1;
+                }
+                _ => {
+                    let (value, end) = decode_in_row_lane(body, cursor, cache).or_else(|| {
+                        if slot == 9 {
+                            decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+                        } else {
+                            decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+                        }
+                    })?;
+                    view.seek(end)?;
+                    values[slot] = value;
+                    slot += 1;
+                }
+            }
+        }
+        view.is_empty().then_some(())?;
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            [values[9], values[10], values[11]].into(),
+            normal.into(),
+            u.into(),
+        )
+        .ok()?;
+        FiniteVector::new([
+            u[0], u[1], u[2], 0.0, 0.0, 0.0, v[0], v[1], v[2], values[9], values[10], values[11],
+        ])
+    })();
+    Some(origin.ok_or(COMPACT_PLANE_ORIGIN_REFUSAL))
+}
+
 pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
     assemble_f64_be(bytes)
 }
@@ -1229,6 +1319,7 @@ fn decode_inline_local_system_coordinates(
 /// Storage layout of a complete positional plane support frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaneSupportFrameLayout {
+    CompactRotation,
     /// The decoder expanded a compact or specialized form into support triples.
     SupportTriples,
     /// The generic form stores the parameter direction, zero rank, and plane
@@ -2945,6 +3036,66 @@ mod tests {
             assert!(seen.insert((axes.axis().index(), axes.reference().index())));
         }
         assert_eq!(seen.len(), 6);
+    }
+
+    #[test]
+    fn compact_plane_rotation_expands_repeats_and_preserves_all_axis_signs() {
+        for u_axis in 0..3 {
+            for v_axis in 0..3 {
+                if u_axis == v_axis {
+                    continue;
+                }
+                for u_sign in [-1.0, 1.0] {
+                    for v_sign in [-1.0, 1.0] {
+                        let mut u = [0.0; 3];
+                        let mut v = [0.0; 3];
+                        u[u_axis] = u_sign;
+                        v[v_axis] = v_sign;
+                        let n = crate::vecmath::cross(u, v);
+                        let matrix: [f64; 9] = std::array::from_fn(|i| [u, v, n][i % 3][i / 3]);
+                        let mut body = Vec::new();
+                        let mut cursor = 0;
+                        while cursor < matrix.len() {
+                            let value = matrix[cursor];
+                            body.push(if value == 1.0 {
+                                0x0f
+                            } else if value == -1.0 {
+                                0x10
+                            } else {
+                                0x18
+                            });
+                            let repeats = matrix[cursor + 1..]
+                                .iter()
+                                .take(3)
+                                .take_while(|next| **next == value)
+                                .count();
+                            if repeats > 0 {
+                                body.push(
+                                    0xe3 + u8::try_from(repeats).expect("at most three repeats"),
+                                );
+                            }
+                            cursor += repeats + 1;
+                        }
+                        body.extend([0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x2f, 0x20, 0x00]);
+                        let expected = [
+                            u[0], u[1], u[2], 0.0, 0.0, 0.0, v[0], v[1], v[2], 2.0, 4.0, 8.0,
+                        ];
+                        let decoded =
+                            super::decode_compact_plane_rotation(&body, &ScalarCache::default())
+                                .expect("compact rotation")
+                                .expect("complete finite origin");
+                        assert_eq!(decoded.get(), expected);
+                        body.pop();
+                        assert!(super::decode_compact_plane_rotation(
+                            &body,
+                            &ScalarCache::default()
+                        )
+                        .expect("compact rotation")
+                        .is_err());
+                    }
+                }
+            }
+        }
     }
 
     #[test]

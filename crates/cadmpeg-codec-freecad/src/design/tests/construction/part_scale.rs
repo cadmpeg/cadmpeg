@@ -139,7 +139,12 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
             definition(&result, "Scale"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Scale"
         ));
-        crate::design::tests::assert_native_retention(&result, 1);
+        crate::design::tests::assert_native_retention_with_known_losses(
+            &result,
+            1,
+            "feature.primitive-placement-unresolved",
+            1,
+        );
         assert_valid_document(result.ir());
     }
 }

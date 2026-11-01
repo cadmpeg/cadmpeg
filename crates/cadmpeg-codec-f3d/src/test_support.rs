@@ -13,6 +13,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+pub(crate) mod align;
+
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
@@ -22,6 +24,7 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 use crate::F3dCodec;
 
 pub(crate) mod act_links;
+pub(crate) mod archive_session;
 pub(crate) mod procedural_support;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
@@ -243,6 +246,7 @@ pub(crate) mod manifest_test;
 
 pub(crate) mod protein_test;
 
+pub(crate) mod empty_attribute_occurrences;
 pub(crate) mod streams_test;
 
 pub(crate) mod zip_test;

@@ -195,3 +195,38 @@ fn local_system_slots_read_declared_count() {
     );
     assert_eq!(values, Some(vec![Some(0.0)]));
 }
+
+#[test]
+fn compact_plane_origin_requires_exact_consumption_and_reports_its_loss() {
+    let mut body = Vec::new();
+    for _ in 0..2 {
+        body.extend([0x0f, 0x18, 0xe5]);
+    }
+    body.push(0x0f);
+    body.extend([0x2f, 0x00, 0x00, 0x18, 0xe4]);
+    let cache = scalar::ScalarCache::default();
+    let mut losses = Vec::new();
+    let parsed = with_surface_ctx(&body, |ctx| {
+        crate::surface::complete_plane_local_system(ctx, &body, &cache, &mut losses)
+    })
+    .expect("bounded frame")
+    .expect("complete frame");
+    assert_eq!(&parsed.0.as_raw()[9..], &[2.0, 0.0, 0.0]);
+    assert!(losses.is_empty());
+    body.push(0x18);
+    assert!(
+        with_surface_ctx(&body, |ctx| crate::surface::complete_plane_local_system(
+            ctx,
+            &body,
+            &cache,
+            &mut losses
+        ))
+        .expect("bounded frame")
+        .is_none()
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind()
+    );
+}

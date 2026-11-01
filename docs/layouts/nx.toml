@@ -866,7 +866,7 @@ anchor = "count:u32 LE"
 name = "extrefstream_header"
 kind = "byte"
 section = "2.3"
-anchor = "`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region"
+anchor = "`EXTREFSTREAM` contains 12-byte `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, four unassigned bytes, a record region"
 size = 20
 endianness = "little"
 note = "The spec's field list places the record region at byte 20. The parser expects the record region's leading `0x00` at byte 24 and the first directory pair at 25, leaving bytes 20..24 undescribed. Recorded in the pull request."
@@ -876,7 +876,7 @@ name = "magic"
 offset = 0
 type = "bytes[12]"
 source = "derived"
-anchor = "`EXTREFSTREAM` contains `EXTREFSTREAM` magic"
+anchor = "`EXTREFSTREAM` contains 12-byte `EXTREFSTREAM` magic"
 note = "Width derived from the length of the stated ASCII magic."
 
 [[record.field]]
@@ -891,7 +891,7 @@ name = "payload_size"
 offset = 16
 type = "u32"
 source = "spec"
-anchor = "`payload_size:u32 LE`, a record region"
+anchor = "`payload_size:u32 LE`, four unassigned bytes, a record region"
 
 [[record]]
 name = "extrefstream_handle_set_record"

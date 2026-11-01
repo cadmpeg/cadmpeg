@@ -184,6 +184,36 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     ]
     .contains(&(section, name)))
     .is_none());
+    let side_values = |values: [i64; 11]| {
+        let mut swapped = model.clone();
+        for (slot, value) in swapped.attributes[2].values[11..].iter_mut().zip(values) {
+            *slot = AttributeValue::Integer(value);
+        }
+        swapped
+    };
+    let member_tail_first = side_values([2, 3, 23, 258, 4, 1, 8, 19, 258, 0, 0]);
+    assert!(loft(&member_tail_first, 17, [23, 19], |section, name| [
+        (0, 3),
+        (1, 8)
+    ]
+    .contains(&(section, name)))
+    .is_some());
+    assert!(loft(&member_tail_first, 17, [19, 23], |section, name| [
+        (0, 8),
+        (1, 3)
+    ]
+    .contains(&(section, name)))
+    .is_none());
+    for tails in [[4, 1, 4, 1], [0, 0, 0, 0]] {
+        let unpaired = side_values([
+            2, 3, 23, 258, tails[0], tails[1], 8, 19, 258, tails[2], tails[3],
+        ]);
+        assert!(
+            loft(&unpaired, 17, [23, 19], |section, name| [(0, 3), (1, 8)]
+                .contains(&(section, name)))
+            .is_none()
+        );
+    }
     let mut wrong_curve = model.clone();
     wrong_curve.attributes[2].values[12] = Some(AttributeValue::Integer(99));
     assert!(

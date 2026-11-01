@@ -1358,6 +1358,7 @@ fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
     );
 }
 
+mod edge_direction;
 mod finding_admission;
 mod index_admission;
 mod inverse_admission;

@@ -790,7 +790,7 @@ fn appearances_from_schema_records(
                     })?;
                 continue;
             }
-            TextureAssetResult::Usable(texture) => texture,
+            TextureAssetResult::Usable(texture) => *texture,
         };
         match textures.get(&texture.asset_guid) {
             None => {
@@ -834,7 +834,9 @@ fn appearances_from_schema_records(
                 .cmp(&right.slot)
                 .then_with(|| left.asset_guid.cmp(&right.asset_guid))
         });
-        let base_color = appearance_base_color(record);
+        let base_color = appearance_base_color(record)
+            .map(|color| appearance_opacity(record, color))
+            .transpose()?;
         let appearance = Appearance {
             native_ref: None,
             id: crate::ids::appearance_id(appearance_key(&record.guid)?),
@@ -866,6 +868,31 @@ fn appearances_from_schema_records(
 /// a disabled or absent tint does not participate in selection.
 fn appearance_base_color(record: &cadmpeg_protein::DecodedRecord) -> Option<Color> {
     color_property(record, appearance_base_color_property_id(record)?)
+}
+
+fn appearance_opacity(
+    record: &cadmpeg_protein::DecodedRecord,
+    color: Color,
+) -> Result<Color, CodecError> {
+    if record.schema != "GenericSchema" {
+        return Ok(color);
+    }
+    let Some(property) = record.properties.get("generic_transparency") else {
+        return Ok(color);
+    };
+    let transparency = property
+        .value()
+        .and_then(cadmpeg_protein::property::PropertyValue::float_value)
+        .filter(|value| (0.0..=1.0).contains(&value.get()))
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "Protein asset {} generic_transparency must be a scalar in [0, 1]",
+                record.guid
+            ))
+        })?;
+    f32_from_f64(1.0 - transparency.get())
+        .and_then(|opacity| color.with_alpha(opacity))
+        .ok_or_else(|| CodecError::Malformed("Protein opacity is outside [0, 1]".into()))
 }
 
 /// Select the serialized color carrier that represents the neutral base color.

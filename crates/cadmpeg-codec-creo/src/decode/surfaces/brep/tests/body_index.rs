@@ -43,3 +43,38 @@ fn brep_body_indexes_preserve_service_values() {
     };
     assert_eq!(vertices, BTreeSet::from([1, 2]));
 }
+
+#[test]
+fn compact_frame_component_requires_every_source_face_and_reports_refusal() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.topology.face_components.push(
+        crate::topology::FaceComponent::new_for_test(vec![5, 6], vec![10])
+            .expect("connected source component"),
+    );
+    let mut faces = BTreeMap::from([(5, Vec::new())]);
+    let mut losses = Vec::new();
+    super::super::retain_complete_compact_frame_components(&scan, &mut faces, &mut losses);
+    assert!(faces.contains_key(&5));
+    scan.planes
+        .local_systems
+        .push(crate::surface::PlaneLocalSystem {
+            surface_id: 5,
+            body: Vec::new(),
+            slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 4.0, 8.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::CompactRotation),
+            classification: crate::surface::LocalSystemClassification::Simple,
+            row_offset: 0,
+            offset: 0,
+        });
+    let mut complete = BTreeMap::from([(5, Vec::new()), (6, Vec::new())]);
+    super::super::retain_complete_compact_frame_components(&scan, &mut complete, &mut losses);
+    assert_eq!(complete.len(), 2);
+    assert!(losses.is_empty());
+    super::super::retain_complete_compact_frame_components(&scan, &mut faces, &mut losses);
+    assert!(faces.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::BrepCompactFrameComponentUnresolved.kind()
+    );
+}

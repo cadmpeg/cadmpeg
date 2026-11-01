@@ -47,6 +47,7 @@ pub(super) struct ProductPrereqs {
     pub(super) design_superseded_component_occurrences: usize,
     /// Local occurrences that two or more component-path carriers name.
     pub(super) design_ambiguous_current_poses: usize,
+    pub(super) design_component_occurrence_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
@@ -108,6 +109,7 @@ impl ProductPrereqs {
             design_component_occurrences,
             design_superseded_component_occurrences: _,
             design_ambiguous_current_poses: _,
+            design_component_occurrence_losses: _,
             design_parameter_scopes,
             design_parameter_scope_losses: _,
             design_joint_motions,
@@ -149,7 +151,7 @@ pub(super) fn decode(
     scan: &ContainerScan,
     design_body_bindings: Vec<DesignBodyBinding>,
 ) -> Result<ProductPrereqs, CodecError> {
-    let history_retained_allowance = ctx.retained_bytes_available();
+    let history_retained_allowance = ctx.retained_allowance();
     // Scope-variant admission reads state identities and chain links only.
     let mut history_index = Vec::new();
     for history_brep in container::history_breps(scan) {
@@ -198,6 +200,7 @@ pub(super) fn decode(
         occurrences: design_component_occurrences,
         superseded: design_superseded_component_occurrences,
         ambiguous_current_poses: design_ambiguous_current_poses,
+        losses: design_component_occurrence_losses,
     } = crate::design::decode::components::decode_component_occurrences(scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
@@ -257,6 +260,7 @@ pub(super) fn decode(
         design_component_occurrences,
         design_superseded_component_occurrences,
         design_ambiguous_current_poses,
+        design_component_occurrence_losses,
         design_parameter_scopes,
         design_parameter_scope_losses,
         design_joint_motions,

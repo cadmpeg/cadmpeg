@@ -124,6 +124,13 @@ macro_rules! classified_arena_registry {
             attributes: SourceAttribute, model, "Attribute arena.", [];
             pmi: crate::pmi::PmiAnnotation, model, "Product-manufacturing information arena.", [serde(default)];
             presentation_layers: crate::presentation::PresentationLayer, model, "Presentation layer arena.", [serde(default)];
+            physical_materials: crate::physics::PhysicalMaterial, model, "Physical material arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            mass_properties: crate::physics::MassProperties, model, "Mass property arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            rigid_bodies: crate::physics::RigidBody, model, "Rigid body arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            colliders: crate::physics::Collider, model, "Collider arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            articulations: crate::physics::Articulation, model, "Articulation arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            physics_scenes: crate::physics::PhysicsScene, model, "Physics scene arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            solver_settings: crate::physics::solver::SolverSettings, model, "Solver settings arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
         }
     };
 }

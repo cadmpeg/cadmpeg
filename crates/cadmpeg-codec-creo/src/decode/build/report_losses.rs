@@ -898,7 +898,12 @@ pub(super) fn push_structural_layer_notes(
         .iter()
         .chain(&scan.surfaces.nonvisible_prototype_field_refusals)
     {
-        push_report_loss(losses, CreoLossCode::SurfacePrototypeFieldRetained, {
+        let code = if refusal.contains(crate::scalar::COMPACT_PLANE_ORIGIN_REFUSAL) {
+            CreoLossCode::PlaneCompactFrameUnresolved
+        } else {
+            CreoLossCode::SurfacePrototypeFieldRetained
+        };
+        push_report_loss(losses, code, {
             untyped.insert(cadmpeg_ir::ArenaClass::Model);
             refusal
         });

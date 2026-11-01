@@ -807,7 +807,6 @@ fn apply_membership(
 impl AsmHistoricalRowsDelta {
     pub(crate) fn retain_projection_rows(&mut self) {
         self.surface_radii = AsmHistoricalRowDelta::default();
-        self.surface_cylinders = AsmHistoricalRowDelta::default();
         self.surface_axes = AsmHistoricalRowDelta::default();
         self.persistent_subentity_tags = AsmHistoricalRowDelta::default();
         self.body_regions = AsmHistoricalRowDelta::default();
@@ -826,6 +825,7 @@ impl AsmHistoricalTopology {
     pub(crate) fn has_retained_rows(&self) -> bool {
         !self.face_surfaces.is_empty()
             || !self.surface_planes.is_empty()
+            || !self.surface_cylinders.is_empty()
             || !self.loop_coedges.is_empty()
             || !self.coedge_topology.is_empty()
             || !self.face_loops.is_empty()

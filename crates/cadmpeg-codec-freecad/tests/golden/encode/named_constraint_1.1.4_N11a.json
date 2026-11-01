@@ -1,0 +1,150 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 44239,
+      "payload_sha256": "4d1daeb5c299c2c0863da53d44875d1345ac195c9c4600ec6db1a7fc6ace89e6"
+    },
+    {
+      "name": "StringHasher.Table.txt",
+      "payload_len": 336,
+      "payload_sha256": "4e125ca1233573110cdd86c297ad08694d44f804941988186bc0841688913cdf"
+    },
+    {
+      "name": "Body.Shape.brp",
+      "payload_len": 7070,
+      "payload_sha256": "c23899b4bff503b53823d36c66fc73b1748be3a294f498515559e4e5f7e5cf31"
+    },
+    {
+      "name": "Body.Shape.Map.txt",
+      "payload_len": 864,
+      "payload_sha256": "6c21af815178a246c323a23fcfec8238f99849e6305efd057bc24150fd46a292"
+    },
+    {
+      "name": "Sketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Sketch.Shape.brp",
+      "payload_len": 1655,
+      "payload_sha256": "363f29ea2d4e7028a6b26b66658c5958cc300ea37b6680e92e456c88ca848690"
+    },
+    {
+      "name": "Sketch.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "3122a2e70dafbd5617afe7851c9a3864672cd03df3cc15e737748f470219b4a7"
+    },
+    {
+      "name": "Pad.AddSubShape.brp",
+      "payload_len": 4964,
+      "payload_sha256": "76d37e0867f85e25ca161445645d465ad430387811fbb0c2f66479a4296d2be8"
+    },
+    {
+      "name": "Pad.AddSubShape.Map.txt",
+      "payload_len": 664,
+      "payload_sha256": "3710defa7faf41e4a31ad72e084a542ca5bf9ff8f8ae92847772a95c8f0adb6e"
+    },
+    {
+      "name": "Pad.Shape.brp",
+      "payload_len": 5187,
+      "payload_sha256": "9ba36a16ce91b191a7ee4bf0304d6ead563cb908bde9ae8b5973cd40ddb77011"
+    },
+    {
+      "name": "Pad.Shape.Map.txt",
+      "payload_len": 664,
+      "payload_sha256": "86ec5306ba22143399c815700d0ba50ad9f1c5d68081615be2ff0e6e62020410"
+    },
+    {
+      "name": "Pad.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 4,
+        "coedges": 72,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 44,
+        "drawings": 0,
+        "edges": 40,
+        "faces": 18,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 4,
+        "loops": 18,
+        "mass_properties": 0,
+        "native.fcstd.applications": 12,
+        "native.fcstd.attachments": 11,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 4,
+        "native.fcstd.design_census": 4,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 4,
+        "native.fcstd.entries": 12,
+        "native.fcstd.extensions": 5,
+        "native.fcstd.logical_ledger": 334,
+        "native.fcstd.objects": 12,
+        "native.fcstd.physical_ledger": 85,
+        "native.fcstd.properties": 162,
+        "native.fcstd.shape_payloads": 6,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 6,
+        "pcurves": 0,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 28,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 4,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 4,
+        "sketch_constraints": 11,
+        "sketch_entities": 5,
+        "sketches": 1,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 1,
+        "subds": 0,
+        "surfaces": 19,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 28,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

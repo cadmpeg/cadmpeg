@@ -553,6 +553,13 @@ fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
         attributes: Reported,
         pmi: Written,
         presentation_layers: Dropped,
+        physical_materials: Omitted,
+        mass_properties: Omitted,
+        rigid_bodies: Omitted,
+        colliders: Omitted,
+        articulations: Omitted,
+        physics_scenes: Omitted,
+        solver_settings: Omitted,
     }
 }
 

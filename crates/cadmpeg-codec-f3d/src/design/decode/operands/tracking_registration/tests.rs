@@ -79,7 +79,7 @@ fn fixture() -> (MetaStream, DesignConstructionTrackingPath) {
 #[test]
 fn registration_follows_dynamic_classes_and_case_insensitive_guids() {
     let (mut meta, mut path) = fixture();
-    assert!(Registry::new(Rc::new(meta.clone())).supports(&path));
+    assert!(Registry::new(Arc::new(meta.clone())).supports(&path));
     meta.types.swap(0, 1);
     path.wrapper_class_tag = "257".to_owned().try_into().unwrap();
     path.carrier_class_tag = "256".to_owned().try_into().unwrap();
@@ -101,7 +101,7 @@ fn registration_follows_dynamic_classes_and_case_insensitive_guids() {
             offset: Some(0),
         };
     }
-    assert!(Registry::new(Rc::new(meta)).supports(&path));
+    assert!(Registry::new(Arc::new(meta)).supports(&path));
 }
 
 #[test]
@@ -135,12 +135,12 @@ fn registration_rejects_wrong_family_version_membership_and_physical_offsets() {
                 8 => meta.types[index].version = if index == 0 { 2 } else { 1 },
                 _ => unreachable!(),
             }
-            assert!(!Registry::new(Rc::new(meta)).supports(&path));
+            assert!(!Registry::new(Arc::new(meta)).supports(&path));
         }
     }
     let mut wrong_class = path;
     wrong_class.wrapper_class_tag = "257".to_owned().try_into().unwrap();
-    assert!(!Registry::new(Rc::new(original)).supports(&wrong_class));
+    assert!(!Registry::new(Arc::new(original)).supports(&wrong_class));
 }
 
 #[test]
@@ -174,27 +174,13 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
         ],
         secondary_records: Vec::new(),
     };
-    let transform =
-        crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
-            crate::records::topology::construction::DesignConstructionOperandTransformDraft {
-                record_index: 300,
-                byte_offset: 17,
-                class_tag: "256".to_owned().try_into().unwrap(),
-                transform: serde_json::from_value(serde_json::json!([
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0]
-                ]))
-                .unwrap(),
-                transform_offset: 39,
-                following_record_index: 309,
-                following_byte_offset: 169,
-                following_class_tag: "257".to_owned().try_into().unwrap(),
-            },
-        )
-        .unwrap();
-    assert!(Registry::new(Rc::new(meta.clone())).supports_transform(&transform));
+    let transform = serde_json::from_value(serde_json::json!({
+        "record_index":300, "byte_offset":17, "class_tag":"256",
+        "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "transform_offset":39,
+        "following_record_index":309, "following_byte_offset":169, "following_class_tag":"257"
+    }))
+    .unwrap();
+    assert!(Registry::new(Arc::new(meta.clone())).supports_transform(&transform));
     for mutation in 0..10 {
         let mut invalid = meta.clone();
         match mutation {
@@ -221,6 +207,6 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
             ),
             _ => unreachable!(),
         }
-        assert!(!Registry::new(Rc::new(invalid)).supports_transform(&transform));
+        assert!(!Registry::new(Arc::new(invalid)).supports_transform(&transform));
     }
 }

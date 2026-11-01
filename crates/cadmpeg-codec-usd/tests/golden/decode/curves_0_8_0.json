@@ -1,0 +1,1201 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Curves/Arc",
+          "kind": "wire",
+          "name": "Arc",
+          "regions": [
+            "usd:stage:region#/Curves/Arc"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Curves/Bezier",
+          "kind": "wire",
+          "name": "Bezier",
+          "regions": [
+            "usd:stage:region#/Curves/Bezier"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Curves/CatmullRom",
+          "kind": "wire",
+          "name": "CatmullRom",
+          "regions": [
+            "usd:stage:region#/Curves/CatmullRom"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Curves/Loop",
+          "kind": "wire",
+          "name": "Loop",
+          "regions": [
+            "usd:stage:region#/Curves/Loop"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Curves/Polyline",
+          "kind": "wire",
+          "name": "Polyline",
+          "regions": [
+            "usd:stage:region#/Curves/Polyline"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Curves/Splines",
+          "kind": "wire",
+          "name": "Splines",
+          "regions": [
+            "usd:stage:region#/Curves/Splines"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "degree": 2,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "x": 1000.0,
+                    "y": 0.0,
+                    "z": 7000.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 1000.0,
+                    "y": 1000.0,
+                    "z": 7000.0
+                  },
+                  "weight": 0.7071067811865476
+                },
+                {
+                  "point": {
+                    "x": 0.0,
+                    "y": 1000.0,
+                    "z": 7000.0
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Arc:0"
+        },
+        {
+          "geometry": {
+            "degree": 3,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              2.0,
+              2.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 1000.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 2000.0,
+                  "y": 1000.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 3000.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 4000.0,
+                  "y": -1000.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 5000.0,
+                  "y": -1000.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 6000.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Bezier:0"
+        },
+        {
+          "geometry": {
+            "degree": 3,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              2.0,
+              2.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 1000.0,
+                  "y": 1000.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 1333.3333333333333,
+                  "y": 1000.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 1666.6666666666667,
+                  "y": 0.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 2000.0,
+                  "y": 0.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 2333.3333333333335,
+                  "y": 0.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 2666.6666666666665,
+                  "y": 1000.0,
+                  "z": 5000.0
+                },
+                {
+                  "x": 3000.0,
+                  "y": 1000.0,
+                  "z": 5000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/CatmullRom:0"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              4.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 0.0,
+                  "z": 1000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 1000.0,
+                  "z": 1000.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 1000.0,
+                  "z": 1000.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Loop:0"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              2.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 1000.0,
+                  "z": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Polyline:0"
+        },
+        {
+          "geometry": {
+            "degree": 3,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              5.0,
+              6.0,
+              7.0,
+              8.0,
+              9.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": -1000.0,
+                  "y": -2000.0,
+                  "z": 3000.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 3000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 2000.0,
+                  "z": 3000.0
+                },
+                {
+                  "x": 3000.0,
+                  "y": 2000.0,
+                  "z": 3000.0
+                },
+                {
+                  "x": 4000.0,
+                  "y": 0.0,
+                  "z": 3000.0
+                },
+                {
+                  "x": 5000.0,
+                  "y": -2000.0,
+                  "z": 3000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Splines:0"
+        },
+        {
+          "geometry": {
+            "degree": 3,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              5.0,
+              6.0,
+              7.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": -1000.0,
+                  "y": 0.0,
+                  "z": 4000.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 4000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 0.0,
+                  "z": 4000.0
+                },
+                {
+                  "x": 2000.0,
+                  "y": 0.0,
+                  "z": 4000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Curves/Splines:1"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Arc:0",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Arc:0:1",
+          "id": "usd:stage:edge#/Curves/Arc:0",
+          "start": "usd:stage:vertex#/Curves/Arc:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Bezier:0",
+            "param_range": [
+              0.0,
+              2.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Bezier:0:1",
+          "id": "usd:stage:edge#/Curves/Bezier:0",
+          "start": "usd:stage:vertex#/Curves/Bezier:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/CatmullRom:0",
+            "param_range": [
+              0.0,
+              2.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/CatmullRom:0:1",
+          "id": "usd:stage:edge#/Curves/CatmullRom:0",
+          "start": "usd:stage:vertex#/Curves/CatmullRom:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Loop:0",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Loop:0:0",
+          "id": "usd:stage:edge#/Curves/Loop:0",
+          "start": "usd:stage:vertex#/Curves/Loop:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Polyline:0",
+            "param_range": [
+              0.0,
+              2.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Polyline:0:1",
+          "id": "usd:stage:edge#/Curves/Polyline:0",
+          "start": "usd:stage:vertex#/Curves/Polyline:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Splines:0",
+            "param_range": [
+              3.0,
+              6.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Splines:0:1",
+          "id": "usd:stage:edge#/Curves/Splines:0",
+          "start": "usd:stage:vertex#/Curves/Splines:0:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Curves/Splines:1",
+            "param_range": [
+              3.0,
+              4.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Curves/Splines:1:1",
+          "id": "usd:stage:edge#/Curves/Splines:1",
+          "start": "usd:stage:vertex#/Curves/Splines:1:0"
+        }
+      ],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Curves",
+          "name": "Curves",
+          "native_ref": "/Curves",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/Arc",
+          "name": "Arc",
+          "native_ref": "/Curves/Arc",
+          "ordinal": 5,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/Arc",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/Bezier",
+          "name": "Bezier",
+          "native_ref": "/Curves/Bezier",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/Bezier",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/CatmullRom",
+          "name": "CatmullRom",
+          "native_ref": "/Curves/CatmullRom",
+          "ordinal": 4,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/CatmullRom",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/Loop",
+          "name": "Loop",
+          "native_ref": "/Curves/Loop",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/Loop",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/Polyline",
+          "name": "Polyline",
+          "native_ref": "/Curves/Polyline",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/Polyline",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Curves/Splines",
+          "name": "Splines",
+          "native_ref": "/Curves/Splines",
+          "ordinal": 3,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Curves"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Curves/Splines",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Curves/Arc:0:0",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 7000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Arc:0:1",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 7000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Bezier:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 2000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Bezier:0:1",
+          "position": {
+            "x": 6000.0,
+            "y": 0.0,
+            "z": 2000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/CatmullRom:0:0",
+          "position": {
+            "x": 1000.0,
+            "y": 1000.0,
+            "z": 5000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/CatmullRom:0:1",
+          "position": {
+            "x": 3000.0,
+            "y": 1000.0,
+            "z": 5000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Loop:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Polyline:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Polyline:0:1",
+          "position": {
+            "x": 1000.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:0:1",
+          "position": {
+            "x": 4000.0000000000005,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:1:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 4000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:1:1",
+          "position": {
+            "x": 1000.0000000000001,
+            "y": 0.0,
+            "z": 4000.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Curves",
+          "kind": "group",
+          "native_ref": "/Curves",
+          "source_name": "Curves"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/Arc"
+          ],
+          "id": "usd:stage:definition#/Curves/Arc",
+          "kind": "object",
+          "native_ref": "/Curves/Arc",
+          "source_name": "Arc"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/Bezier"
+          ],
+          "id": "usd:stage:definition#/Curves/Bezier",
+          "kind": "object",
+          "native_ref": "/Curves/Bezier",
+          "source_name": "Bezier"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/CatmullRom"
+          ],
+          "id": "usd:stage:definition#/Curves/CatmullRom",
+          "kind": "object",
+          "native_ref": "/Curves/CatmullRom",
+          "source_name": "CatmullRom"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/Loop"
+          ],
+          "id": "usd:stage:definition#/Curves/Loop",
+          "kind": "object",
+          "native_ref": "/Curves/Loop",
+          "source_name": "Loop"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/Polyline"
+          ],
+          "id": "usd:stage:definition#/Curves/Polyline",
+          "kind": "object",
+          "native_ref": "/Curves/Polyline",
+          "source_name": "Polyline"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Curves/Splines"
+          ],
+          "id": "usd:stage:definition#/Curves/Splines",
+          "kind": "object",
+          "native_ref": "/Curves/Splines",
+          "source_name": "Splines"
+        }
+      ],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Curves/Arc",
+          "id": "usd:stage:region#/Curves/Arc",
+          "shells": [
+            "usd:stage:shell#/Curves/Arc"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Bezier",
+          "id": "usd:stage:region#/Curves/Bezier",
+          "shells": [
+            "usd:stage:shell#/Curves/Bezier"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/CatmullRom",
+          "id": "usd:stage:region#/Curves/CatmullRom",
+          "shells": [
+            "usd:stage:shell#/Curves/CatmullRom"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Loop",
+          "id": "usd:stage:region#/Curves/Loop",
+          "shells": [
+            "usd:stage:shell#/Curves/Loop"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Polyline",
+          "id": "usd:stage:region#/Curves/Polyline",
+          "shells": [
+            "usd:stage:shell#/Curves/Polyline"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Splines",
+          "id": "usd:stage:region#/Curves/Splines",
+          "shells": [
+            "usd:stage:shell#/Curves/Splines"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Curves/Arc",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Arc:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Arc"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Bezier",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Bezier:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Bezier"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/CatmullRom",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/CatmullRom:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/CatmullRom"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Loop",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Loop:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Loop"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Polyline",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Polyline:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Polyline"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Splines",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Splines:0",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "usd:stage:edge#/Curves/Splines:1",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Splines"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Curves/Arc:0:0",
+          "point": "usd:stage:point#/Curves/Arc:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Arc:0:1",
+          "point": "usd:stage:point#/Curves/Arc:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Bezier:0:0",
+          "point": "usd:stage:point#/Curves/Bezier:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Bezier:0:1",
+          "point": "usd:stage:point#/Curves/Bezier:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/CatmullRom:0:0",
+          "point": "usd:stage:point#/Curves/CatmullRom:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/CatmullRom:0:1",
+          "point": "usd:stage:point#/Curves/CatmullRom:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Loop:0:0",
+          "point": "usd:stage:point#/Curves/Loop:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Polyline:0:0",
+          "point": "usd:stage:point#/Curves/Polyline:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Polyline:0:1",
+          "point": "usd:stage:point#/Curves/Polyline:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:0:0",
+          "point": "usd:stage:point#/Curves/Splines:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:0:1",
+          "point": "usd:stage:point#/Curves/Splines:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:1:0",
+          "point": "usd:stage:point#/Curves/Splines:1:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:1:1",
+          "point": "usd:stage:point#/Curves/Splines:1:1"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Curves",
+        "meters_per_unit": "1",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "version": "0.8.0"
+            },
+            "dialect": "usd:usdc-0.8.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version": "0.8.0"
+          },
+          "dialect": "usd:usdc-0.8.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "mesh.primvar-not-transferred",
+          "kind": "attributes_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "these primvars were not transferred: widths",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "curves.rejected",
+          "kind": "geometry_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 curves do not satisfy their topology and were not transferred",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

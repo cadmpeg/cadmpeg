@@ -266,6 +266,10 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
                     .expect("generated face selection"),
                 diameter: None,
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             },
         ));
     let mut plane = compact_edge_projection_feature();

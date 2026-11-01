@@ -14,7 +14,7 @@ use crate::reason::{Category, CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, UvSource};
 use crate::select::Selection;
 use crate::test_support::builders::{
-    assert_measured, assert_tight_box, measure, square_with_split_side, Builder, Frame,
+    assert_measured, assert_tight_box, measure, square_with_split_side, Builder, Circle, Frame,
 };
 use crate::value::Quantity;
 
@@ -238,6 +238,36 @@ fn a_seam_cut_cylinder_side_resolves_from_its_pcurves() {
         .all(|source| *source == Some(UvSource::Pcurve)));
 }
 
+/// A cylinder band of radius 2 between the circle `z = 0` and the tilted
+/// ellipse `z = 5 + cos u`, each a closed edge whose only geometry is a
+/// polar-harmonic pcurve, whose `u` jumps by `2π` at `t = π`. The tilt
+/// integrates to zero around the axis, so the area is `2π · 2 · 5`.
+#[test]
+fn a_principal_branch_pcurve_bounds_a_cylinder_band() {
+    let (radius, height) = (2.0, 5.0);
+    let mut builder = Builder::new();
+    let low = builder.vertex([radius, 0.0, 0.0]);
+    let high = builder.vertex([radius, 0.0, height + 1.0]);
+    let bottom = builder.bare_edge(&low, &low);
+    let top = builder.bare_edge(&high, &high);
+    let surface = builder.cylinder(Frame::z_up([0.0; 3]), radius);
+    let face = builder.face(
+        &surface,
+        Sense::Forward,
+        &[vec![(bottom, Sense::Forward)], vec![(top, Sense::Reversed)]],
+        false,
+    );
+    builder.polar_harmonic_pcurve(&face, [0, 0], [0.0, 0.0, 0.0], [0.0, TAU]);
+    builder.polar_harmonic_pcurve(&face, [1, 0], [height, 1.0, 0.0], [0.0, TAU]);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &everything());
+    assert_measured(
+        only_face(&report).measures().area(),
+        TAU * radius * height,
+        radius * height,
+    );
+}
+
 #[test]
 fn a_cone_tip_closes_through_its_pole_edge() {
     let mut builder = Builder::new();
@@ -375,4 +405,61 @@ fn a_pcurve_chain_listed_backward_is_a_face_caveat() {
             );
         }
     }
+}
+
+/// An annulus whose two loops are each one closed circle coedge, listed
+/// without roles: the plane at `x = −9.5` with normal `+y`, the outer circle
+/// clockwise in its parameters. A closed piece's first polyline has more than
+/// its two coincident ends, so each loop bounds an area and the loops nest.
+#[test]
+fn closed_circle_loops_nest_from_their_pcurves() {
+    let (outer, inner) = (9.5, 3.25);
+    let mut builder = Builder::new();
+    let outer_vertex = builder.vertex([outer, 0.0, 0.0]);
+    let inner_vertex = builder.vertex([-inner, 0.0, 0.0]);
+    let outer_edge = builder.arc(
+        Circle {
+            frame: Frame {
+                origin: [0.0; 3],
+                axis: [0.0, -1.0, 0.0],
+                reference: [1.0, 0.0, 0.0],
+            },
+            radius: outer,
+        },
+        [0.0, TAU],
+        &outer_vertex,
+        &outer_vertex,
+    );
+    let inner_edge = builder.arc(
+        Circle {
+            frame: Frame {
+                origin: [0.0; 3],
+                axis: [0.0, 1.0, 0.0],
+                reference: [-1.0, 0.0, 0.0],
+            },
+            radius: inner,
+        },
+        [0.0, TAU],
+        &inner_vertex,
+        &inner_vertex,
+    );
+    let surface = builder.plane([-9.5, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]);
+    let face = builder.face(
+        &surface,
+        Sense::Reversed,
+        &[
+            vec![(inner_edge, Sense::Forward)],
+            vec![(outer_edge, Sense::Forward)],
+        ],
+        false,
+    );
+    builder.circle_pcurve(&face, [0, 0], [-9.5, 0.0], inner, [0.0, TAU]);
+    builder.circle_pcurve_on_axes(&face, [1, 0], [-9.5, 0.0], [-1.0, 0.0], outer, [0.0, TAU]);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &everything());
+    assert_measured(
+        only_face(&report).measures().area(),
+        PI * (outer * outer - inner * inner),
+        outer * outer,
+    );
 }

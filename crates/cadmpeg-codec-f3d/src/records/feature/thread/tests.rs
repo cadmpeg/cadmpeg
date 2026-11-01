@@ -72,3 +72,37 @@ fn thread_wire_rejects_blank_names_and_invalid_dimensions() {
         assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
     }
 }
+
+#[test]
+fn standard_compact_form_round_trips_and_refuses_a_trailing_reference() {
+    use crate::records::feature::thread::DesignThreadForm;
+
+    let mut wire = thread_wire();
+    wire["form"] = serde_json::json!("standard_compact");
+    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(construction.form, DesignThreadForm::StandardCompact);
+    assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+
+    wire["trailing_reference_record_index"] = serde_json::json!(7);
+    wire["trailing_reference_offset"] = serde_json::json!(99);
+    assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+}
+
+#[test]
+fn reference_table_shape_follows_the_form() {
+    use crate::records::feature::thread::DesignThreadForm;
+
+    for form in [
+        DesignThreadForm::Standard,
+        DesignThreadForm::StandardLegacy,
+        DesignThreadForm::StandardCompact,
+    ] {
+        assert!(form.has_standard_reference_table(), "{form:?}");
+    }
+    for form in [
+        DesignThreadForm::Compact(None),
+        DesignThreadForm::CompactLegacy,
+    ] {
+        assert!(!form.has_standard_reference_table(), "{form:?}");
+    }
+}

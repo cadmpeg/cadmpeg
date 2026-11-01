@@ -1182,6 +1182,57 @@ fn blend_boundary(
     Ok((vertices, points))
 }
 
+/// Distance within which a curve end lies at a vertex without a stored
+/// tolerance: the stream's linear resolution, `1e-8` m.
+const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
+
+/// Whether an edge runs against an open NURBS curve that stores no range,
+/// from the curve's points at the two ends of its knot domain. Each end
+/// matches a vertex within that vertex's `bounds` entry. When both orders
+/// match, the order whose worse end is nearer decides; `None` when neither
+/// order matches or both are equally near.
+fn domain_endpoint_reversal(
+    ctx: &DecodeContext<'_>,
+    carrier: &CurveCarrier,
+    endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    bounds: [f64; 2],
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    let (Some(endpoints), Some(SolvedCurveGeometry::Nurbs(curve))) =
+        (endpoints, carrier.geometry.solved())
+    else {
+        return Ok(None);
+    };
+    if curve.periodic() {
+        return Ok(None);
+    }
+    let Some(domain) = nurbs_curve_parameter_domain(curve) else {
+        return Ok(None);
+    };
+    let [low, high] = domain.endpoints();
+    let (Some(first), Some(last)) = (
+        super::evaluation::nurbs_curve_point(ctx, curve, low)?,
+        super::evaluation::nurbs_curve_point(ctx, curve, high)?,
+    ) else {
+        return Ok(None);
+    };
+    let ends = [first.get(), last.get()];
+    let worse_end = |order: [usize; 2]| {
+        ends.iter()
+            .zip(order)
+            .try_fold(0.0_f64, |worse, (end, vertex)| {
+                let distance = end.distance(endpoints[vertex]);
+                (distance <= bounds[vertex]).then(|| worse.max(distance))
+            })
+    };
+    Ok(match (worse_end([0, 1]), worse_end([1, 0])) {
+        (Some(_), None) => Some(false),
+        (None, Some(_)) => Some(true),
+        (Some(along), Some(against)) if along < against => Some(false),
+        (Some(along), Some(against)) if against < along => Some(true),
+        _ => None,
+    })
+}
+
 /// An angular range moved by whole turns so it starts within `[0, τ)`, the
 /// canonical phase of a circle or ellipse. A trim may store an arc on any
 /// equivalent branch, such as one ending at the seam from below as
@@ -2154,13 +2205,35 @@ fn decode_graph(
             .transpose()?
             .flatten();
         edge_curve_spans.insert(e, (curve_attr, parameter_range.map(|(range, _)| range)));
-        // An edge without a resolved range on a compact analytic curve takes its
-        // direction from the curve's orientation marker.
+        // An edge without a resolved range takes its direction from the ends of
+        // its curve's domain, and else from a compact analytic curve's
+        // orientation marker.
         let against_curve = match parameter_range {
             Some((_, reversed)) => reversed,
-            None => carriers
-                .curve(curve_attr)
-                .is_some_and(|carrier| carrier.carrier().runs_against_edges),
+            None => {
+                let carrier = carriers.curve(curve_attr).map(IndexedCurve::carrier);
+                let vertex_bound = |vertex_use: u16| {
+                    t.vertex_uses()
+                        .get(&vertex_use)
+                        .and_then(|record| record.tolerance_m)
+                        .map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                            looser_tolerance(tolerance * LEN_TO_MM, LINEAR_RESOLUTION_MM)
+                        })
+                };
+                let domain_reversed = carrier
+                    .map(|carrier| {
+                        domain_endpoint_reversal(
+                            ctx,
+                            carrier,
+                            edge_endpoint_positions.get(&e).copied(),
+                            [vertex_bound(start_v), vertex_bound(end_v)],
+                        )
+                    })
+                    .transpose()?
+                    .flatten();
+                domain_reversed
+                    .unwrap_or_else(|| carrier.is_some_and(|carrier| carrier.runs_against_edges))
+            }
         };
         if against_curve {
             std::mem::swap(&mut start_id, &mut end_id);
@@ -5811,7 +5884,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
     Some((segment_knots, control_points, weights))
 }
 
-fn clamp_nurbs_curve_to_domain(
+pub(crate) fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, cadmpeg_ir::geometry::nurbs::NurbsError>
