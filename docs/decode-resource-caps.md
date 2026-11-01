@@ -397,6 +397,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7ffe` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
+| `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_STRING_NODE_BYTES` | `4096` | 1 | Reader's framing window for the stated text length of a KEY or CHAR_VALUES node in the topology scope pass. A node that states a longer text does not frame, and its bytes are scanned as other unframed bytes. |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_DIMENSIONS`                          | `7`                                                     | 1    | Dimension slots of the recognized hole-sketch shape. More dimensions mean the shape does not match (`None`).                                                                                                                                                                 |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_DIAMETERS`                           | `3`                                                     | 1    | Diameter slots of the same shape.                                                                                                                                                                                                                                            |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_LENGTHS`                             | `2`                                                     | 1    | Length slots of the same shape.                                                                                                                                                                                                                                              |
@@ -515,16 +516,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 300.
+Production `MAX_*` constants: 301.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 38    |
+| 1    | Format or reader invariant | 39    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 151   |
 | N    | Not a decode bound         | 40    |
-|      | Total                      | 300   |
+|      | Total                      | 301   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -533,7 +534,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 20,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 32,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 33,
 `cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
