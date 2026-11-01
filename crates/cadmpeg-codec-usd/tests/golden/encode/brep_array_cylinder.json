@@ -90,6 +90,8 @@
     "",
     "def Xform \"Occurrence\"",
     "{",
+    "    uniform string cad:id = \"usd:stage:occurrence#/Occurrence\"",
+    "    uniform string cad:definition:id = \"usd:stage:definition#/Occurrence\"",
     "    def BrepArray \"Brep\" (",
     "        prepend apiSchemas = [\"BrepPointAPI:vertexPoint\", \"BrepCurve3dNurbAPI:edge3dNurb\", \"BrepSurfaceNurbAPI\", \"BrepCurveUvNurbAPI\", \"CadBrepIdentityAPI\"]",
     "    )",

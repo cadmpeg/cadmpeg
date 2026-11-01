@@ -129,7 +129,7 @@ impl super::Builder<'_, '_, '_, '_> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let schemas = prim.api_schemas();
         let occurrence = PhysicsTarget::Occurrence {
-            occurrence: crate::ids::occurrence(&prim.path),
+            occurrence: self.occurrence_id(&prim.path),
         };
         for name in crate::schema::physics::unread_body_properties(prim) {
             self.tallies
@@ -209,7 +209,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 }
             } else {
                 SolverTarget::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
+                    occurrence: self.occurrence_id(&prim.path),
                 }
             };
             self.physx(prim, &[Holder::Collision], &target, None);
@@ -220,7 +220,7 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         } else {
             SolverTarget::Occurrence {
-                occurrence: crate::ids::occurrence(&prim.path),
+                occurrence: self.occurrence_id(&prim.path),
             }
         };
         self.physx(prim, &[Holder::Articulation], &articulation, None);
@@ -228,7 +228,7 @@ impl super::Builder<'_, '_, '_, '_> {
             prim,
             &[Holder::Body],
             &SolverTarget::Occurrence {
-                occurrence: crate::ids::occurrence(&prim.path),
+                occurrence: self.occurrence_id(&prim.path),
             },
             None,
         );
@@ -245,7 +245,7 @@ impl super::Builder<'_, '_, '_, '_> {
         body: bool,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let occurrence = PhysicsTarget::Occurrence {
-            occurrence: crate::ids::occurrence(&prim.path),
+            occurrence: self.occurrence_id(&prim.path),
         };
         let data = crate::schema::physics::collision(prim, &mut self.issues);
         let shape = match data.approximation.as_deref() {
@@ -464,7 +464,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 };
                 let operand = match &data.bodies[side] {
                     Some(body) => {
-                        let occurrence = crate::ids::occurrence(body);
+                        let occurrence = self.occurrence_id(body);
                         if !occurrences.contains(occurrence.as_str()) {
                             unresolved = true;
                             break;

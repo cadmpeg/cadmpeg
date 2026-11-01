@@ -152,7 +152,7 @@ impl super::Builder<'_, '_, '_, '_> {
         };
         Some(Resolved {
             operand: JointOperand::occurrence(
-                crate::ids::occurrence(&occurrence),
+                self.occurrence_id(&occurrence),
                 body,
                 vec![face_ir.to_string()],
             ),
@@ -187,14 +187,14 @@ impl super::Builder<'_, '_, '_, '_> {
                             .model
                             .occurrences
                             .iter()
-                            .any(|occurrence| occurrence.id == crate::ids::occurrence(target))
+                            .any(|occurrence| occurrence.id == self.occurrence_id(target))
                     })
                     .map(|target| {
                         AssemblyJoint::grounded(
                             id,
                             JointConnector {
                                 operand: JointOperand::occurrence(
-                                    crate::ids::occurrence(&target),
+                                    self.occurrence_id(&target),
                                     target,
                                     Vec::new(),
                                 ),

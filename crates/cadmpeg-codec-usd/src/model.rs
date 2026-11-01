@@ -314,6 +314,13 @@ struct Builder<'s, 'l, 'c, 'a> {
     pending_joints: Vec<physics::PendingJoint>,
     /// Mate prims, resolved after every occurrence exists.
     pending_mates: Vec<usize>,
+    /// The IR identity of each occurrence, by prim path.
+    occurrence_ids: BTreeMap<String, cadmpeg_ir::ids::OccurrenceId>,
+    /// The definition key of each `cad:definition:id`: the path of the first
+    /// prim that states it.
+    identified_definitions: BTreeMap<String, String>,
+    /// The IR identity of each product definition, by definition key.
+    definition_ids: BTreeMap<String, cadmpeg_ir::ids::ProductDefinitionId>,
     /// The IR identity of each `CadFeature` prim, by path.
     feature_ids: BTreeMap<String, cadmpeg_ir::features::FeatureId>,
     /// The IR identity of each `CadParameter` prim, by path.
@@ -357,6 +364,9 @@ pub(crate) fn build<'a>(
         pending_mates: Vec::new(),
         parameter_ids: BTreeMap::new(),
         feature_ids: BTreeMap::new(),
+        occurrence_ids: BTreeMap::new(),
+        definition_ids: BTreeMap::new(),
+        identified_definitions: BTreeMap::new(),
         brep_entries: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
@@ -439,7 +449,18 @@ impl Builder<'_, '_, '_, '_> {
                 Some(relative.as_str()),
             ),
             (None, Some(key)) if places_only(prim) => (key.clone(), None),
-            _ => return prim.path.clone(),
+            // Prims with one `cad:definition:id` are occurrences of one
+            // definition, keyed by the first of them (spec §18).
+            _ => {
+                return match crate::schema::token(prim, "cad:definition:id", &mut self.issues) {
+                    Some(identity) => self
+                        .identified_definitions
+                        .entry(identity)
+                        .or_insert_with(|| prim.path.clone())
+                        .clone(),
+                    None => prim.path.clone(),
+                }
+            }
         };
         let next = self.prototypes.len();
         let ordinal = *self.prototypes.entry(key).or_insert(next);
@@ -584,6 +605,13 @@ impl Builder<'_, '_, '_, '_> {
         let visible = (visibility.as_deref() == Some("invisible")
             || matches!(purpose.as_deref(), Some("guide" | "proxy")))
         .then_some(false);
+        let occurrence_id = self
+            .cad_id(&prim.path, |text| {
+                cadmpeg_ir::ids::OccurrenceId::mint(text).ok()
+            })
+            .unwrap_or_else(|| crate::ids::occurrence(&prim.path));
+        self.occurrence_ids
+            .insert(prim.path.clone(), occurrence_id.clone());
         if self.definitions.insert(definition.clone()) {
             self.definition(prim, role, &definition)?;
         }
@@ -591,14 +619,14 @@ impl Builder<'_, '_, '_, '_> {
         self.ctx
             .retain_bytes(u64_from_index(prim.name.len()), RETAIN_NAME)?;
         self.ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(&prim.path),
+            id: occurrence_id,
             prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(&definition),
+                definition: self.definition_id(&definition),
             },
             parent: match parent {
                 None => OccurrenceParent::Root {},
                 Some(parent) => OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(parent),
+                    occurrence: self.occurrence_id(parent),
                 },
             },
             ordinal,
@@ -626,7 +654,7 @@ impl Builder<'_, '_, '_, '_> {
                     object: external.prim_path.clone(),
                 },
                 parent: OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
+                    occurrence: self.occurrence_id(&prim.path),
                 },
                 ordinal: child_ordinal,
                 transform: Transform::identity(),
@@ -680,6 +708,12 @@ impl Builder<'_, '_, '_, '_> {
 
     /// Writes the definition of `prim` and its geometry.
     fn definition(&mut self, prim: &Prim<'_>, role: Role, key: &str) -> Result<(), CodecError> {
+        let id = self
+            .cad_identity(&prim.path, "cad:definition:id", |text| {
+                cadmpeg_ir::ids::ProductDefinitionId::mint(text).ok()
+            })
+            .unwrap_or_else(|| crate::ids::definition(key));
+        self.definition_ids.insert(key.to_owned(), id);
         let kind = match role {
             Role::Mesh
             | Role::BasisCurves
@@ -745,7 +779,7 @@ impl Builder<'_, '_, '_, '_> {
             self.bodied.insert(key.to_owned());
         }
         self.ir.model.product_definitions.push(ProductDefinition {
-            id: crate::ids::definition(key),
+            id: self.definition_id(key),
             kind,
             source_name: Some(definition_name(prim, key).to_owned()),
             label: None,
@@ -871,14 +905,41 @@ impl Builder<'_, '_, '_, '_> {
     /// The CADIR identity that `cad:id` of the prim at `path` states, when
     /// `mint` admits it and no record holds it yet (spec §18).
     fn cad_id<T>(&mut self, path: &str, mint: impl Fn(String) -> Option<T>) -> Option<T> {
+        self.cad_identity(path, "cad:id", mint)
+    }
+
+    /// The CADIR identity that attribute `name` of the prim at `path`
+    /// states, when `mint` admits it and no record holds it yet.
+    fn cad_identity<T>(
+        &mut self,
+        path: &str,
+        name: &str,
+        mint: impl Fn(String) -> Option<T>,
+    ) -> Option<T> {
         let stage = self.stage;
-        let text = crate::schema::token(stage.find(path)?, "cad:id", &mut self.issues)?;
+        let text = crate::schema::token(stage.find(path)?, name, &mut self.issues)?;
         if self.used_ids.contains(&text) {
             return None;
         }
         let id = mint(text.clone())?;
         self.used_ids.insert(text);
         Some(id)
+    }
+
+    /// The occurrence of the prim at `path`.
+    fn occurrence_id(&self, path: &str) -> cadmpeg_ir::ids::OccurrenceId {
+        self.occurrence_ids
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::occurrence(path))
+    }
+
+    /// The product definition of definition key `key`.
+    fn definition_id(&self, key: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
+        self.definition_ids
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::definition(key))
     }
 
     /// The body of definition key `key`.
@@ -1483,7 +1544,10 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
 /// carried `PhysX` schemas.
 fn group_property_read(prim: &Prim<'_>, name: &str) -> bool {
     name.starts_with("xformOp")
-        || matches!(name, "visibility" | "purpose")
+        || matches!(
+            name,
+            "visibility" | "purpose" | "cad:id" | "cad:definition:id"
+        )
         || name.starts_with("material:binding")
         || name.starts_with("physics:")
         || name.starts_with("drive:")
@@ -1497,7 +1561,7 @@ fn group_property_read(prim: &Prim<'_>, name: &str) -> bool {
 }
 
 /// Whether the prim's own specifications state only placement properties:
-/// transform ops, visibility, and purpose.
+/// transform ops, visibility, purpose, and the occurrence identity.
 fn places_only(prim: &Prim<'_>) -> bool {
     prim.sites
         .iter()
@@ -1505,7 +1569,7 @@ fn places_only(prim: &Prim<'_>) -> bool {
         .flat_map(|site| site.body.properties.iter())
         .all(|property| {
             let name = property.name();
-            name.starts_with("xformOp") || matches!(name, "visibility" | "purpose")
+            name.starts_with("xformOp") || matches!(name, "visibility" | "purpose" | "cad:id")
         })
 }
 

@@ -275,6 +275,7 @@ fn the_encoder_targets_each_usda_version_a_package_and_a_crate_layer() {
 }
 
 mod features;
+mod identities;
 mod intrinsics;
 mod layers;
 mod losses;

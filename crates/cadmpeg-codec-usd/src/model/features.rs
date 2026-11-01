@@ -283,7 +283,8 @@ impl super::Builder<'_, '_, '_, '_> {
                 let holder = stage
                     .find(target)
                     .ok_or_else(|| format!("{name}: <{target}> is not a prim"))?;
-                let definition = crate::ids::definition(&self.definition_key(holder));
+                let key = self.definition_key(holder);
+                let definition = self.definition_id(&key);
                 if self
                     .ir
                     .model

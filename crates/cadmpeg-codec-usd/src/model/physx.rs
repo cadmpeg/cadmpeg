@@ -134,7 +134,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 .any(|record| record.id == joint)
                 .then_some(SolverTarget::Joint { joint });
         }
-        let occurrence = crate::ids::occurrence(path);
+        let occurrence = self.occurrence_id(path);
         model
             .occurrences
             .iter()

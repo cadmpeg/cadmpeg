@@ -18,10 +18,11 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `pcurves` | NURBS trim curves in `BrepCurveUvNurbAPI`; exact pcurves in `CadBrepAnalyticAPI` | pcurve kinds other than line, circle, ellipse, and NURBS | added `CadBrepAnalyticAPI` pcurve types |
 | `procedural_surfaces`, `procedural_curves` | extrusion and revolution surfaces in `CadBrepAnalyticAPI` | sum, sweep, offset, subset, ruled, blend; intersection, projection, offset, subset curves | `CadBrepProceduralAPI`: a construction for each carrier, beside its NURBS solved form; the writer needs a NURBS form of each kind |
 | `subds` | none | subdivision cages | `Mesh` with `subdivisionScheme = "catmullClark"`, creases, and corners (official) |
-| `tessellations` | `Mesh` with normals, texture coordinates, and `GeomSubset` triangle groups | channels and texture assignments other than coordinates | primvars by channel name (official) |
+| `tessellations` | `Mesh` with normals, texture coordinates, and `GeomSubset` triangle groups | per-vertex colors (a scan mesh) and channels other than coordinates, such as intensity and confidence | vertex-interpolated `primvars:displayColor` and primvars by channel name (official) |
+| point clouds (no CADIR arena) | `UsdGeomPoints` prims are not read; free CADIR `points` are written as one `UsdGeomPoints` prim | a CADIR arena of packed points with per-point channels (normal, color, intensity, classification) and a sensor frame | `UsdGeomPoints` with `normals`, `widths`, `ids`, per-point `displayColor`, and primvars by channel name (official); capture metadata (sensor pose, capture time, registration) as `assetInfo` or a `CadScanAPI` |
 | `appearances`, `appearance_bindings` | materials; bindings to bodies, tessellations, triangle groups, `BrepArray` faces and B-reps | bindings to edges, vertices, free curves, free points, and native carriers | `GeomSubset` of `BrepArray` with `elementType = "edge"` and `"vertex"` |
 | `assets` | package members and asset paths | none for images; other asset kinds keep their path | none |
-| `product_definitions`, `occurrences` | `Xform` prims, references, instancing, `kind` | part number, label, description, BOM properties, source name | `assetInfo` (official) for identifier and version; `CadProductAPI` for part number and BOM properties |
+| `product_definitions`, `occurrences` | `Xform` prims, references, instancing, `kind`; `cad:id` and `cad:definition:id` identities (`usd.md` §18) | part number, label, description, BOM properties, source name | `assetInfo` (official) for identifier and version; `CadProductAPI` for part number and BOM properties |
 | `assembly_joints` | `UsdPhysics` joints, drives, PhysX gear and rack-and-pinion joints; `CadConnector` and `CadMate` on `BrepArray` faces (`usd.md` §18.3) | joint families with no `UsdPhysics` or `CadMate` type; joint values and limits on a mate; driving parameter | `CadMate` types for the other CADIR joint kinds, and `cadMate:value` |
 | `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings` | `UsdPhysics` and PhysX schemas | none | none |
 | `sketches`, `sketch_entities`, `sketch_constraints` | `CadSketch` types (`usd.md` §18.2) | entity and constraint kinds outside the `CadSketch` types | added `CadSketch` element and constraint types |
@@ -30,7 +31,7 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `configurations` | `CadConfiguration` prims (`usd.md` §18.8): typed identity, order, name, material, and properties; overrides, values, bodies, and feature states as CADIR wire JSON | a variant set that selects the parameter values and feature suppression of each configuration for viewers | typed configuration properties; a `configuration` variant set |
 | `features`, `feature_input_topologies`, `feature_result_topologies` | `CadFeature` prims (`usd.md` §18.7): typed identity, order, suppression, dependencies, outputs, and properties; the definition and topologies as CADIR wire JSON | typed operation properties | `CadFeature` subtypes for each operation family, which replace the payload family by family |
 | `spreadsheets` | none | spreadsheet cells | `CadSpreadsheet` prim, or an asset |
-| `pmi`, `semantic_annotations` | `CadPmi` prims (`usd.md` §18.9) with targets and definition as CADIR wire JSON | semantic annotations; the PMI semantics of a design parameter, which name a native record; targets that name occurrences and product definitions, whose identities a stage does not keep | `CadAnnotation` prims; `cad:id` on occurrence and definition prims |
+| `pmi`, `semantic_annotations` | `CadPmi` prims (`usd.md` §18.9) with targets and definition as CADIR wire JSON | semantic annotations; the PMI semantics of a design parameter, which name a native record | `CadAnnotation` prims |
 | `attributes` | none | user attributes on entities | `customData` dictionary `cad:attributes` on the prim of the entity, or keyed by entity identity on a `BrepArray` |
 | `presentation_layers` | none | layers and their members and visibility | `UsdCollectionAPI` instances (official) |
 | `drawings`, `presentation_documents`, `view_presentations` | none | drawing sheets and views | out of scope; keep as assets |
@@ -60,6 +61,7 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 
 ## 3. Changes outside the USD codec
 
+- CADIR: a point cloud arena that holds packed positions and per-point channels, as `tessellations` hold packed meshes. Free `points` records hold one identity per point, which a scan of millions of points does not admit.
 - CADIR: a face that two solid regions share. A `BrepArray` represents it; a CADIR face belongs to one shell.
 - `cadmpeg-measure`: the per-edge work allowance of `cadmpeg check` is below the cost of a rational NURBS circle edge, so a check of a `BrepArray` body skips its measurement checks.
 

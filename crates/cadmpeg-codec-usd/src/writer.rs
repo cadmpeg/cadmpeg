@@ -687,6 +687,13 @@ impl<'ir> Writer<'ir> {
                 .push(format!("prepend references = [{}]", references.join(", "))),
         }
         let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
+        placement.properties.push(format!(
+            "uniform string cad:id = {}",
+            quoted(occurrence.id.as_str())
+        ));
+        if let Some(definition) = definition.filter(|_| !shared) {
+            placement.properties.push(definition_line(&definition.id));
+        }
         let bodies: Vec<&'ir Body> = definition
             .filter(|_| !shared)
             .map(|definition| {
@@ -1621,13 +1628,18 @@ impl<'ir> Writer<'ir> {
                 })
                 .collect();
             let mut names = Names::default();
+            let placement = Placement {
+                properties: vec![definition_line(&definition.id)],
+                ..Placement::default()
+            };
             if let [body] = bodies.as_slice() {
-                self.body(body, &mut names, &Placement::default(), Some(&name));
+                self.body(body, &mut names, &placement, Some(&name));
                 continue;
             }
             self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
             self.out.open();
+            self.placement(&placement);
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
@@ -1942,4 +1954,12 @@ fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
         out.insert(edge.id.as_str(), position);
     }
     out
+}
+
+/// The `cad:definition:id` attribute of the prim that defines `definition`.
+fn definition_line(definition: &ProductDefinitionId) -> String {
+    format!(
+        "uniform string cad:definition:id = {}",
+        quoted(definition.as_str())
+    )
 }
