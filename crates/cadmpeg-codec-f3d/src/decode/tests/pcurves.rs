@@ -29,6 +29,7 @@ use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_surface_offset_smbh,
 };
 use crate::test_support::smbh_pcurves_test::{
+    assert_pcurve_close, assert_pcurve_geometry_close,
     synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
     synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
     synthetic_geometry_with_out_of_scope_pcurve_cache_smbh, synthetic_geometry_with_pcurve_smbh,
@@ -37,7 +38,8 @@ use crate::test_support::smbh_pcurves_test::{
     synthetic_geometry_with_ref_pcurve_smbh, synthetic_geometry_with_short_pcurve_tail_smbh,
     synthetic_geometry_with_wrapped_ref_pcurve_smbh,
     synthetic_inline_pcurve_with_referenced_support_smbh, with_inline_pcurve_non_boolean_wrapper,
-    with_pcurve_discriminator, with_ref_pcurve_companion_name, with_ref_pcurve_companion_reversed,
+    with_pcurve_discriminator, with_plane_pcurve_offset_vertices, with_ref_pcurve_companion_name,
+    with_ref_pcurve_companion_reversed,
 };
 use crate::test_support::tokens_test::renamed_generated_subtype;
 use crate::test_support::zip_test::f3d_with_smbh;
@@ -812,7 +814,10 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
 
 #[test]
 fn decode_attaches_generated_pcurve_to_its_coedge() {
-    let f3d = f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh());
+    let f3d = f3d_with_smbh(&with_plane_pcurve_offset_vertices(
+        synthetic_geometry_with_pcurve_smbh(),
+        [-1.0, 2.0],
+    ));
     let mut cur = Cursor::new(f3d);
     let result = F3dCodec
         .decode(&mut cur, &DecodeOptions::default())
@@ -963,7 +968,7 @@ fn negative_ref_pcurve_reverses_its_uv_parameterization() {
     };
     assert_eq!(
         nurbs.pole_rows().raw_points().first(),
-        Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
+        Some(&cadmpeg_ir::math::Point2::new(-1.25, 5.5))
     );
 }
 
@@ -988,7 +993,7 @@ fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
     };
     assert_eq!(
         nurbs.pole_rows().raw_points().first(),
-        Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
+        Some(&cadmpeg_ir::math::Point2::new(-1.75, 4.5))
     );
 }
 
@@ -1017,7 +1022,7 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     );
     assert_eq!(
         complete
-            .parameter_range()
+            .uv_offset()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-1.0, 2.0])
     );
@@ -1025,9 +1030,7 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
     assert_eq!(short.native_tail_flags(), None);
     assert_eq!(
-        short
-            .parameter_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
+        short.uv_offset().map(cadmpeg_ir::units::FiniteVector::get),
         Some([-1.0, 2.0])
     );
 }
@@ -1133,9 +1136,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     assert_eq!(pcurve.wrapper_reversed(), Some(false));
     assert_eq!(pcurve.native_tail_flags(), Some([true, false, true, false]));
     assert_eq!(
-        pcurve
-            .parameter_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
+        pcurve.uv_offset().map(cadmpeg_ir::units::FiniteVector::get),
         Some([-1.0, 2.0])
     );
     assert_eq!(
@@ -1186,7 +1187,8 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected.clone()]);
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    assert_pcurve_close(&round_trip.ir().model.pcurves[0], &expected);
 }
 
 #[test]
@@ -1224,7 +1226,8 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated scoped pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected]);
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    assert_pcurve_close(&round_trip.ir().model.pcurves[0], &expected);
 }
 
 #[test]
@@ -1276,11 +1279,12 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated rational pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected]);
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    assert_pcurve_close(&round_trip.ir().model.pcurves[0], &expected);
 }
 
 #[test]
-fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
+fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
     let source = f3d_with_smbh(&synthetic_geometry_with_ref_pcurve_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -1290,9 +1294,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     assert_eq!(pcurve.wrapper_reversed(), None);
     assert_eq!(pcurve.fit_tolerance(), None);
     assert_eq!(
-        pcurve
-            .parameter_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
+        pcurve.uv_offset().map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.0, 4.0])
     );
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
@@ -1329,19 +1331,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     else {
         panic!("decoded fixture uses general pcurve metadata")
     };
-    {
-        let replacement = Some([-3.0, 5.0]);
-        edit::replace(metadata, |previous| {
-            Ok::<_, &str>(cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::new(
-                previous.wrapper_reversed,
-                replacement.map(|range| {
-                    cadmpeg_ir::units::FiniteVector::new(range).expect("finite fixture range")
-                }),
-                previous.fit_tolerance(),
-            ))
-        })
-    }
-    .unwrap();
+    metadata.uv_offset = Some(cadmpeg_ir::units::FiniteVector::new([-3.0, 5.0]).unwrap());
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1350,7 +1340,8 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated ref-form pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected.clone()]);
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    assert_pcurve_close(&round_trip.ir().model.pcurves[0], &expected);
 
     edited.source = None;
     edited
@@ -1365,10 +1356,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .decode(&mut Cursor::new(source_less), &DecodeOptions::default())
         .expect("source-less ref-form pcurve round trip");
     let actual = &source_less_round_trip.ir().model.pcurves[0];
-    assert_eq!(actual.geometry, expected.geometry);
+    assert_pcurve_geometry_close(&actual.geometry, &expected.geometry);
     assert_eq!(actual.wrapper_reversed(), expected.wrapper_reversed());
     assert_eq!(actual.native_tail_flags(), expected.native_tail_flags());
-    assert_eq!(actual.parameter_range(), expected.parameter_range());
+    assert_eq!(actual.uv_offset(), expected.uv_offset());
     assert_eq!(actual.fit_tolerance(), expected.fit_tolerance());
     assert!(source_less_round_trip
         .ir()
@@ -1381,14 +1372,14 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let mut inline = mixed.model.pcurves[0].clone();
     inline.id = cadmpeg_ir::ids::PcurveId::mint("generated:test:mixed-inline-pcurve#0")
         .expect("identity grammar");
-    let Some(parameter_range) = inline.parameter_range() else {
-        panic!("ref-form fixture carries a parameter range")
+    let Some(uv_offset) = inline.uv_offset() else {
+        panic!("ref-form fixture carries a UV offset")
     };
     inline.metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
         form: cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
             false,
             [true, false, true, false],
-            parameter_range,
+            uv_offset,
             cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
                 .expect("finite non-negative fixture tolerance"),
         ),

@@ -28,9 +28,9 @@ pub(super) fn convert(records: &mut [Record], scales: &SegmentScales) -> Result<
             .filter_map(|pcurve| exp_par_cur_block(records, &definitions, *pcurve))
             .collect()
     };
-    let elsewhere = blocks(&elsewhere);
+    let elsewhere_blocks = blocks(&elsewhere);
     let converted = blocks(&on_plane);
-    let mut pending = converted.difference(&elsewhere).peekable();
+    let mut pending = converted.difference(&elsewhere_blocks).peekable();
     while let Some(&(owner, marker)) = pending.next() {
         let segment = scales.partition_point(|(start, _)| *start <= owner);
         let scale = segment
@@ -44,6 +44,38 @@ pub(super) fn convert(records: &mut [Record], scales: &SegmentScales) -> Result<
             scale_bs2_block(&mut tokens, marker, scale).ok_or(owner)?;
         }
         record.tokens = tokens.into();
+    }
+    for &index in on_plane.difference(&elsewhere) {
+        let Some(record) = records
+            .get_mut(index)
+            .filter(|record| record.head() == "pcurve")
+        else {
+            continue;
+        };
+        let mut values = record
+            .tokens
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, token)| !token.is_payload_ident());
+        let pair = match (values.next(), values.next()) {
+            (Some((v_index, Token::Double(dv))), Some((u_index, Token::Double(du)))) => {
+                Some([(u_index, *du), (v_index, *dv)])
+            }
+            _ => None,
+        };
+        if let Some(pair) = pair {
+            let segment = scales.partition_point(|(start, _)| *start <= index);
+            let scale = segment
+                .checked_sub(1)
+                .and_then(|segment| scales.get(segment))
+                .map_or(1.0, |(_, scale)| *scale);
+            let mut tokens = record.tokens.to_vec();
+            for (position, value) in pair {
+                tokens[position] = Token::Double(length_cm(value, scale).ok_or(index)?);
+            }
+            record.tokens = tokens.into();
+        }
     }
     Ok(())
 }
