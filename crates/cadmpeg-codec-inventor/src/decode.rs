@@ -1017,15 +1017,11 @@ fn decode_container<'a>(
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
-        if unresolved.sketches != 0
-            || unresolved.sketch_entities != 0
-            || unresolved.sketch_constraints != 0
-        {
-            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
-                "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
-                unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
-            )));
-        }
+        losses.extend(crate::sketch::graph_loss(
+            unresolved.sketches,
+            unresolved.sketch_entities,
+            unresolved.sketch_constraints,
+        ));
         if unresolved.sketch_construction != 0 {
             losses.push(InventorLossCode::SketchConstructionUnresolved.note(format!(
                 "{} Inventor sketch curve(s) carry entity flags whose construction meaning is unresolved; they project as geometry and stay out of the sketch profile tables.",

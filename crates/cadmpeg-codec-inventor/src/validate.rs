@@ -826,6 +826,17 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         HashMap::new()
     };
     for entity in &ir.model.sketch_entities {
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities
+                .get(reference)
+                .is_some_and(|source| crate::sketch::curve::is_non_geometric(source))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch entity source is a non-geometric sketch record".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
         if entity
             .native_ref
             .as_deref()
@@ -900,6 +911,24 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         HashMap::new()
     };
     for constraint in &ir.model.sketch_constraints {
+        if constraint.native_ref.as_deref().is_some_and(|reference| {
+            native_constraints.get(reference).is_some_and(|source| {
+                crate::sketch::curve::relation_stays_native(source, |reference| {
+                    reference
+                        .record_ordinal()
+                        .and_then(|ordinal| {
+                            entities.get(&(source.identity.segment_token.as_str(), ordinal))
+                        })
+                        .is_some_and(|entity| crate::sketch::curve::is_non_geometric(entity))
+                })
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch constraint source is a non-geometric sketch relation".into(),
+                Some(constraint.id.as_str().to_owned()),
+            ));
+        }
         if constraint
             .native_ref
             .as_deref()

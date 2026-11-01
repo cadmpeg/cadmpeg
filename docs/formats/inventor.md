@@ -467,7 +467,7 @@ Types `bf70e821d011d0d20008ccbc0663dc09`, `b07b170fd11196e680006fb1e13554c7`, `c
 - collinear stores two line references and `state:u16`; the lines lie on one infinite line;
 - symmetric stores two entity references and an axis line reference; the axis line's carrier reflects the first entity onto the second.
 
-Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts with the planar-entity prefix and then stores a reference-entity reference and `value:u32`. The reference entity is the polygon's center point, or a line. Type `1f89dbfbd84778b6b0967285c7ec8bb9` is a polygon relation. After the constraint header it stores two entity references, the polygon's reference entity, the polygon-record reference twice, and two u32 values. The two entities are consecutive polygon edges or consecutive polygon vertices.
+Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts with the planar-entity prefix and then stores a reference-entity reference and `value:u32`. The reference entity is the polygon's center point, or a line. Separate line entities define the polygon's edges. Type `1f89dbfbd84778b6b0967285c7ec8bb9` is a polygon relation. After the constraint header it stores two entity references, the polygon's reference entity, the polygon-record reference twice, and two u32 values. The two entities are consecutive polygon edges or consecutive polygon vertices.
 
 Type `bc144b4ed211fea4600010b38932edb0` encodes an equal-distance relation. After the constraint header, whose parameter is null, it stores two pairs of line references. The lines of each pair are parallel, and the two pairs have the same separation.
 

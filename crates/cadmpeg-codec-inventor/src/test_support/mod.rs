@@ -14,5 +14,6 @@ pub(crate) mod mirror;
 pub(crate) mod surface_extrusion;
 
 pub(crate) mod sketch_curves;
+pub(crate) mod sketch_relations;
 pub(crate) mod split;
 pub(crate) mod thicken;

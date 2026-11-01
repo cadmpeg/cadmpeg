@@ -1022,6 +1022,7 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
     Ok(())
 }
 
+mod non_geometric;
 mod sketch_curves;
 
 mod split_trim;
