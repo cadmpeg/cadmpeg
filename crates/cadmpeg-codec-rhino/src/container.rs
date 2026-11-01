@@ -255,8 +255,6 @@ pub(crate) struct Scan<'a> {
     pub(crate) data: &'a [u8],
     /// Parsed archive version.
     pub(crate) archive: ArchiveVersion,
-    /// Introductory comment offset, if the source contains a comment.
-    pub(crate) comment_offset: Option<usize>,
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
@@ -267,8 +265,6 @@ pub(crate) struct Scan<'a> {
     pub(crate) definitions: DefinitionScan,
     /// Decoded built-in history records in source order.
     pub(crate) history: Vec<crate::history::HistoryRecord>,
-    /// Validated EOF descriptor.
-    eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
     pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
@@ -1095,7 +1091,7 @@ fn scan_with_record_limit<'a>(
         &chunk_at(data, comment_offset, data.len(), archive, false).map_err(framing_error)?,
     );
     let mut warnings = Diagnostics::new();
-    let (comment_offset, mut offset) = if first.typecode & !TCODE_SHORT == TCODE_COMMENT {
+    let mut offset = if first.typecode & !TCODE_SHORT == TCODE_COMMENT {
         if first.is_short() {
             warnings.push(format_args!(
                 "introductory comment uses short framing; comment text is unavailable"
@@ -1109,12 +1105,12 @@ fn scan_with_record_limit<'a>(
                 format_args!("{note}"),
             );
         }
-        (Some(comment_offset), first.range.end)
+        first.range.end
     } else {
         warnings.push(format_args!(
             "introductory comment is absent; reading tables from the first post-header chunk"
         ));
-        (None, comment_offset)
+        comment_offset
     };
     let writer_version = first_writer_version(data, archive, offset)?;
     let mut tables = Vec::new();
@@ -1146,13 +1142,11 @@ fn scan_with_record_limit<'a>(
             return Ok(Scan {
                 data,
                 archive,
-                comment_offset,
                 tables,
                 objects: all_objects,
                 opaque_records,
                 definitions,
                 history,
-                eof_offset: offset,
                 warnings,
                 metadata,
             });
@@ -1566,28 +1560,6 @@ pub(crate) fn source_meta(
         SourceMetaDetail::ContainerOnly(scan) => {
             let mut attributes = BTreeMap::new();
             chunked_source_attributes(scan, &mut attributes)?;
-            if let Some(offset) = scan.comment_offset {
-                insert_source_meta_attribute(
-                    &mut attributes,
-                    "comment_offset",
-                    format_args!("{offset}"),
-                )?;
-            }
-            insert_source_meta_attribute(
-                &mut attributes,
-                "eof_offset",
-                format_args!("{}", scan.eof_offset),
-            )?;
-            insert_source_meta_attribute(
-                &mut attributes,
-                "table_count",
-                format_args!("{}", scan.tables.len()),
-            )?;
-            insert_source_meta_attribute(
-                &mut attributes,
-                "instance_definition_count",
-                format_args!("{}", scan.definitions.definitions().len()),
-            )?;
             attributes
         }
         SourceMetaDetail::Full {
