@@ -30,7 +30,7 @@ pub(super) fn strip(
     while let Some(value) = pending.pop() {
         match value {
             Value::String(text) if crate::ids::is_valid_identity(text) => {
-                row_ids.push(text.clone())
+                row_ids.push(text.clone());
             }
             Value::Array(values) => pending.extend(values),
             Value::Object(fields) => pending.extend(fields.values()),

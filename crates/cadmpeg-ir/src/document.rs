@@ -1973,9 +1973,6 @@ cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
 
 mod identity_rewrite;
 
-fn is_false(value: &bool) -> bool {
-    !*value
-}
 cadmpeg_core::named_optional_field!(deserialize_fragment, bool, "fragment");
 
 cadmpeg_core::named_optional_field!(
