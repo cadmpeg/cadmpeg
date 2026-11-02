@@ -9,7 +9,9 @@ use cadmpeg_core::decode::u64_from_index;
 use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
-use super::base_feature::exact_base_feature_construction;
+use super::base_feature::{
+    exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
+};
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
 use super::coil::exact_coil_placement;
@@ -118,6 +120,7 @@ pub(crate) fn decode_parameter_scopes(
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
@@ -605,7 +608,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_base_feature_construction(bytes, &scope)?;
+                let owned = body_owners
+                    .get(&scope.record_index)
+                    .and_then(|owner| exact_timeline_owned_base_feature(bytes, &scope, *owner));
+                let construction = match owned {
+                    Some(owned) => Some(owned),
+                    None => exact_base_feature_construction(bytes, &scope)?,
+                };
                 if let scope::DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -1025,16 +1034,21 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
 }
 
+/// Tail byte that begins the second marked reference of an 87-byte fixed tail.
+const FIXED_TAIL_SECOND_REFERENCE: usize = 30;
+
 pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
         ScopeTailForm::Fixed,
         rigid_group,
+        second_tail_reference,
     )
 }
 
@@ -1197,6 +1211,7 @@ fn parameter_scope_previous_history_offset_for_form(
     tail_length: usize,
     tail_form: ScopeTailForm,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
@@ -1215,7 +1230,8 @@ fn parameter_scope_previous_history_offset_for_form(
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
-        (_, 87) => Some(41),
+        (_, 87) if second_tail_reference => Some(41),
+        (_, 87) => Some(31),
         _ => None,
     }
 }
@@ -1451,6 +1467,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 tail_length,
                 tail_form,
                 kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
             ) {
                 Some(offset) => Some(kind_end.checked_add(offset)?),
                 None => None,

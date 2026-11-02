@@ -12,6 +12,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use std::collections::HashMap;
 
 use super::shared_frames::marked_record_reference;
 
@@ -674,6 +675,8 @@ use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
+use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
+use crate::layout::timeline_body_owner_prefix as owner_prefix;
 use crate::records::feature::scope;
 
 fn read_base_feature_entry_at(
@@ -744,6 +747,124 @@ fn exact_typed_zero_body_base_feature(
             .get(start + typed_zero_body::SHARED_METADATA_FIELD..reference_end)?
             .to_vec()
             .into(),
+    })
+}
+
+/// Paste object whose owned scope stores the pasted bodies.
+const PASTE_BODIES_TYPE_GUID: &str = "BA3059E4-4B23-4D02-9D18-E7BB95C991F3";
+/// Body-to-component object whose owned scope stores the moved bodies.
+const BODY_TO_COMPONENT_TYPE_GUID: &str = "56225BC7-69B7-446A-9AEA-6AA25BC7806E";
+
+/// A timeline object's reference to the Base Feature scope it owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TimelineBodyOwner {
+    record: u32,
+    body_count: usize,
+    reference_offset: u64,
+}
+
+/// Index each scope named by a paste or body-to-component timeline object.
+pub(super) fn timeline_body_owners<'a>(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    types: impl Iterator<Item = &'a crate::records::entity_header::SegmentType>,
+) -> HashMap<u32, TimelineBodyOwner> {
+    let mut owners = HashMap::new();
+    for design_type in types.filter(|design_type| {
+        [PASTE_BODIES_TYPE_GUID, BODY_TO_COMPONENT_TYPE_GUID]
+            .iter()
+            .any(|guid| guid.eq_ignore_ascii_case(design_type.type_guid.as_str()))
+    }) {
+        for &entity in design_type.entities.values() {
+            let Some((scope, owner)) = u32::try_from(entity)
+                .ok()
+                .and_then(|record| parse_timeline_body_owner(bytes, records, record))
+            else {
+                continue;
+            };
+            owners.insert(scope, owner);
+        }
+    }
+    owners
+}
+
+fn parse_timeline_body_owner(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    record: u32,
+) -> Option<(u32, TimelineBodyOwner)> {
+    let start = *records.offsets(record).first()?;
+    let count_at = if bytes
+        .get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)?
+        == [0; 10]
+    {
+        start + owner_prefix::BODY_COUNT
+    } else if bytes
+        .get(start + owner_marked_prefix::ZERO_RUN_9..start + owner_marked_prefix::MARKER)?
+        == [0; 9]
+        && bytes.get(start + owner_marked_prefix::MARKER) == Some(&1)
+        && bytes
+            .get(start + owner_marked_prefix::ZERO_U32..start + owner_marked_prefix::BODY_COUNT)?
+            == [0; 4]
+    {
+        start + owner_marked_prefix::BODY_COUNT
+    } else {
+        return None;
+    };
+    let body_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if body_count == 0 {
+        return None;
+    }
+    let mut cursor = count_at + 4;
+    for _ in 0..body_count {
+        crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    }
+    let reference_offset = u64::try_from(cursor.checked_add(1)?).ok()?;
+    let (scope, _) = crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    Some((
+        u32::try_from(scope).ok()?,
+        TimelineBodyOwner {
+            record,
+            body_count,
+            reference_offset,
+        },
+    ))
+}
+
+/// Read the parallel parameter-body and body-entity runs of an owned scope.
+pub(super) fn exact_timeline_owned_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owner: TimelineBodyOwner,
+) -> Option<DesignBaseFeatureConstruction> {
+    if scope.kind() != scope::DesignFeatureKind::BaseFeature {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
+        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+        || usize::try_from(View::u32_le_at(
+            bytes,
+            start + result_body::COMBINED_BODY_REFERENCE_COUNT,
+        )?)
+        .ok()?
+            != owner.body_count.checked_mul(2)?
+    {
+        return None;
+    }
+    let mut cursor = start + result_body::LEN;
+    let mut run = |count: usize| -> Option<Vec<DesignBaseFeatureEntry<u64>>> {
+        (0..count)
+            .map(|_| read_base_feature_entry_at(bytes, &mut cursor))
+            .collect()
+    };
+    let parameter_bodies = run(owner.body_count)?;
+    let bodies = run(owner.body_count)?;
+    Some(DesignBaseFeatureConstruction::TimelineOwnedBodies {
+        parameter_bodies,
+        bodies,
+        owner_record: owner.record,
+        owner_reference_offset: owner.reference_offset,
     })
 }
 

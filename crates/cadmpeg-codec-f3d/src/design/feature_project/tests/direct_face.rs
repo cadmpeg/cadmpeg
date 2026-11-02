@@ -274,7 +274,6 @@ fn move_face_projects_a_translation_of_its_group() {
     } = projected_operation(super::super::project_move_face(
         &scope,
         std::slice::from_ref(&group),
-        &[],
     ))
     else {
         panic!("expected a face translation");
@@ -294,7 +293,7 @@ fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     ];
     let faces = group(DesignOperandRole::ROLE_0X10);
     let refused = |transform, groups: &[DesignConstructionOperandGroup]| {
-        super::super::project_move_face(&move_face_scope(transform), groups, &[])
+        super::super::project_move_face(&move_face_scope(transform), groups)
             .unwrap()
             .is_none()
     };
@@ -343,7 +342,6 @@ fn move_face_stays_native_for_a_reflection() {
         assert!(super::super::project_move_face(
             &move_face_scope(transform),
             std::slice::from_ref(&faces),
-            &[],
         )
         .unwrap()
         .is_none());
@@ -407,6 +405,60 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     .try_into()
     .unwrap();
     assert!(super::super::project_move(&scope, &[group]).is_none());
+}
+
+#[test]
+fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
+    let scope = scope(DesignFeatureKind::OffsetFaces);
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let operand = crate::records::topology::face::DesignFaceOperand::try_new(
+        crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:test:face-operand#200".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 0,
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: "297".to_owned().try_into().unwrap(),
+            paired_byte_offset: 1250,
+            paired_class_tag: "259".to_owned().try_into().unwrap(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1300,
+            recipe_id: "f3d:test:recipe#203".into(),
+            recipe_prefix_offset: 1311,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: crate::records::recipes::ConstructionRecipeKind::BoundedFace,
+            recipe_program_offset: 1350,
+            recipe_program: vec![0, -1],
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: vec![27],
+            resolved_active_face: None,
+            next_record_index: 220,
+            next_byte_offset: 1411,
+        },
+    )
+    .unwrap();
+    let FeatureOperation::MoveFace { faces, .. } =
+        projected_operation(super::super::project_offset_faces(
+            &scope,
+            &[],
+            std::slice::from_ref(&operand),
+            std::slice::from_ref(&group),
+        ))
+    else {
+        panic!("expected a face move");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
 }
 
 #[test]

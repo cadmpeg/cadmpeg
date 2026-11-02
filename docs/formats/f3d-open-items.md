@@ -56,6 +56,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Such a Hole retains its native placement and reports `feature.hole-placement-unproven`.
 
+### DR-221. Primary identity of a Hole carrier selection
+
+**Question.** What does the primary persistent identity of the direct selection on a Hole carrier name?
+
+**Known.** `f3d.md` §3.1 "The direct support-face selection has type GUID" gives the frame. On a carrier with `refType` `13` the identity can match a loop in a state after the Hole, so it does not name the support face there. The transition states the support face in `f3d.md` §3.1 "The transition that drills a Hole".
+
+**Need.** Paired Holes that vary the sketch point, the sketch, and the sketch plane while the support face stays fixed.
+
+**Conflict.** None.
+
+**Note.** The selection stays a native record. A candidate from this identity binds only when the transition states no support face.
+
 ### DR-09A. Sheet-metal settings compatibility and override encoding
 
 **Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?
@@ -761,6 +773,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The decoder admits the flag bytes and does not project them.
 
+### DR-222. `MoveFace` and `OffsetFaces` selections that the transition leaves open
+
+**Question.** Which faces does a `MoveFace` or `OffsetFaces` group select when its transition deletes a face, updates a face without a plane or cylinder row, or moves more faces than the group has distinct members?
+
+**Known.** The specification states the selection from the surface rows of the transition when no selected face can be missing from the moved set. A selected face can leave the moved set by deletion, and a selected face on a cone, sphere, torus, or spline surface has no row to compare. A face tangent to a selected face moves with it, so a larger moved set holds unselected faces. Each group member is a bounded-face recipe.
+
+**Need.** The mapping from a bounded-face member recipe to the face it selects, or a surface comparison for the other surface forms.
+
+**Conflict.** None.
+
+**Note.** Keep the group as the native selection.
+
 ### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
@@ -1053,7 +1077,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which dimension does a direct presentation frame govern when its label states a value that differs from the first following dimension owner's parameter?
 
-**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. The decoder retains the native dimensional constraint when the owner has two frames, and when the operand measurement differs from the parameter.
+**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. When one owner has several frames, the frame whose operand measurement equals the parameter governs it.
 
 **Need.** Files with the direct two-operand frame form that create a dimension, delete or replace it, and save the document after each change.
 
@@ -1092,3 +1116,15 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** `cad-ir.md` applies a procedural carrier's solved cache at the construction parameters. Rational conic arcs agree with the analytic ellipse in position and use different parameters between arc endpoints.
 
 **Note.** ASM GC-40 records the corresponding neutral-model question for a revolved conic.
+
+### DR-176. Saved current-body state outside consumer selections
+
+**Question.** Which saved state determines current body membership when the Body container, Design browser visibility, and terminal ASM state retain a body that the producer omits from its current view and STEP export?
+
+**Known.** `f3d.md` §3.1 defines the Body-container membership and the consuming-scope join through whole-body selections and browser nodes. The separate browser segment carries body-entry state bytes. A state byte can distinguish body groups whose Design browser hidden flags agree. The byte's relation to body activity, display visibility, and timeline rollback requires a controlled comparison.
+
+**Need.** Save a small design with several Base Feature bodies and a later new body. Save it before and after one multi-select Remove of several Base Feature bodies, then after a second Remove with another selected set. Record the visible and exported body counts at each save. Make separate save pairs that change one body's visibility, suppress and restore a Remove, and move the timeline marker before and after each Remove and to the timeline end. Keep geometry fixed within each pair. Compare complete Design and browser entries, selection reference runs, saved scene visibility, and ASM state membership. Establish which byte changes with removal independently of visibility and rollback, and verify its identity join on an independent design before using it to omit a body.
+
+**Conflict.** Local corpus files retain ten additional bodies in the Body container and terminal ASM state while the producer's current view and STEP export contain five bodies. The complete registered whole-body selection family has 36 records; all 36 decode. Its two Remove selections name two distinct browser nodes already covered by the consuming-scope rule.
+
+**Note.** Preserve bodies while the browser-entry state and timeline endpoint remain unresolved. Creator family and container order supply comparison groups for the controlled saves.
