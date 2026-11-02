@@ -480,6 +480,90 @@ source = "spec"
 anchor = "The twelve-byte parameter tail is"
 
 [[record]]
+name = "design_parameter_wide_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The wide expression trailer is eleven bytes"
+size = 11
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6."
+
+[[record.field]]
+name = "zero_run_6"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record.field]]
+name = "driven"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record.field]]
+name = "reserved_7"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+value = 0
+
+[[record.field]]
+name = "favorite"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record.field]]
+name = "reserved_9"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+value = 0
+
+[[record.field]]
+name = "document"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record]]
+name = "design_parameter_compact_owned_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact owned expression trailer is five bytes"
+size = 5
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter."
+
+[[record.field]]
+name = "reserved_0"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The compact owned expression trailer is five bytes"
+value = 0
+
+[[record.field]]
+name = "driven"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "The compact owned expression trailer is five bytes"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 2
+type = "bytes[3]"
+source = "spec"
+anchor = "The compact owned expression trailer is five bytes"
+
+[[record]]
 name = "design_parameter_owner_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
