@@ -1072,10 +1072,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-            faces: FaceSelection::Resolved {
-                faces: vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")],
-                native: delete_group.id.clone(),
-            },
+            faces: FaceSelection::Native(delete_group.id.clone()),
             heal: true,
         })
     );
