@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{
+    ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits, View,
+};
 use cadmpeg_core::CodecError;
 
 use serde::Serialize;
@@ -145,6 +147,63 @@ pub fn document_local_sha256_without_carried(
         })
     })()?;
     canonical_json_sha256(ctx, &document).map_err(Into::into)
+}
+
+/// Whether a retained source image still describes its document, by derivation.
+///
+/// Returns true only when both comparisons hold: SHA-256 of `image` equals
+/// `decode_digest`, and decoding `image` again at the document's own depth
+/// yields a document whose [`document_local_sha256`] equals `current_hash`.
+/// A re-decode failure answers false; it never fails the write and never
+/// replays. The digest comparison runs first, so a stale image pays one hash
+/// and no second decode.
+///
+/// `decode_fresh` runs the codec's own decode path over the image and reports
+/// the fresh document's local hash. It must apply the same wrapper the
+/// original decode ran (digest stamp, evaluation fixups, validation), or an
+/// unedited document will not agree with its own fresh decode.
+///
+/// The check owns a throwaway decode session under `limits`; its budget never
+/// touches the caller's session.
+pub fn retained_image_replays(
+    image: &[u8],
+    decode_digest: &digest::Sha256Digest,
+    current_hash: &str,
+    scope: ContentScope,
+    limits: ResourceLimits,
+    decode_fresh: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Result<String, CodecError>,
+) -> bool {
+    if digest::Sha256Digest::digest(image).as_str() != decode_digest.as_str() {
+        return false;
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits,
+        ..DecodePolicy::default()
+    };
+    let Ok((ctx, root)) = DecodeContext::from_root_bytes_at(image, &arena, &policy, depth(scope))
+    else {
+        return false;
+    };
+    let fresh = decode_fresh(&ctx, root);
+    let session = ctx.finish_session();
+    let (Ok(fresh), Ok(())) = (fresh, session) else {
+        return false;
+    };
+    fresh.as_str() == current_hash
+}
+
+/// The decode depth that reproduces a document of `scope`.
+///
+/// A design-only document has no depth of its own; decoding it at full depth
+/// disagrees on scope, so the hash comparison refuses replay.
+fn depth(scope: ContentScope) -> DecodeDepth {
+    match (scope.model, scope.design) {
+        (true, true) => DecodeDepth::Full,
+        (true, false) => DecodeDepth::Geometry,
+        (false, false) => DecodeDepth::Container,
+        (false, true) => DecodeDepth::Full,
+    }
 }
 
 fn reduced_unknowns(
