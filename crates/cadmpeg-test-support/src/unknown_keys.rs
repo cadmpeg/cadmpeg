@@ -302,6 +302,8 @@ fn object_at_mut<'a>(
 /// * `/model/semantic_annotations/#/references` -
 ///   `SemanticAnnotation::references`, `BTreeMap<String,
 ///   Vec<ReferenceSelection>>`, the native note's reference roles by name;
+/// * `/model/solver_settings/#/values` - `SolverSettings::values`,
+///   `BTreeMap<String, SolverValue>`, the solver schema's property names;
 /// * `/model/view_presentations/#/properties` - `ViewPresentation::properties`;
 /// * `/source/identity/dialects/primary/declared` and
 ///   `/source/identity/dialects/extra/#/declared` - `DialectMatch::declared`,
@@ -322,6 +324,7 @@ pub const FREE_FORM_SHAPES: &[&str] = &[
     "/model/product_definitions/#/bom_properties",
     "/model/semantic_annotations/#/parameters",
     "/model/semantic_annotations/#/references",
+    "/model/solver_settings/#/values",
     "/model/view_presentations/#/properties",
     "/source/attributes",
     "/source/identity/dialects/extra/#/declared",
