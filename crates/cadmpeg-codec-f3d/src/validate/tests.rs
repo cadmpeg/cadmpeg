@@ -1286,6 +1286,7 @@ fn validation_accepts_user_design_parameter_frame() {
             record_index: 900,
             source_ordinal: 0,
             source: crate::records::parameters::DesignParameterSource::User {
+                source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                 family_discriminator: Some(crate::records::identity::Located {
                     value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 122,

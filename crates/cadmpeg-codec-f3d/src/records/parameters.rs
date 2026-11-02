@@ -7,7 +7,6 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU64;
-use std::sync::LazyLock;
 
 cadmpeg_core::named_optional_field!(
     deserialize_family_discriminator,
@@ -89,13 +88,20 @@ pub(crate) enum DesignParameterSource {
     /// A document parameter. The discriminated form stores a family
     /// discriminator; the typed compact form stores none.
     User {
+        /// Localized document-parameter source kind.
+        source_kind: NonBlankString,
         family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     },
     Owned(OwnedDesignParameter),
 }
 
-static USER_PARAMETER_SOURCE_KIND: LazyLock<NonBlankString> =
-    LazyLock::new(|| cadmpeg_core::nonblank_literal!("User Parameter"));
+/// Localized source kinds of a document parameter.
+const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 2] = ["User Parameter", "Paramètre utilisateur"];
+
+/// Whether a parameter source kind names a document parameter.
+pub(crate) fn is_document_source_kind(source_kind: &str) -> bool {
+    DOCUMENT_PARAMETER_SOURCE_KINDS.contains(&source_kind)
+}
 
 /// An owned source family. Its nonempty name cannot identify a user parameter.
 /// A frame with a null owner reference has no owner record index.
@@ -116,10 +122,11 @@ impl DesignParameterSource {
             return Err("design parameter source_kind is empty".into());
         };
         match (
-            source_kind == *USER_PARAMETER_SOURCE_KIND,
+            is_document_source_kind(source_kind.as_str()),
             owner_record_index,
         ) {
             (true, None) => Ok(Self::User {
+                source_kind,
                 family_discriminator,
             }),
             (true, Some(_)) => {
@@ -277,6 +284,7 @@ fn check_parameter_discriminator_offset(
     let family_discriminator = match source {
         DesignParameterSource::User {
             family_discriminator,
+            ..
         } => *family_discriminator,
         DesignParameterSource::Owned(source) => source.family_discriminator,
     };
@@ -354,6 +362,7 @@ impl DesignParameter {
         match &self.source {
             DesignParameterSource::User {
                 family_discriminator,
+                ..
             } => *family_discriminator,
             DesignParameterSource::Owned(source) => source.family_discriminator,
         }
@@ -361,7 +370,7 @@ impl DesignParameter {
 
     pub(crate) fn source_kind(&self) -> &NonBlankString {
         match &self.source {
-            DesignParameterSource::User { .. } => &USER_PARAMETER_SOURCE_KIND,
+            DesignParameterSource::User { source_kind, .. } => source_kind,
             DesignParameterSource::Owned(source) => &source.source_kind,
         }
     }
@@ -439,7 +448,7 @@ impl Serialize for DesignParameter {
 }
 
 fn design_parameter_kind_from_source(source_kind: &str) -> DesignParameterKind {
-    if source_kind == "User Parameter" {
+    if is_document_source_kind(source_kind) {
         DesignParameterKind::User
     } else if source_kind.contains("Dimension") {
         DesignParameterKind::Dimension
@@ -553,7 +562,7 @@ impl From<DesignParameter> for DesignParameterSerde {
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
         let source_kind = match parameter.source {
-            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND.to_string(),
+            DesignParameterSource::User { source_kind, .. } => source_kind.to_string(),
             DesignParameterSource::Owned(source) => source.source_kind.to_string(),
         };
         Self {

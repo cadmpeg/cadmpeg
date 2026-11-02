@@ -1548,6 +1548,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     assert_eq!(
         parameter.source(),
         &crate::records::parameters::DesignParameterSource::User {
+            source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
             family_discriminator: None
         }
     );
@@ -1711,7 +1712,12 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert_eq!(parameter.expression(), "20 mm");
     assert_eq!(parameter.evaluated_value().get(), 2.0);
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
-    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
+    assert_eq!(
+        parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))
+            .expect("wide discriminator-6 document parameter with the eleven-byte trailer")
+            .kind(),
+        DesignParameterKind::User
+    );
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_some());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 2, 0, 1])).is_none());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 1, 0, 0, 0, 0, 1])).is_none());

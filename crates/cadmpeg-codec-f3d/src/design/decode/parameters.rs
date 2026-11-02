@@ -361,7 +361,7 @@ fn parse_header_form(
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
     let extended_document_trailer = shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| value.code() == 0)
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6))
         && owner_record_index.is_none()
         && payload.get(expression_end..expression_end + 11)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
@@ -407,7 +407,7 @@ fn parse_header_form(
     if discriminated
         && !long_document_trailer
         && (extended_document_trailer || expression_trailer[DOCUMENT_TRAILER_FLAG] == 1)
-            != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
+            != crate::records::parameters::is_document_source_kind(&source_kind)
     {
         return None;
     }
@@ -646,9 +646,6 @@ const PLAIN_OWNER_EXPRESSION_LENGTH: usize = typed::OWNER_MARKER + 11;
 /// Expression trailer of a typed compact owned parameter.
 const TYPED_OWNED_EXPRESSION_TRAILER: [u8; 5] = [0; 5];
 
-/// Source kind of a document parameter.
-const TYPED_DOCUMENT_SOURCE_KIND: &str = "User Parameter";
-
 /// Expression trailer of a typed compact document parameter.
 const TYPED_DOCUMENT_EXPRESSION_TRAILER: [u8; 5] = [0, 0, 0, 0, 1];
 
@@ -743,7 +740,8 @@ fn parse_typed_compact_design_parameter(
         // The null owner reference denotes a document parameter; an ownerless
         // feature input or dimension has no admitted typed form.
         if source_kind.is_empty()
-            || owner_record_index.is_none() != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
+            || owner_record_index.is_none()
+                != crate::records::parameters::is_document_source_kind(&source_kind)
         {
             return None;
         }
