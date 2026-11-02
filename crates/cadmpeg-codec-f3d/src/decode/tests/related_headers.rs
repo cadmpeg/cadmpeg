@@ -27,6 +27,7 @@ fn compact_thread_trailer_record_is_a_related_record() {
             0.3086, 0.2529, 0.2725,
         )
         .unwrap(),
+        extended: None,
     };
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#100",

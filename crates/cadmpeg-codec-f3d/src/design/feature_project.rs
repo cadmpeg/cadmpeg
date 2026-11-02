@@ -1084,18 +1084,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                                         .eq([member_record_index])
                                             })
                                     });
-                            let extent = parameters
-                                .iter()
-                                .find(|(ordinal, _)| *ordinal == 1)
-                                .and_then(|(_, parameter)| design_positive_length(parameter))
-                                .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length,
-                                })
-                                .or_else(|| {
-                                    full_face_extent.then_some(
-                                        cadmpeg_ir::features::CosmeticThreadExtent::Through {},
-                                    )
-                                });
+                            let extent = cosmetic_thread_extent(
+                                construction
+                                    .extended
+                                    .as_ref()
+                                    .and_then(|extended| extended.full_length),
+                                parameters
+                                    .iter()
+                                    .find(|(ordinal, _)| *ordinal == 1)
+                                    .and_then(|(_, parameter)| design_positive_length(parameter)),
+                                full_face_extent,
+                            );
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
@@ -1105,7 +1104,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     pitch: cadmpeg_ir::scalar::PositiveLength::new(
                                         construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
                                     ),
-                                    modeled: None,
+                                    modeled: construction
+                                        .extended
+                                        .as_ref()
+                                        .map(|extended| extended.modeled),
                                     extent,
                                 },
                             ))
@@ -3172,6 +3174,23 @@ fn project_surface_offset(
 /// makes every Draft projection branch use the same convention.
 const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
+}
+
+/// The neutral extent of a Thread: the full-length flag of an extended
+/// standard thread, else its length owner, else a selection of whole faces.
+fn cosmetic_thread_extent(
+    full_length: Option<bool>,
+    length: Option<cadmpeg_ir::scalar::PositiveLength>,
+    full_face: bool,
+) -> Option<cadmpeg_ir::features::CosmeticThreadExtent> {
+    use cadmpeg_ir::features::CosmeticThreadExtent;
+
+    if full_length == Some(true) {
+        return Some(CosmeticThreadExtent::Through {});
+    }
+    length
+        .map(|length| CosmeticThreadExtent::Blind { length })
+        .or_else(|| full_face.then_some(CosmeticThreadExtent::Through {}))
 }
 
 fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {

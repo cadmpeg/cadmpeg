@@ -931,6 +931,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            extended: Some(crate::records::feature::thread::DesignThreadExtended {
+                class: "6g".into(),
+                external: true,
+                modeled: true,
+                full_length: Some(true),
+            }),
         });
     }
     thread
@@ -979,9 +985,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             .unwrap(),
     };
     let project =
-        |settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
+        |scopes: &[DesignParameterScope],
+         settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
             crate::test_support::with_decode_context(|ctx| {
-                let scopes = &scopes;
                 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
                 crate::design::feature_project::project_parameter_design_with_edge_identities(
                     ctx,
@@ -997,7 +1003,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .expect("test projection has a synthetic exact timeline")
             })
         };
-    let unruled = project(&[]);
+    let unruled = project(&scopes, &[]);
     // Without its settings' rule the flange uses its stored copy, and says so.
     assert_eq!(unruled.unruled_flange_thicknesses, 1);
     assert_eq!(
@@ -1018,7 +1024,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             "rule_thickness": 0.25, "rule_thickness_offset": 900,
         }))
         .unwrap();
-    let ruled_projection = project(std::slice::from_ref(&ruled));
+    let ruled_projection = project(&scopes, std::slice::from_ref(&ruled));
     assert_eq!(ruled_projection.unruled_flange_thicknesses, 0);
     assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
@@ -1111,11 +1117,27 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(diameter, cadmpeg_ir::scalar::PositiveLength::new(3.5));
     let pitch = pitch.expect("pitch").get();
     assert!((pitch - 0.6).abs() < EPS_THREAD_PITCH, "pitch {pitch} mm");
-    assert_eq!(modeled, None);
+    assert_eq!(modeled, Some(true));
     assert_eq!(
         extent,
         Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})
     );
+
+    let mut cosmetic_scopes = scopes.clone();
+    let crate::records::feature::scope::DesignScopePayloadMut::Thread(Some(cosmetic)) =
+        cosmetic_scopes[6].payload_mut()
+    else {
+        panic!("the Thread scope carries its construction");
+    };
+    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    let cosmetic = project(&cosmetic_scopes, &[]);
+    assert!(cosmetic.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            modeled: Some(false),
+            ..
+        })
+    )));
 }
 
 #[test]

@@ -8115,22 +8115,19 @@ Parsed by:
 
 ## `thread_extended_scope_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 46 B
+Spec §3.1 · layout: byte offsets · size: 34 B
 
-Offsets are relative to the primary Thread indexed header.
+Offsets are relative to the primary Thread indexed header. The 16-byte entries start at offset 34, and the LP-UTF16 thread class follows them.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
-| 29 | 1 | `standard_flag` | `u8` | little | spec | Offset 29 is `1` for the standard token and `0` for the compact token |
-| 30 | 4 | `zero_value` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `0` |
-| 34 | 4 | `form_marker` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `2` |
-| 38 | 4 | `form_token` | `bytes[4]` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero |
-| 42 | 4 | `trailing_zero` | `u32` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero · value `0` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 29 | 1 | `external_flag` | `u8` | little | spec | Offset 29 is `1` for an external thread and `0` for an internal thread. |
+| 30 | 4 | `entry_count` | `u32` | little | spec | Offset 30 stores the u32 count of the 16-byte entries that follow it |
 
 Unstated regions:
 

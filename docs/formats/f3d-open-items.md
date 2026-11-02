@@ -895,27 +895,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-142. Thread construction option bytes
 
-**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
-**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time.
 
 **Conflict.** None.
 
 **Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
-
-### DR-143. Thread modeled state
-
-**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
-
-**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. The extended standard trailer links the length and offset owners. The extended compact trailer also links its owning Hole. Resolved Thread transitions replace existing face revisions.
-
-**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both. CAD Fixture Recipes F17a and F17b specify this pair.
-
-**Conflict.** None.
-
-**Note.** The neutral thread leaves `modeled` absent.
 
 ### DR-149. Text-bearing document parameter prefix
 
@@ -1084,6 +1072,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The decoder retains these members in the native table document. A `default` or `isCustom` value `true` and each member of `cachedRevIds` emit `configuration.member-unassigned`.
+
+### DR-205. Entries of a modeled extended Thread prefix
+
+**Question.** What do the two u64 values of each 16-byte entry after the entry count of an extended Thread prefix state?
+
+**Known.** A modeled extended Thread stores count `1` and one entry with u64 `1` and u64 `0x130`. The Design stream of that thread has no indexed record `0x130`. A cosmetic extended Thread stores count `0` and no entry.
+
+**Need.** Modeled threads on several faces, on bodies of different sizes, and in designs with different record counts.
+
+**Conflict.** None.
+
+**Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 
 ### DR-172. Paired-locus dimension owner binding
 

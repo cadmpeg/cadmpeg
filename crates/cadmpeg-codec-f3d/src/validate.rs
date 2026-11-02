@@ -3254,23 +3254,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = if construction.form.has_standard_reference_table() {
-                    scope
-                        .reference_members()
-                        .values()
-                        .next()
-                        .copied()
-                        .into_iter()
-                        .collect()
-                } else {
-                    scope
-                        .reference_members()
-                        .values()
-                        .skip(construction.form.face_reference_start())
-                        .step_by(2)
-                        .copied()
-                        .collect()
-                };
+                let references = scope
+                    .reference_members()
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
+                let expected_groups = construction.form.face_groups(&references);
                 construction
                     .form
                     .owners_hold(scope, &native.design_parameter_owners)
