@@ -99,9 +99,15 @@ fn named_cylinder_binds_decoded_version_nine_frame() {
     );
     let restored: DesignParameterScope =
         serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
-    assert_eq!(restored, scope);
+    assert_eq!(
+        serde_json::to_value(&restored).unwrap(),
+        serde_json::to_value(&scope).unwrap()
+    );
     assert!(super::bind(std::slice::from_mut(&mut scope), &[]).is_empty());
-    assert_eq!(scope, restored);
+    assert_eq!(
+        serde_json::to_value(&scope).unwrap(),
+        serde_json::to_value(&restored).unwrap()
+    );
 }
 
 #[test]

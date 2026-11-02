@@ -121,8 +121,6 @@ pub(crate) enum StepLossCode {
     PmiDatumSystemInvalid,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
-    /// Independent styled items assign conflicting scalar colors.
-    ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
     SurfaceSideInvalid,
     /// A surface rendering has multiple transparency properties.
@@ -434,7 +432,6 @@ impl StepLossCode {
         Self::PmiAngleUnitUnresolved,
         Self::PmiDatumSystemInvalid,
         Self::DimensionalLimitsOmitted,
-        Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
         Self::ContextDependentStyleUnresolved,
@@ -617,7 +614,6 @@ impl StepLossCode {
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
-            Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
             Self::ContextDependentStyleUnresolved => {
@@ -856,7 +852,6 @@ impl StepLossCode {
             | Self::PresentationAnnotationPlacementAmbiguous
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
-            | Self::ConflictingScalarColors
             | Self::SurfaceSideInvalid
             | Self::SurfaceTransparencyConflict
             | Self::ContextDependentStyleUnresolved
@@ -1019,223 +1014,8 @@ impl StepLossCode {
     }
 }
 
-/// Classes with source records represented only by bytes, rather than typed records.
-///
-/// Codes absent from this table describe retained typed content, metadata, or export
-/// loss. Native retention below is checked separately from neutral projection.
-#[cfg(test)]
-const UNREPRESENTED: &[(StepLossCode, cadmpeg_ir::ArenaClass)] = &[
-    (
-        StepLossCode::ParseRecordOmitted,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (StepLossCode::DecodeWarning, cadmpeg_ir::ArenaClass::Model),
-    (
-        StepLossCode::ByteAccountingUnclassified,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::OpaqueRecordPreserved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::AttributeStringInvalid,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::ConflictingRepresentationUnits,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::LineParameterScaleUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TopologyRootRejected,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TopologyRootIncomplete,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::SeamEdgePcurveUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::EdgeNoSurfaceOrCurveForPcurve,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PcurveEndpointsDiscontinuous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PcurveLocusDiscontinuous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PcurveGlobalFidelityUnproved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PcurveAssociationAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PcurveCandidatesCarrierUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::NauoPlacementUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::NauoPlacementAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::BodyConflictingMappedPlacements,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PresentationAnnotationTextUnordered,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PresentationAnnotationPlacementAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DimensionalNominalAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DimensionalUnnamedMeasureAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PmiLengthUnitUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PmiAngleUnitUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::PmiDatumSystemInvalid,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::ContextDependentStyleUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingRecordTooFewParameters,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingOrderUnstatable,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingRelationshipUntypedTarget,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingRelationshipTargetAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingSheetRevisionUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DrawingRevisionSheetUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DraughtingSemanticDefinitionUntyped,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::DraughtingAssociatedItemUntyped,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TessellationItemBodyUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TessellationInvalidPayload,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TessellationItemUndeclared,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TessellationPlacementUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::TessellationPlacementAmbiguous,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::ValidationMeasureUnitUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::ParseExpansionBounded,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::OccurrenceExpansionOutputTruncated,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        StepLossCode::OccurrenceExpansionDepthTruncated,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-];
-
-/// Classify this codec's own loss vocabulary after native records have been stored.
-#[cfg(test)]
-pub(crate) fn unrepresented(
-    losses: &[LossNote],
-    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
-) -> cadmpeg_ir::ArenaClasses {
-    let mut classes = cadmpeg_ir::ArenaClasses::default();
-    for (code, class) in UNREPRESENTED {
-        if losses.iter().any(|loss| loss.code == code.kind()) {
-            classes.insert(*class);
-        }
-    }
-    classes
-}
-
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
-        let losses = [
-            super::StepLossCode::PlacementReferenceInferred.note("typed record retained"),
-            super::StepLossCode::SourceDialectUnverified.note("decode diagnostic"),
-        ];
-        assert!(super::unrepresented(&losses, None).is_empty());
-    }
-
-    #[test]
-    fn source_only_losses_declare_their_classes() {
-        for (code, class) in super::UNREPRESENTED {
-            let losses = [code.note("source record is not typed")];
-            let classes = super::unrepresented(&losses, None);
-            assert!(classes.contains(class), "{code:?} must declare {class:?}");
-        }
-        assert!(super::unrepresented(&[], None).is_empty());
-    }
-
     use super::StepLossCode;
     use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
     use std::collections::BTreeSet;
@@ -1293,7 +1073,6 @@ mod tests {
                 "pmi.angle-unit-unresolved",
                 "pmi.datum-system-invalid",
                 "pmi.dimensional-limits-omitted",
-                "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
                 "presentation.context-dependent-style-unresolved",

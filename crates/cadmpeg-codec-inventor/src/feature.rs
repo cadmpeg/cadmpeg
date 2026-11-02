@@ -4312,6 +4312,14 @@ fn indexed_thicken_operation(
             Some((*parameter, design.value.as_ref()?))
         },
         |reference| {
+            let ordinal = reference.record_ordinal()?;
+            let parameter = index
+                .parameters
+                .get(&(source.identity.segment_token.as_str(), ordinal))?
+                .as_ref()?;
+            Some((*index.parameter_ids.get(parameter.id().as_str())?).clone())
+        },
+        |reference| {
             index
                 .dimensions
                 .get(&(

@@ -7,9 +7,10 @@ fn repro_fragment_skips_external_body_keys_and_checks_local_binding_frames() {
     let binding = serde_json::from_value(serde_json::json!({
         "id":"f3d:Design1/BulkStream.dat:design-body-binding#16",
         "stream":"Design1/BulkStream.dat", "pair_count":1, "pair_ordinal":0,
-        "asm_body_key":1, "asm_body_key_offset":16,
-        "entity_suffix":7, "entity_suffix_offset":24,
-        "blob_name":"BREP.synthetic.smb", "blob_name_offset":32,
+        "asm_body_key":1,
+        "entity_suffix":7,
+        "blob_name":"BREP.synthetic.smb",
+        "map_ordinal":0,
         "body":"f3d:brep:entity#1"
     }))
     .unwrap();
@@ -50,7 +51,7 @@ fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() 
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace.set_arena(&ctx, "design_record_headers", &[
-        serde_json::json!({"id":"f3d:design:design-record-header#1", "byte_offset":1, "class_tag":"257", "record_index":1}),
+        serde_json::json!({"id":"f3d:design:design-record-header#1", "class_tag":"257", "record_index":1}),
         serde_json::json!({"id":"f3d:design:design-record-header#2"}),
     ]).unwrap();
     assert!(crate::native::F3dNative::load_inner(&ctx, &namespace).is_err());
@@ -60,3 +61,4 @@ fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() 
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].starts_with("design_record_headers:"));
 }
+

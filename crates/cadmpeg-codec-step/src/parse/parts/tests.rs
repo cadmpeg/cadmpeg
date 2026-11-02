@@ -12,7 +12,7 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::service())
             .expect("real STEP source");
     let (exchange, diagnostics, parts) =
-        parse(root, &ctx).expect("independent terminated statement recovery");
+        parse(root, &ctx, None).expect("independent terminated statement recovery");
     assert_eq!(
         exchange.records().keys().copied().collect::<Vec<_>>(),
         [1, 3]
@@ -87,7 +87,7 @@ fn complex_callback_preserves_real_partials_and_recovers_after_duplicate_partial
     let (ctx, root) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::service())
             .expect("source extent");
-    let (exchange, _, parts) = parse(root, &ctx).expect("complex statement callback");
+    let (exchange, _, parts) = parse(root, &ctx, None).expect("complex statement callback");
     assert_eq!(
         exchange.records().keys().copied().collect::<Vec<_>>(),
         [1, 3]
@@ -155,7 +155,7 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
             DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::service())
                 .expect("cut-short source extent");
         let (exchange, diagnostics, parts) =
-            parse(root, &ctx).expect("actual parent or EOF bounds one damaged entity");
+            parse(root, &ctx, None).expect("actual parent or EOF bounds one damaged entity");
         assert_eq!(
             exchange.records().keys().copied().collect::<Vec<_>>(),
             [1],
