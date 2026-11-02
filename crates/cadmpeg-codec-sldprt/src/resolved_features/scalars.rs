@@ -96,6 +96,11 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         .then_some(value_only_offset)
 }
 
+/// Whether two scalar lanes state the same indices into the shared payload.
+///
+/// Compares every payload-backed field and every resolved reference, so the
+/// writer's patch path replays only lanes whose typed content, including its
+/// resolved owners and marker links, agrees with a fresh admission.
 pub(crate) fn scalar_indices_match(
     actual: &[FeatureInputScalar],
     expected: &[FeatureInputScalar],
@@ -113,6 +118,36 @@ pub(crate) fn scalar_indices_match(
                 && actual.role == expected.role
                 && actual.operands == expected.operands
         })
+}
+
+/// Whether two scalar records state the same payload-backed fields.
+///
+/// This ignores the resolved `feature_ref`
+/// and the resolved operand `entity_ref`s: those are derived from the lane's
+/// entities, which a namespace load validates separately.
+pub(crate) fn scalar_payload_fields_match(
+    actual: &FeatureInputScalar,
+    expected: &FeatureInputScalar,
+) -> bool {
+    actual.id == expected.id
+        && actual.parent == expected.parent
+        && actual.ordinal == expected.ordinal
+        && actual.offset == expected.offset
+        && actual.object_id == expected.object_id
+        && actual.name == expected.name
+        && ulp_distance(actual.value.get(), expected.value.get()) <= 4
+        && actual.role == expected.role
+        && actual.operands.len() == expected.operands.len()
+        && actual
+            .operands
+            .iter()
+            .zip(&expected.operands)
+            .all(|(actual, expected)| {
+                actual.offset == expected.offset
+                    && actual.reference_ref == expected.reference_ref
+                    && actual.kind == expected.kind
+                    && actual.entity_index == expected.entity_index
+            })
 }
 
 fn ulp_distance(left: f64, right: f64) -> u64 {

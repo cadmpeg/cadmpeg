@@ -72,7 +72,7 @@ fn operand() -> DesignFaceOperand {
         operand
             .recipe_references
             .push(crate::records::dimensions::DesignRecipeReference {
-                clause_index: 0,
+                clause_index: u32::try_from(ordinal).unwrap(),
                 selector: 1,
                 selector_offset: Some(ordinal),
                 token: format!("face{ordinal}"),
@@ -202,11 +202,11 @@ fn delete_face_selection_retains_native_group_until_every_member_has_boundary_pr
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:test:group#20", "scope_record_index": 10, "scope_reference_ordinal": 0,
-            "record_index": 20, "byte_offset": 0, "class_tag": "338", "role": 0,
-            "members": [21], "member_offsets": [0], "frame": {
-                "member_count_offset": 0, "opaque_index": 1, "opaque_index_offset": 18,
-                "opaque_scalar": 0.0, "opaque_scalar_offset": 22, "variant": false
-            }, "role_offset": 0, "paired_class_tag": "261", "paired_byte_offset": 0
+            "record_index": 20, "class_tag": "338", "role": 0,
+            "members": [21], "frame": {
+                "opaque_index": 1,
+                "opaque_scalar": 0.0, "variant": false
+            }, "paired_class_tag": "261"
         }))
         .unwrap();
     let native = FaceSelection::Native(group.id.clone());
@@ -307,3 +307,5 @@ fn bounded_face_nodes_bind_two_edge_loops_with_two_shared_vertices() {
     }
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
 }
+
+

@@ -30,14 +30,19 @@ fn distinguishes_stored_base_and_application_owned_features() {
             &DecodeOptions::default(),
         )
         .expect("stored and derived features");
+    let source = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Source"))
+        .expect("stored source feature");
     assert!(
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .all(|feature| feature.name.as_deref() != Some("Source")),
-        "a plain Part::Feature is model content, without a stored-geometry design wrapper"
+        matches!(
+            source.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+        ),
+        "a plain Part::Feature is stored geometry with a neutral feature"
     );
     let base = result
         .ir()
@@ -46,16 +51,27 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("base feature");
+    let source_id = source.id.clone();
     assert!(
-        matches!(base.evaluation.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase")
+        matches!(base.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { source }) if *source == source_id)
     );
-    assert!(base.dependencies.is_empty());
-    assert!(result.ir().model.features.iter().all(|feature| {
-        !matches!(
-            feature.name.as_deref(),
-            Some("PartExtension" | "DesignExtension")
-        )
-    }));
+    assert_eq!(base.dependencies.as_slice(), &[source_id.clone()]);
+    for (name, kind) in [
+        ("PartExtension", "Part::FeaturePython"),
+        ("DesignExtension", "PartDesign::FeaturePython"),
+    ] {
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{name} projects as a neutral feature"));
+        assert!(
+            matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Native { kind: actual, parameters }) if actual.as_str() == kind && parameters.is_empty()),
+            "{name} keeps its vendor kind with only readable scalar parameters"
+        );
+    }
     let namespace = result
         .ir()
         .native
@@ -73,45 +89,41 @@ fn distinguishes_stored_base_and_application_owned_features() {
     let census = namespace
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 1);
-    assert_eq!(
-        census[0].object,
-        crate::native::native_id("object", "BaseFeature")
-    );
-    assert_eq!(census[0].type_name, "PartDesign::FeatureBase");
+    assert_eq!(census.len(), 4);
+    for (name, type_name, semantic_kind) in [
+        ("Source", "Part::Feature", "stored_geometry"),
+        ("BaseFeature", "PartDesign::FeatureBase", "derived_geometry"),
+        ("PartExtension", "Part::FeaturePython", "native"),
+        ("DesignExtension", "PartDesign::FeaturePython", "native"),
+    ] {
+        let record = census
+            .iter()
+            .find(|record| {
+                record.object == crate::native::native_id("object", name)
+                    && record.type_name == type_name
+            })
+            .unwrap_or_else(|| panic!("{name} has a census record"));
+        assert_eq!(record.semantic_kind, semantic_kind);
+        assert!(serde_json::to_value(&record)
+            .unwrap()
+            .get("feature")
+            .is_none());
+        assert_eq!(record.neutral(), semantic_kind != "native");
+        assert!(!record.post_processed);
+    }
     // The history relation resolves through neutral.native_ref.
-    assert_eq!(base.native_ref.as_deref(), Some(census[0].object.as_str()));
-    assert!(serde_json::to_value(&census[0])
-        .unwrap()
-        .get("feature")
-        .is_none());
-    assert_eq!(census[0].semantic_kind, "native");
-    assert!(!census[0].neutral());
-    assert!(!census[0].post_processed);
-    assert_eq!(result.report().losses.len(), 3);
+    let base_record = census
+        .iter()
+        .find(|record| record.object == crate::native::native_id("object", "BaseFeature"))
+        .expect("base census record");
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(
-                |loss| loss.code.local_code() == "feature.object-unprojected"
-                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            )
-            .count(),
-        2
+        base.native_ref.as_deref(),
+        Some(base_record.object.as_str())
     );
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(
-                |loss| loss.code.local_code() == "feature.native-kind-retained"
-                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            )
-            .count(),
-        1
+    assert!(
+        result.report().losses.is_empty(),
+        "stored, derived and vendor-native features report no loss: {:?}",
+        result.report().losses
     );
     assert!(
         result.source_fidelity().unrepresented().is_empty(),
@@ -258,17 +270,18 @@ fn keeps_extension_types_out_of_exact_design_dispatch() {
         let object_id = crate::native::native_id("object", name);
         assert_eq!(feature.native_ref.as_deref(), Some(object_id.as_str()));
         assert_eq!(feature.source_tag.as_deref(), Some(expected_kind));
-        let retained = result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code.local_code() == "feature.native-kind-retained"
-                    && loss.message.contains(expected_kind)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(retained.len(), 1);
-        assert_eq!(retained[0].severity, cadmpeg_ir::report::Severity::Blocking);
+        // A vendor object is at its Native home, which is not a loss.
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(
+                    |loss| loss.code.local_code() == "feature.native-kind-retained"
+                        && loss.message.contains(expected_kind)
+                ),
+            "{name} keeps its vendor kind without a retention loss"
+        );
     }
     assert!(result
         .report()
@@ -484,12 +497,19 @@ fn transfers_stored_and_external_part_feature_families() {
                 if path.starts_with("models/") && *actual == format
         ));
     }
-    assert!(result
+    let planar_extension = result
         .ir()
         .model
         .features
         .iter()
-        .all(|feature| feature.name.as_deref() != Some("PlanarExtension")));
+        .find(|feature| feature.name.as_deref() == Some("PlanarExtension"))
+        .expect("extension feature");
+    assert!(matches!(
+        planar_extension.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+        ) if kind.as_str() == "Part::Part2DObjectPython"
+    ));
     let census = result
         .ir()
         .native
@@ -497,20 +517,20 @@ fn transfers_stored_and_external_part_feature_families() {
         .expect("namespace")
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 8);
+    assert_eq!(census.len(), 9);
     assert!(census
         .iter()
+        .filter(|record| record.type_name != "Part::Part2DObjectPython")
         .all(crate::native::DesignCensusRecord::neutral));
-    assert_eq!(result.report().losses.len(), 1);
-    assert!(result
-        .report()
-        .losses
+    assert!(census
         .iter()
-        .all(
-            |loss| loss.code.local_code() == "feature.object-unprojected"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-                && loss.message.contains("PlanarExtension")
-        ));
+        .filter(|record| record.type_name == "Part::Part2DObjectPython")
+        .all(|record| !record.neutral()));
+    assert!(
+        result.report().losses.is_empty(),
+        "stored, imported and vendor-native features report no loss: {:?}",
+        result.report().losses
+    );
     assert!(result.source_fidelity().unrepresented().is_empty());
     let objects = result
         .ir()

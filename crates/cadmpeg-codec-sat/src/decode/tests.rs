@@ -2,6 +2,7 @@
 //! Decode and transfer tests for text and binary ASM streams.
 
 mod framing;
+mod part_recovery;
 
 use cadmpeg_test_support::wire;
 
@@ -955,11 +956,9 @@ point $-1 0 0 0#\npoint $-1 5 0 0#\nEnd-of-ACIS-data\n";
 
 #[test]
 fn omitted_use_curve_interval_has_a_sat_loss_code() {
-    use cadmpeg_asm::brep::AsmBrep;
-    use cadmpeg_asm::kernel_header::KernelHeader;
-    use std::collections::BTreeMap;
-    let bytes = text_sphere_stream(1.0);
+    use cadmpeg_ir::document::CadIr;
     let arena = cadmpeg_core::decode::DecodeArena::new();
+    let bytes = text_sphere_stream(1.0);
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &bytes,
         &arena,
@@ -967,28 +966,24 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
     )
     .unwrap();
     let stream = cadmpeg_asm::sat::parse(&ctx, &bytes).unwrap();
-    let header: KernelHeader = stream.header.as_kernel_header();
+    let header: cadmpeg_asm::kernel_header::KernelHeader = stream.header.as_kernel_header();
     let evidence = super::StreamEvidence::Text(Some(super::TextEvidence {
         branch: stream.terminator,
         header: &header,
     }));
-    let (matched, kernel) = super::layers(&evidence);
-    let mut graph = AsmBrep::default();
-    graph
-        .stats
+    let (_, kernel) = super::layers(&evidence);
+    let mut stats = cadmpeg_asm::brep::stats::Stats::default();
+    stats
         .other_record_kinds
         .insert("tcoedge-use-curve-invalid-interval".into(), 1);
-    let result = super::build_result(
+    let result = super::assemble_result(
         &ctx,
-        Some(super::FramedStream {
-            brep: graph,
-            has_entities: true,
-        }),
-        BTreeMap::new(),
-        &header,
+        CadIr::empty(),
+        Vec::new(),
+        true,
         Some(stream.terminator),
-        matched,
         &kernel,
+        super::stream_part_for_test(&ctx, stats),
     )
     .unwrap();
     assert!(result

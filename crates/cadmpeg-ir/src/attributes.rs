@@ -221,13 +221,39 @@ impl SourceAttribute {
         let mut slots = Vec::new();
         ctx.reserve_working(&mut slots, values.len(), "attribute value slots")?;
         slots.extend(values.into_iter().map(Some));
-        Ok(Self {
+        Ok(Self::from_slots(id, native_ref, target, name, slots))
+    }
+
+    /// Construct an attribute whose value slots may hold positions the
+    /// decoder gave up; a `None` slot stays at its source position.
+    pub fn new_optional(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: AttributeId,
+        native_ref: Option<String>,
+        target: AttributeTarget,
+        name: String,
+        values: Vec<Option<AttributeValue>>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut slots = Vec::new();
+        ctx.reserve_working(&mut slots, values.len(), "attribute value slots")?;
+        slots.extend(values);
+        Ok(Self::from_slots(id, native_ref, target, name, slots))
+    }
+
+    fn from_slots(
+        id: AttributeId,
+        native_ref: Option<String>,
+        target: AttributeTarget,
+        name: String,
+        values: Vec<Option<AttributeValue>>,
+    ) -> Self {
+        Self {
             id,
             native_ref,
             target,
             name,
-            values: slots,
-        })
+            values,
+        }
     }
 }
 

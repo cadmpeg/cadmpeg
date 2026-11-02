@@ -545,6 +545,13 @@ impl TryFrom<DesignBodyBindingContent> for DesignBodyBinding {
         if !wire.blob_name.starts_with("BREP.") {
             return Err("blob_name must start with BREP.".into());
         }
+        if wire.history_only
+            && (wire.body.is_some()
+                || wire.component_owner.is_some()
+                || wire.component_owner_unresolved)
+        {
+            return Err("a history-only pair must name no solved body and no owner".into());
+        }
         let id = NativeRecordId::from_content(wire.id, "design-body-binding")?;
         let stream = DesignBulkStreamPath::try_from(wire.stream)?;
         if !crate::ids::native_scope_matches(id.stream(), stream.as_str()) {

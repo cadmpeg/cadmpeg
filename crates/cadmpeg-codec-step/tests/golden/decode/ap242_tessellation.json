@@ -27,22 +27,7 @@
         }
       ],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "step:data:geometry-name#48-0",
-          "name": "name",
-          "target": {
-            "id": "step:data:point#48",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "centre point"
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [
         {
           "id": "step:data:body#38",
@@ -300,18 +285,6 @@
             "format": "step",
             "geometry_role": "support",
             "object_id": "#12"
-          }
-        },
-        {
-          "id": "step:data:point#48",
-          "position": {
-            "x": 3.333333333333333,
-            "y": 3.333333333333333,
-            "z": 0.0
-          },
-          "source_object": {
-            "format": "step",
-            "object_id": "#48"
           }
         }
       ],

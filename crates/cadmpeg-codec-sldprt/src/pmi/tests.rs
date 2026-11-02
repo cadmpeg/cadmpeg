@@ -643,6 +643,7 @@ fn malformed_pmi_map_emits_attributed_loss() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
+    assert!(losses[0].code.local_code() == "record.unreadable");
     assert!(
         losses[0]
             .message
@@ -672,6 +673,7 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
+    assert!(losses[0].code.local_code() == "record.unreadable");
     assert!(losses[0]
         .message
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
@@ -891,7 +893,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
         assert_eq!(dimension.value.get(), value);
         assert_eq!(dimension.item_count.get(), item_count);
         assert!(decoded.report().losses.iter().all(|loss| {
-            !loss.message.contains("semantic-record-malformed")
+            loss.code.local_code() != "record.unreadable"
                 && !loss.message.contains("failed to parse MessagePack map")
         }));
     }
@@ -916,8 +918,8 @@ fn decode_reports_malformed_pmi_semantic_map() {
         .unwrap();
     assert!(sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("01234567-89ab-cdef-0123-456789abcdef")
+        loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("01234567-89ab-cdef-0123-456789abcdef")
             && loss.message.contains("failed to parse MessagePack map")
     }));
 }
@@ -955,10 +957,9 @@ fn multi_item_pmi_dimension_is_not_bound() {
         .parameters
         .iter()
         .any(|parameter| parameter.name == "D1" && parameter.pmi.is_some()));
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
-    }));
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("semantic dimension record(s) are not bound")));
 }
 
 #[test]
@@ -974,10 +975,13 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
-    }));
+    // The record is admitted with a literal nominal and no parameter
+    // binding; the missing feature is not a decode loss.
+    let native = sldprt_native(decoded.ir());
+    assert_eq!(native.pmi_dimensions.len(), 1);
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("semantic dimension record(s) are not bound")));
 }
 
 #[test]
@@ -1117,10 +1121,10 @@ fn semantically_distinct_pmi_records_remain_unbound() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            == "2 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
-    }));
+    assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("semantic dimension record(s) are not bound")));
 }
 
 #[test]
@@ -1507,12 +1511,10 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
     assert!(parse_payload(&integer_key, &mut losses).is_empty());
     let [loss] = losses.as_slice() else {
-        panic!("one malformed-record loss: {losses:?}");
+        panic!("one part give-up loss: {losses:?}");
     };
-    assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
-    );
+    assert!(loss.code.local_code() == "record.unreadable");
+    assert!(loss.message.contains("pmi_record"), "{loss:?}");
 }
 
 /// `count` candidate maps whose arrays run to the end of the payload. Each

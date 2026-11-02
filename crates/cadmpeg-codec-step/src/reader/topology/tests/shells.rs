@@ -185,7 +185,7 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
         .model
         .faces
         .iter()
-        .all(|face| face.color.is_some()));
+        .all(|face| face.color.is_none()));
     assert_eq!(decoded.ir().model.presentation_layers[0].items.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");

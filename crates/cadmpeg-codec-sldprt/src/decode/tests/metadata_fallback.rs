@@ -189,8 +189,8 @@ fn decode_without_geometry_falls_back_to_metadata() {
             .unwrap(),
     );
     assert!(!result.report().geometry_transferred());
-    assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
-    assert_eq!(result.source_fidelity().retained_records().len(), 2);
+    assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 3);
     assert!(result
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")

@@ -62,22 +62,15 @@ fn group(
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
         "record_index": record_index,
-        "byte_offset": 1000,
         "class_tag": "332",
         "members": [member],
-        "member_offsets": [1026],
         "frame": {
-            "member_count_offset": 1021,
             "opaque_index": 1,
-            "opaque_index_offset": 1072,
             "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 1076,
             "variant": false
         },
         "role": role.raw(),
-        "role_offset": 1054,
         "paired_class_tag": "259",
-        "paired_byte_offset": 1125
     }))
     .unwrap()
 }
