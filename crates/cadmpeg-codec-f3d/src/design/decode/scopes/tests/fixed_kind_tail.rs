@@ -167,28 +167,36 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         );
     }
 
-    let mut extended_tail = bytes[..feature_ordinal_at].to_vec();
-    let mut tail = [0; 87];
-    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-    tail[41..45].copy_from_slice(&3u32.to_le_bytes());
-    extended_tail.extend_from_slice(&tail);
-    extended_tail.extend_from_slice(&3u32.to_le_bytes());
-    extended_tail.extend_from_slice(b"261");
-    extended_tail.extend_from_slice(&12u32.to_le_bytes());
-    let extended = parse_parameter_scope(
-        &extended_tail,
-        &crate::design::test_support::indexed_record_offsets_for_test(&extended_tail),
-        header.record_index,
-        &header.class_tag,
-        header.byte_offset,
-    )
-    .unwrap()
-    .expect("scope with extended fixed tail");
-    assert_eq!(extended.previous_history_state_id(), Some(3));
-    assert_eq!(
-        extended.previous_history_state_id_offset(),
-        Some(u64_from_index(feature_ordinal_at + 41))
-    );
+    for (second_reference, previous_at) in [(true, 41), (false, 31)] {
+        let mut extended_tail = bytes[..feature_ordinal_at].to_vec();
+        let mut tail = [0; 87];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[19] = 1;
+        tail[20..24].copy_from_slice(&40u32.to_le_bytes());
+        if second_reference {
+            tail[30] = 1;
+            tail[31..35].copy_from_slice(&41u32.to_le_bytes());
+        }
+        tail[previous_at..previous_at + 4].copy_from_slice(&3u32.to_le_bytes());
+        extended_tail.extend_from_slice(&tail);
+        extended_tail.extend_from_slice(&3u32.to_le_bytes());
+        extended_tail.extend_from_slice(b"261");
+        extended_tail.extend_from_slice(&12u32.to_le_bytes());
+        let extended = parse_parameter_scope(
+            &extended_tail,
+            &crate::design::test_support::indexed_record_offsets_for_test(&extended_tail),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
+        .expect("scope with extended fixed tail");
+        assert_eq!(extended.previous_history_state_id(), Some(3));
+        assert_eq!(
+            extended.previous_history_state_id_offset(),
+            Some(u64_from_index(feature_ordinal_at + previous_at))
+        );
+    }
 
     for tail_length in [82, 104] {
         let mut variant = bytes[..feature_ordinal_at].to_vec();

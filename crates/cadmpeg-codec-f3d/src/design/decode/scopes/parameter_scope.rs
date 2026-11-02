@@ -1017,16 +1017,21 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
 }
 
+/// Tail byte that begins the second marked reference of an 87-byte fixed tail.
+const FIXED_TAIL_SECOND_REFERENCE: usize = 30;
+
 pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
         ScopeTailForm::Fixed,
         rigid_group,
+        second_tail_reference,
     )
 }
 
@@ -1189,6 +1194,7 @@ fn parameter_scope_previous_history_offset_for_form(
     tail_length: usize,
     tail_form: ScopeTailForm,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
@@ -1207,7 +1213,8 @@ fn parameter_scope_previous_history_offset_for_form(
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
-        (_, 87) => Some(41),
+        (_, 87) if second_tail_reference => Some(41),
+        (_, 87) => Some(31),
         _ => None,
     }
 }
@@ -1443,6 +1450,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 tail_length,
                 tail_form,
                 kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
             ) {
                 Some(offset) => Some(kind_end.checked_add(offset)?),
                 None => None,
