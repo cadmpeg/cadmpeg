@@ -1154,3 +1154,14 @@ The first row that the row grammar does not admit ends the table and retains
 not transfer. Synthetic checks cover each frame-slot form, repeat runs, row
 order, offsets, declared-count and row-grammar stops, rigid-placement
 refusal, and the external prototypes and placements of a decoded assembly.
+
+## Native edge interval orientation
+
+A native conic edge interval starts at the edge's start vertex. When the arc
+that a native pcurve midpoint selects, or the parabola or hyperbola branch
+interval, runs from the end vertex to the start vertex, the carrier reverses its
+parameter direction and the interval maps to the reversed parameters. A
+periodic start angle lies in `[0, tau)`; an angle that wraps to one full turn
+becomes zero. Synthetic checks cover reversed circle, parabola, and hyperbola
+intervals, an unchanged forward arc, a seam-crossing arc, and an endpoint just
+below the seam.

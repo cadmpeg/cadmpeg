@@ -25,8 +25,8 @@ use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::carriers::placed_carriers;
 use super::edges::{
-    nurbs_control_extent, nurbs_intrinsic_parameter_range, periodic_conic_edge_parameter_range,
-    point_pair_alignments,
+    nurbs_control_extent, nurbs_intrinsic_parameter_range, orient_periodic_conic_edge_carrier,
+    periodic_conic_edge_parameter_range, point_pair_alignments,
 };
 use super::equations::{CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
@@ -2347,7 +2347,7 @@ pub(in crate::decode) fn bounded_cylinder_circle_parameter_range(
 
 pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: &CurveGeometry,
+    geometry: &mut CurveGeometry,
     incidence: (u32, [u32; 2]),
     candidates: &NativePcurveCandidates,
     surfaces: &[Surface],
@@ -2381,7 +2381,10 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
             selected = Some(candidate);
         }
     }
-    Ok(selected)
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    orient_periodic_conic_edge_carrier(ctx, geometry, selected, points)
 }
 
 fn oriented_native_pcurve_endpoints(
