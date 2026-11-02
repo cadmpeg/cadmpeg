@@ -1080,18 +1080,26 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                                         .eq([member_record_index])
                                             })
                                     });
-                            let extent = parameters
-                                .iter()
-                                .find(|(ordinal, _)| *ordinal == 1)
-                                .and_then(|(_, parameter)| design_positive_length(parameter))
-                                .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length,
-                                })
-                                .or_else(|| {
-                                    full_face_extent.then_some(
-                                        cadmpeg_ir::features::CosmeticThreadExtent::Through {},
-                                    )
-                                });
+                            let full_length = construction
+                                .extended
+                                .as_ref()
+                                .and_then(|extended| extended.full_length);
+                            let extent = if full_length == Some(true) {
+                                Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})
+                            } else {
+                                parameters
+                                    .iter()
+                                    .find(|(ordinal, _)| *ordinal == 1)
+                                    .and_then(|(_, parameter)| design_positive_length(parameter))
+                                    .map(|length| {
+                                        cadmpeg_ir::features::CosmeticThreadExtent::Blind { length }
+                                    })
+                                    .or_else(|| {
+                                        full_face_extent.then_some(
+                                            cadmpeg_ir::features::CosmeticThreadExtent::Through {},
+                                        )
+                                    })
+                            };
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
@@ -1101,7 +1109,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     pitch: cadmpeg_ir::scalar::PositiveLength::new(
                                         construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
                                     ),
-                                    modeled: None,
+                                    modeled: construction
+                                        .extended
+                                        .as_ref()
+                                        .map(|extended| extended.modeled),
                                     extent,
                                 },
                             ))

@@ -931,6 +931,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            extended: None,
         });
     }
     thread

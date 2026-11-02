@@ -48,6 +48,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             2.97345, 2.5732, 2.7568,
         )
         .unwrap(),
+        extended: None,
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
@@ -150,6 +151,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             0.71472, 0.60355, 0.64255,
         )
         .unwrap(),
+        extended: None,
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
@@ -228,6 +230,7 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
             0.4891, 0.4213, 0.4529,
         )
         .unwrap(),
+        extended: None,
     };
     for zero_run in [2, 3] {
         let bytes = standard_compact_thread_bytes(zero_run, 612);
@@ -369,6 +372,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             0.35995, 0.293, 0.3166,
         )
         .unwrap(),
+        extended: None,
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
@@ -486,6 +490,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             19.08149, 18.18397, 18.50413,
         )
         .unwrap(),
+        extended: None,
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
@@ -724,7 +729,7 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
             construction.face_group_record_indices,
             if standard { vec![101] } else { vec![109] }
         );
-        for offset in [30, 34, 38, 42] {
+        for offset in [30, 34, 42] {
             let mut mutated = bytes.clone();
             mutated[offset] = 9;
             assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());

@@ -456,6 +456,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
                 .unwrap(),
+            extended: None,
         });
     }
     let mut cylinder_operand = operand.clone();

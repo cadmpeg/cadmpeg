@@ -59,17 +59,26 @@ fn extended_standard_thread_has_one_face_group_and_a_designation_at_46() {
 
 #[test]
 fn extended_standard_thread_layout_rejects_short_prefixes_and_extra_references() {
-    for delta in [38, 42, 45, 47] {
+    for delta in [34, 38, 42, 43] {
         assert!(!thread_designation_offset_holds(
             DesignThreadForm::StandardExtended,
             1000 + delta,
             1000
         ));
     }
-    for count in [0, 2, 3, 5, 6] {
+    for delta in [44, 46, 50] {
+        assert!(thread_designation_offset_holds(
+            DesignThreadForm::StandardExtended,
+            1000 + delta,
+            1000
+        ));
+    }
+    for count in [0, 2, 3, 5] {
         assert!(!DesignThreadForm::StandardExtended.reference_count_holds(count));
     }
-    assert!(DesignThreadForm::StandardExtended.reference_count_holds(4));
+    for count in [4, 6, 8] {
+        assert!(DesignThreadForm::StandardExtended.reference_count_holds(count));
+    }
     assert!(thread_designation_offset_holds(
         DesignThreadForm::CompactExtended(crate::records::identity::Located {
             value: std::num::NonZeroU32::new(7).unwrap(),

@@ -32,10 +32,11 @@ pub(super) fn exact_thread_construction(
     }
     let (prefix_form, designation_delta) = bytes.get(start..).and_then(exact_thread_prefix)?;
     let designation_at = start.checked_add(designation_delta)?;
+    let reference_count = scope.reference_members().len();
 
     let mut face_group_record_indices = Vec::new();
     match prefix_form {
-        ThreadPrefix::Standard | ThreadPrefix::ExtendedStandard => {
+        ThreadPrefix::Standard => {
             let first = scope.reference_members().values().next()?;
             face_group_record_indices.push(*first);
         }
@@ -43,7 +44,7 @@ pub(super) fn exact_thread_construction(
             face_group_record_indices
                 .extend(scope.reference_members().values().step_by(2).copied());
         }
-        ThreadPrefix::ExtendedCompact => {}
+        ThreadPrefix::Extended(_) => {}
     }
     let mut construction = parse_thread_payload(
         bytes,
@@ -51,14 +52,26 @@ pub(super) fn exact_thread_construction(
         prefix_form,
         face_group_record_indices,
     )?;
-    if matches!(construction.form, DesignThreadForm::CompactExtended(_)) {
-        construction.face_group_record_indices = scope
-            .reference_members()
-            .values()
-            .skip(construction.form.face_reference_start())
-            .step_by(2)
-            .copied()
-            .collect();
+    match construction.form {
+        DesignThreadForm::CompactExtended(_) => {
+            construction.face_group_record_indices = scope
+                .reference_members()
+                .values()
+                .skip(construction.form.face_reference_start())
+                .step_by(2)
+                .copied()
+                .collect();
+        }
+        DesignThreadForm::StandardExtended => {
+            construction.face_group_record_indices = scope
+                .reference_members()
+                .values()
+                .take(reference_count.checked_sub(2)?)
+                .step_by(2)
+                .copied()
+                .collect();
+        }
+        _ => {}
     }
     if matches!(
         construction.form,
@@ -72,8 +85,8 @@ pub(super) fn exact_thread_construction(
             DesignThreadForm::StandardExtended => (
                 extended_standard::LENGTH_REFERENCE,
                 extended_standard::OFFSET_REFERENCE,
-                3,
-                2,
+                reference_count.checked_sub(1)?,
+                reference_count.checked_sub(2)?,
             ),
             DesignThreadForm::CompactExtended(_) => (
                 extended_compact::LENGTH_REFERENCE,
@@ -115,13 +128,27 @@ pub(super) fn exact_thread_construction(
     Some(construction)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ThreadPrefix {
     Standard,
     Compact,
-    ExtendedStandard,
-    ExtendedCompact,
+    /// The extended prefix and the fields it states before the designation.
+    Extended(ExtendedThreadPrefix),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ExtendedThreadPrefix {
+    external: bool,
+    modeled: bool,
+    class: String,
+    designation_copy: String,
+}
+
+/// Byte length of each entry that the extended prefix counts at offset 30.
+const EXTENDED_PREFIX_ENTRY_LEN: usize = 16;
+
+/// Longest thread class, in UTF-16 code units, that the extended prefix admits.
+const THREAD_CLASS_UNITS: usize = 16;
 
 fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     let direct = if bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)?
@@ -147,29 +174,42 @@ fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     } else {
         None
     };
-    let extended = if bytes.get(thread_extended::ZERO_RUN_10..thread_extended::FIXED_SCALAR)?
-        == [0; 10]
-        && View::f64_le_at(bytes, thread_extended::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
-        && View::u32_le_at(bytes, thread_extended::ZERO_VALUE)? == thread_extended::ZERO_VALUE_VALUE
-        && View::u32_le_at(bytes, thread_extended::FORM_MARKER)?
-            == thread_extended::FORM_MARKER_VALUE
-        && View::u32_le_at(bytes, thread_extended::TRAILING_ZERO)?
-            == thread_extended::TRAILING_ZERO_VALUE
-    {
-        match (
-            bytes.get(thread_extended::STANDARD_FLAG)?,
-            bytes.get(thread_extended::FORM_TOKEN..thread_extended::TRAILING_ZERO)?,
-        ) {
-            (1, [0x36, 0, 0x67, 0]) => Some((ThreadPrefix::ExtendedStandard, thread_extended::LEN)),
-            (0, [0x36, 0, 0x48, 0]) => Some((ThreadPrefix::ExtendedCompact, thread_extended::LEN)),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    let extended = extended_thread_prefix(bytes);
     let mut candidates = [direct, owner_marked, extended].into_iter().flatten();
     let prefix = candidates.next()?;
     candidates.next().is_none().then_some(prefix)
+}
+
+/// The extended prefix: the external flag, the counted entries, the LP-UTF16
+/// thread class, and the LP-UTF16 designation copy before the designation.
+fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
+    if bytes.get(thread_extended::ZERO_RUN_10..thread_extended::FIXED_SCALAR)? != [0; 10]
+        || View::f64_le_at(bytes, thread_extended::FIXED_SCALAR)?.to_bits() != 60.0f64.to_bits()
+    {
+        return None;
+    }
+    let external = match bytes.get(thread_extended::EXTERNAL_FLAG)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let modeled = match View::u32_le_at(bytes, thread_extended::ENTRY_COUNT)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let class_at = thread_extended::LEN + usize::from(modeled) * EXTENDED_PREFIX_ENTRY_LEN;
+    let (class, copy_at) = lp_utf16_bounded(bytes, class_at, 1..=THREAD_CLASS_UNITS)?;
+    let (designation_copy, designation_at) = lp_utf16_bounded(bytes, copy_at, 0..=128)?;
+    Some((
+        ThreadPrefix::Extended(ExtendedThreadPrefix {
+            external,
+            modeled,
+            class,
+            designation_copy,
+        }),
+        designation_at,
+    ))
 }
 
 fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<ThreadPrefix> {
@@ -193,20 +233,36 @@ pub(super) fn parse_thread_payload(
     let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
     (|| {
-        let (pitch_marker, trailer_kind) =
-            match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::ExtendedStandard, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::ExtendedStandard)
+        let extended = match &expected_form {
+            ThreadPrefix::Extended(prefix) => Some(prefix),
+            ThreadPrefix::Standard | ThreadPrefix::Compact => None,
+        };
+        if extended.is_some_and(|prefix| {
+            !prefix.designation_copy.is_empty() && prefix.designation_copy != designation
+        }) {
+            return None;
+        }
+        let (pitch_marker, trailer_kind, full_length) =
+            match (&expected_form, bytes.get(after_profile..after_profile + 5)?) {
+                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => (
+                    u8::from(prefix.modeled),
+                    ThreadTrailerKind::ExtendedStandard,
+                    Some(*flag == 1),
+                ),
+                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard, None),
+                (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::StandardLegacy, None)
                 }
-                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard),
-                (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::StandardLegacy),
                 (ThreadPrefix::Standard, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardCompact)
+                    (0, ThreadTrailerKind::StandardCompact, None)
                 }
-                (ThreadPrefix::Compact | ThreadPrefix::ExtendedCompact, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::Compact)
+                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact, None),
+                (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0]) if !prefix.modeled => {
+                    (0, ThreadTrailerKind::Compact, None)
                 }
-                (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::CompactLegacy),
+                (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::CompactLegacy, None)
+                }
                 _ => return None,
             };
         let nominal_size = thread::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
@@ -274,7 +330,7 @@ pub(super) fn parse_thread_payload(
                     value: record_index,
                     offset: u64::try_from(reference_offset).ok()?,
                 };
-                if expected_form == ThreadPrefix::ExtendedCompact {
+                if extended.is_some() {
                     (bytes.get(trailer_offset + extended_compact::END_FLAG)
                         == Some(&extended_compact::END_FLAG_VALUE))
                     .then_some(())?;
@@ -285,8 +341,11 @@ pub(super) fn parse_thread_payload(
             }
             _ => return None,
         };
-        if expected_form == ThreadPrefix::ExtendedCompact
-            && !matches!(form, DesignThreadForm::CompactExtended(_))
+        if extended.is_some()
+            && !matches!(
+                form,
+                DesignThreadForm::CompactExtended(_) | DesignThreadForm::StandardExtended
+            )
         {
             return None;
         }
@@ -303,6 +362,12 @@ pub(super) fn parse_thread_payload(
                 minor_diameter,
                 pitch_diameter,
             )?,
+            extended: extended.map(|prefix| thread::DesignThreadExtended {
+                class: prefix.class.clone(),
+                external: prefix.external,
+                modeled: prefix.modeled,
+                full_length,
+            }),
         })
     })()
 }
