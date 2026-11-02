@@ -144,6 +144,7 @@ fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
             offset: 0,
         }],
         face_selection: Some(face_selection),
+        locations: Vec::new(),
     };
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:scope#5",

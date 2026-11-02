@@ -587,7 +587,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     losses.extend(projected.unruled_flange_thickness_loss());
-    losses.extend(projected.hole_extent_losses);
+    losses.extend(projected.hole_losses);
     losses.extend(
         crate::design::decode::operands::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,

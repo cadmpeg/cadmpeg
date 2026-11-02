@@ -55,9 +55,47 @@ cadmpeg_core::named_optional_field!(
     Located<FiniteReal>,
     "saved_non_distance_depth"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_direction_control,
+    Located<u8>,
+    "direction_control"
+);
 
 pub(crate) fn valid_hole_extent_control(control: u8) -> bool {
     matches!(control, 0 | 1)
+}
+
+pub(crate) fn valid_hole_direction_control(control: u8) -> bool {
+    matches!(control, 0 | 1)
+}
+
+/// Carrier `refType` of a Hole placed by its sketch-point records.
+const HOLE_CARRIER_SKETCH_POINTS: u32 = 13;
+/// Carrier `refType` of a Hole placed at one point on its support face.
+const HOLE_CARRIER_FACE_POINT: u32 = 19;
+/// Point-data `refType` of a sketch-point record.
+const POINT_DATA_SKETCH_POINT: u32 = 10;
+/// Accepted difference, in source centimetres, between a carrier position and
+/// the value that the placement form requires.
+const EPS_HOLE_CARRIER_POSITION_CM: f64 = 1.0e-9;
+
+fn hole_position_matches(left: &[FiniteReal; 3], right: &[f64; 3]) -> bool {
+    left.iter()
+        .zip(right)
+        .all(|(left, right)| (left.get() - right).abs() <= EPS_HOLE_CARRIER_POSITION_CM)
+}
+
+/// One point-data record that a `Hole` scope references.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignHoleLocation {
+    /// Point-data record referenced by the Hole scope.
+    pub(crate) record_index: u32,
+    /// Point coordinates in source model centimetres.
+    pub(crate) position: [FiniteReal; 3],
+    /// Byte offset of the first position coordinate.
+    pub(crate) position_offset: u64,
+    /// `refType` of the point-data record.
+    pub(crate) reference_type: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +109,10 @@ pub(crate) struct DesignHoleExtent {
     pub(crate) extent_control: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) saved_non_distance_depth: Option<Located<FiniteReal>>,
+    /// Located control of type versions 5 and 7: `0` travels against the
+    /// carrier normal and `1` travels along it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) direction_control: Option<Located<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +123,8 @@ struct DesignHoleExtentWire {
     extent_control: Option<u8>,
     #[serde(default, deserialize_with = "deserialize_saved_non_distance_depth")]
     saved_non_distance_depth: Option<Located<FiniteReal>>,
+    #[serde(default, deserialize_with = "deserialize_direction_control")]
+    direction_control: Option<Located<u8>>,
 }
 
 impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
@@ -93,10 +137,17 @@ impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
         {
             return Err("invalid Hole extent control");
         }
+        if wire
+            .direction_control
+            .is_some_and(|control| !valid_hole_direction_control(control.value))
+        {
+            return Err("invalid Hole direction control");
+        }
         Ok(Self {
             leading_word: wire.leading_word,
             extent_control: wire.extent_control,
             saved_non_distance_depth: wire.saved_non_distance_depth,
+            direction_control: wire.direction_control,
         })
     }
 }
@@ -127,11 +178,11 @@ pub(crate) struct DesignHoleConstruction {
     pub(crate) point_record_index: u32,
     /// Byte offset of the point-data record header.
     pub(crate) point_record_byte_offset: u64,
-    /// Hole entry position in source model centimetres.
+    /// Carrier position in source model centimetres.
     pub(crate) position: [FiniteReal; 3],
     /// Byte offset of the first position coordinate.
     pub(crate) position_offset: u64,
-    /// Directed drilling vector in model space.
+    /// Carrier normal in model space.
     pub(crate) direction: [FiniteReal; 3],
     /// Byte offset of the first direction component.
     pub(crate) direction_offset: u64,
@@ -150,6 +201,55 @@ pub(crate) struct DesignHoleConstruction {
     /// Direct persistent face selection carried by the Hole scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) face_selection: Option<DesignHoleFaceSelection>,
+    /// Point-data records of the Hole scope, in reference order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) locations: Vec<DesignHoleLocation>,
+}
+
+impl DesignHoleConstruction {
+    /// Entry point of each placed Hole, in source model centimetres. `None`
+    /// when the carrier and its point-data records do not form an admitted
+    /// placement.
+    pub(crate) fn entry_points(&self) -> Option<Vec<[FiniteReal; 3]>> {
+        if self.locations.is_empty() {
+            return None;
+        }
+        match self.reference_type {
+            HOLE_CARRIER_SKETCH_POINTS => (hole_position_matches(&self.position, &[0.0; 3])
+                && self
+                    .locations
+                    .iter()
+                    .all(|location| location.reference_type == POINT_DATA_SKETCH_POINT))
+            .then(|| {
+                self.locations
+                    .iter()
+                    .map(|location| location.position)
+                    .collect()
+            }),
+            HOLE_CARRIER_FACE_POINT => self
+                .locations
+                .iter()
+                .all(|location| {
+                    hole_position_matches(&self.position, &location.position.map(FiniteReal::get))
+                })
+                .then(|| vec![self.position]),
+            _ => None,
+        }
+    }
+
+    /// Whether the carrier states that sketch-point records place the Hole.
+    pub(crate) fn placed_by_sketch_points(&self) -> bool {
+        self.reference_type == HOLE_CARRIER_SKETCH_POINTS
+    }
+
+    /// Drilling vector in model space under the scope's direction control.
+    pub(crate) fn drilling_direction(&self, direction_control: u8) -> Option<[f64; 3]> {
+        match direction_control {
+            0 => Some(self.direction.map(|component| -component.get())),
+            1 => Some(self.direction.map(FiniteReal::get)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,11 +258,11 @@ struct DesignHoleConstructionWire {
     point_record_index: u32,
     /// Byte offset of the point-data record header.
     point_record_byte_offset: u64,
-    /// Hole entry position in source model centimetres.
+    /// Carrier position in source model centimetres.
     position: [FiniteReal; 3],
     /// Byte offset of the first position coordinate.
     position_offset: u64,
-    /// Directed drilling vector in model space.
+    /// Carrier normal in model space.
     direction: [FiniteReal; 3],
     /// Byte offset of the first direction component.
     direction_offset: u64,
@@ -206,6 +306,9 @@ struct DesignHoleConstructionWire {
         deserialize_with = "deserialize_face_selection"
     )]
     face_selection: Option<DesignHoleFaceSelection>,
+    /// Point-data records of the Hole scope, in reference order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    locations: Vec<DesignHoleLocation>,
 }
 
 impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
@@ -234,6 +337,7 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
             },
             input_records: wire.input_record_indices.into_iter().zip(wire.input_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             face_selection: wire.face_selection,
+            locations: wire.locations,
         })
     }
 }
@@ -284,6 +388,8 @@ struct HoleConstructionView<'a> {
     input_record_offsets: InputRecordOffsets<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     face_selection: Option<&'a DesignHoleFaceSelection>,
+    #[serde(skip_serializing_if = "<[DesignHoleLocation]>::is_empty")]
+    locations: &'a [DesignHoleLocation],
 }
 
 impl Serialize for DesignHoleConstruction {
@@ -306,6 +412,7 @@ impl Serialize for DesignHoleConstruction {
             input_record_indices: InputRecordIndices(&self.input_records),
             input_record_offsets: InputRecordOffsets(&self.input_records),
             face_selection: self.face_selection.as_ref(),
+            locations: &self.locations,
         }
         .serialize(serializer)
     }
@@ -514,6 +621,19 @@ mod tests {
             let extent: super::DesignHoleExtent = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(serde_json::to_value(extent).unwrap(), value);
         }
+        let directed = serde_json::json!({
+            "extent_control": 0, "direction_control": {"value": 1, "offset": 7}
+        });
+        let extent: super::DesignHoleExtent = serde_json::from_value(directed.clone()).unwrap();
+        assert_eq!(serde_json::to_value(extent).unwrap(), directed);
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"direction_control": {"value": 2, "offset": 7}})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"direction_control": null})
+        )
+        .is_err());
         let worded =
             serde_json::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
         let extent: super::DesignHoleExtent = serde_json::from_value(worded.clone()).unwrap();
@@ -538,6 +658,115 @@ mod tests {
             serde_json::json!({"extent_control": 1, "saved_non_distance_depth": null})
         )
         .is_err());
+    }
+
+    fn carrier(
+        reference_type: u32,
+        position: [f64; 3],
+        locations: &[(u32, [f64; 3])],
+    ) -> DesignHoleConstruction {
+        let locations: Vec<_> = locations
+            .iter()
+            .enumerate()
+            .map(|(index, (reference_type, position))| {
+                serde_json::json!({
+                    "record_index": index, "position": position,
+                    "position_offset": index, "reference_type": reference_type
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "point_record_index": 1, "point_record_byte_offset": 2,
+            "position": position, "position_offset": 3,
+            "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
+            "point_parameters": [0.0, 0.0], "point_parameter_offsets": [5, 6],
+            "reference_type": reference_type, "reference_type_offset": 7,
+            "input_record_indices": [8], "input_record_offsets": [9],
+            "locations": locations
+        }))
+        .unwrap()
+    }
+
+    fn entry_points(construction: &DesignHoleConstruction) -> Option<Vec<[f64; 3]>> {
+        construction.entry_points().map(|points| {
+            points
+                .into_iter()
+                .map(|point| point.map(cadmpeg_ir::scalar::FiniteReal::get))
+                .collect()
+        })
+    }
+
+    const A: [f64; 3] = [1.0, 1.5, 2.0];
+    const B: [f64; 3] = [3.0, 1.5, 2.0];
+    const ZERO: [f64; 3] = [0.0, 0.0, 0.0];
+
+    #[test]
+    fn sketch_point_carrier_places_one_hole_per_point_record() {
+        let two = carrier(13, ZERO, &[(10, A), (10, B)]);
+        assert_eq!(entry_points(&two), Some(vec![A, B]));
+        let one = carrier(13, ZERO, &[(10, B)]);
+        assert_eq!(entry_points(&one), Some(vec![B]));
+    }
+
+    #[test]
+    fn sketch_point_carrier_needs_every_record_to_be_a_sketch_point() {
+        assert_eq!(entry_points(&carrier(13, ZERO, &[(10, A), (17, B)])), None);
+        assert_eq!(entry_points(&carrier(13, ZERO, &[(17, A), (10, B)])), None);
+        assert_eq!(entry_points(&carrier(13, ZERO, &[(17, A), (17, B)])), None);
+    }
+
+    #[test]
+    fn sketch_point_carrier_with_a_stored_position_defines_no_placement() {
+        assert_eq!(entry_points(&carrier(13, A, &[(10, A)])), None);
+        assert_eq!(
+            entry_points(&carrier(13, [0.0, 0.0, 1.0], &[(10, A)])),
+            None
+        );
+    }
+
+    #[test]
+    fn face_point_carrier_needs_every_record_at_its_position() {
+        assert_eq!(entry_points(&carrier(19, A, &[(17, A)])), Some(vec![A]));
+        assert_eq!(
+            entry_points(&carrier(19, A, &[(6, A), (5, A)])),
+            Some(vec![A])
+        );
+        assert_eq!(entry_points(&carrier(19, A, &[(6, A), (5, B)])), None);
+        assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, A)])), None);
+        assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, B)])), None);
+    }
+
+    #[test]
+    fn hole_without_point_records_or_with_another_form_has_no_entry_point() {
+        assert_eq!(entry_points(&carrier(13, ZERO, &[])), None);
+        assert_eq!(entry_points(&carrier(19, A, &[])), None);
+        for other in [0, 1, 10, 12, 14, 18, 20] {
+            assert_eq!(entry_points(&carrier(other, A, &[(other, A)])), None);
+        }
+    }
+
+    #[test]
+    fn direction_control_states_the_travel_from_the_carrier_normal() {
+        let hole = carrier(19, A, &[(17, A)]);
+        assert_eq!(hole.drilling_direction(0), Some([-0.0, -0.0, -1.0]));
+        assert_eq!(hole.drilling_direction(1), Some([0.0, 0.0, 1.0]));
+        assert_eq!(hole.drilling_direction(2), None);
+    }
+
+    #[test]
+    fn hole_locations_round_trip_and_stay_absent_when_empty() {
+        let located = carrier(19, A, &[(17, A)]);
+        let value = serde_json::to_value(&located).unwrap();
+        assert_eq!(
+            value["locations"],
+            serde_json::json!([{
+                "record_index": 0, "position": A, "position_offset": 0, "reference_type": 17
+            }])
+        );
+        let decoded: DesignHoleConstruction = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, located);
+        let bare = serde_json::to_value(carrier(19, A, &[])).unwrap();
+        assert!(bare.get("locations").is_none());
     }
 
     #[test]
