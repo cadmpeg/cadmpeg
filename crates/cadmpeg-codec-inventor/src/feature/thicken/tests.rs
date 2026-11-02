@@ -201,6 +201,16 @@ impl Operands {
                 Some((raw, value))
             },
             |reference| {
+                let raw = self
+                    .parameters
+                    .iter()
+                    .find(|p| Some(p.identity.record_ordinal) == reference.record_ordinal())?;
+                self.values
+                    .iter()
+                    .find(|p| p.native_ref.as_deref() == Some(raw.id().as_str()))
+                    .map(|p| p.id.clone())
+            },
+            |reference| {
                 self.dimensions
                     .iter()
                     .find(|p| Some(p.identity.record_ordinal) == reference.record_ordinal())
