@@ -1900,3 +1900,65 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
     assert_eq!(notes.len(), 1);
     assert!(notes[0].message.contains("[11, 12]"));
 }
+
+#[test]
+fn pathless_occurrence_placements_bind_the_target_role_and_close() {
+    use crate::test_support::{lp_ascii, typed_cross_document_reference};
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let matrix = [
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, -3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for transform in [None, Some(matrix)] {
+        let original = repeated_target_occurrence_record(role, 42, 1, transform);
+        let path_end = super::occurrence_path(&original).unwrap().1;
+        let repeated_start = path_end + 4 + 2 * 76 + 1;
+        let mut repeated_end = repeated_start;
+        super::take_reference(&original, &mut repeated_end).unwrap();
+        let mut bytes = original[..15].to_vec();
+        lp_ascii(&mut bytes, "");
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&original[path_end..repeated_start]);
+        bytes.extend(typed_cross_document_reference(
+            100,
+            super::ROOT_COMPONENT_TYPE_GUID,
+            role,
+        ));
+        bytes.extend_from_slice(&original[repeated_end..]);
+        let placement = super::occurrence_placement(&bytes, None).unwrap().unwrap();
+        assert_eq!(placement.link_names, [role]);
+        assert_eq!(placement.carrier_record_index, 42);
+        assert_eq!(placement.owner.unwrap().target, 3);
+        assert_eq!(placement.transform, transform);
+        assert_eq!(
+            placement.occurrence_guid.unwrap().as_str(),
+            "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        );
+        let details = super::repeated_target_occurrence_placement_details(&bytes)
+            .unwrap()
+            .unwrap();
+        assert_eq!(details.role, role);
+        for offset in [0, 4, 15, 19, 20, 21, 25, bytes.len() - 1] {
+            let mut bad = bytes.clone();
+            bad[offset] = 2;
+            assert!(
+                super::occurrence_placement(&bad, None).unwrap().is_none(),
+                "offset {offset}"
+            );
+        }
+        let mut extra = bytes.clone();
+        extra.push(0);
+        assert!(super::occurrence_placement(&extra, None).unwrap().is_none());
+        let mut wrong = bytes.clone();
+        let target_at = 25 + 2 * 76 + 1;
+        let mut target_end = target_at;
+        super::take_reference(&wrong, &mut target_end).unwrap();
+        wrong.splice(
+            target_at..target_end,
+            typed_cross_document_reference(100, super::OCCURRENCE_PLACEMENT_TYPE_GUID, role),
+        );
+        assert!(super::occurrence_placement(&wrong, None).unwrap().is_none());
+    }
+}

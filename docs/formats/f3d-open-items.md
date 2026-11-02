@@ -444,9 +444,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** How does a component-path record with more than two path elements join to a nested occurrence, and does its world pose supersede that occurrence's own placement?
 
-**Known.** A two-element path of a cross-document element and a local element naming an occurrence-placement record stores the current world pose of that placed occurrence. A two-element path of a Component record and a local occurrence carrier of that component stores the current pose of a local occurrence in the root component. Longer paths continue through further cross-document and local elements, each with an instance discriminator, and also store a world transform. A path of a referenced design's root component and occurrence placement, then this document's placement of the external occurrence and some of its local owners, stores the world pose of the inner occurrence; when the records of one instance that list the most owners agree, they place it. A path of a referenced design's root component, then this document's placement of an external occurrence and one or more of its local owners, stores that external occurrence's world pose; it places an instance that no contained record places.
+**Known.** A two-element path of a cross-document element and a local element naming an occurrence-placement record stores the current world pose of that placed occurrence. A two-element path of a Component record and a local occurrence carrier of that component stores the current pose of a local occurrence in the root component. Longer paths continue through further cross-document and local elements, each with an instance discriminator, and also store a world transform. A path of a referenced design's root component and occurrence placement, then this document's placement of the external occurrence and some of its local owners, stores the world pose of the inner occurrence; when the records of one instance that list the most owners agree, they place it. A path of a referenced design's root component, then this document's placement of an external occurrence and one or more of its local owners, stores that external occurrence's world pose; it places an instance that no contained record places. An inline-qualified own path places its insertion independently of the contained carriers that identify child instances. A full-owner nested carrier in one public assembly stores origin `(75, -124.5, 450)` mm; its own-root carrier stores `(80, -125, 450)` mm, and its same-role contained-body carrier stores `(221.330802, -259.941433, 443.85)` mm. The class-301 pathless placement binds the nested carrier to its target and stores a local translation of `(0, 0, -0.5)` mm.
 
-**Need.** Why an external occurrence's own two-element record, and a contained record that lists fewer owners, can keep an earlier pose while the records that list more owners give another; the join from each later path element to the placement record of the nested occurrence in its placed design, and the relation between that world pose and the nested occurrence's own placement and joints, and whether a two-local-element pose of an occurrence below another component is local to its container or in the world.
+The first closing reference run identifies a direct contained child by its local insertion placement and cross-document target, in that order. Three nested-design carriers share their insertions with ordinary contained carriers and name distinct external child instances by this chain. Seven contained carriers in an inserted public design equal the product of the stored insertion placement and the direct source child pose. Their insertion's own current carrier states another insertion frame. The source composition preserves the child local pose under that current frame.
+
+**Need.** Why an external occurrence's own two-element record, and a contained record that lists fewer owners, can keep an earlier pose while the records that list more owners give another; the join from each later path element to the placement record of the nested occurrence in its placed design, and the relation between that world pose and the nested occurrence's own placement and joints, and whether a two-local-element pose of an occurrence below another component is local to its container or in the world. The saved-state selector that relates a full-owner nested path to the own-root and same-role contained paths.
 
 **Conflict.** None.
 
@@ -1006,3 +1008,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** The scalar records name the owning scope and have consecutive owner-local ordinals. Their scope reference table interleaves the scalar records with several counted operand groups. A scalar run can contain two values with two groups, or three values with three groups. The fixed single-group grammar reads these runs as a tangency weight and constant radius, or a tangency weight and two endpoint radii.
 
 **Need.** A record discriminator or explicit assignment that separates per-group radii from a shared tangency weight and a multi-value radius law.
+
+### DR-166. Pathless occurrence-placement control word
+
+**Question.** What does the u32 after the empty path and separator in a pathless occurrence placement select?
+
+**Known.** One public assembly member stores value `1` in the 25-byte prefix. Its two metadata UUIDs equal the UUIDs of the corresponding repeated-target placement in a second public assembly. Its typed target, role, rigid matrix, and local owner close the placement frame. The decoder admits control value `1` and retains the complete frame.
+
+**Need.** Pathless placements with another control value and an independently established placement relation.
+
+**Conflict.** None.
+
+**Note.** The empty-path control remains native. The target role binds the external placement independently of this control's meaning.
