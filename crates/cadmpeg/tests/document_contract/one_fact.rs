@@ -183,7 +183,7 @@ fn native_records(ir: &CadIr, namespace: &str, arena: &str) -> Vec<Value> {
         .collect()
 }
 
-#[cfg(any(feature = "fcstd", feature = "sldprt", feature = "f3d"))]
+#[cfg(feature = "sldprt")]
 fn native_length(text: &str, expected_mm: f64) {
     let expected = ParameterValue::Length(Length::new(expected_mm).unwrap());
     assert_eq!(
@@ -372,21 +372,19 @@ fn freecad_one_fact_updates_pad_length_expression_engine_and_touched() {
                 .is_some_and(|value| (value - expected_mm).abs() <= EPS_DIMENSION_MM)),
         "the native property agrees with the canonical cache"
     );
-    let engine = properties
+    let engines = properties
         .iter()
-        .find(|property| {
+        .filter(|property| {
             property["owner"].as_str() == Some(owner) && property["name"] == "ExpressionEngine"
         })
-        .expect("Pad.ExpressionEngine");
-    let expression = engine["values"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|value| value["attributes"]["path"] == "Length")
-        .expect("Length expression")["attributes"]["expression"]
-        .as_str()
-        .unwrap();
-    native_length(expression, expected_mm);
+        .collect::<Vec<_>>();
+    assert!(
+        engines
+            .iter()
+            .flat_map(|engine| engine["values"].as_array().into_iter().flatten())
+            .all(|value| value["attributes"]["path"] != "Length"),
+        "a literal binding lives in the value lane, never as a second engine copy"
+    );
 }
 
 #[cfg(feature = "fcstd")]
