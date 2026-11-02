@@ -404,20 +404,20 @@ pub(crate) fn configuration_entry_id(
     )
 }
 
-/// The neutral configuration key for `variant_name` under `entry_name`, with
-/// both names length-prefixed into `#{len}:{key}{len}:{key}` segments.
+/// The neutral configuration key for table row `row_id` under `entry_name`,
+/// with both length-prefixed into `#{len}:{key}{len}:{key}` segments.
 pub(crate) fn neutral_configuration_id(
     entry_name: &str,
-    variant_name: &str,
+    row_id: &str,
 ) -> cadmpeg_ir::features::ConfigurationId {
     let entry_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(entry_name);
-    let variant_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(variant_name);
+    let row_id = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(row_id);
     let key = cadmpeg_ir::ids::IdentityKey::from(entry_name.as_str().len())
         .then(cadmpeg_ir::identity_key!(":"))
         .with_tail(&entry_name)
-        .then(variant_name.as_str().len())
+        .then(row_id.as_str().len())
         .then(cadmpeg_ir::identity_key!(":"))
-        .with_tail(&variant_name);
+        .with_tail(&row_id);
     cadmpeg_ir::features::ConfigurationId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "configuration", "variant"),
         key,

@@ -160,6 +160,8 @@ pub(super) struct DesignNative {
     pub(super) design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs,
     design_body_bounds: Vec<DesignBodyBounds>,
     pub(super) design_configurations: Vec<NativeDesignConfiguration>,
+    /// Count of root records that no table document receives.
+    pub(super) configuration_roots_unbound: usize,
     /// Phase-1 scopes with their design-intent bindings. Supersedes the
     /// product-prerequisite scopes in native storage.
     design_parameter_scopes: Vec<DesignParameterScope>,
@@ -214,6 +216,7 @@ impl DesignNative {
             design_dimension_null_locus_pairs,
             design_body_bounds,
             design_configurations,
+            configuration_roots_unbound: _,
             design_parameter_scopes,
             design_record_headers,
             design_surface_trim_operations,
@@ -552,9 +555,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.design_body_bounds,
         &prereqs.design_body_bindings,
     )?;
-    design.design_configurations = crate::design::configurations::decode_configurations(ctx, scan)?;
-    model.configurations =
-        crate::design::configurations::project_configurations(&design.design_configurations)?;
+    let configurations = crate::design::configurations::decode_configurations(ctx, scan)?;
+    design.design_configurations = configurations.documents;
+    design.configuration_roots_unbound = configurations.unbound_roots;
     design.design_sheet_metal_settings =
         crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
     let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
@@ -661,10 +664,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
     )?;
     extend_design_assets(geometry.assets, &mut model.assets, decal_assets)?;
-    crate::design::configurations::bind_configuration_parameter_overrides(
-        &mut model.configurations,
-        &model.parameters,
-    );
     let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
@@ -984,10 +983,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.faces,
         &mut losses,
     )?;
-    crate::design::configurations::bind_configuration_suppressed_features(
-        &mut model.configurations,
-        &model.features,
-    );
     if let Some(table) = prereqs.xref_table() {
         losses.extend(crate::xref::bind_component_insert_features(
             &mut model.features,
@@ -1024,6 +1019,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         inputs.ctx,
         &model.features,
         &mut model.feature_input_topologies,
+    )?;
+    model.configurations = crate::design::configurations::project_configurations(
+        &design.design_configurations,
+        &crate::design::configurations::ConfigurationTargets {
+            parameters: &prereqs.design_parameters,
+            owners: &prereqs.design_parameter_owners,
+            scopes: &design.design_parameter_scopes,
+            neutral_parameters: &model.parameters,
+            neutral_features: &model.features,
+        },
     )?;
     let phase_one_headers = prereqs
         .design_record_headers

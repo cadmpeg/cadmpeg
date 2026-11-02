@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admitted configuration documents and their authored variant order.
+//! Admitted configuration documents and the configuration tables they hold.
 
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 
-/// JSON configuration payload stored in a Fusion design-configuration entry.
+pub(crate) mod table;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_active_row,
+    DesignConfigurationActiveRow,
+    "active_row"
+);
+
+/// JSON configuration document stored in a Fusion design-configuration entry.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "DesignConfigurationWire")]
 pub(crate) struct DesignConfiguration {
     entry_name: String,
     identity_scope: cadmpeg_ir::ids::IdentityComponent,
-    payload: ConfigurationPayload,
+    payload: Map<String, Value>,
+    content: ConfigurationContent,
+    active_row: Option<DesignConfigurationActiveRow>,
 }
 
 #[cfg(test)]
@@ -30,190 +39,44 @@ impl Clone for DesignConfiguration {
             entry_name: self.entry_name.clone(),
             identity_scope: self.identity_scope.clone(),
             payload: self.payload.clone(),
+            content: self.content.clone(),
+            active_row: self.active_row.clone(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ConfigurationPayload {
-    Table {
-        active: Option<String>,
-        variants: Option<ConfigurationVariants>,
-        extensions: Map<String, Value>,
-    },
-    Rule(Map<String, Value>),
+enum ConfigurationContent {
+    Table(table::AdmittedTables),
+    Rule,
 }
 
-/// A table's actual members, in authored order.
-#[derive(Debug, Clone, PartialEq)]
-struct ConfigurationVariants {
-    entries: Vec<(String, ConfigurationVariant)>,
-    /// Empty or singleton legacy records can omit their unambiguous order.
-    explicit_order: bool,
+/// Active row that the Design `DesignConfigurationRoot` record names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignConfigurationActiveRow {
+    /// Indexed-record index of the root record in its Design `BulkStream`.
+    pub(crate) record_index: u32,
+    /// Id of the table that holds the active row.
+    pub(crate) table_id: String,
+    /// Id of the active row.
+    pub(crate) row_id: String,
 }
 
-/// Typed variant properties and retained extension members.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ConfigurationVariant {
-    parameters: Option<BTreeMap<String, ConfigurationScalar>>,
-    suppressed: Option<Vec<String>>,
-    material: Option<String>,
-    extensions: Map<String, Value>,
-}
-
-/// A parameter override contains one JSON scalar.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ConfigurationScalar {
-    Null,
-    Bool(bool),
-    Number(serde_json::Number),
-    String(String),
-}
-
-impl ConfigurationScalar {
-    pub(crate) fn text(&self) -> String {
-        struct ScalarText<'a>(&'a ConfigurationScalar);
-        impl std::fmt::Display for ScalarText<'_> {
-            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self.0 {
-                    ConfigurationScalar::Null => formatter.write_str("null"),
-                    ConfigurationScalar::Bool(value) => std::fmt::Display::fmt(value, formatter),
-                    ConfigurationScalar::Number(value) => std::fmt::Display::fmt(value, formatter),
-                    ConfigurationScalar::String(value) => formatter.write_str(value),
-                }
-            }
-        }
-        format!("{}", ScalarText(self))
-    }
-
-    fn value(&self) -> Value {
-        match self {
-            Self::Null => Value::Null,
-            Self::Bool(value) => Value::Bool(*value),
-            Self::Number(value) => Value::Number(value.clone()),
-            Self::String(value) => Value::String(value.clone()),
-        }
-    }
-}
-
-impl ConfigurationVariant {
-    fn admit(entry_name: &str, name: &str, value: Value) -> Result<Self, CodecError> {
-        let Value::Object(mut fields) = value else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration variant `{name}` must be an object: {entry_name}"
-            )));
-        };
-        let parameters = match fields.remove("parameters") {
-            Some(Value::Object(parameters)) => {
-                let mut admitted = BTreeMap::new();
-                for (key, value) in parameters {
-                    let value = match value {
-                        Value::Null => ConfigurationScalar::Null,
-                        Value::Bool(value) => ConfigurationScalar::Bool(value),
-                        Value::Number(value) => ConfigurationScalar::Number(value),
-                        Value::String(value) => ConfigurationScalar::String(value),
-                        Value::Array(_) | Value::Object(_) => {
-                            return Err(CodecError::malformed(format_args!(
-                                "F3D configuration variant `{name}` parameter overrides must be JSON scalars: {entry_name}"
-                            )));
-                        }
-                    };
-                    admitted.insert(key, value);
-                }
-                Some(admitted)
-            }
-            Some(_) => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration variant `{name}` parameters must be an object: {entry_name}"
-                )))
-            }
-            None => None,
-        };
-        let suppressed_error = || {
-            CodecError::malformed(format_args!(
-            "F3D configuration variant `{name}` suppressed list must contain strings: {entry_name}"
-        ))
-        };
-        let suppressed = match fields.remove("suppressed") {
-            Some(Value::Array(values)) => {
-                let mut suppressed = Vec::new();
-                for value in values {
-                    let Value::String(value) = value else {
-                        return Err(suppressed_error());
-                    };
-                    suppressed.push(value);
-                }
-                Some(suppressed)
-            }
-            Some(_) => return Err(suppressed_error()),
-            None => None,
-        };
-        let material = match fields.remove("material") {
-            Some(Value::String(value)) => Some(value),
-            Some(_) => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration variant `{name}` material must be a string: {entry_name}"
-                )))
-            }
-            None => None,
-        };
-        Ok(Self {
-            parameters,
-            suppressed,
-            material,
-            extensions: fields,
-        })
-    }
-
-    pub(crate) fn parameters(&self) -> impl Iterator<Item = (&String, &ConfigurationScalar)> {
-        self.parameters
-            .iter()
-            .flat_map(|parameters| parameters.iter())
-    }
-
-    pub(crate) fn suppressed(&self) -> impl Iterator<Item = &String> {
-        self.suppressed.iter().flatten()
-    }
-
-    pub(crate) fn material(&self) -> Option<&str> {
-        self.material.as_deref()
-    }
-
-    fn payload(&self) -> Map<String, Value> {
-        let mut payload = self.extensions.clone();
-        if let Some(parameters) = &self.parameters {
-            payload.insert(
-                "parameters".into(),
-                Value::Object(
-                    parameters
-                        .iter()
-                        .map(|(name, value)| (name.clone(), value.value()))
-                        .collect(),
-                ),
-            );
-        }
-        if let Some(suppressed) = &self.suppressed {
-            payload.insert(
-                "suppressed".into(),
-                Value::Array(suppressed.iter().cloned().map(Value::String).collect()),
-            );
-        }
-        if let Some(material) = &self.material {
-            payload.insert("material".into(), Value::String(material.clone()));
-        }
-        payload
-    }
-}
-
-/// Serialized configuration identity and payload.
+/// Serialized configuration identity, document, and active row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DesignConfigurationWire {
     id: String,
     entry_name: String,
     kind: DesignConfigurationKind,
-    #[serde(default)]
-    variant_order: Vec<String>,
     payload: Value,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_active_row"
+    )]
+    active_row: Option<DesignConfigurationActiveRow>,
 }
 
 struct ConfigurationIdentity<'a>(&'a DesignConfiguration);
@@ -243,169 +106,16 @@ impl Serialize for ConfigurationIdentity<'_> {
     }
 }
 
-struct ConfigurationOrder<'a>(&'a DesignConfiguration);
-
-impl Serialize for ConfigurationOrder<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match &self.0.payload {
-            ConfigurationPayload::Table {
-                variants: Some(variants),
-                ..
-            } if variants.explicit_order => {
-                serializer.collect_seq(variants.entries.iter().map(|(name, _)| name))
-            }
-            _ => serializer.collect_seq(std::iter::empty::<&String>()),
-        }
-    }
-}
-
-impl Serialize for ConfigurationScalar {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Null => serializer.serialize_none(),
-            Self::Bool(value) => serializer.serialize_bool(*value),
-            Self::Number(value) => value.serialize(serializer),
-            Self::String(value) => serializer.serialize_str(value),
-        }
-    }
-}
-
-struct ConfigurationVariantView<'a>(&'a ConfigurationVariant);
-
-impl Serialize for ConfigurationVariantView<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let variant = self.0;
-        let mut map = serializer.serialize_map(Some(
-            variant.extensions.len()
-                + usize::from(variant.material.is_some())
-                + usize::from(variant.parameters.is_some())
-                + usize::from(variant.suppressed.is_some()),
-        ))?;
-        let mut material_written = false;
-        let mut parameters_written = false;
-        let mut suppressed_written = false;
-        for (name, value) in &variant.extensions {
-            if name.as_str() > "material" && !material_written {
-                if let Some(material) = &variant.material {
-                    map.serialize_entry("material", material)?;
-                }
-                material_written = true;
-            }
-            if name.as_str() > "parameters" && !parameters_written {
-                if let Some(parameters) = &variant.parameters {
-                    map.serialize_entry("parameters", parameters)?;
-                }
-                parameters_written = true;
-            }
-            if name.as_str() > "suppressed" && !suppressed_written {
-                if let Some(suppressed) = &variant.suppressed {
-                    map.serialize_entry("suppressed", suppressed)?;
-                }
-                suppressed_written = true;
-            }
-            map.serialize_entry(name, value)?;
-        }
-        if !material_written {
-            if let Some(material) = &variant.material {
-                map.serialize_entry("material", material)?;
-            }
-        }
-        if !parameters_written {
-            if let Some(parameters) = &variant.parameters {
-                map.serialize_entry("parameters", parameters)?;
-            }
-        }
-        if !suppressed_written {
-            if let Some(suppressed) = &variant.suppressed {
-                map.serialize_entry("suppressed", suppressed)?;
-            }
-        }
-        map.end()
-    }
-}
-
-struct ConfigurationPayloadView<'a>(&'a ConfigurationPayload);
-
-struct SortedConfigurationVariants<'a>(&'a [(String, ConfigurationVariant)]);
-
-impl Serialize for SortedConfigurationVariants<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        let mut previous: Option<&str> = None;
-        while let Some((name, variant)) = self
-            .0
-            .iter()
-            .filter(|(name, _)| previous.is_none_or(|previous| name.as_str() > previous))
-            .min_by(|(left, _), (right, _)| left.cmp(right))
-        {
-            map.serialize_entry(name, &ConfigurationVariantView(variant))?;
-            previous = Some(name);
-        }
-        map.end()
-    }
-}
-
-impl Serialize for ConfigurationPayloadView<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            ConfigurationPayload::Rule(fields) => fields.serialize(serializer),
-            ConfigurationPayload::Table {
-                active,
-                variants,
-                extensions,
-            } => {
-                let mut map = serializer.serialize_map(Some(
-                    extensions.len()
-                        + usize::from(active.is_some())
-                        + usize::from(variants.is_some()),
-                ))?;
-                let mut active_written = false;
-                let mut variants_written = false;
-                for (name, value) in extensions {
-                    if name.as_str() > "active" && !active_written {
-                        if let Some(active) = active {
-                            map.serialize_entry("active", active)?;
-                        }
-                        active_written = true;
-                    }
-                    if name.as_str() > "configurations" && !variants_written {
-                        if let Some(variants) = variants {
-                            map.serialize_entry(
-                                "configurations",
-                                &SortedConfigurationVariants(&variants.entries),
-                            )?;
-                        }
-                        variants_written = true;
-                    }
-                    map.serialize_entry(name, value)?;
-                }
-                if !active_written {
-                    if let Some(active) = active {
-                        map.serialize_entry("active", active)?;
-                    }
-                }
-                if !variants_written {
-                    if let Some(variants) = variants {
-                        map.serialize_entry(
-                            "configurations",
-                            &SortedConfigurationVariants(&variants.entries),
-                        )?;
-                    }
-                }
-                map.end()
-            }
-        }
-    }
-}
-
 impl Serialize for DesignConfiguration {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(5))?;
+        let mut map = serializer.serialize_map(Some(4 + usize::from(self.active_row.is_some())))?;
         map.serialize_entry("id", &ConfigurationIdentity(self))?;
         map.serialize_entry("entry_name", &self.entry_name)?;
         map.serialize_entry("kind", &self.kind())?;
-        map.serialize_entry("variant_order", &ConfigurationOrder(self))?;
-        map.serialize_entry("payload", &ConfigurationPayloadView(&self.payload))?;
+        map.serialize_entry("payload", &self.payload)?;
+        if let Some(active_row) = &self.active_row {
+            map.serialize_entry("active_row", active_row)?;
+        }
         map.end()
     }
 }
@@ -422,17 +132,7 @@ impl DesignConfiguration {
     pub(crate) fn try_new(
         entry_name: String,
         kind: DesignConfigurationKind,
-        variant_order: Vec<String>,
         payload: Map<String, Value>,
-    ) -> Result<Self, CodecError> {
-        Self::try_new_inner(entry_name, kind, variant_order, payload)
-    }
-
-    fn try_new_inner(
-        entry_name: String,
-        kind: DesignConfigurationKind,
-        variant_order: Vec<String>,
-        mut payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
         let extension = match kind {
             DesignConfigurationKind::Table => ".dsgcfg",
@@ -443,94 +143,34 @@ impl DesignConfiguration {
                 "configuration.entry_name must end with {extension} for {kind:?}"
             )));
         }
-        if kind == DesignConfigurationKind::Rule {
-            if !variant_order.is_empty() {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration rule carries a variant order: {entry_name}"
-                )));
+        let content = match kind {
+            DesignConfigurationKind::Table => {
+                ConfigurationContent::Table(table::AdmittedTables::admit(&payload))
             }
-            return Ok(Self {
-                entry_name,
-                identity_scope: cadmpeg_ir::identity_component!("configuration"),
-                payload: ConfigurationPayload::Rule(payload),
-            });
-        }
-        let variants = match payload.remove("configurations") {
-            Some(Value::Object(variants)) => Some(variants),
-            Some(_) => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration table `configurations` must be an object: {entry_name}"
-                )))
-            }
-            None => None,
-        };
-        let active = match payload.remove("active") {
-            Some(Value::String(active)) => {
-                if !variants
-                    .as_ref()
-                    .is_some_and(|variants| variants.contains_key(&active))
-                {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D active configuration `{active}` is not a named variant: {entry_name}"
-                    )));
-                }
-                Some(active)
-            }
-            Some(_) => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration table `active` must be a string: {entry_name}"
-                )))
-            }
-            None => None,
-        };
-        let invalid_order = || {
-            CodecError::malformed(format_args!(
-                "F3D configuration variant order does not match its table: {entry_name}"
-            ))
-        };
-        let variants = match variants {
-            Some(variants) => {
-                let mut admitted = BTreeMap::new();
-                for (name, value) in variants {
-                    let value = ConfigurationVariant::admit(&entry_name, &name, value)?;
-                    admitted.insert(name, value);
-                }
-                let mut variants = admitted;
-                let explicit_order = !variant_order.is_empty();
-                let entries = if !explicit_order && variants.len() <= 1 {
-                    let mut entries = Vec::new();
-                    for variant in variants {
-                        entries.push(variant);
-                    }
-                    entries
-                } else {
-                    let mut entries = Vec::new();
-                    for name in variant_order {
-                        let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
-                        entries.push(variant);
-                    }
-                    if !variants.is_empty() {
-                        return Err(invalid_order());
-                    }
-                    entries
-                };
-                Some(ConfigurationVariants {
-                    entries,
-                    explicit_order,
-                })
-            }
-            None if variant_order.is_empty() => None,
-            None => return Err(invalid_order()),
+            DesignConfigurationKind::Rule => ConfigurationContent::Rule,
         };
         Ok(Self {
             entry_name,
             identity_scope: cadmpeg_ir::identity_component!("configuration"),
-            payload: ConfigurationPayload::Table {
-                active,
-                variants,
-                extensions: payload,
-            },
+            payload,
+            content,
+            active_row: None,
         })
+    }
+
+    /// Attach the active row of a table document.
+    pub(crate) fn set_active_row(
+        &mut self,
+        active_row: DesignConfigurationActiveRow,
+    ) -> Result<(), CodecError> {
+        if self.kind() == DesignConfigurationKind::Rule {
+            return Err(CodecError::malformed(format_args!(
+                "F3D configuration rule carries an active row: {}",
+                self.entry_name
+            )));
+        }
+        self.active_row = Some(active_row);
+        Ok(())
     }
 
     pub(crate) fn id(&self) -> String {
@@ -542,97 +182,44 @@ impl DesignConfiguration {
     }
 
     pub(crate) fn kind(&self) -> DesignConfigurationKind {
-        match self.payload {
-            ConfigurationPayload::Table { .. } => DesignConfigurationKind::Table,
-            ConfigurationPayload::Rule(_) => DesignConfigurationKind::Rule,
+        match self.content {
+            ConfigurationContent::Table(_) => DesignConfigurationKind::Table,
+            ConfigurationContent::Rule => DesignConfigurationKind::Rule,
         }
     }
 
-    /// Actual named definitions in authored order; rules have no variants.
-    pub(crate) fn variants(&self) -> &[(String, ConfigurationVariant)] {
-        match &self.payload {
-            ConfigurationPayload::Table {
-                variants: Some(variants),
-                ..
-            } => &variants.entries,
-            _ => &[],
+    /// Admitted tables in document order; rules hold none.
+    pub(crate) fn tables(&self) -> &[table::ConfigurationTable] {
+        match &self.content {
+            ConfigurationContent::Table(admitted) => &admitted.tables,
+            ConfigurationContent::Rule => &[],
         }
     }
 
-    pub(crate) fn active(&self) -> Option<&str> {
-        match &self.payload {
-            ConfigurationPayload::Table { active, .. } => active.as_deref(),
-            ConfigurationPayload::Rule(_) => None,
-        }
+    pub(crate) fn active_row(&self) -> Option<&DesignConfigurationActiveRow> {
+        self.active_row.as_ref()
     }
 
     pub(crate) fn rule(&self) -> Option<&Map<String, Value>> {
-        match &self.payload {
-            ConfigurationPayload::Rule(payload) => Some(payload),
-            ConfigurationPayload::Table { .. } => None,
+        match self.content {
+            ConfigurationContent::Rule => Some(&self.payload),
+            ConfigurationContent::Table(_) => None,
         }
     }
 
-    /// The native wire keeps a missing legacy order as an empty list.
-    #[cfg(test)]
-    pub(crate) fn variant_order(&self) -> Vec<String> {
-        match &self.payload {
-            ConfigurationPayload::Table {
-                variants: Some(variants),
-                ..
-            } if variants.explicit_order => variants
-                .entries
-                .iter()
-                .map(|(name, _)| name.clone())
-                .collect(),
-            _ => Vec::new(),
-        }
-    }
-
-    /// Rebuild the complete object payload, including extension members.
-    pub(crate) fn payload(&self) -> Map<String, Value> {
-        match &self.payload {
-            ConfigurationPayload::Rule(payload) => payload.clone(),
-            ConfigurationPayload::Table {
-                active,
-                variants,
-                extensions,
-            } => {
-                let mut payload = extensions.clone();
-                if let Some(active) = active {
-                    payload.insert("active".into(), Value::String(active.clone()));
-                }
-                if let Some(variants) = variants {
-                    payload.insert(
-                        "configurations".into(),
-                        Value::Object(
-                            variants
-                                .entries
-                                .iter()
-                                .map(|(name, value)| (name.clone(), Value::Object(value.payload())))
-                                .collect(),
-                        ),
-                    );
-                }
-                payload
-            }
-        }
+    /// The complete source document.
+    pub(crate) fn payload(&self) -> &Map<String, Value> {
+        &self.payload
     }
 
     pub(crate) fn unknown_member_count(&self) -> usize {
-        match &self.payload {
-            ConfigurationPayload::Rule(payload) => payload
+        match &self.content {
+            ConfigurationContent::Rule => self
+                .payload
                 .keys()
                 .filter(|key| !matches!(key.as_str(), "when" | "activate"))
                 .count(),
-            ConfigurationPayload::Table { extensions, .. } => {
-                extensions.len()
-                    + self
-                        .variants()
-                        .iter()
-                        .map(|(_, variant)| variant.extensions.len())
-                        .sum::<usize>()
-            }
+            ConfigurationContent::Table(admitted) => admitted.unassigned,
         }
     }
 }
@@ -654,10 +241,14 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
         let Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        let mut record =
-            Self::try_new_inner(wire.entry_name, wire.kind, wire.variant_order, payload)
-                .map_err(|error| error.to_string())?;
+        let mut record = Self::try_new(wire.entry_name, wire.kind, payload)
+            .map_err(|error| error.to_string())?;
         record.identity_scope = scope;
+        if let Some(active_row) = wire.active_row {
+            record
+                .set_active_row(active_row)
+                .map_err(|error| error.to_string())?;
+        }
         Ok(record)
     }
 }
@@ -668,47 +259,18 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
         Self {
             id: value.id(),
             kind: value.kind(),
-            variant_order: value.variant_order(),
-            payload: Value::Object(value.payload()),
+            payload: Value::Object(value.payload),
             entry_name: value.entry_name,
+            active_row: value.active_row,
         }
     }
 }
 
-struct OrderedConfigurationVariants<'a>(&'a [(String, ConfigurationVariant)]);
-
-impl Serialize for OrderedConfigurationVariants<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for (name, value) in self.0 {
-            map.serialize_entry(name, &ConfigurationVariantView(value))?;
-        }
-        map.end()
-    }
-}
-
-struct OrderedConfigurationPayload<'a>(&'a DesignConfiguration);
-
-impl Serialize for OrderedConfigurationPayload<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let object = self.0.payload();
-        let mut map = serializer.serialize_map(Some(object.len()))?;
-        for (name, value) in object {
-            if name == "configurations" && self.0.kind() == DesignConfigurationKind::Table {
-                map.serialize_entry(&name, &OrderedConfigurationVariants(self.0.variants()))?;
-            } else {
-                map.serialize_entry(&name, &value)?;
-            }
-        }
-        map.end()
-    }
-}
-
-/// Encode the native source payload with its authored variant order.
+/// Encode the native source document.
 pub(crate) fn encode_configuration_payload(
     configuration: &DesignConfiguration,
 ) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(&OrderedConfigurationPayload(configuration)).map_err(|error| {
+    serde_json::to_vec(configuration.payload()).map_err(|error| {
         CodecError::malformed(format_args!(
             "cannot encode F3D configuration JSON {}: {error}",
             configuration.entry_name()

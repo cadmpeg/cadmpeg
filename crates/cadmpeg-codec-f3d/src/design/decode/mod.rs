@@ -8,6 +8,7 @@ pub(crate) mod body_reference_tails;
 pub(crate) mod canvas;
 pub(crate) mod component_bodies;
 pub(crate) mod components;
+pub(crate) mod configuration_root;
 pub(crate) mod decal;
 pub(crate) mod dimension_frames;
 mod image;

@@ -1344,7 +1344,12 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| !configuration.variants().is_empty());
+        .filter(|configuration| {
+            configuration
+                .tables()
+                .iter()
+                .any(|table| !table.rows.is_empty())
+        });
     let first = nonempty_tables.next();
     if nonempty_tables.next().is_some() {
         let id = first.map(super::records::configuration::DesignConfiguration::id);

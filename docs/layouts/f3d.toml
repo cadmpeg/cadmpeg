@@ -27841,9 +27841,9 @@ value = 1
 
 [[not_applicable]]
 area = "Design configuration table and rule payloads"
-reason = "Complete JSON objects. Member names and JSON syntax delimit variable-length fields; an empty table object contains zero configurations, parameter columns, and cell values."
+reason = "Complete JSON objects. Member names and JSON syntax delimit variable-length fields; the empty table object contains zero tables, columns, rows, and cells."
 section = "1.2"
-anchor = "An empty table object `{}` contains zero configurations, parameter columns, and cell values."
+anchor = "The empty object contains zero tables, columns, rows, and cells."
 
 [[record]]
 name = "design_configuration_table_serializer_prefix"
@@ -27913,6 +27913,57 @@ type = "u32"
 source = "spec"
 anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
 value = 68
+
+[[record]]
+name = "configuration_root_prefix"
+kind = "byte"
+section = "1.2"
+anchor = "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."
+size = 57
+note = "Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_u32"
+offset = 11
+type = "u32"
+value = 0
+source = "spec"
+anchor = "Its indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot`"
+
+[[record.field]]
+name = "key_length"
+offset = 15
+type = "u32"
+value = 23
+source = "spec"
+anchor = "the LP-ASCII key `DesignConfigurationRoot`"
+
+[[record.field]]
+name = "key"
+offset = 19
+type = "bytes[23]"
+source = "spec"
+anchor = "the LP-ASCII key `DesignConfigurationRoot`"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven zero bytes, u32 `1`, the LP-UTF16 table id"
+
+[[record.field]]
+name = "constant_one"
+offset = 53
+type = "u32"
+value = 1
+source = "spec"
+anchor = "eleven zero bytes, u32 `1`, the LP-UTF16 table id"
 
 [[record]]
 name = "snapshot_body_map_plain_prefix"

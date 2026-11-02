@@ -72,11 +72,3 @@ fn configuration_json_values_and_diagnostics_match_serde() {
         }
     }
 }
-
-#[test]
-fn configuration_numeric_scalar_text_formats_the_number() {
-    let scalar = crate::records::configuration::ConfigurationScalar::Number(
-        serde_json::Number::from_f64(2.5).unwrap(),
-    );
-    assert_eq!(scalar.text(), "2.5");
-}
