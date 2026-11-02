@@ -8075,6 +8075,23 @@ Parsed by:
 | 26 | 23 | `meta_type` | `bytes[23]` | little | spec | LP-ASCII `IntrinsicMetaTypeuint64` · value `"IntrinsicMetaTypeuint64"` |
 | 49 | 8 | `entity_genesis` | `u64` | little | spec | the u64 origin bitfield |
 
+## `pathless_external_placement_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 25 B
+
+Prefix through the control word; the metadata UUIDs follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `indexed_header` | `bytes[15]` | little | spec | A pathless occurrence placement |
+| 15 | 4 | `empty_name` | `u32` | little | spec | A pathless occurrence placement · value `0` |
+| 19 | 1 | `path_flag` | `u8` | little | spec | A pathless occurrence placement · value `0` |
+| 20 | 1 | `separator` | `u8` | little | spec | A pathless occurrence placement · value `0` |
+| 21 | 4 | `control` | `u32` | little | spec | A pathless occurrence placement · value `1` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

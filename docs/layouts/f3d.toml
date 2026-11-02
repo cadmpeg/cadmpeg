@@ -27642,3 +27642,51 @@ offset = 49
 type = "u64"
 source = "spec"
 anchor = "the u64 origin bitfield"
+
+[[record]]
+name = "pathless_external_placement_prefix"
+kind = "byte"
+section = "1.4"
+anchor = "A pathless occurrence placement"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Prefix through the control word; the metadata UUIDs follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "A pathless occurrence placement"
+
+[[record.field]]
+name = "empty_name"
+offset = 15
+type = "u32"
+value = 0
+source = "spec"
+anchor = "A pathless occurrence placement"
+
+[[record.field]]
+name = "path_flag"
+offset = 19
+type = "u8"
+value = 0
+source = "spec"
+anchor = "A pathless occurrence placement"
+
+[[record.field]]
+name = "separator"
+offset = 20
+type = "u8"
+value = 0
+source = "spec"
+anchor = "A pathless occurrence placement"
+
+[[record.field]]
+name = "control"
+offset = 21
+type = "u32"
+value = 1
+source = "spec"
+anchor = "A pathless occurrence placement"
