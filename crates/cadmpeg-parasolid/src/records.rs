@@ -18,9 +18,12 @@ pub(crate) mod primary;
 pub use deltas::DeltasRecords;
 pub use primary::PrimaryRecords;
 
+/// A base schema that embedded edit programs refer to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BaseVersion {
+pub enum BaseVersion {
+    /// Base schema 11004.
     V11004,
+    /// Base schema 13006.
     V13006,
 }
 
@@ -304,10 +307,53 @@ fn read_definition(
     kind: u16,
     count: u8,
 ) -> Result<Option<SchemaPlan>, CodecError> {
+    Ok(read_edit_program(view, version, kind, count)?.map(|program| program.plan))
+}
+
+/// One first-use schema declaration and the base fields its program consumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditProgram {
+    plan: SchemaPlan,
+    base_consumed: usize,
+    base_len: usize,
+}
+
+impl EditProgram {
+    /// The effective field list the declaration establishes.
+    #[must_use]
+    pub const fn plan(&self) -> &SchemaPlan {
+        &self.plan
+    }
+
+    /// Whether the program copied or deleted every base field before `Z`.
+    #[must_use]
+    pub const fn consumes_base(&self) -> bool {
+        self.base_consumed == self.base_len
+    }
+}
+
+/// Read the first-use schema declaration of node type `kind` after its
+/// effective-field `count` byte.
+///
+/// A count of `ff` declares the base field list. Another count starts an
+/// edit program over the base list, or a complete declaration for a type
+/// absent from the base schema. The view ends after the declaration.
+///
+/// # Errors
+///
+/// Returns [`CodecError::Malformed`] when a field name fails the shared
+/// printable-name check after it was read.
+pub fn read_edit_program(
+    view: &mut View<'_>,
+    version: BaseVersion,
+    kind: u16,
+    count: u8,
+) -> Result<Option<EditProgram>, CodecError> {
     let original = base::fields(version, kind);
 
     let mut fields = Vec::new();
     let mut custom = None;
+    let mut base_consumed = original.map_or(0, <[_]>::len);
     if count == 255 {
         let Some(original) = original else {
             return Ok(None);
@@ -356,6 +402,7 @@ fn read_definition(
         if fields.len() != usize::from(count) {
             return Ok(None);
         }
+        base_consumed = cursor;
     } else {
         let Some(name) = short_string(view) else {
             return Ok(None);
@@ -376,7 +423,11 @@ fn read_definition(
         plan.custom_name = Some(name.to_owned());
         plan.custom_description = Some(description.to_owned());
     }
-    Ok(Some(plan))
+    Ok(Some(EditProgram {
+        plan,
+        base_consumed,
+        base_len: original.map_or(0, <[_]>::len),
+    }))
 }
 
 fn own_definition(kind: u16, fields: &[BorrowedField<'_>]) -> Result<SchemaPlan, CodecError> {
