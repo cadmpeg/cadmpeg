@@ -1364,7 +1364,10 @@ pub(crate) fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 }
 
 fn typed_ref(bytes: &mut Vec<u8>, value: u32) {
-    assert!(value <= 0x7ffe, "synthetic typed reference must fit u16");
+    assert!(
+        value <= 0x7fff,
+        "synthetic typed reference must fit one cell"
+    );
     be16(bytes, u16::try_from(value).expect("value fits u16"));
 }
 

@@ -73,7 +73,7 @@ Spec §4.2 · layout: byte offsets · size: 21 B
 Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information.
 
 Parsed by:
-- `crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs`
+- `crates/cadmpeg-parasolid/src/deltas/pmark_state.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

@@ -2,7 +2,7 @@
 //! Transmit headers always start at inflated offset zero.
 
 use super::ParasolidDeltasTransmitHeader;
-use crate::deltas::transmit_state::TransmitState;
+use cadmpeg_parasolid::deltas::transmit_state::TransmitState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize)]

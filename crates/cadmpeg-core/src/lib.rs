@@ -10,6 +10,8 @@ pub mod dialect;
 pub mod distinct_keys;
 pub mod error;
 pub mod io;
+pub mod iter_wire;
+pub mod printable;
 pub mod target;
 pub mod text;
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+//! The node sequence of a partition or plain stream.
 
 use super::{base, own_definition, positive, read_definition, BaseVersion, DataType, SchemaPlan};
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -30,8 +31,9 @@ pub(crate) enum StopReason {
     UnsupportedScalar,
 }
 
+/// One framed node: its effective field list, identity, and field byte ranges.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PrimaryRecord {
+pub struct PrimaryRecord {
     definition: Rc<SchemaPlan>,
     xmt: NonNullXmt,
     range: Range<usize>,
@@ -40,8 +42,9 @@ pub(crate) struct PrimaryRecord {
     fields: Vec<Range<usize>>,
 }
 
+/// The framed node sequence of one partition or plain stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PrimaryRecords<'a> {
+pub struct PrimaryRecords<'a> {
     source: &'a [u8],
     version: BaseVersion,
     records: Vec<PrimaryRecord>,
@@ -63,7 +66,7 @@ fn header(view: &mut View<'_>) -> Option<Header> {
     .then_some(())?;
     let length = usize::try_from(view.u32_be()?).ok()?;
     let schema_bytes = view.take(length)?;
-    let token = cadmpeg_parasolid::find_schema_token(schema_bytes)?;
+    let token = crate::find_schema_token(schema_bytes)?;
     (token.value().as_bytes() == schema_bytes).then_some(())?;
     let embedded = match token.value().split('_').count() {
         3 => false,
@@ -118,11 +121,21 @@ impl<'a> PrimaryRecords<'a> {
         positive(&mut self.field(record, index)?).and_then(|value| value.checked_add(1))
     }
 
-    pub(crate) fn records(&self) -> &[PrimaryRecord] {
+    /// Framed nodes in stream order.
+    pub fn records(&self) -> &[PrimaryRecord] {
         &self.records
     }
 
-    pub(crate) fn read(stream: &'a [u8]) -> Result<Option<Self>, CodecError> {
+    /// Frame the node sequence of `stream`.
+    ///
+    /// Returns `None` when the transmit header is absent or invalid, its
+    /// description names neither a partition nor a created transmit file, or its
+    /// schema names a base other than 11004 or 13006.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an embedded field name is outside printable ASCII.
+    pub fn read(stream: &'a [u8]) -> Result<Option<Self>, CodecError> {
         let mut view = View::over_retained(stream);
         let Some(header) = header(&mut view) else {
             return Ok(None);
@@ -289,4 +302,5 @@ fn consume_field(view: &mut View<'_>, data_type: DataType, count: u32) -> Result
 mod tests;
 
 mod group;
+pub use group::PrimaryGroup;
 mod membership;

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Sequential owner of one Deltas stream.
+//!
+//! The reader frames the transmit header, the partition prefix, and each section
+//! of nodes, maps, and PMARK packets in stream order.
 
 use super::instance::{read_status_instance, StatusInstance};
 use super::{base, own_definition, positive, read_definition, BaseVersion, SchemaPlan};
@@ -6,7 +10,7 @@ use crate::deltas::partition_prefix::PartitionPrefixState;
 use crate::deltas::pmark_state::PmarkState;
 use crate::deltas::section::{MapEntry, MapRead, SectionKind, TerminalWord};
 use crate::deltas::transmit_state::TransmitState;
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -14,110 +18,158 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
 
+/// The first-use declaration of one node type and its effective field list.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Definition {
+pub struct Definition {
     declaration: Range<usize>,
     plan: Rc<SchemaPlan>,
 }
 
 impl Definition {
-    pub(crate) fn declaration(&self) -> Range<usize> {
+    /// Byte range of the declaration in the stream.
+    pub fn declaration(&self) -> Range<usize> {
         self.declaration.clone()
     }
-    pub(crate) fn plan(&self) -> &SchemaPlan {
+    /// Effective field list of the node type.
+    pub fn plan(&self) -> &SchemaPlan {
         &self.plan
     }
-    pub(crate) fn shared_plan(&self) -> Rc<SchemaPlan> {
+    /// Shared handle to the effective field list.
+    pub fn shared_plan(&self) -> Rc<SchemaPlan> {
         Rc::clone(&self.plan)
     }
 }
 
+/// One status-framed node instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Instance {
+pub struct Instance {
     definition: Rc<Definition>,
     data: StatusInstance,
 }
 
 impl Instance {
-    pub(crate) fn definition(&self) -> &Definition {
+    /// Declaration of the instance's node type.
+    pub fn definition(&self) -> &Definition {
         &self.definition
     }
-    pub(crate) fn identity_at(&self) -> usize {
+    /// Byte offset of the instance's node index.
+    pub fn identity_at(&self) -> usize {
         self.data.identity_at
     }
-    pub(crate) fn xmt(&self) -> NonNullXmt {
+    /// Stream-local node index.
+    pub fn xmt(&self) -> NonNullXmt {
         self.data.xmt
     }
-    pub(crate) fn variable_length(&self) -> Option<u32> {
+    /// Variable-field element count, when the node type has a variable field.
+    pub fn variable_length(&self) -> Option<u32> {
         self.data.variable_length
     }
-    pub(crate) fn fields(&self) -> &[Range<usize>] {
+    /// Byte range of each effective field.
+    pub fn fields(&self) -> &[Range<usize>] {
         &self.data.fields
     }
 }
 
+/// One non-node element of a Deltas section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Metadata {
+pub enum Metadata {
+    /// An index map closing a map section.
     Map {
+        /// Map entries in stream order.
         entries: Vec<MapEntry>,
+        /// Word that ends the map.
         terminal_word: TerminalWord,
     },
+    /// One PMARK packet.
     Pmark(PmarkState),
+    /// A terminator that closes a section.
     Terminator {
+        /// Kind of the closed section.
         closes: SectionKind,
+        /// Byte offset where the closed section began.
         section_start: usize,
     },
+    /// The terminator that ends the stream.
     FinalTerminator,
 }
 
+/// Content of one Deltas event.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum EventContent {
+pub enum EventContent {
+    /// The transmit header.
     Header(TransmitState),
+    /// The partition and current PMARK prefix.
     PartitionPrefix(PartitionPrefixState),
+    /// A node instance.
     Instance(Instance),
+    /// A map, PMARK, or terminator element.
     Metadata(Metadata),
 }
 
+/// One framed element of a Deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Event {
+pub struct Event {
     range: Range<usize>,
     content: EventContent,
 }
 
 impl Event {
-    pub(crate) fn range(&self) -> Range<usize> {
+    /// Byte range of the event in the stream.
+    pub fn range(&self) -> Range<usize> {
         self.range.clone()
     }
-    pub(crate) fn content(&self) -> &EventContent {
+    /// Content of the event.
+    pub fn content(&self) -> &EventContent {
         &self.content
     }
 }
 
+/// The reason the Deltas reader stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StopReason {
+pub enum StopReason {
+    /// The stream does not begin with `PS`.
     MissingHeader,
+    /// The schema token names a base schema other than 13006.
     UnsupportedBase,
+    /// The transmit header is incomplete or invalid.
     InvalidHeader,
+    /// A first-use node declaration is invalid.
     InvalidDeclaration,
+    /// A node instance does not frame under its field list.
     InvalidInstance,
+    /// A packet type is outside the Deltas grammar at its position.
     UnsupportedPacket,
+    /// The stream ends inside an open section.
     UnclosedSection,
+    /// The stream ends where the grammar requires another section.
     MissingSection,
+    /// An index map is incomplete or invalid.
     InvalidMap,
+    /// The map's terminal word has no defined width.
     UnresolvedMapWordWidth,
+    /// A PMARK packet is incomplete or invalid.
     InvalidPmark,
 }
 
+/// The end state of the Deltas reader.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum DeltasEnd {
+pub enum DeltasEnd {
+    /// The reader consumed the complete stream.
     Complete,
-    Stopped { offset: usize, reason: StopReason },
+    /// The reader stopped before the end of the stream.
+    Stopped {
+        /// Byte offset of the unread element.
+        offset: usize,
+        /// Reason the reader stopped.
+        reason: StopReason,
+    },
 }
 
+/// The framed events of one Deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DeltasRecords<'s> {
+pub struct DeltasRecords<'s> {
     source: &'s [u8],
     definitions: Vec<Rc<Definition>>,
     events: Vec<Event>,
@@ -139,7 +191,7 @@ fn header(view: &mut View<'_>) -> Result<Header, StopReason> {
         let description = std::str::from_utf8(view.take(length)?).ok()?;
         let length = usize::try_from(view.u32_be()?).ok()?;
         let schema = std::str::from_utf8(view.take(length)?).ok()?;
-        let token = cadmpeg_parasolid::find_schema_token(schema.as_bytes())?;
+        let token = crate::find_schema_token(schema.as_bytes())?;
         (token.value() == schema).then_some(())?;
         let embedded = match schema.split('_').count() {
             3 => false,
@@ -352,7 +404,7 @@ impl OpenSection {
             .or_else(|| existing.as_ref().map(|definition| &definition.plan));
         let Some(plan) = plan else {
             return Err(CodecError::Malformed(
-                "missing established NX Deltas schema".into(),
+                "missing established Parasolid Deltas schema".into(),
             ));
         };
         let Some(data) = read_status_instance(view, plan) else {
@@ -361,7 +413,11 @@ impl OpenSection {
         let definition = match (existing, new) {
             (Some(definition), _) => definition,
             (_, Some(definition)) => self.first_use(definition),
-            _ => return Err(CodecError::Malformed("missing NX Deltas definition".into())),
+            _ => {
+                return Err(CodecError::Malformed(
+                    "missing Parasolid Deltas definition".into(),
+                ))
+            }
         };
         self.push(Event {
             range: start..view.position(),
@@ -396,29 +452,40 @@ fn read_map(view: &mut View<'_>, maximum: u16) -> Result<Metadata, StopReason> {
 }
 
 impl<'s> DeltasRecords<'s> {
-    pub(crate) fn source(&self) -> &'s [u8] {
+    /// Complete stream bytes.
+    pub fn source(&self) -> &'s [u8] {
         self.source
     }
-    pub(crate) fn definitions(&self) -> &[Rc<Definition>] {
+    /// First-use declarations in stream order.
+    pub fn definitions(&self) -> &[Rc<Definition>] {
         &self.definitions
     }
-    pub(crate) fn events(&self) -> &[Event] {
+    /// Framed events in stream order.
+    pub fn events(&self) -> &[Event] {
         &self.events
     }
-    pub(crate) fn end(&self) -> &DeltasEnd {
+    /// End state of the reader.
+    pub fn end(&self) -> &DeltasEnd {
         &self.end
     }
-    pub(crate) fn suffix(&self) -> Range<usize> {
+    /// Byte range after the last framed event.
+    pub fn suffix(&self) -> Range<usize> {
         match self.end {
             DeltasEnd::Complete => self.source.len()..self.source.len(),
             DeltasEnd::Stopped { offset, .. } => offset..self.source.len(),
         }
     }
-    pub(crate) fn census(&self) -> crate::deltas::census::Census<'_, 's> {
+    /// Event counts of the stream.
+    pub fn census(&self) -> crate::deltas::census::Census<'_, 's> {
         crate::deltas::census::Census::new(self)
     }
 
-    pub(crate) fn read(source: &'s [u8]) -> Result<Self, CodecError> {
+    /// Frame one Deltas stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an established declaration is missing for a framed node.
+    pub fn read(source: &'s [u8]) -> Result<Self, CodecError> {
         let mut result = Self {
             source,
             definitions: Vec::new(),

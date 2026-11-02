@@ -3,17 +3,25 @@
 use super::PrimaryRecords;
 use crate::records::group::GroupSelector;
 
-pub(crate) struct PrimaryGroup {
-    pub(crate) xmt: u32,
-    pub(crate) node_id: u32,
-    pub(crate) references: [u32; 5],
-    pub(crate) selector: GroupSelector,
-    pub(crate) offset: usize,
-    pub(crate) end: usize,
+/// One type-90 GROUP node with base-schema fields.
+pub struct PrimaryGroup {
+    /// The node's encoded index.
+    pub xmt: u32,
+    /// The node's `node_id`.
+    pub node_id: u32,
+    /// The pointer fields at base-schema positions 1 through 4 and 6.
+    pub references: [u32; 5],
+    /// The member class that the type byte at base-schema position 5 selects.
+    pub selector: GroupSelector,
+    /// Byte offset of the node in the stream.
+    pub offset: usize,
+    /// Byte offset just past the node.
+    pub end: usize,
 }
 
 impl PrimaryRecords<'_> {
-    pub(crate) fn groups(&self) -> Vec<PrimaryGroup> {
+    /// Type-90 GROUP nodes in stream order.
+    pub fn groups(&self) -> Vec<PrimaryGroup> {
         (self.records.iter().filter_map(|record| {
             if record.definition.kind != 90 {
                 return None;

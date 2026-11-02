@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::{owned_deltas, test_pmarks, test_prt, with_decode_context};
+use crate::test_support::{test_prt, with_decode_context};
 use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::{CadIr, DecodeSidecar, RetainedBytes, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_parasolid::test_support::{owned_deltas, test_pmarks};
 use serde_json::{json, Value};
 
 const STREAM: &str = "nx:container:parasolid#0";

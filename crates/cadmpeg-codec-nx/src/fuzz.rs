@@ -19,7 +19,7 @@ fn fuzz_policy() -> DecodePolicy {
 
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
-    drop(crate::records::DeltasRecords::read(data));
+    drop(cadmpeg_parasolid::records::DeltasRecords::read(data));
 }
 
 /// Exercise NX object-model indexed section framing.

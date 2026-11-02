@@ -3,10 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Linked-reference status byte of a GROUP node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum GroupReferenceStatus {
+pub enum GroupReferenceStatus {
+    /// Status byte zero.
     Form0,
+    /// Status byte one.
     Form1,
 }
 impl TryFrom<u8> for GroupReferenceStatus {

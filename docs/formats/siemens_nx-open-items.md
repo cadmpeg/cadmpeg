@@ -150,7 +150,7 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Question.** Which NX releases, SPLMSSTR container versions, UGII payload versions, and Parasolid schema tokens does the decoder accept, and which does it reject?
 
-**Known.** `siemens_nx.md` §2 admits only container version tag `0x06`; `container.rs` rejects every other version byte. `siemens_nx.md` §2.4 retains the UGII version byte at `0x08`; its values are unlisted. `siemens_nx.md` §3.1 names base schemas `11004` and `13006` with embedded-schema edits. `dialect.rs` declares `VERIFIED_PARASOLID_GRAMMARS` empty; unverified kernel carriers report `source.kernel-dialect-unverified`.
+**Known.** `siemens_nx.md` §2 admits only container version tag `0x06`; `container.rs` rejects every other version byte. `siemens_nx.md` §2.4 retains the UGII version byte at `0x08`; its values are unlisted. `parasolid.md` §1 "`SCH_<modeller>_<schema>_<base>` selects embedded schema edits" names base schema `13006`; the shared reader admits base schemas `11004` and `13006`. `dialect.rs` declares `VERIFIED_PARASOLID_GRAMMARS` empty; unverified kernel carriers report `source.kernel-dialect-unverified`.
 
 **Need.** We must record the envelope to distinguish an out-of-support release from a malformed file, and to assign each embedded schema token a verified grammar or a residual recovery.
 

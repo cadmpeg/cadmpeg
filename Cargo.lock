@@ -514,6 +514,8 @@ version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-test-support",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

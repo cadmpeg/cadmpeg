@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Typed field values of status-framed node instances.
 
 use super::{positive, DataType, SchemaPlan};
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::ops::Range;
 
+/// The exact bit pattern of one big-endian binary64 real.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RealBits(u64);
+pub struct RealBits(u64);
 
 impl Serialize for RealBits {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -34,25 +36,44 @@ impl<'de> Deserialize<'de> for RealBits {
     }
 }
 
+/// One decoded field element of a status-framed instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
-pub(crate) enum FieldValue {
+pub enum FieldValue {
+    /// A byte value.
     Byte(u8),
+    /// A character byte.
     Char(u8),
+    /// A logical value.
     Logical(bool),
+    /// A short value.
     Short(u16),
+    /// A word value.
     Word(u16),
+    /// An integer value.
     Integer(u32),
-    Pointer { target: NonZeroU32, status: bool },
+    /// A non-null pointer target and its trailing status byte.
+    Pointer {
+        /// Target node index.
+        target: NonZeroU32,
+        /// Status byte.
+        status: bool,
+    },
+    /// A real value.
     RealBits(RealBits),
+    /// An interval of two reals.
     IntervalBits([RealBits; 2]),
+    /// A vector of three reals.
     VectorBits([RealBits; 3]),
+    /// A box of six reals.
     BoxBits([RealBits; 6]),
+    /// An Hvec of eleven reals.
     HvecBits([RealBits; 11]),
 }
 
 impl FieldValue {
-    pub(crate) fn data_type(&self) -> DataType {
+    /// Field type code of the value.
+    pub fn data_type(&self) -> DataType {
         match self {
             Self::Byte(_) => DataType::Byte,
             Self::Char(_) => DataType::Char,
@@ -69,7 +90,8 @@ impl FieldValue {
         }
     }
 
-    pub(crate) fn encoded_len(&self) -> u64 {
+    /// Encoded byte length of the value, including a pointer's status byte.
+    pub fn encoded_len(&self) -> u64 {
         match self {
             Self::Byte(_) | Self::Char(_) | Self::Logical(_) => 1,
             Self::Short(_) | Self::Word(_) => 2,
@@ -89,7 +111,8 @@ impl FieldValue {
         }
     }
 
-    pub(crate) fn read(kind: DataType, view: &mut View<'_>) -> Option<Self> {
+    /// Read one value of type `kind`, or `None` when the bytes are incomplete or invalid.
+    pub fn read(kind: DataType, view: &mut View<'_>) -> Option<Self> {
         Some(match kind {
             DataType::Byte => Self::Byte(view.u8()?),
             DataType::Char => Self::Char(view.u8()?),
