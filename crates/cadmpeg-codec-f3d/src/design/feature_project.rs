@@ -904,10 +904,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Hole) => {
-                    project_hole(scope, &parameters, face_operands, &mut hole_losses)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
-                }
+                Some(DesignFeatureFamily::Hole) => project_hole(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    face_operands,
+                    &mut hole_losses,
+                )?
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -7527,9 +7531,21 @@ fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::L
     ))
 }
 
+/// The face that ends an Extents To Hole: the native identity of its sole
+/// role-`0x0000000500000000` group, which has one member.
+fn hole_extent_face(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
+    (group.members().len() == 1)
+        .then(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+}
+
 fn hole_termination(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
+    groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::LinearTermination> {
     use cadmpeg_ir::features::LinearTermination;
@@ -7542,6 +7558,12 @@ fn hole_termination(
         return None;
     }
     match extent.extent_control {
+        Some(0) if extent.saved_non_distance_depth.is_some() && depth.is_none() => {
+            Some(LinearTermination::ToFace {
+                face: hole_extent_face(scope, groups)?,
+                offset: None,
+            })
+        }
         Some(0) | None => Some(LinearTermination::Blind {
             length: design_positive_length(depth?.1)?.into(),
         }),
@@ -7627,9 +7649,22 @@ fn hole_placements(
         .collect()
 }
 
+/// The entry treatment that a Hole's parameters state.
+enum HoleEntry {
+    Counterbore(
+        cadmpeg_ir::scalar::PositiveLength,
+        cadmpeg_ir::scalar::PositiveLength,
+    ),
+    Countersink(
+        cadmpeg_ir::scalar::PositiveLength,
+        cadmpeg_ir::scalar::InteriorAngle,
+    ),
+}
+
 fn project_hole(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
+    groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
@@ -7641,7 +7676,7 @@ fn project_hole(
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
         return Ok(None);
     }
-    let Some(extent) = hole_termination(scope, parameters, face_operands) else {
+    let Some(extent) = hole_termination(scope, parameters, groups, face_operands) else {
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
@@ -7666,26 +7701,60 @@ fn project_hole(
     if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
         return Ok(None);
     }
-    let counterbore = match parameters.len().checked_sub(base_count) {
+    let entry = match parameters.len().checked_sub(base_count) {
         Some(0) => None,
-        Some(2) => {
-            let counterbore_depth =
-                or_none!(design_positive_length(or_none!(parameter("CBDepth"))));
-            let counterbore_diameter =
-                or_none!(design_positive_length(or_none!(parameter("CBDiameter"))));
-            if depth.is_some_and(|depth| counterbore_depth.get() > depth)
-                || counterbore_diameter.get() <= diameter.get()
-            {
-                return Ok(None);
+        Some(2) => match (
+            parameter("CBDepth"),
+            parameter("CBDiameter"),
+            parameter("CSDiameter"),
+            parameter("CSAngle"),
+        ) {
+            (Some(counterbore_depth), Some(counterbore_diameter), None, None) => {
+                let counterbore_depth = or_none!(design_positive_length(counterbore_depth));
+                let counterbore_diameter = or_none!(design_positive_length(counterbore_diameter));
+                if depth.is_some_and(|depth| counterbore_depth.get() > depth)
+                    || counterbore_diameter.get() <= diameter.get()
+                {
+                    return Ok(None);
+                }
+                Some(HoleEntry::Counterbore(
+                    counterbore_diameter,
+                    counterbore_depth,
+                ))
             }
-            Some((counterbore_diameter, counterbore_depth))
-        }
+            (None, None, Some(countersink_diameter), Some(countersink_angle)) => {
+                let countersink_diameter = or_none!(design_positive_length(countersink_diameter));
+                let countersink_angle = or_none!(cadmpeg_ir::scalar::InteriorAngle::try_from(
+                    or_none!(design_angle(countersink_angle))
+                )
+                .ok());
+                if countersink_diameter.get() <= diameter.get() {
+                    return Ok(None);
+                }
+                Some(HoleEntry::Countersink(
+                    countersink_diameter,
+                    countersink_angle,
+                ))
+            }
+            _ => return Ok(None),
+        },
         _ => return Ok(None),
     };
     // The tip angle lies in (0, pi]. Pi states a flat bottom; every smaller
     // tip angle is an interior drill-point angle.
     let drill_point_angle = cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok();
-    let (kind, bottom) = match (counterbore, drill_point_angle) {
+    let (kind, bottom) = match (entry, drill_point_angle) {
+        (Some(HoleEntry::Countersink(diameter, angle)), None) => (
+            HoleKind::Countersink { diameter, angle },
+            Some(HoleBottom::Flat),
+        ),
+        (Some(HoleEntry::Countersink(diameter, angle)), Some(included_angle)) => (
+            HoleKind::Countersink { diameter, angle },
+            Some(HoleBottom::Angled {
+                included_angle,
+                depth_to_tip: false,
+            }),
+        ),
         (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
         (None, Some(drill_point_angle)) => (
             HoleKind::SimpleDrilled { drill_point_angle },
@@ -7694,11 +7763,11 @@ fn project_hole(
                 depth_to_tip: false,
             }),
         ),
-        (Some((diameter, depth)), None) => (
+        (Some(HoleEntry::Counterbore(diameter, depth)), None) => (
             HoleKind::Counterbore { diameter, depth },
             Some(HoleBottom::Flat),
         ),
-        (Some((diameter, depth)), Some(drill_point_angle)) => (
+        (Some(HoleEntry::Counterbore(diameter, depth)), Some(drill_point_angle)) => (
             HoleKind::CounterboreDrilled {
                 diameter,
                 depth,

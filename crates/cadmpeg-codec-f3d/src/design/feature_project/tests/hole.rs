@@ -56,7 +56,7 @@ fn hole_without_face_operand_falls_back_to_scope_face() {
         (1, &parameters[1]),
         (2, &parameters[2]),
     ];
-    let definition = project_hole(&scope, &indexed, &[], &mut Vec::new())
+    let definition = project_hole(&scope, &indexed, &[], &[], &mut Vec::new())
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -149,7 +149,7 @@ fn projected_placements(
         (2, &parameters[2]),
     ];
     let mut losses = Vec::new();
-    let definition = project_hole(scope, &indexed, &[], &mut losses)
+    let definition = project_hole(scope, &indexed, &[], &[], &mut losses)
         .unwrap()
         .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition else {
@@ -308,7 +308,7 @@ fn through_all_admits_a_carrier_selection_only_on_a_sketch_point_carrier() {
     set_extent(&mut scope, 1, true);
 
     set_carrier(&mut scope, 13, [0.0; 3], &[(10, [1.0, 1.5, 2.0])], true);
-    let definition = project_hole(&scope, &indexed, &[], &mut Vec::new())
+    let definition = project_hole(&scope, &indexed, &[], &[], &mut Vec::new())
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -327,7 +327,7 @@ fn through_all_admits_a_carrier_selection_only_on_a_sketch_point_carrier() {
         true,
     );
     let mut losses = Vec::new();
-    assert!(project_hole(&scope, &indexed, &[], &mut losses)
+    assert!(project_hole(&scope, &indexed, &[], &[], &mut losses)
         .unwrap()
         .is_none());
     assert_eq!(
@@ -417,7 +417,7 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
             .enumerate()
             .map(|(i, p)| (u32::try_from(i).unwrap(), p))
             .collect();
-        let definition = project_hole(&scope, &indexed, &faces, &mut Vec::new())
+        let definition = project_hole(&scope, &indexed, &[], &faces, &mut Vec::new())
             .unwrap()
             .unwrap();
         let FeatureDefinition::Operation(FeatureOperation::Hole { extent, bottom, .. }) =
@@ -463,7 +463,7 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
             .enumerate()
             .map(|(i, p)| (u32::try_from(i).unwrap(), p))
             .collect();
-        let definition = project_hole(&scope, &indexed, &faces, &mut Vec::new())
+        let definition = project_hole(&scope, &indexed, &[], &faces, &mut Vec::new())
             .unwrap()
             .unwrap();
         let FeatureDefinition::Operation(FeatureOperation::Hole { extent, shape, .. }) = definition
@@ -472,7 +472,7 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
         };
         assert_eq!(extent, Some(LinearTermination::ThroughAll {}));
         assert_eq!(
-            super::super::hole_termination(&scope, &indexed, &[]),
+            super::super::hole_termination(&scope, &indexed, &[], &[]),
             Some(LinearTermination::ThroughAll {})
         );
         assert_eq!(
@@ -520,9 +520,9 @@ fn hole_unproved_extent_has_loss_for_depth_extra_face_and_missing_saved_depth() 
         .collect();
     let faces = [face_operand(2, 0), face_operand(3, 1), face_operand(5, 2)];
     for (parameters, faces) in [(&indexed[..], &faces[..2]), (&indexed[1..], &faces[..])] {
-        assert!(super::super::hole_termination(&scope, parameters, faces).is_none());
+        assert!(super::super::hole_termination(&scope, parameters, &[], faces).is_none());
         let mut losses = Vec::new();
-        assert!(project_hole(&scope, parameters, faces, &mut losses)
+        assert!(project_hole(&scope, parameters, &[], faces, &mut losses)
             .unwrap()
             .is_none());
         assert_eq!(losses.len(), 1);
@@ -533,7 +533,7 @@ fn hole_unproved_extent_has_loss_for_depth_extra_face_and_missing_saved_depth() 
     }
     set_extent(&mut scope, 1, false);
     assert!(
-        project_hole(&scope, &indexed[1..], &faces[..2], &mut Vec::new())
+        project_hole(&scope, &indexed[1..], &[], &faces[..2], &mut Vec::new())
             .unwrap()
             .is_none()
     );
@@ -562,7 +562,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .map(|(i, p)| (u32::try_from(i).unwrap(), p))
         .collect();
     assert!(matches!(
-        super::super::hole_termination(&scope, &indexed, &[]),
+        super::super::hole_termination(&scope, &indexed, &[], &[]),
         Some(LinearTermination::Blind { .. })
     ));
     let without_depth: Vec<_> = indexed
@@ -572,11 +572,11 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .collect();
     assert_eq!(without_depth.len(), indexed.len() - 1);
     assert_eq!(
-        super::super::hole_termination(&scope, &without_depth, &[]),
+        super::super::hole_termination(&scope, &without_depth, &[], &[]),
         None
     );
     let mut losses = Vec::new();
-    assert!(project_hole(&scope, &without_depth, &[], &mut losses)
+    assert!(project_hole(&scope, &without_depth, &[], &[], &mut losses)
         .unwrap()
         .is_none());
     assert_eq!(losses.len(), 1);
