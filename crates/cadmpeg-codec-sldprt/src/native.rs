@@ -72,7 +72,7 @@ impl Serialize for LaneArenaView<'_> {
         if self.0.configuration.is_some() {
             map.serialize_entry("configuration", &self.0.configuration)?;
         }
-        map.serialize_entry("payload_evidence", &self.0.native_payload)?;
+        map.serialize_entry("native_payload", &self.0.native_payload)?;
         for field in [
             "classes",
             "names",
@@ -471,7 +471,11 @@ impl SldprtNative {
                     wire.id, wire.parent
                 )));
             };
-            entities.push(crate::records::SketchInputEntity::from_wire(wire, payload));
+            entities.push(
+                crate::records::SketchInputEntity::from_wire(wire, payload).map_err(|error| {
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_owned())
+                })?,
+            );
         }
         if let Some(record) = classes
             .iter()
@@ -771,6 +775,14 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
+        for lane in &native.feature_input_lanes {
+            crate::resolved_features::write_prepare::validate_lane_against_payload(
+                &native.feature_histories,
+                lane,
+                false,
+            )
+            .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
+        }
         native.validate_records()?;
         Ok(native)
     }
@@ -808,7 +820,13 @@ impl SldprtNative {
     fn validate_records(&self) -> Result<(), cadmpeg_ir::NativeConvertError> {
         // Typed records are admitted against their document-owned relationships.
         // Physical framing was checked by the source scanner before projection.
-        for history in &self.feature_histories {
+        for lane in &self.feature_input_lanes {
+            crate::resolved_features::write_prepare::validate_lane_selections_against_payload(
+                &self.feature_histories,
+                lane,
+            )
+            .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
+        }        for history in &self.feature_histories {
             if let Some(record) = history
                 .configurations
                 .iter()

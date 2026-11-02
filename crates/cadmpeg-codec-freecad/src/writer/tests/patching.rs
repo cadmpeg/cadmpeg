@@ -67,13 +67,28 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("Document.xml", xml), (r"..\outside", b"payload")]);
-    let error = FcstdCodec
+    let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(bytes),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .expect_err("reader refuses backslash");
-    assert!(error.to_string().contains("unsafe ZIP entry path"));
+        .expect("the unsafe entry is given up while the document still inspects");
+    let unreadable: Vec<_> = summary
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1, "{:?}", summary.losses);
+    assert!(
+        unreadable[0].message.contains("unsafe ZIP entry path"),
+        "{}",
+        unreadable[0].message
+    );
+    assert!(
+        unreadable[0].message.contains("part zip.entry"),
+        "{}",
+        unreadable[0].message
+    );
 }
 
 #[test]
