@@ -5641,7 +5641,6 @@ pub(super) fn project_fixed_revolve_with_entities(
         }
     };
     if body_count != expected_body_groups
-        || targets.len() != expected_target_groups
         || group_count != 2 + expected_body_groups + expected_target_groups
     {
         return None;

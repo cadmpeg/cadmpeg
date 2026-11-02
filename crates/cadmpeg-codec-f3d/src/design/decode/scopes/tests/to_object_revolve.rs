@@ -72,6 +72,7 @@ struct Fixture {
     final_reference: u32,
     swapped_targets: bool,
     extra_padding: usize,
+    extra_references: bool,
 }
 
 impl Fixture {
@@ -93,6 +94,7 @@ impl Fixture {
             final_reference: FINAL_REFERENCE,
             swapped_targets: false,
             extra_padding: 0,
+            extra_references: false,
         }
     }
 
@@ -129,6 +131,9 @@ impl Fixture {
         table.extend([81, 82, AXIS_GROUP, 84, FIRST_TARGET, 86]);
         if self.form.two_sided() {
             table.extend([SECOND_TARGET, 88]);
+        }
+        if self.extra_references {
+            table.extend([89, 90]);
         }
         table.extend([OWNER, FINAL_REFERENCE]);
         table
@@ -325,6 +330,7 @@ fn every_prologue_field_and_reference_slot_refuses_another_value() {
         case("axis reference", |f| f.axis_reference = 99);
         case("final reference", |f| f.final_reference = OWNER);
         case("frame length", |f| f.extra_padding = 1);
+        case("reference count", |f| f.extra_references = true);
         case("operation", |f| {
             f.operation = if f.operation == 4 { 1 } else { 4 }
         });

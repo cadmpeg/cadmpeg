@@ -5491,18 +5491,16 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .collect()
                     }
                 };
-                role_count(DesignOperandRole::ROLE_0X5) == target_groups.len()
-                    && target_groups.iter().all(|record_index| {
-                        groups.iter().any(|group| {
-                            group.record_index == *record_index
-                                && group.role() == DesignOperandRole::ROLE_0X5
-                                && group.members().len() == 1
-                        })
+                target_groups.iter().all(|record_index| {
+                    groups.iter().any(|group| {
+                        group.record_index == *record_index
+                            && group.role() == DesignOperandRole::ROLE_0X5
+                            && group.members().len() == 1
                     })
-                    && scope
-                        .reference_members()
-                        .values()
-                        .any(|value| value == angle_record_index)
+                }) && scope
+                    .reference_members()
+                    .values()
+                    .any(|value| value == angle_record_index)
                     && opposite_angle.is_none_or(|located| {
                         scope
                             .reference_members()

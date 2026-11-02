@@ -150,4 +150,20 @@ fn a_to_object_revolve_has_one_target_group_for_each_target() {
             "{name}"
         );
     }
+    let mut two_members = native(to_targets(104, None), &with(&[target(104)]));
+    let group = two_members
+        .design_construction_operand_groups
+        .last_mut()
+        .unwrap();
+    let member = group.members()[0];
+    group
+        .try_set_members(vec![
+            member,
+            Located {
+                value: member.value + 1,
+                offset: member.offset + 11,
+            },
+        ])
+        .unwrap();
+    assert_eq!(path_findings(&two_members), 1, "two-member target group");
 }

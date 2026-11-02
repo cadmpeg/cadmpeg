@@ -180,3 +180,23 @@ fn every_target_needs_its_own_target_group() {
     assert!(extent(&angle, &groups(&[])).is_some());
     assert_eq!(extent(&angle, &groups(&[SIDE_ONE])), None);
 }
+
+#[test]
+fn a_target_group_is_the_named_record_with_one_member() {
+    let mut two_members = groups(&[SIDE_ONE]);
+    let member = two_members[2].members()[0];
+    two_members[2]
+        .try_set_members(vec![
+            member,
+            Located {
+                value: member.value + 1,
+                offset: member.offset + 11,
+            },
+        ])
+        .unwrap();
+    assert_eq!(extent(&scope(targets(None)), &two_members), None);
+    assert_eq!(
+        extent(&scope(targets(Some(SIDE_TWO))), &groups(&[SIDE_ONE, 104])),
+        None
+    );
+}
