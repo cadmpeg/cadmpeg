@@ -407,11 +407,9 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     assert!(super::super::project_move(&scope, &[group]).is_none());
 }
 
-#[test]
-fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
-    let scope = scope(DesignFeatureKind::OffsetFaces);
-    let group = group(DesignOperandRole::ROLE_0X10);
-    let operand = crate::records::topology::face::DesignFaceOperand::try_new(
+/// A bounded-face member of group 100 whose candidate lanes resolve face 27.
+fn resolved_member_operand() -> crate::records::topology::face::DesignFaceOperand {
+    crate::records::topology::face::DesignFaceOperand::try_new(
         crate::records::topology::face::DesignFaceOperandDraft {
             id: "f3d:test:face-operand#200".into(),
             scope_record_index: 12,
@@ -447,7 +445,14 @@ fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
             next_byte_offset: 1411,
         },
     )
-    .unwrap();
+    .unwrap()
+}
+
+#[test]
+fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
+    let scope = scope(DesignFeatureKind::OffsetFaces);
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let operand = resolved_member_operand();
     let FeatureOperation::MoveFace { faces, .. } =
         projected_operation(super::super::project_offset_faces(
             &scope,
@@ -459,6 +464,22 @@ fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
         panic!("expected a face move");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn shell_keeps_its_group_when_a_member_resolves_a_face() {
+    let scope = scope(DesignFeatureKind::Shell);
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let FeatureOperation::Shell { removed_faces, .. } =
+        projected_operation(super::super::project_shell(
+            &scope,
+            &[resolved_member_operand()],
+            std::slice::from_ref(&group),
+        ))
+    else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
 }
 
 #[test]

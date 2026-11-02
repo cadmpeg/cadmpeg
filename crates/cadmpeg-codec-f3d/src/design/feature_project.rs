@@ -3812,15 +3812,14 @@ pub(super) fn project_shell(
     });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
-    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
-        faces
-    } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
-        FaceSelection::Native(group.id.clone())
-    } else if bodies.is_some() {
-        FaceSelection::Faces(Vec::new())
-    } else {
-        return Ok(None);
-    };
+    let removed_faces =
+        if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
+            FaceSelection::Native(group.id.clone())
+        } else if bodies.is_some() {
+            FaceSelection::Faces(Vec::new())
+        } else {
+            or_none!(direct_face_selection(scope, operands))
+        };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Shell {
             bodies,
