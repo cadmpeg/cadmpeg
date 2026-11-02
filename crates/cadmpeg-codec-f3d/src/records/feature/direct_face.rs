@@ -4,6 +4,8 @@
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use serde::{Deserialize, Serialize};
+cadmpeg_core::named_optional_field!(deserialize_draft_flags, DesignDraftFlags, "flags");
+
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "operation")]
@@ -162,6 +164,22 @@ pub(crate) struct DesignDraftOperation {
     pub(crate) opposite_angle_record_index: u32,
     /// Byte offset of the opposite-side angle scalar.
     pub(crate) opposite_angle_offset: u64,
+    /// Flags of a scope whose prologue names both angle lanes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_draft_flags"
+    )]
+    pub(crate) flags: Option<DesignDraftFlags>,
+}
+
+/// Flags that the single-angle `Draft` prologue stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDraftFlags {
+    /// Whether the pull direction is opposite the neutral plane normal.
+    pub(crate) flipped: bool,
+    /// Whether the selected faces extend along tangent faces.
+    pub(crate) tangent_chain: bool,
 }
 
 mod identity_rewrite;
