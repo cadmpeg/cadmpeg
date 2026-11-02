@@ -304,11 +304,12 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
     assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
     assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
     let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
-    assert!(ir["native"]["rhino"]["unknowns"][0]["links"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|link| link == body_id));
+    assert_eq!(
+        ir["model"]["bodies"][0]["native_ref"].as_str().unwrap(),
+        ir["native"]["rhino"]["unknowns"][0]["id"].as_str().unwrap(),
+        "the body resolves its projecting source record through native_ref"
+    );
+    assert!(body_id.starts_with("rhino:object:body#"), "{body_id}");
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
