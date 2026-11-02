@@ -16,12 +16,12 @@ use crate::{
     },
 };
 use cadmpeg_core::{
-    decode::{u64_from_index, DecodeContext, View},
+    decode::{u64_from_index, DecodeContext, SpaceId, View},
     CodecError,
 };
 use cadmpeg_ir::{
     source_fidelity::parts::{DecodeParts, PartOutput, PartSpec},
-    CodecFormat,
+    CodecFormat, StreamName,
 };
 
 use std::collections::BTreeMap;
@@ -336,7 +336,13 @@ fn decode_stream(
         } else {
             full
         };
-        ctx.decode_part(output, full, PartSpec::new("f3d.bulk_record"), |stage| {
+        let spec = PartSpec::new("f3d.bulk_record");
+        let spec = if full.location().space == SpaceId::ROOT {
+            spec
+        } else {
+            spec.in_stream(StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?)
+        };
+        ctx.decode_part(output, full, spec, |stage| {
             if !root {
                 validate_pair(source, frames, frame)?;
             }

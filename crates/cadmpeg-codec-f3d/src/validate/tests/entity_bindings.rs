@@ -120,11 +120,9 @@ fn history_only_binding(
         "pair_count": 1,
         "pair_ordinal": 0,
         "asm_body_key": 1,
-        "asm_body_key_offset": 50,
         "entity_suffix": 1,
-        "entity_suffix_offset": 58,
         "blob_name": "BREP.body",
-        "blob_name_offset": 60,
+        "map_ordinal": 0,
         "history_only": true,
     });
     for (key, field) in extra.as_object().unwrap() {
@@ -154,7 +152,6 @@ fn history_only_binding_names_no_solved_body_or_owner_and_no_retained_key() {
         native.body_native_keys.push(
             serde_json::from_value(serde_json::json!({
                 "id": "f3d:asm:body-native-key#1",
-                "body": "f3d:brep:entity#1",
                 "asm_body_key": 1,
                 "body_ordinal": 0,
                 "record_index": 1,

@@ -11,10 +11,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
-pub(crate) mod lane_payload;
 pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
 mod sketch_code;
+
+/// Mint the fidelity id of one feature-input lane's retained source image.
+///
+/// The id derives from the lane identity alone, so the decode retention, the
+/// writer patch path and the reporting of an untyped lane agree on one home.
+pub(crate) fn lane_retained_id(
+    lane: &str,
+) -> Result<cadmpeg_ir::ids::UnknownId, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::hash::digest::Sha256Digest;
+    cadmpeg_ir::ids::UnknownId::mint(format!(
+        "sldprt:source:feature-input#{}",
+        Sha256Digest::digest(lane.as_bytes())
+    ))
+    .map_err(cadmpeg_core::CodecError::malformed)
+}
 
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -475,10 +489,9 @@ pub(crate) struct FeatureInputLane {
     /// per configuration; `None` when the lane applies to all configurations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) configuration: Option<String>,
-    /// Complete native feature-input byte stream, retained undecoded for
+    /// Complete native feature-input byte stream, retained for
     /// parametric replay and native rewrite.
-    #[serde(rename = "payload_evidence")]
-    pub(crate) native_payload: lane_payload::LanePayload,
+    pub(crate) native_payload: NativeBytes,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
     pub(crate) classes: Vec<FeatureInputClass>,
@@ -527,10 +540,9 @@ pub(crate) struct FeatureInputLaneWire {
         deserialize_with = "deserialize_configuration"
     )]
     configuration: Option<String>,
-    /// Complete native feature-input byte stream, retained undecoded for
+    /// Complete native feature-input byte stream, retained for
     /// parametric replay and native rewrite.
-    #[serde(rename = "payload_evidence")]
-    native_payload: lane_payload::LanePayload,
+    native_payload: NativeBytes,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
     classes: Vec<FeatureInputClass>,
@@ -576,8 +588,15 @@ impl FeatureInputLaneWire {
         let entities = self
             .sketch_entities
             .into_iter()
-            .map(|entity| SketchInputEntity::from_wire(entity, &self.native_payload))
-            .collect();
+            .map(|entity| {
+                SketchInputEntity::from_wire(entity, &self.native_payload).map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "SLDPRT feature-input lane {}: {error}",
+                        self.id
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -603,8 +622,11 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
         let sketch_entities = wire
             .sketch_entities
             .into_iter()
-            .map(|entity| SketchInputEntity::from_wire(entity, &wire.native_payload))
-            .collect();
+            .map(|entity| {
+                SketchInputEntity::from_wire(entity, &wire.native_payload)
+                    .map_err(|error| error.to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let relation_instances = wire
             .relation_instances
             .into_iter()
@@ -1606,8 +1628,11 @@ impl SketchInputEntity {
         updated
     }
 
-    pub(crate) fn from_wire(wire: SketchInputEntityWire, _payload: &[u8]) -> Self {
-        Self {
+    pub(crate) fn from_wire(
+        wire: SketchInputEntityWire,
+        payload: &[u8],
+    ) -> Result<Self, &'static str> {
+        let entity = Self {
             id: wire.id,
             parent: wire.parent,
             feature_ref: wire.feature_ref,
@@ -1620,7 +1645,11 @@ impl SketchInputEntity {
             state_value: wire.state_value,
             coordinates_m: wire.coordinates_m,
             links: wire.links,
+        };
+        if !payload.is_empty() {
+            entity.validate_against_payload(payload)?;
         }
+        Ok(entity)
     }
 
     pub(crate) fn try_new(

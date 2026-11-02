@@ -4,13 +4,15 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
+use super::dependencies::ExternalReferences;
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
+    PrototypeReference,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::{Transform, TransformError};
@@ -60,6 +62,107 @@ struct PathLink {
     length: usize,
 }
 
+/// One external reference that supplies a product prototype.
+struct ExternalPrototype {
+    document: ExternalDocument,
+    object: Option<String>,
+}
+
+/// The asset a prototype-supplying reference no longer needs.
+enum UsedAsset {
+    Document(u64),
+    Item(u64),
+    Uri(String),
+}
+
+/// Resolve an unresolved child definition to the external reference that
+/// supplies its prototype: a referenced document, an externally defined
+/// item, or a Part 21 REFERENCE entry. A reference that supplies neither a
+/// product nor a shape prototype stays an asset and resolves to nothing.
+fn external_prototype(
+    exchange: &Exchange,
+    externals: &ExternalReferences,
+    child: u64,
+) -> Option<(ExternalPrototype, UsedAsset)> {
+    if let Some(&document_id) = externals.document_refs.get(&child) {
+        let (identifier, _, _) = externals.documents.get(&document_id)?;
+        if identifier.is_empty() {
+            return None;
+        }
+        return Some((
+            ExternalPrototype {
+                document: ExternalDocument::document_id(identifier.clone()),
+                object: None,
+            },
+            UsedAsset::Document(document_id),
+        ));
+    }
+    if let Some((identifier, _, _)) = externals.documents.get(&child) {
+        if identifier.is_empty() {
+            return None;
+        }
+        return Some((
+            ExternalPrototype {
+                document: ExternalDocument::document_id(identifier.clone()),
+                object: None,
+            },
+            UsedAsset::Document(child),
+        ));
+    }
+    if let Some((item, source_id)) = externals.items.get(&child) {
+        let source = externals.sources.get(source_id)?;
+        if source.is_empty() {
+            return None;
+        }
+        return Some((
+            ExternalPrototype {
+                document: ExternalDocument::path(source.clone()),
+                object: (!item.is_empty()).then(|| item.clone()),
+            },
+            UsedAsset::Item(child),
+        ));
+    }
+    let entry = exchange
+        .references()
+        .iter()
+        .find(|entry| entry.name == crate::parse::ReferenceName::Entity(child))?;
+    if entry.uri.starts_with('#') {
+        return None;
+    }
+    Some((
+        ExternalPrototype {
+            document: ExternalDocument::path(entry.uri.clone()),
+            object: Some(entry.name.to_string()),
+        },
+        UsedAsset::Uri(entry.uri.clone()),
+    ))
+}
+
+/// Drop the asset a prototype-supplying reference leaves behind. External
+/// references go to occurrences first; only a reference that supplies
+/// neither stays an asset.
+fn remove_used_asset(ir: &mut CadIr, used: &UsedAsset) {
+    match used {
+        UsedAsset::Document(document_id) => {
+            let identity = ids::data(kind!("external-document"), *document_id);
+            ir.model
+                .assets
+                .retain(|asset| asset.id.as_str() != identity.as_str());
+        }
+        UsedAsset::Item(item_id) => {
+            let identity = ids::data(kind!("external-item"), *item_id);
+            ir.model
+                .assets
+                .retain(|asset| asset.id.as_str() != identity.as_str());
+        }
+        UsedAsset::Uri(uri) => {
+            ir.model.assets.retain(|asset| {
+                !matches!(&asset.content, cadmpeg_ir::assets::AssetContent::External { uri: asset_uri } if asset_uri.as_str() == uri)
+            });
+        }
+    }
+}
+
 /// Whether `definition` lies on the path that ends at link `at`.
 fn path_contains(links: &[PathLink], at: usize, definition: u64) -> bool {
     let mut next = Some(at);
@@ -86,6 +189,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
+    externals: &ExternalReferences,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
@@ -475,12 +579,21 @@ pub(super) fn decode(
                 continue;
             }
             let usage = &usages[&usage_id];
-            let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
-            else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} references an unresolved child definition"
-                )));
-                continue;
+            enum ChildPrototype {
+                Local(ProductDefinitionId),
+                External(ExternalPrototype, UsedAsset),
+            }
+            let child = match definition_prototypes.get(&usage.child_definition).cloned() {
+                Some(definition) => ChildPrototype::Local(definition),
+                None => match external_prototype(exchange, externals, usage.child_definition) {
+                    Some((prototype, used)) => ChildPrototype::External(prototype, used),
+                    None => {
+                        losses.push(StepLossCode::DecodeWarning.note(format!(
+                            "NAUO #{usage_id} references an unresolved child definition"
+                        )));
+                        continue;
+                    }
+                },
             };
             if u64_from_index(parent_length) >= depth_limit {
                 let (_, skipped) = depth_truncated.get_or_insert((usage_id, 0));
@@ -502,10 +615,16 @@ pub(super) fn decode(
                     .dash(key_word!("instance"))
                     .dash(*instance)
             };
-            let id = OccurrenceId::from(ids::product(
-                kind!("occurrence"),
-                IdentityKey::from(usage_id).with_tail(&suffix),
-            ));
+            let id = OccurrenceId::from(match &child {
+                ChildPrototype::Local(_) => ids::product(
+                    kind!("occurrence"),
+                    IdentityKey::from(usage_id).with_tail(&suffix),
+                ),
+                ChildPrototype::External(_, _) => ids::product(
+                    kind!("external-occurrence"),
+                    IdentityKey::from(usage_id).with_tail(&suffix),
+                ),
+            });
             if ir.model.occurrences.len() >= MAX_OCCURRENCES {
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
                 break 'expansion;
@@ -518,11 +637,20 @@ pub(super) fn decode(
                 )));
             }
 
+            let expand = matches!(&child, ChildPrototype::Local(_));
+            let prototype = match child {
+                ChildPrototype::Local(definition) => PrototypeReference::Local { definition },
+                ChildPrototype::External(prototype, used) => {
+                    remove_used_asset(ir, &used);
+                    PrototypeReference::External {
+                        document: prototype.document,
+                        object: prototype.object,
+                    }
+                }
+            };
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
-                prototype: PrototypeReference::Local {
-                    definition: prototype,
-                },
+                prototype,
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.clone(),
                 },
@@ -543,12 +671,14 @@ pub(super) fn decode(
             *ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 CodecError::malformed("STEP child occurrence ordinal exceeds u32")
             })?;
-            pending_occurrences.push_back((usage.child_definition, id, path_links.len()));
-            path_links.push(PathLink {
-                definition: usage.child_definition,
-                parent: Some(parent_link),
-                length: parent_length + 1,
-            });
+            if expand {
+                pending_occurrences.push_back((usage.child_definition, id, path_links.len()));
+                path_links.push(PathLink {
+                    definition: usage.child_definition,
+                    parent: Some(parent_link),
+                    length: parent_length + 1,
+                });
+            }
             typed.insert(usage_id);
         }
     }

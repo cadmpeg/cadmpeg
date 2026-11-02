@@ -215,9 +215,9 @@ fn body_recipe_reference_count_fixes_nested_frame_offsets() {
 #[test]
 fn body_recipe_semantic_wire_rejects_broken_identities_and_chain() {
     let wire = serde_json::to_value(source_record()).unwrap();
-    for field in ["nested_record_index", "next_record_index"] {
+    for (field, value) in [("nested_record_index", 0), ("next_record_index", 2)] {
         let mut invalid = wire.clone();
-        invalid[field] = 0.into();
+        invalid[field] = value.into();
         assert!(
             serde_json::from_value::<DesignBodyRecipeOperand>(invalid).is_err(),
             "{field}"

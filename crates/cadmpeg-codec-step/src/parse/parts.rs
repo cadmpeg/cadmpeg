@@ -13,13 +13,17 @@ pub(super) enum RecordAttempt {
     GivenUp { end: usize },
 }
 
-/// Parse source-addressed bare STEP, retaining shared homes separately from the
+/// Parse source-addressed STEP, retaining shared homes separately from the
 /// transient `RawRecord` graph. Simple and complex entities use independently
 /// observed statement or parent boundaries. A missing terminator never creates
 /// a continuation boundary inside an unfinished literal or comment.
+///
+/// `stream` names the member that holds `input` when it is not the root
+/// stream; part extents outside the root stream must name it.
 pub(crate) fn parse(
     input: View<'_>,
     ctx: &DecodeContext<'_>,
+    stream: Option<cadmpeg_ir::StreamName>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>, PartOutput), CodecError> {
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Step, ctx);
     let mut parser = Parser {
@@ -32,6 +36,7 @@ pub(crate) fn parse(
         budget: ctx,
         source: Some(input),
         parts: Some(&mut parts),
+        part_stream: stream,
         shared_omitted: BTreeSet::new(),
     };
     parser.current = parser.lex_next().map_err(ParseError::into_codec_error)?;
@@ -110,11 +115,12 @@ impl<'input> Parser<'input, '_, '_> {
             } else {
                 "step.simple_entity_instance"
             };
-            Some((
-                extent,
-                PartSpec::new(label).holding([cadmpeg_ir::ArenaClass::Model]),
-                end,
-            ))
+            let spec = PartSpec::new(label).holding([cadmpeg_ir::ArenaClass::Model]);
+            let spec = match &self.part_stream {
+                Some(stream) => spec.in_stream(stream.clone()),
+                None => spec,
+            };
+            Some((extent, spec, end))
         })())
     }
 }

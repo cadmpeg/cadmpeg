@@ -200,9 +200,9 @@ mod tests {
         DesignShellOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
             thickness_record_index: 291,
-            thickness_offset: Some(100),
+            thickness_offset: None,
             outward: false,
-            outward_offset: Some(23),
+            outward_offset: None,
             wall_slots: Some(DesignShellWallSlots {
                 tangent_chain: true,
                 rounded_corners: false,

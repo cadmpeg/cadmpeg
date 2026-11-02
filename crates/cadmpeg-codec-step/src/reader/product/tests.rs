@@ -1745,3 +1745,141 @@ fn direct_product_and_occurrence_projection_has_no_invented_native_counterpart()
         .expect("validate the current model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn external_references_supplying_prototypes_become_external_occurrences() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root definition','',#4,#5);
+#10=EXTERNAL_SOURCE('https://example.invalid/library');
+#11=EXTERNALLY_DEFINED_ITEM('fastener-table',#10);
+#12=NEXT_ASSEMBLY_USAGE_OCCURRENCE('ext-item','External item child','',#6,#11,$);
+#20=DOCUMENT_TYPE('configuration controlled document version');
+#21=DOCUMENT('SPEC-42','Interface control drawing','',#20);
+#22=APPLIED_DOCUMENT_REFERENCE(#21,'supplier vault',(#5));
+#23=NEXT_ASSEMBLY_USAGE_OCCURRENCE('ext-doc','External document child','',#6,#21,$);
+#30=DOCUMENT('UNUSED','Unused document','',#20);
+#31=APPLIED_DOCUMENT_REFERENCE(#30,'vault',(#5));",
+    );
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    let root = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        .expect("root occurrence");
+    assert!(matches!(root.prototype, PrototypeReference::Local { .. }));
+    let item_child = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("External item child"))
+        .expect("external item occurrence");
+    match &item_child.prototype {
+        PrototypeReference::External { document, object } => {
+            assert_eq!(
+                document,
+                &cadmpeg_ir::products::ExternalDocument::path("https://example.invalid/library")
+            );
+            assert_eq!(object.as_deref(), Some("fastener-table"));
+        }
+        prototype => panic!("item child has no external prototype: {prototype:?}"),
+    }
+    assert!(matches!(
+        item_child.parent,
+        OccurrenceParent::Occurrence { .. }
+    ));
+    assert_eq!(item_child.ordinal, 0);
+    assert!(item_child.native_ref.is_none());
+    let document_child = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("External document child"))
+        .expect("external document occurrence");
+    match &document_child.prototype {
+        PrototypeReference::External { document, object } => {
+            assert_eq!(
+                document,
+                &cadmpeg_ir::products::ExternalDocument::document_id("SPEC-42")
+            );
+            assert_eq!(object, &None);
+        }
+        prototype => panic!("document child has no external prototype: {prototype:?}"),
+    }
+    assert_eq!(document_child.ordinal, 1);
+    let asset_ids = result
+        .ir()
+        .model
+        .assets
+        .iter()
+        .map(|asset| asset.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        !asset_ids
+            .iter()
+            .any(|id| id.contains("external-document#21") || id.contains("external-item#11")),
+        "prototype-supplying references leave no asset: {asset_ids:?}"
+    );
+    assert!(
+        asset_ids
+            .iter()
+            .any(|id| id.contains("external-document#30")),
+        "the unused reference stays an asset: {asset_ids:?}"
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("references an unresolved child definition")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn reference_section_entries_supplying_prototypes_become_external_occurrences() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('extref'),'4;2');FILE_NAME('extref','2026-10-22T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<https://example.invalid/subsidiary#shape>;ENDSEC;DATA;#1=APPLICATION_CONTEXT('mechanical design');#2=PRODUCT_CONTEXT('',#1,'mechanical');#3=PRODUCT('ROOT','Root assembly','',(#2));#4=PRODUCT_DEFINITION_FORMATION('','',#3);#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');#6=PRODUCT_DEFINITION('root definition','',#4,#5);#12=NEXT_ASSEMBLY_USAGE_OCCURRENCE('ext-ref','External reference child','',#6,#10,$);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode external reference child");
+    let child = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("External reference child"))
+        .expect("external reference occurrence");
+    match &child.prototype {
+        PrototypeReference::External { document, object } => {
+            assert_eq!(
+                document,
+                &cadmpeg_ir::products::ExternalDocument::path(
+                    "https://example.invalid/subsidiary#shape"
+                )
+            );
+            assert_eq!(object.as_deref(), Some("#10"));
+        }
+        prototype => panic!("reference child has no external prototype: {prototype:?}"),
+    }
+    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
+    assert!(result
+        .ir()
+        .model
+        .assets
+        .iter()
+        .all(|asset| !matches!(&asset.content, cadmpeg_ir::assets::AssetContent::External { uri } if uri.as_str() == "https://example.invalid/subsidiary#shape")));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}

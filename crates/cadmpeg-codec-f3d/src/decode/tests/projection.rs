@@ -1780,7 +1780,7 @@ fn counted_partial_profile_selection_reports_one_loss() {
             "sketch": "synthetic:test:sketch#42", "selections": ["f3d:Design/BulkStream.dat:scope#10"]
         }},
         "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
-        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": {"kind": "literal", "value": 1.0}}}},
         "op": "cut", "solid": true
     })).unwrap();
     ir.model.features.push(Feature {

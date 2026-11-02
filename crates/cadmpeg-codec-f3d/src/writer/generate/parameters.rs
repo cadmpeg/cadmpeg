@@ -85,8 +85,10 @@ fn encode(out: &mut Vec<u8>, parameter: &DesignParameter) -> Result<(), CodecErr
     }
     native_lp_utf16(out, parameter.name())?;
     out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
-    let family = if legacy {
-        crate::layout::design_parameter_legacy_287_tail::FAMILY_MARKER_VALUE
+    // The tail names the parameter collection. Synthesis authors no
+    // collection registry, so each family repeats its observed index.
+    let tail_target: u32 = if legacy {
+        175
     } else if matches!(discriminator, Some(5 | 6))
         && parameter.source_kind_str() != "TangencyWeight"
     {
@@ -94,7 +96,10 @@ fn encode(out: &mut Vec<u8>, parameter: &DesignParameter) -> Result<(), CodecErr
     } else {
         19
     };
-    out.extend_from_slice(&[0, 1, family, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut tail = [0u8; 12];
+    tail[1] = 1;
+    tail[2..6].copy_from_slice(&tail_target.to_le_bytes());
+    out.extend_from_slice(&tail);
     Ok(())
 }
 

@@ -24,7 +24,6 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::groups::NonemptyGroup;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
@@ -244,8 +243,6 @@ pub(super) fn decode(
         }
     }
     styles.sort_by_key(|(_, left)| *left);
-    let mut scalar_color_candidates =
-        BTreeMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
     let mut style_domains = BTreeMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
@@ -333,8 +330,8 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no appearance is selected and the source style graph remains retained"
                 )));
                 continue;
             }
@@ -401,7 +398,6 @@ pub(super) fn decode(
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
-                push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color)?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     native_ref: None,
                     id: ids::presentation(
@@ -487,37 +483,6 @@ pub(super) fn decode(
         }
         if supported {
             typed.insert(invisibility_id);
-        }
-    }
-    for (target, candidates) in scalar_color_candidates {
-        let mut color = candidates.first().1;
-        let mut conflict = false;
-        for (_, candidate) in candidates.iter().skip(1) {
-            if candidate.r() != color.r()
-                || candidate.g() != color.g()
-                || candidate.b() != color.b()
-            {
-                conflict = true;
-            } else if candidate.a() < color.a() {
-                color = *candidate;
-            }
-        }
-        if conflict {
-            let message = scalar_conflict_message(&candidates, &target);
-            losses.push(StepLossCode::ConflictingScalarColors.note(message));
-        } else {
-            let slot = match &target {
-                AppearanceTarget::Face(face) => face_indices
-                    .get(face.as_str())
-                    .map(|&index| &mut ir.model.faces[index].color),
-                AppearanceTarget::Body(body) => body_indices
-                    .get(body.as_str())
-                    .map(|&index| &mut ir.model.bodies[index].color),
-                _ => None,
-            };
-            if let Some(slot) = slot {
-                *slot = Some(color);
-            }
         }
     }
     Ok(StageOutcome {
@@ -933,35 +898,6 @@ struct PresentationIndices<'a> {
     bodies: &'a BTreeMap<String, usize>,
 }
 
-fn push_scalar_candidate(
-    candidates: &mut BTreeMap<AppearanceTarget, NonemptyGroup<(u64, Color)>>,
-    target: &AppearanceTarget,
-    style_id: u64,
-    color: Color,
-) -> Result<(), CodecError> {
-    if !matches!(
-        target,
-        AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
-    ) {
-        return Ok(());
-    }
-    if !candidates.contains_key(target) {
-        let key = match target {
-            AppearanceTarget::Face(face) => AppearanceTarget::Face(face.clone()),
-            AppearanceTarget::Body(body) => AppearanceTarget::Body(body.clone()),
-            _ => return Ok(()),
-        };
-
-        candidates.insert(key, NonemptyGroup::new((style_id, color)));
-        return Ok(());
-    }
-    let values = candidates
-        .get_mut(target)
-        .ok_or_else(|| CodecError::malformed("presentation scalar target was not indexed"))?;
-    values.push((style_id, color));
-    Ok(())
-}
-
 fn collect_identity_indices<'a>(
     identities: impl IntoIterator<Item = &'a str>,
 ) -> std::collections::BTreeMap<std::string::String, usize> {
@@ -1067,28 +1003,6 @@ fn context_style_message(
 ) -> std::string::String {
     let details = ContextStyleDetails { ids, exchange };
     format!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque")
-}
-
-struct ScalarStyleIds<'a>(&'a NonemptyGroup<(u64, Color)>);
-
-impl std::fmt::Display for ScalarStyleIds<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, (style_id, _)) in self.0.iter().enumerate() {
-            if index > 0 {
-                formatter.write_str(", ")?;
-            }
-            write!(formatter, "#{style_id}")?;
-        }
-        Ok(())
-    }
-}
-
-fn scalar_conflict_message(
-    candidates: &NonemptyGroup<(u64, Color)>,
-    target: &AppearanceTarget,
-) -> std::string::String {
-    let style_ids = ScalarStyleIds(candidates);
-    format!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment")
 }
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {

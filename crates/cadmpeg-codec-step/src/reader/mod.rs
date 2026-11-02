@@ -135,9 +135,15 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         let mut ir = CadIr::empty();
         let requested = ctx.depth().required_scope();
-        ir.scope = cadmpeg_ir::ContentScope {
-            model: requested.model && !exchange.data().is_empty(),
-            design: requested.design,
+        // STEP defines no design-class part, so design equals the request.
+        // A container-only decode delivers no class.
+        ir.scope = if ctx.container_only() {
+            cadmpeg_ir::ContentScope::container()
+        } else {
+            cadmpeg_ir::ContentScope {
+                model: requested.model && !exchange.data().is_empty(),
+                design: requested.design,
+            }
         };
 
         let mut body = DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
@@ -259,6 +265,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
     ) -> AnalyzedExchange {
+        // A held class is in scope: occurrences or assets can admit model
+        // records after the session scope was derived from the DATA sections.
+        self.ir.scope.model |= self.ir.model.entity_count() != 0;
         self.ir.source = Some(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
             self.source_attributes,
@@ -339,17 +348,7 @@ fn decode_exchange_mode(
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
-        let mut fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
-        if matches!(mode, DecodeMode::Decode(_)) && !exchange.records().is_empty() {
-            let bytes = retained_source_copy(ctx, input, "step_container_source")?;
-            fidelity.insert_retained_record(
-                ids::source_image(),
-                cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole("step", bytes)
-                    .with_untyped(cadmpeg_ir::ArenaClasses::from([
-                        cadmpeg_ir::ArenaClass::Model,
-                    ])),
-            )?;
-        }
+        let fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
         return Ok(session.into_result(fidelity, BTreeSet::new()));
     }
 
@@ -370,7 +369,10 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_pending_ir_entities("step_dependency_decode")?;
-    let mut dependencies = dependencies::decode(ctx, exchange, &mut session.ir)?;
+    let mut external_losses = Vec::new();
+    let externals = dependencies::external_references(exchange, &mut external_losses)?;
+    session.body.losses.append(&mut external_losses);
+    let mut dependencies = dependencies::decode(ctx, exchange, &mut session.ir, &externals)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
     session.charge_pending_ir_entities("step_topology_decode")?;
 
@@ -433,6 +435,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
         &mut session.admitted_ir_entities,
+        &externals,
     )?;
     session.charge_pending_ir_entities("step_tessellation_decode")?;
     let mut tessellation = tessellation::decode(
