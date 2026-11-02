@@ -15,6 +15,7 @@ fn draft() -> DesignParameterDraft {
         record_index: 1,
         source_ordinal: 0,
         source: DesignParameterSource::User {
+            source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
             family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 122,
@@ -95,6 +96,7 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
     let mut edited = parameter.clone();
     assert!(edited
         .try_set_source(DesignParameterSource::User {
+            source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
             family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 121
