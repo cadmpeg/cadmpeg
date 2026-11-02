@@ -13,7 +13,6 @@ mod face_boundaries;
 mod feature_inputs;
 mod feature_outputs;
 mod header_index;
-mod hole;
 mod mirror;
 mod path_selections;
 mod planes;
