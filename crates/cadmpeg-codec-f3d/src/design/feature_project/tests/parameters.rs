@@ -305,6 +305,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -602,6 +603,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_sketch_members: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "302".to_owned(),
                 )
@@ -774,6 +776,7 @@ fn parameter_expressions_project_feature_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_sketch_members: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )

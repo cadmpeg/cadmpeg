@@ -426,6 +426,7 @@ fn localized_fillet_scope_without_owners() -> DesignParameterScope {
             .unwrap(),
             payload: DesignFeatureKind::Conge.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: 300,
         }

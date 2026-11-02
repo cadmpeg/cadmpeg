@@ -54,6 +54,86 @@ source = "spec"
 anchor = "then `u32 record_index`"
 
 [[record]]
+name = "record_timestamp_table_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A record-timestamp table describes the indexed record that its owner reference names"
+size = 31
+note = "Offsets are relative to the table's indexed header. The entries follow the prefix."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes, `01 01`, and a u32 entry count"
+
+[[record.field]]
+name = "first_marker"
+offset = 25
+type = "u8"
+value = 1
+source = "spec"
+anchor = "fourteen zero bytes, `01 01`, and a u32 entry count"
+
+[[record.field]]
+name = "second_marker"
+offset = 26
+type = "u8"
+value = 1
+source = "spec"
+anchor = "fourteen zero bytes, `01 01`, and a u32 entry count"
+
+[[record.field]]
+name = "entry_count"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "and a u32 entry count"
+
+[[record]]
+name = "record_timestamp_entry"
+kind = "byte"
+section = "3.1"
+anchor = "each entry is `01 + u32 record_index + six zero bytes + u64 timestamp`"
+size = 19
+note = "The owner reference after the entries uses this form and is followed by eight zero bytes."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "each entry is `01 + u32 record_index"
+
+[[record.field]]
+name = "record_index"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "u32 record_index + six zero bytes"
+
+[[record.field]]
+name = "zero_run"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes + u64 timestamp"
+
+[[record.field]]
+name = "timestamp"
+offset = 11
+type = "u64"
+source = "spec"
+anchor = "A timestamp is a Unix-epoch value in microseconds"
+
+[[record]]
 name = "construction_operand_extended_path_prefix"
 kind = "byte"
 section = "3.1"

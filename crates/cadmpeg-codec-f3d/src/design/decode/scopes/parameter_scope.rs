@@ -1653,6 +1653,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 kind => kind.try_into().ok()?,
             },
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,
             paired_byte_offset: u64_from_index(paired_at),
