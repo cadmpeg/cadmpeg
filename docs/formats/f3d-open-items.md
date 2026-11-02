@@ -869,18 +869,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The neutral thread leaves `modeled` absent.
 
-### DR-148. Target references in populated configuration tables
-
-**Question.** How does an authored configuration table encode its driven parameter and feature targets, row identities, and cell values?
-
-**Known.** The table entries in seven public parametric hardware designs and 37 recipe uploads contain the JSON object `{}`. Each entry has zero rows and cells. The Design `BulkStream` contains the table serializer trigger and separate `DesignConfigurationRoot` records. The existing configuration decoder admits named JSON variant objects and joins parameter override names to unique neutral parameter identities. Design parameter records carry their own indexed identities in the Design `BulkStream`.
-
-**Need.** Legally available designs with at least two authored configurations, a changed parameter cell, and a changed feature state, with the corresponding table entries and Design records.
-
-**Conflict.** None.
-
-**Note.** Unassigned JSON members retain their native values and emit `configuration.member-unassigned`. The neutral configuration arena supports parameter overrides and evaluated feature states.
-
 ### DR-149. Text-bearing document parameter prefix
 
 **Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
@@ -1036,6 +1024,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** The precedence that other families use selects a face that does not lie on the origin plane in the `Draft` controls.
 
 **Note.** No stored field separates an origin identity from an ASM identity with the same number.
+
+### DR-204. Row default flag and revision members of configuration tables
+
+**Question.** What do a row `default` value `true`, a column `isCustom` value `true`, a nonempty `cachedRevIds` object, and the row `configRevisionId` state in a configuration table?
+
+**Known.** Every row in the populated tables stores `default` `false` and a `configRevisionId` UUID that differs from the row id. Every column stores `isCustom` `false`, and `cachedRevIds` is `{}`. Changes to the active row, one parameter cell, one suppression cell, one row name, one row copy, and one column target set none of these members.
+
+**Need.** A saved design with a row marked as the default, a design with a customized column, and a design saved again after changes to configured rows.
+
+**Conflict.** None.
+
+**Note.** The decoder retains these members in the native table document. A `default` or `isCustom` value `true` and each member of `cachedRevIds` emit `configuration.member-unassigned`.
 
 ### DR-172. Paired-locus dimension owner binding
 

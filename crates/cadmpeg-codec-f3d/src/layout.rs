@@ -7684,6 +7684,34 @@ pub(crate) mod thread_extended_compact_trailer {
     pub(crate) const END_FLAG_VALUE: u8 = 1;
 }
 
+/// Byte offsets for the `configuration_root_prefix` record.
+///
+/// Spec §1.2. Record length 57 B.
+///
+/// ```text
+/// Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix.
+/// ```
+pub(crate) mod configuration_root_prefix {
+    /// Record length in bytes. Spec §1.2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `zero_u32` (`u32`, little-endian). Spec §1.2.
+    pub(crate) const ZERO_U32: usize = 11;
+    /// Stated value of `zero_u32` (`u32`). Spec §1.2.
+    pub(crate) const ZERO_U32_VALUE: u32 = 0x0000_0000;
+    /// Offset of `key_length` (`u32`, little-endian). Spec §1.2.
+    pub(crate) const KEY_LENGTH: usize = 15;
+    /// Stated value of `key_length` (`u32`). Spec §1.2.
+    pub(crate) const KEY_LENGTH_VALUE: u32 = 0x0000_0017;
+    /// Offset of `key` (`bytes[23]`). Spec §1.2.
+    pub(crate) const KEY: usize = 19;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §1.2.
+    pub(crate) const ZERO_RUN_11: usize = 42;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §1.2.
+    pub(crate) const CONSTANT_ONE: usize = 53;
+    /// Stated value of `constant_one` (`u32`). Spec §1.2.
+    pub(crate) const CONSTANT_ONE_VALUE: u32 = 0x0000_0001;
+}
+
 /// Byte offsets for the `snapshot_body_map_plain_prefix` record.
 ///
 /// Spec §3.1. Record length 36 B.

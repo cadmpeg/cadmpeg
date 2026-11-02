@@ -8114,6 +8114,24 @@ Spec §1.2 · layout: byte offsets · size: 66 B
 | 60 | 2 | `separator` | `bytes[2]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `[0, 0]` |
 | 62 | 4 | `basename_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `68` |
 
+## `configuration_root_prefix`
+
+Spec §1.2 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 4 | `zero_u32` | `u32` | little | spec | Its indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot` · value `0` |
+| 15 | 4 | `key_length` | `u32` | little | spec | the LP-ASCII key `DesignConfigurationRoot` · value `23` |
+| 19 | 23 | `key` | `bytes[23]` | little | spec | the LP-ASCII key `DesignConfigurationRoot` |
+| 42 | 11 | `zero_run_11` | `bytes[11]` | little | spec | eleven zero bytes, u32 `1`, the LP-UTF16 table id |
+| 53 | 4 | `constant_one` | `u32` | little | spec | eleven zero bytes, u32 `1`, the LP-UTF16 table id · value `1` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
 ## `snapshot_body_map_plain_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 36 B
@@ -8202,4 +8220,4 @@ Parsed by:
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and `Manifest.dat` text grammar; no fixed byte-offset structure is stated. |
-| Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; an empty table object contains zero configurations, parameter columns, and cell values. |
+| Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; the empty table object contains zero tables, columns, rows, and cells. |

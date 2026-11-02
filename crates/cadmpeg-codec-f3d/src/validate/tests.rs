@@ -31,6 +31,7 @@ mod arithmetic;
 mod body_ownership;
 mod component_insert;
 mod component_occurrences;
+mod configurations;
 mod construction_group;
 mod construction_identity;
 mod copy_paste_bodies;

@@ -1683,6 +1683,11 @@ pub(super) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
+        if before.active_row() != after.active_row() {
+            return Err(CodecError::NotImplemented(format!(
+                "retained F3D configuration edit changes the Design root record: {name}"
+            )));
+        }
         if before != after {
             edits.insert(
                 name.to_owned(),
