@@ -244,6 +244,10 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Combine body refinement violates operand arity or disjoint membership.
+    FeatureCombineSelectionNative,
+    /// Fixed Fillet scalar lanes have no complete group assignment.
+    FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
     /// Feature face operands stay unresolved inside historical selections.
@@ -525,6 +529,8 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureCombineSelectionNative,
+        Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
@@ -721,6 +727,8 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
@@ -943,6 +951,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
@@ -1104,6 +1114,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
@@ -1337,6 +1349,8 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.combine-selection-native",
+                "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",

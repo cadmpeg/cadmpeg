@@ -6394,7 +6394,28 @@ fn validate_fillet_operand_groups<'a>(
                         || (fixed.groups.len() == 1
                             && (sole_compact_group_shape || in_selection_pair)))
             });
+        let retained_fixed_assignment = !has_parameter_owner
+            && scope.is_some_and(|scope| {
+                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                    scope,
+                    &native.design_construction_operand_groups,
+                ) && ctx
+                    .ir
+                    .model
+                    .features
+                    .iter()
+                    .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                    .all(|feature| {
+                        matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { .. }
+                            )
+                        )
+                    })
+            });
         if is_fillet
+            && !retained_fixed_assignment
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment

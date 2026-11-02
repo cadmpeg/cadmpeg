@@ -2124,6 +2124,37 @@ pub(crate) fn fillet_edge_and_face_groups<'a>(
         .then_some([*first, *second])
 }
 
+/// Whether fixed scalar laws leave several construction groups without a pairing.
+pub(crate) fn fixed_fillet_assignment_is_unresolved(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> bool {
+    let Some(fixed) = scope.fixed_fillet_parameters() else {
+        return false;
+    };
+    let stream = native_stream(&scope.id);
+    let scope_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == stream && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    scope_groups.len() > 1
+        && scope_groups.len() != fixed.groups.len()
+        && !(fixed.groups.len() == 1 && fillet_edge_and_face_groups(&scope_groups).is_some())
+}
+
+pub(crate) fn fixed_fillet_assignment_losses(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    scopes.iter().filter(|scope| fixed_fillet_assignment_is_unresolved(scope, groups))
+        .map(|scope| crate::loss::F3dLossCode::FeatureFixedFilletAssignmentNative.note(format!(
+            "scope {} retains its fixed Fillet scalar lanes and operand groups because their radius assignment is unresolved", scope.id
+        )))
+        .collect()
+}
+
 pub(crate) fn decode_fillet_radius_groups(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],

@@ -17,6 +17,7 @@ pub(crate) mod binding;
 mod body_candidates;
 mod body_index;
 mod cache;
+mod combine_selection;
 pub(crate) mod compact_lineage;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
@@ -1829,9 +1830,10 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
 pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
 
+    let mut losses = Vec::new();
     let scopes = inputs.scopes;
     let groups = inputs.groups;
     let body_recipe_operands = inputs.body_recipe_operands;
@@ -1900,7 +1902,6 @@ pub(crate) fn bind_feature_body_selections(
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
         let dependencies = &feature.dependencies;
-        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
         'feature_edit: {
             let Some(native_ref) = native_ref else {
@@ -1952,8 +1953,7 @@ pub(crate) fn bind_feature_body_selections(
             if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
                 definition
             {
-                let edit = operands
-                    .try_edit(|target, tools| {
+                let refusal = combine_selection::refine(operands, feature_id, |target, tools| {
                         let (Some(state_id), Some(previous_state_id)) =
                             (scope.history_state_id(), scope.previous_history_state_id())
                         else {
@@ -2130,8 +2130,8 @@ pub(crate) fn bind_feature_body_selections(
                             }
                         }
                     });
-                if let Err(error) = edit {
-                    edit_result = Err(cadmpeg_core::CodecError::malformed(error));
+                if let Some(loss) = refusal {
+                    losses.push(loss);
                 }
                 break 'feature_edit;
             }
@@ -2253,10 +2253,9 @@ pub(crate) fn bind_feature_body_selections(
             }
         }
         });
-        edit_result?;
     }
 
-    Ok(())
+    losses
 }
 
 fn combine_historical_rows(
