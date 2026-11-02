@@ -1206,3 +1206,35 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
 }
 
 mod variable_coordinates;
+
+#[test]
+fn saved_circular_radii_use_the_positive_dict_head_rule() {
+    let payload = b"\xe0\x00entity(arc)\0\
+            \xe0\x01id\0\x07\xe0\x02radius\0\x8e\x01\x02\x03\x04\x05\x06\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x08\xe0\x02radius\0\x8a\x7e\x35\x9f\xa9\xe2\x50";
+
+    let entities = saved_circular_entities(
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        None,
+        None,
+    );
+
+    let [FeatureSavedEntity::Arc(arc), FeatureSavedEntity::Circle(circle)] = entities.as_slice()
+    else {
+        panic!("saved circular entities");
+    };
+    assert_eq!(
+        arc.radius,
+        Some(f64::from_be_bytes([0x40, 0x03, 1, 2, 3, 4, 5, 6]))
+    );
+    assert_eq!(
+        circle.radius,
+        Some(f64::from_be_bytes([
+            0x3f, 0xff, 0x7e, 0x35, 0x9f, 0xa9, 0xe2, 0x50
+        ]))
+    );
+}
