@@ -193,6 +193,21 @@ fn table_identity_conflicts_leave_the_table_unassigned() {
 }
 
 #[test]
+fn table_rows_with_one_id_leave_the_table_unassigned() {
+    let mut document = document();
+    for pointer in [
+        "/tables/0/rows/2/asset/attributes/pim:configuration:rowId",
+        "/tables/0/rows/2/asset/components/1/properties/id/value",
+    ] {
+        set(&mut document, pointer, json!("c1"));
+    }
+    set(&mut document, ROW_ORDER, json!(["c1", "tall"]));
+    let admitted = admit(&document);
+    assert!(admitted.tables.is_empty());
+    assert_eq!(admitted.unassigned, 1);
+}
+
+#[test]
 fn table_cell_of_an_absent_column_leaves_the_table_unassigned() {
     let mut document = document();
     let cells = document
