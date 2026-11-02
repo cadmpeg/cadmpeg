@@ -13,6 +13,7 @@ use std::sync::Arc;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::source_fidelity::parts::DecodeParts;
 
 use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
 
@@ -839,10 +840,23 @@ impl Parser<'_, '_, '_> {
                 0,
                 ParseDiagnosticKind::PreambleOmitted,
                 format_args!(
-                    "bounded prefix before the draft exchange omitted; exact source retained"
+                    "bounded draft preamble stream=\"\" offset=0 length={offset} not retained; decode continues at the exchange"
                 ),
             );
-            omitted_spans.push(0..offset);
+            if let (Some(source), Some(parts)) = (self.source, self.parts.as_deref_mut()) {
+                // The preamble decoder reads no byte, so this part is
+                // never given up; the helper call declares the part.
+                if source.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+                    if let Some(extent) = source.child(0, offset) {
+                        let spec = cadmpeg_ir::source_fidelity::parts::PartSpec::new(
+                            "step.draft_preamble",
+                        );
+                        self.budget
+                            .decode_part(parts, extent, spec, |_| Ok(()))
+                            .map_err(ParseError::from)?;
+                    }
+                }
+            }
         }
         if draft {
             self.diagnostic(0, ParseDiagnosticKind::DraftExchangeGrammar, format_args!("pre-standard STEP/FILE_IDENTIFICATION exchange; DATA parsed with the Part 21 instance grammar, with draft @ assignments and !* comments"));

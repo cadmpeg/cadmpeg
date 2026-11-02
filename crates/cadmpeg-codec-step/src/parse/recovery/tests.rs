@@ -326,25 +326,35 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
 }
 
 #[test]
-fn bounded_draft_preamble_is_retained_with_an_explicit_loss() {
+fn bounded_draft_preamble_runs_as_a_part_with_an_explicit_loss() {
     let source =
         "EXTRA!*synthetic*!STEP;HEADER;IMP_LEVEL('1.0');ENDSEC;DATA;@1=ITEM();ENDSEC;ENDSTEP;";
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded draft preamble");
-    assert!(decoded
+    let preamble = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::ParsePreambleOmitted.kind()));
-    let (ir, _, fidelity) = decoded.into_parts();
-    assert_eq!(
-        fidelity
-            .retained_record("step:file:omitted#0")
-            .expect("exact prefix")
-            .data(),
-        Some(b"EXTRA".as_slice())
+        .find(|loss| loss.code == StepLossCode::ParsePreambleOmitted.kind())
+        .expect("draft preamble loss");
+    assert!(
+        preamble.message.contains("stream=\"\""),
+        "{}",
+        preamble.message
     );
+    assert!(
+        preamble.message.contains("offset=0"),
+        "{}",
+        preamble.message
+    );
+    assert!(
+        preamble.message.contains("length=5"),
+        "{}",
+        preamble.message
+    );
+    let (ir, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:file:omitted#0").is_none());
     assert!(!ir
         .source
         .as_ref()
