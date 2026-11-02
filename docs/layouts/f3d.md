@@ -5612,6 +5612,18 @@ Spec §3.1 · layout: byte offsets · size: 25 B
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 | 21 | 4 | `reference_count` | `u32` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 
+## `body_consumer_browser_node_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A browser node named this way stores ten zero bytes after its indexed header |
+| 21 | 4 | `guid_code_unit_count` | `u32` | little | spec | the counted GUID at offset 21, hidden flag `1` |
+
 ## `body_reference_persistent_pair`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
