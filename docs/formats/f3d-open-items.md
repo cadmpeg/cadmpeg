@@ -883,7 +883,7 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-142. Thread construction option bytes
 
-**Question.** What do the second byte of the Thread construction marker, and the first marker byte, the pitch marker, and the zero bytes before the trailer `01` in the forms other than the extended standard form, select?
+**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
 **Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
@@ -892,7 +892,6 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
-
 
 ### DR-149. Text-bearing document parameter prefix
 
