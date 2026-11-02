@@ -3,16 +3,22 @@
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::annotations::AnnotationRecord;
+use cadmpeg_asm::brep::stats::Stats;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
+use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{sab, sat};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::{ArenaClass, CadIr, Model, SourceMeta};
+use cadmpeg_ir::native::Native;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+use cadmpeg_ir::{Annotations, CodecFormat, SourceFidelity};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -20,24 +26,63 @@ use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEviden
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
-pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    let bytes = root.window();
     match classify(bytes) {
-        Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
-        Some(StreamKind::Text) => decode_text(ctx, bytes),
-        Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
+        Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, root, bytes, &header),
+        Some(StreamKind::Text) => decode_text(ctx, root, bytes),
+        Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, root, bytes, &header),
         None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
     }
 }
 
+/// One framed entity-record stream: the unit the SAT format frames by itself
+/// (§4.5). A damaged stream gives up this part and keeps the scope it framed.
 struct FramedStream {
-    brep: AsmBrep,
+    records: Vec<sab::Record>,
     has_entities: bool,
+    record_span: (usize, usize),
+}
+
+/// Byte span of the framed records, or `anchor..anchor` when the framed stream
+/// holds no records.
+fn record_span(records: &[sab::Record], anchor: usize) -> (usize, usize) {
+    match (records.first(), records.last()) {
+        (Some(first), Some(last)) => (first.offset, last.offset + last.len),
+        _ => (anchor, anchor),
+    }
+}
+
+/// One decoded stream part: the model and native records the part built with
+/// the fidelity and report pieces that describe them.
+struct StreamPart {
+    model: Model,
+    native: Native,
+    fidelity: SourceFidelity,
+    annotation_records: Vec<AnnotationRecord>,
+    stats: Stats,
+    unknown_count: usize,
+    prior_losses: Vec<LossNote>,
+}
+
+#[cfg(test)]
+fn stream_part_for_test(ctx: &DecodeContext<'_>, stats: Stats) -> StreamPart {
+    StreamPart {
+        model: Model::default(),
+        native: Native::default(),
+        fidelity: SourceFidelity::for_decode(ctx, Annotations::default()),
+        annotation_records: Vec::new(),
+        stats,
+        unknown_count: 0,
+        prior_losses: Vec::new(),
+    }
 }
 
 fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
+    root: View<'_>,
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
@@ -83,16 +128,12 @@ fn decode_asm_binary(
             })
         })?;
         let has_entities = !records.is_empty();
-        let brep = decode_with_header(
-            ctx,
-            &records,
-            bytes,
-            Some(&header.metadata),
-            "stream",
-            cadmpeg_asm::asm_format!("sat"),
-            DecodePurpose::Model,
-        )?;
-        Some(FramedStream { brep, has_entities })
+        let record_span = record_span(&records, start);
+        Some(FramedStream {
+            records,
+            has_entities,
+            record_span,
+        })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Asm, &mut attributes);
@@ -104,6 +145,7 @@ fn decode_asm_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        root,
         payload,
         attributes,
         &header.metadata,
@@ -124,6 +166,7 @@ fn decode_asm_binary(
 
 fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
+    root: View<'_>,
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
@@ -166,16 +209,12 @@ fn decode_acis_binary(
             })
         })?;
         let has_entities = !records.is_empty();
-        let brep = decode_with_header(
-            ctx,
-            &records,
-            bytes,
-            Some(&header.metadata),
-            "stream",
-            cadmpeg_asm::asm_format!("sat"),
-            DecodePurpose::Model,
-        )?;
-        Some(FramedStream { brep, has_entities })
+        let record_span = record_span(&records, start);
+        Some(FramedStream {
+            records,
+            has_entities,
+            record_span,
+        })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Acis, &mut attributes);
@@ -190,6 +229,7 @@ fn decode_acis_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        root,
         payload,
         attributes,
         &header.metadata,
@@ -208,7 +248,11 @@ fn decode_acis_binary(
     Ok(result)
 }
 
-fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
+fn decode_text(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    bytes: &[u8],
+) -> Result<Decoded, CodecError> {
     let (text_header, branch, records, framing, unread, concatenated_streams, unread_stream_layout) =
         if ctx.container_only() {
             let (header, branch) = sat::parse_container(bytes).map_err(|failure| {
@@ -292,21 +336,18 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let payload = match records {
         Some(records) => {
             let has_entities = !records.is_empty();
-            let brep = decode_with_header(
-                ctx,
-                &records,
-                bytes,
-                Some(&header),
-                "stream",
-                cadmpeg_asm::asm_format!("sat"),
-                DecodePurpose::Model,
-            )?;
-            Some(FramedStream { brep, has_entities })
+            let record_span = record_span(&records, text_header.source_span.end);
+            Some(FramedStream {
+                records,
+                has_entities,
+                record_span,
+            })
         }
         None => None,
     };
     let mut result = build_result(
         ctx,
+        root,
         payload,
         attributes,
         &header,
@@ -436,6 +477,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 fn build_result(
     ctx: &DecodeContext<'_>,
+    root: View<'_>,
     payload: Option<FramedStream>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
@@ -480,7 +522,12 @@ fn build_result(
         }
     }
 
-    let Some(FramedStream { brep, has_entities }) = payload else {
+    let Some(FramedStream {
+        records,
+        has_entities,
+        record_span,
+    }) = payload
+    else {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -497,6 +544,42 @@ fn build_result(
         });
     };
 
+    let extent = root
+        .child(record_span.0, record_span.1)
+        .ok_or_else(|| CodecError::malformed("SAT record extent escapes its stream"))?;
+    let mut output = PartOutput::new(CodecFormat::Sat, ctx);
+    let spec = PartSpec::new("stream").holding([ArenaClass::Model]);
+    // The closure transfers into staged document pieces rather than the helper
+    // stage: the shared transfer writes into `CadIr`, and re-inserting through
+    // the stage would charge entity accounting twice. The stage carries the
+    // give-up on the failure path.
+    let part = match ctx.decode_part(&mut output, extent, spec, |_stage| {
+        decode_stream_part(ctx, root.window(), &records, header)
+    })? {
+        Some(part) => part,
+        None => stream_part_given_up(output)?,
+    };
+    assemble_result(ctx, ir, losses, has_entities, text_dialect, &kernel, part)
+}
+
+/// Decode the framed records and transfer them into staged document pieces.
+/// Any error here gives up the stream part (§4.5) instead of refusing the file.
+fn decode_stream_part(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &[sab::Record],
+    header: &KernelHeader,
+) -> Result<StreamPart, CodecError> {
+    let brep = decode_with_header(
+        ctx,
+        records,
+        bytes,
+        Some(header),
+        "stream",
+        cadmpeg_asm::asm_format!("sat"),
+        DecodePurpose::Model,
+    )?;
+    let mut prior_losses = Vec::new();
     for record in &brep.unknowns {
         let code = if record.id().as_str().contains(":brep:tvertex#") {
             Some((SatLossCode::VertexToleranceUnresolved,
@@ -517,10 +600,11 @@ fn build_result(
             None
         };
         if let Some((code, message)) = code {
-            losses.push(code.note(message));
+            prior_losses.push(code.note(message));
         }
     }
 
+    let mut staged_ir = CadIr::empty();
     let (
         _,
         AsmTransferRemainder {
@@ -528,7 +612,73 @@ fn build_result(
             stats,
             annotation_records,
         },
-    ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
+    ) = transfer_into_ir(ctx, &mut staged_ir, FORMAT, brep)?;
+    let unknown_count = unknowns.len();
+    let untyped = unknowns
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            // Invalid native tolerance evidence does not omit the owning geometry.
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().to_string())
+        .collect::<Vec<_>>();
+    let mut fidelity = SourceFidelity::for_decode(ctx, Annotations::default());
+    fidelity.attach_native_unknown_records(&mut staged_ir, FORMAT, unknowns, ctx)?;
+    for id in untyped {
+        fidelity.mark_untyped(&id, [ArenaClass::Model])?;
+    }
+    Ok(StreamPart {
+        model: staged_ir.model,
+        native: staged_ir.native,
+        fidelity,
+        annotation_records,
+        stats,
+        unknown_count,
+        prior_losses,
+    })
+}
+
+/// Assemble the staged give-up of a failed stream part: the helper's stub,
+/// retained bytes and `record.unreadable` loss with an empty model.
+fn stream_part_given_up(output: PartOutput) -> Result<StreamPart, CodecError> {
+    let (model, native, fidelity, prior_losses) = output.into_parts();
+    let unknown_count = native
+        .namespace("sat")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    Ok(StreamPart {
+        model,
+        native,
+        fidelity,
+        annotation_records: Vec::new(),
+        stats: Stats::default(),
+        unknown_count,
+        prior_losses,
+    })
+}
+
+fn assemble_result(
+    ctx: &DecodeContext<'_>,
+    mut ir: CadIr,
+    mut losses: Vec<LossNote>,
+    has_entities: bool,
+    text_dialect: Option<sat::Terminator>,
+    kernel: &DialectMatch,
+    part: StreamPart,
+) -> Result<Decoded, CodecError> {
+    let StreamPart {
+        model,
+        native,
+        fidelity: part_fidelity,
+        annotation_records,
+        stats,
+        unknown_count,
+        prior_losses,
+    } = part;
+    ir.model = model;
+    ir.native = native;
+    losses.extend(prior_losses);
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -563,7 +713,7 @@ fn build_result(
     }
     losses.extend(unmapped_support_chart_losses(&ir));
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
+    coverage.record(crate::coverage::UNKNOWN_RECORDS, unknown_count);
     coverage.record(
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
@@ -593,20 +743,8 @@ fn build_result(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations.build());
-    let untyped = unknowns
-        .iter()
-        .filter(|record| {
-            let id = record.id().as_str();
-            // Invalid native tolerance evidence does not omit the owning geometry.
-            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
-        })
-        .map(|record| record.id().to_string())
-        .collect::<Vec<_>>();
-    source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
-    for id in untyped {
-        source_fidelity.mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
-    }
+    let mut source_fidelity = SourceFidelity::for_decode(ctx, annotations.build());
+    source_fidelity.append(part_fidelity)?;
     Ok(Decoded {
         ir,
         body,

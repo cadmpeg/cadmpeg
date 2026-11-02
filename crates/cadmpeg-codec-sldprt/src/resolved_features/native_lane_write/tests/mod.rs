@@ -65,10 +65,12 @@ fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
         feature_input_lanes: vec![lane],
         ..Default::default()
     };
-    // CADIR retains evidence and typed content, without native lane bytes.
+    // CADIR retains the lane bytes with the typed content. Clear the bytes
+    // here so the test exercises sourceless regeneration from typed fields.
     let wire = serde_json::to_value(&source).expect("typed native serializes");
     let mut source: SldprtNative = serde_json::from_value(wire).expect("typed native parses");
-    assert!(source.feature_input_lanes[0].native_payload.is_empty());
+    assert!(!source.feature_input_lanes[0].native_payload.is_empty());
+    source.feature_input_lanes[0].native_payload.clear();
     source.feature_input_lanes[0].scalars[0].value =
         cadmpeg_ir::scalar::FiniteReal::new(0.034).expect("finite control");
     let mut target = source.clone();

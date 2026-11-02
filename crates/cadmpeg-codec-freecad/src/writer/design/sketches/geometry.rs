@@ -122,23 +122,26 @@ pub(super) fn row(entity: &SketchEntity) -> Option<String> {
             {
                 return None;
             }
-            let mut knots: Vec<(f64, usize)> = Vec::new();
-            for knot in curve.knots() {
-                if let Some((_, count)) =
-                    knots.last_mut().filter(|(previous, _)| *previous == *knot)
-                {
-                    *count += 1;
-                } else {
-                    knots.push((*knot, 1));
-                }
+            let axis = crate::writer::geometry::nurbs::axis(
+                curve.knots(),
+                curve.degree(),
+                poles.len(),
+                curve.periodic(),
+            )?;
+            if !crate::writer::geometry::nurbs::cyclic_tail(&poles, &axis)
+                || weights.as_ref().is_some_and(|weights| {
+                    !crate::writer::geometry::nurbs::cyclic_tail(weights, &axis)
+                })
+            {
+                return None;
             }
             attributes.extend([
                 ("Degree", curve.degree().to_string()),
                 ("IsPeriodic", u8::from(curve.periodic()).to_string()),
-                ("PolesCount", poles.len().to_string()),
-                ("KnotsCount", knots.len().to_string()),
+                ("PolesCount", axis.count.to_string()),
+                ("KnotsCount", axis.rows.len().to_string()),
             ]);
-            for (index, pole) in poles.iter().enumerate() {
+            for (index, pole) in poles.iter().take(axis.count).enumerate() {
                 let point = pole.get();
                 children.push_str(&xml::element(
                     "Pole",
@@ -156,7 +159,7 @@ pub(super) fn row(entity: &SketchEntity) -> Option<String> {
                     ],
                 ));
             }
-            for (value, count) in knots {
+            for (value, count) in axis.rows {
                 children.push_str(&xml::element(
                     "Knot",
                     &[("Value", value.to_string()), ("Mult", count.to_string())],
