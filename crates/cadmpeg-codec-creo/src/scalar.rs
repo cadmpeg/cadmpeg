@@ -2670,6 +2670,43 @@ pub(crate) fn decode_cylinder_rotation_prefix(
     Some((values, end))
 }
 
+/// A tiny-magnitude literal of the stateful plane lane: a three-byte
+/// IEEE-fill form, the eight-byte `3c` form, or `00 04 <low>`.
+fn plane_tiny_literal(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    let mut view = View::over_retained(body);
+    view.seek(cursor)?;
+    let (high, repeat) = match view.u8()? {
+        0x1a => (0x3c, true),
+        0x1b => (0x3c, false),
+        0x20 => (0x3d, false),
+        0x33 => (0xbc, true),
+        0x34 => (0xbc, false),
+        0x39 => (0xbd, false),
+        0x3c => {
+            let mut image = [0; 8];
+            image[0] = 0xbe;
+            image[1..].copy_from_slice(view.take(7)?);
+            return Some((be_f64(image), view.read_len()));
+        }
+        0x00 => {
+            (view.u8()? == 0x04).then_some(())?;
+            let low = view.u8()?;
+            return Some((
+                f64::from_bits(0x3fef_ffff_ffff_ff00 | u64::from(low)),
+                view.read_len(),
+            ));
+        }
+        _ => return None,
+    };
+    let second = view.u8()?;
+    let fill = view.u8()?;
+    let mut image = [if repeat { fill } else { 0 }; 8];
+    image[0] = high;
+    image[1] = second;
+    image[2] = fill;
+    Some((be_f64(image), view.read_len()))
+}
+
 pub(crate) fn decode_stateful_scalar_run(
     body: &[u8],
     cursor: usize,
@@ -2704,6 +2741,11 @@ pub(crate) fn decode_stateful_scalar_run(
         && matches!(token, 0x19 | 0x32 | 0x1b | 0x34)
     {
         return revolution_frames::run(body, cursor, previous, cache);
+    }
+    if matches!(kind, StatefulScalarKind::Plane) {
+        if let Some((value, end)) = plane_tiny_literal(body, cursor) {
+            return value.is_finite().then_some((value, 1, end));
+        }
     }
     let run = match token {
         0xe4..=0xe6 => (previous?, usize::from(token - 0xe3), cursor + 1),
