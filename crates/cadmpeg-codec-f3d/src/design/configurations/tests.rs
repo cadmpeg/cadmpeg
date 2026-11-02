@@ -287,9 +287,9 @@ fn configuration_cells_bind_targets_by_record_index() {
 fn configuration_cells_without_a_neutral_target_stay_properties() {
     let mut cases: Vec<(&str, Natives)> = Vec::new();
     let mut natives = Natives::complete();
-    natives.neutral_parameters.clear();
-    natives.neutral_features.clear();
-    cases.push(("no neutral entities", natives));
+    natives.neutral_parameters = vec![neutral_parameter(&parameter(500, "other"))];
+    natives.neutral_features = vec![neutral_feature(&scope(600), "f3d:model:feature#sketch")];
+    cases.push(("other neutral entities", natives));
     let mut natives = Natives::complete();
     natives.parameters.clear();
     natives.scopes.clear();
