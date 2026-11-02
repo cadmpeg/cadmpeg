@@ -8,7 +8,6 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -329,39 +328,6 @@ impl fmt::Display for DirectoryDefect {
     }
 }
 
-/// One Directory Entry whose twenty typed fields were not recovered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct QuarantinedDirectoryRecord {
-    pub(crate) sequence: u32,
-    pub(crate) source_offset: u64,
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) defect: DirectoryDefect,
-}
-
-impl QuarantinedDirectoryRecord {
-    pub(crate) fn cards(&self) -> usize {
-        self.bytes.len() / crate::card::CARD_WIDTH
-    }
-
-    pub(crate) fn loss_note(&self) -> LossNote {
-        let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
-        self.sequence,
-        self.defect,
-        self.cards());
-        let tag = format!("directory_entry:D{}", self.sequence);
-        let code = IgesLossCode::DirectoryRecordQuarantined;
-
-        code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.source_offset,
-            )
-            .with_tag(tag),
-        )
-    }
-}
-
 fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
     let mut fields = [[b' '; 8]; 9];
     for (target, source) in fields.iter_mut().zip(line.payload.chunks_exact(8)) {
@@ -515,29 +481,16 @@ pub(crate) fn admit_fields_with<E: From<DirectoryDefect>>(
     })
 }
 
-fn quarantine(
-    first: (u32, &PhysicalLine),
-    rest: &[(u32, &PhysicalLine)],
-    defect: DirectoryDefect,
-) -> QuarantinedDirectoryRecord {
-    let mut bytes = Vec::new();
-    for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
-        bytes.extend_from_slice(&line.payload);
-    }
-    QuarantinedDirectoryRecord {
-        sequence: first.0,
-        source_offset: first.1.offset,
-        bytes,
-        defect,
-    }
-}
-
-/// Split the Directory Entry section into typed records and quarantined ones.
+/// Split the Directory Entry section into typed records.
+///
+/// A pair that fails to parse refuses the decode. Fixed ASCII decodes
+/// directory entries through `parts`, which gives up failed pairs; binary
+/// normalizes only admitted records, so a rendered pair always parses.
 pub(crate) fn parse(
     scan: &CardScan,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
-) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+) -> Result<Vec<DirectoryEntry>, CodecError> {
     parse_with_keys(scan, global_table, ctx, Ok)
 }
 
@@ -546,33 +499,31 @@ pub(crate) fn parse_with_keys(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
     mut semantic_key: impl FnMut(u32) -> Result<u32, CodecError>,
-) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+) -> Result<Vec<DirectoryEntry>, CodecError> {
     let lines: Vec<_> = scan.section(Section::Directory).collect();
     let mut entries = Vec::new();
-    let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
         ctx.charge_entities(1, "iges_directory_entries")?;
         let sequence = semantic_key(pair[0].0)?;
-        match parse_pair(sequence, pair[0].1, pair[1].1, global_table) {
-            Ok(entry) => {
-                entries.push(entry);
-            }
-            Err(defect) => {
-                quarantined.push(quarantine((sequence, pair[0].1), &pair[1..], defect));
-            }
-        }
+        let entry = parse_pair(sequence, pair[0].1, pair[1].1, global_table).map_err(
+            |defect| {
+                CodecError::malformed(format_args!(
+                    "IGES Directory Entry record D{sequence} is unreadable: {defect}"
+                ))
+            },
+        )?;
+        entries.push(entry);
     }
     if let Some(unpaired) = pairs.remainder().first() {
         ctx.charge_entities(1, "iges_directory_entries")?;
-
-        quarantined.push(quarantine(
-            (semantic_key(unpaired.0)?, unpaired.1),
-            &[],
-            DirectoryDefect::UnpairedCard,
-        ));
+        let sequence = semantic_key(unpaired.0)?;
+        return Err(CodecError::malformed(format_args!(
+            "IGES Directory Entry record D{sequence} is unreadable: {}",
+            DirectoryDefect::UnpairedCard
+        )));
     }
-    Ok((entries, quarantined))
+    Ok(entries)
 }
 
 pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
@@ -587,7 +538,5 @@ pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
     notes
 }
 
-#[cfg(test)]
-mod quarantine_tests;
 #[cfg(test)]
 mod tests;

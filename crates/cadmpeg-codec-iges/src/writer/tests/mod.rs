@@ -69,7 +69,6 @@ mod extrusion_directrix;
 mod ownership;
 mod pcurve_orientation;
 mod physical_dependence;
-mod quarantine;
 mod roundtrip;
 
 fn assert_degraded_plan(

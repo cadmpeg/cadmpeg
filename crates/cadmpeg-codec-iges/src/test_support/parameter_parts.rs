@@ -43,8 +43,7 @@ pub(crate) fn assert_one_parameter_field(
     assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(unreadable[0].message.contains("iges.parameter_field"));
     assert!(result.report().losses.iter().all(|loss| loss.code
-        != crate::loss::IgesLossCode::ParameterDataQuarantined.kind()
-        && loss.code != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
+        != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .unwrap()
         .is_ok());

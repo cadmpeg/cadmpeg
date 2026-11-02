@@ -203,28 +203,25 @@ pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
 /// Parse the exact retained Fixed ASCII source when an assertion concerns fidelity.
 pub(crate) fn retained_fixed_ascii(
     result: &cadmpeg_ir::codec::DecodeResult,
-) -> (
-    Vec<crate::directory::QuarantinedDirectoryRecord>,
-    crate::parameter::ParameterAssembly,
-) {
+) -> crate::parameter::ParameterAssembly {
     let bytes = result
         .source_fidelity()
         .retained_record(crate::SOURCE_IMAGE_ID)
         .expect("source image retained")
         .data()
         .expect("exact source bytes retained");
-    with_service_context(bytes, |ctx| {
-        let scan = crate::card::scan(bytes).expect("retained Fixed ASCII source scans");
-        let (global, _) = crate::global::parse(&scan).expect("retained global parses");
-        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)
-            .expect("retained directory parses");
-        let parameters = crate::parameter::assemble(
-            &scan,
-            &directory,
-            quarantined.iter().map(|record| record.sequence),
-            &global,
-        )
-        .expect("retained parameters assemble");
-        (quarantined, parameters)
-    })
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service())
+            .expect("retained source fits the service policy");
+    let scan = crate::card::scan_source(root).expect("retained Fixed ASCII source scans");
+    let (global, _) = crate::global::parse(&scan).expect("retained global parses");
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("retained directory parses");
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Iges,
+        &ctx,
+    );
+    crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("retained parameters assemble")
 }

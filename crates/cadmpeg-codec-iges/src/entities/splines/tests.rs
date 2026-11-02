@@ -4,7 +4,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -87,19 +86,20 @@ fn decode_skips_a_parametric_spline_surface_over_its_pole_limit() {
 #[test]
 fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
     let bytes = parametric_spline_surface_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = crate::card::scan_source(root).expect("the fixture scans into cards");
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
-    let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
-        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
-        let parameters = crate::parameter::assemble(
-            &scan,
-            &directory,
-            quarantined.iter().map(|record| record.sequence),
-            &global,
-        )?;
-        Ok::<_, CodecError>((directory, parameters))
-    })
-    .unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses");
+    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Iges,
+        &ctx,
+    );
+    let parameters =
+        crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut parts)
+            .expect("the parameter section assembles");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();

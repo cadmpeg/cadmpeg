@@ -54,9 +54,8 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
         .expect("the global section parses")
         .0
         .global_table();
-    let expected = directory::parse(&scan, table, &ctx)
-        .expect("the directory section parses")
-        .0;
+    let expected =
+        directory::parse(&scan, table, &ctx).expect("the directory section parses");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let actual = parse(&scan, table, &ctx, &mut output)
         .expect("the part callbacks parse the directory section")
@@ -93,8 +92,7 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
     assert_eq!(entries[0].sequence, 1);
     let baseline = card::scan(&original).expect("the original fixture scans into cards");
     let expected = directory::parse(&baseline, table, &ctx)
-        .expect("the original directory section parses")
-        .0;
+        .expect("the original directory section parses");
     assert_eq!(entries[0], expected[0]);
     let (_, native, fidelity, losses) = output.into_parts();
     // #215 rule 1: the given-up part keeps one unknowns home.

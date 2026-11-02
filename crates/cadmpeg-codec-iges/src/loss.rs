@@ -83,10 +83,6 @@ loss_codes! {
     ParameterCountOverdeclared => "parameter.count-overdeclared",
     /// A Type 422 attribute table states a count no row grid can be read from.
     AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
-    /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
-    DirectoryRecordQuarantined => "directory.record-quarantined",
-    /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
-    ParameterDataQuarantined => "parameter.data-quarantined",
     /// Card framing came from the card census because the file's own declaration did not.
     CardFramingRecovered => "card.framing-recovered",
     /// Directory display, font, or color data was not projected.
@@ -200,8 +196,6 @@ impl IgesLossCode {
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
@@ -279,8 +273,6 @@ impl IgesLossCode {
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
@@ -357,8 +349,6 @@ mod tests {
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
                 "parameter.attribute-table-count-unstatable",
-                "directory.record-quarantined",
-                "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
