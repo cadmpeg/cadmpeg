@@ -1105,3 +1105,70 @@ fn retains_a_structurally_complete_inline_row_when_center_sign_is_ambiguous() {
         .any(|window| { window == INLINE_TEST_LOCAL_SYSTEM_Z }));
     assert_eq!(record.boundary, SurfaceBodyBoundary::CompoundClose);
 }
+
+fn floating_rotation_cylinder_body(lower: f64, axial_corner: f64) -> Vec<u8> {
+    let sine = std::f64::consts::PI.sin().to_be_bytes();
+    let mut body = Vec::new();
+    if lower == 0.0 {
+        body.extend_from_slice(&[0x18, 0xe4, 0x12]);
+    } else {
+        push_inline_test_subunit(&mut body, 0x41, lower);
+        body.extend_from_slice(&[0x18, 0x12]);
+    }
+    let corners = [
+        4.0,
+        8.0 - 2.0 * lower.cos(),
+        4.0,
+        2.0,
+        8.0,
+        6.0 - 2.0 * lower.sin(),
+        axial_corner,
+    ];
+    for value in corners {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x10, 0x32]);
+    body.extend_from_slice(&(-std::f64::consts::PI.sin()).to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x19]);
+    body.extend_from_slice(&sine[1..]);
+    body.extend_from_slice(&[0x10, 0x18, 0xe5, 0x0f]);
+    for value in [8.0, 6.0, 2.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
+    body
+}
+
+#[test]
+fn quarter_turn_and_bend_floating_rotations_use_the_complete_rotation_frame() {
+    let decode = |body: &[u8]| {
+        crate::decode::with_service_context(|ctx| {
+            inline_surface_body(
+                ctx,
+                SurfaceKind::Cylinder,
+                body,
+                &scalar::ScalarCache::default(),
+            )
+        })
+        .expect("decode the inline surface body")
+        .expect("rotation layout")
+    };
+    for lower in [0.0, 0.7] {
+        let layout = decode(&floating_rotation_cylinder_body(lower, 6.0));
+        let Some(InlineSurfaceCarrier::Cylinder { frame, .. }) = layout.carrier else {
+            panic!("the floating rotation places the cylinder for lower bound {lower}");
+        };
+        assert_eq!(frame.frame().origin(), [8.0, 6.0, 2.0]);
+        assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+        let reference = frame.frame().ref_direction();
+        assert!((reference[0] + 1.0).abs() <= 1.0e-12);
+        assert!(reference[1].abs() <= 1.0e-12 && reference[2] == 0.0);
+        assert_eq!(frame.radius.get(), 2.0);
+        assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
+
+        let refused = decode(&floating_rotation_cylinder_body(lower, 7.0));
+        assert!(refused.carrier.is_none());
+        assert!(refused.rotation_cylinder);
+    }
+}

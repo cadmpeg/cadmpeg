@@ -4448,6 +4448,11 @@ fn inline_surface_body(
             cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
                 .or_else(|| bends::inline_body(body, cache))
         {
+            if frame.is_none() && revolution::has_inline_floating_rotation_prefix(body, cache) {
+                if let Some(layout) = floating_rotation_cylinder_body(body, cache) {
+                    return Ok(Some(layout));
+                }
+            }
             return Ok(Some(InlineSurfaceBody {
                 rotation_frame: false,
                 terminal_close,
@@ -4486,6 +4491,19 @@ fn inline_surface_body(
     } else {
         matrix.or(legacy)
     })
+}
+
+/// The complete-rotation or coordinate-axis carrier of a floating rotation body.
+fn floating_rotation_cylinder_body(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceBody> {
+    let admitted = |layout: &InlineSurfaceBody| layout.carrier.is_some();
+    revolution::inline_body(body, cache)
+        .filter(admitted)
+        .or_else(|| {
+            cylinder_frame_readers::compact_rotation_cylinder_body(body, cache).filter(admitted)
+        })
 }
 
 fn legacy_inline_surface_body(

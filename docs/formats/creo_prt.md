@@ -1053,7 +1053,9 @@ either production admits is admitted, and the complete-rotation frame wins
 when both do. A frame neither admits is refused, and each production that
 recognized the body records its own loss. An inline body that the
 complete-rotation production refuses is still given to the coordinate-axis
-production.
+production. A quarter-turn or positive-lower-bound bend envelope followed by
+such a matrix is read first by its own production; a frame that production
+refuses is given to these two productions.
 
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
