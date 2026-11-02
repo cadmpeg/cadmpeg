@@ -5755,9 +5755,9 @@ fn saved_line_block(
             {
                 break;
             }
-            if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
-                filled += 3;
+            if let Some(run) = saved_zero_run(payload, cursor) {
+                values[filled..filled + run].fill(Some(0.0));
+                filled += run;
                 cursor += 2;
                 continue;
             }
@@ -5923,19 +5923,32 @@ fn saved_named_scalars_in<const N: usize>(
         (usize::try_from(count).ok()? == N).then_some(())?;
         cursor = next;
     }
-    if N == 3 && payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-        return Some(std::array::from_fn(|index| {
-            Some(if index == 1 { 1.0 } else { 0.0 })
-        }));
-    }
     let mut values = [None; N];
-    for value in &mut values {
+    let mut filled = 0;
+    while filled < N {
+        if let Some(run) = saved_zero_run(payload, cursor).filter(|_| N == 3) {
+            values.get_mut(filled..filled + run)?.fill(Some(0.0));
+            filled += run;
+            cursor += 2;
+            continue;
+        }
         let (decoded, next) = read(payload, cursor, end, cache);
         (next > cursor).then_some(())?;
-        *value = decoded;
+        values[filled] = decoded;
+        filled += 1;
         cursor = next;
     }
     Some(values)
+}
+
+/// The zero slots of a saved-section coordinate image where `e4` and `e5`
+/// repeat a standalone `18` zero once and twice.
+fn saved_zero_run(payload: &[u8], cursor: usize) -> Option<usize> {
+    match payload.get(cursor..cursor + 2)? {
+        [0x18, 0xe4] => Some(2),
+        [0x18, 0xe5] => Some(3),
+        _ => None,
+    }
 }
 
 fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
@@ -6090,9 +6103,9 @@ fn saved_positional_generated_entities(
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
-            if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
-                filled += 3;
+            if let Some(run) = saved_zero_run(payload, cursor) {
+                values[filled..filled + run].fill(Some(0.0));
+                filled += run;
                 cursor += 2;
                 continue;
             }
