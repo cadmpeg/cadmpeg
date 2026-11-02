@@ -149,7 +149,9 @@ pub(super) fn project(
             link: None,
             native_ref: Some(record.id.clone()),
         });
-        ordinal = ordinal.saturating_add(1);
+        ordinal = ordinal.checked_add(1).ok_or_else(|| {
+            CodecError::malformed("IGES product occurrence ordinal overflows")
+        })?;
     }
     ir.model
         .product_definitions
