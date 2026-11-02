@@ -31,6 +31,7 @@ mod recipe_index;
 mod reference_edge;
 pub(crate) mod selection;
 pub(crate) mod stored_bodies;
+pub(crate) mod thread_face;
 mod topology_cache;
 mod treatment_index;
 
