@@ -588,6 +588,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_extent_losses);
+    losses.extend(
+        crate::design::decode::operands::fixed_fillet_assignment_losses(
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+        ),
+    );
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {
@@ -698,7 +704,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &scope_histories,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
-    crate::history::bind_feature_body_selections(
+    losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
             scopes: &design.design_parameter_scopes,
@@ -711,7 +717,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             regions: geometry.regions,
             shells: geometry.shells,
         },
-    )?;
+    ));
     crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
