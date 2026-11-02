@@ -20459,6 +20459,185 @@ offset = 35
 type = "bytes[11]"
 source = "spec"
 anchor = "The marked angle-owner reference starts at offset 35"
+
+[[record]]
+name = "marked_to_object_revolve_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The marked to-object form uses the marker-one prologue through offset 33"
+size = 62
+note = "Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 61 is one null byte or an eleven-byte marked reference."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding Revolve envelope are outside this field run."
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The marked to-object form uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "zero_value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The marked to-object form uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "The marked to-object form uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "extent_kind"
+offset = 29
+type = "u32"
+value = 1
+source = "spec"
+anchor = "with extent kind `1` at offset 29"
+
+[[record.field]]
+name = "direction_kind"
+offset = 33
+type = "u8"
+value = 0
+source = "spec"
+anchor = "The marked to-object form uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "project_axis"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "Offset 34 stores the Project Axis flag and offset 35 stores the solid flag"
+
+[[record.field]]
+name = "solid"
+offset = 35
+type = "u8"
+source = "spec"
+anchor = "Offset 34 stores the Project Axis flag and offset 35 stores the solid flag"
+
+[[record.field]]
+name = "zero_flags"
+offset = 36
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 36 through 38 are zero"
+
+[[record.field]]
+name = "owner_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked owner reference starts at offset 39"
+
+[[record.field]]
+name = "axis_group_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked axis-group reference starts at offset 50"
+
+[[record.field]]
+name = "side_two_target"
+offset = 61
+type = "u8"
+source = "spec"
+anchor = "the side-two target slot starts at offset 61"
+
+[[record]]
+name = "unmarked_to_object_revolve_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The unmarked to-object form stores ten zero bytes at offsets 11 through 20"
+size = 58
+note = "Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 57 is one null byte or an eleven-byte marked reference."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The unmarked to-object form stores ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the result operation at offset 21"
+
+[[record.field]]
+name = "extent_kind"
+offset = 25
+type = "u32"
+value = 1
+source = "spec"
+anchor = "extent kind `1` at offset 25"
+
+[[record.field]]
+name = "direction_kind"
+offset = 29
+type = "u8"
+value = 0
+source = "spec"
+anchor = "direction kind `0` at offset 29"
+
+[[record.field]]
+name = "project_axis"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "Offset 30 stores the Project Axis flag and offset 31 stores the solid flag"
+
+[[record.field]]
+name = "solid"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "Offset 30 stores the Project Axis flag and offset 31 stores the solid flag"
+
+[[record.field]]
+name = "zero_flags"
+offset = 32
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 32 through 34 are zero"
+
+[[record.field]]
+name = "owner_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked owner reference starts at offset 35"
+
+[[record.field]]
+name = "axis_group_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked axis-group reference starts at offset 46"
+
+[[record.field]]
+name = "side_two_target"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "the side-two target slot starts at offset 57"
 [[record]]
 name = "two_sided_revolve_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
