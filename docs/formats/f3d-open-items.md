@@ -797,6 +797,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
 
+### DR-224. `Fillet` edges that the transition leaves open
+
+**Question.** Which edges does a constant-radius `Fillet` group select when its transition inserts a blend without a cylinder or torus row, a blend with no replaced edge or with two, two groups with one radius, or more replaced edges than the group has distinct members? Can a rounded edge keep its slot?
+
+**Known.** The specification states the edges from the blend faces of the transition when every new carrier is a cylinder or torus blend. A sphere, spline, or variable blend has no spine row. A tangent chain rounds more edges than the group has members. A historical partial selection can name an edge that the transition keeps.
+
+**Need.** Controls that fillet one edge of a tangent chain, a corner of three rounded edges, and an edge between curved faces, and controls that show whether a selected edge can keep its slot.
+
+**Conflict.** None.
+
+**Note.** Keep the operand proofs for these groups.
+
 ### DR-124. Partial-curve operands in profile selections
 
 **Question.** How do the three u32 operands of a typed profile curve entry and the incidence words of a counted profile member select a partial curve?

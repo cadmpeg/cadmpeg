@@ -689,6 +689,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
+    crate::history::fillet_blends::bind_fillet_blend_edges(
+        &mut model.features,
+        crate::history::fillet_blends::FilletBlendInputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            histories: &mut design.asm_histories,
+        },
+    );
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,
