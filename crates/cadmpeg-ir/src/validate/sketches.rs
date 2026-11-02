@@ -1318,7 +1318,7 @@ pub(super) fn check_sketches(
                         .as_ref()
                         .and_then(|angle| ir.dimension_value(angle))
                         .is_none_or(|angle| {
-                            let measured = (second.v - first.v).atan2(second.u - first.u);
+                            let measured = (second.v - first.v).portable_atan2(second.u - first.u);
                             let difference =
                                 (angle.get() - measured).rem_euclid(std::f64::consts::TAU);
                             difference.min(std::f64::consts::TAU - difference) <= EPS_POLAR_ANGLE

@@ -4,6 +4,7 @@
 use super::{distance2, sketch_locus_point};
 use crate::features::{Dimension, DimensionValue};
 use crate::index::identities::BorrowedIdentities;
+use crate::math::portable::Portable;
 use crate::math::Point2;
 use crate::sketches::{
     SketchAxis, SketchConstraintDefinitionInput as Constraint, SketchEntityId, SketchGeometry,
@@ -35,7 +36,7 @@ fn endpoints(id: &SketchEntityId, geometry: &Geometries<'_>) -> Option<(Point2, 
 }
 fn direction(id: &SketchEntityId, geometry: &Geometries<'_>) -> Option<f64> {
     let (start, end) = endpoints(id, geometry)?;
-    Some((end.v - start.v).atan2(end.u - start.u))
+    Some((end.v - start.v).portable_atan2(end.u - start.u))
 }
 fn radius(id: &SketchEntityId, geometry: &Geometries<'_>) -> Option<f64> {
     match geometry.get(id.as_str())?.definition() {
@@ -262,9 +263,9 @@ pub(super) fn check(
                     .map(|(first, second)| {
                         let difference = second - first;
                         if matches!(definition, Constraint::Parallel { .. }) {
-                            difference.sin().abs() <= ir.tolerances.angular.get()
+                            difference.portable_sin().abs() <= ir.tolerances.angular.get()
                         } else {
-                            difference.cos().abs() <= ir.tolerances.angular.get()
+                            difference.portable_cos().abs() <= ir.tolerances.angular.get()
                         }
                     }),
                 "solved lines disagree with their parallel or perpendicular constraint",

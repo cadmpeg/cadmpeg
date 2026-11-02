@@ -68,12 +68,12 @@ pub(super) fn verified(
 /// Matching ordinal rows provide a deliberately conservative proposed map.
 /// Every accepted mapping is globally injective; counts alone prove nothing.
 fn ordinal_identities(left: &CadIr, right: &CadIr) -> Option<BTreeMap<String, String>> {
-    let left = serde_json::to_value(&left.model).ok()?;
-    let right = serde_json::to_value(&right.model).ok()?;
+    let left_model = serde_json::to_value(&left.model).ok()?;
+    let right_model = serde_json::to_value(&right.model).ok()?;
     let mut ids = BTreeMap::new();
     let mut targets = BTreeSet::new();
-    for (name, records) in left.as_object()? {
-        let (Some(records), Some(output)) = (records.as_array(), right.get(name)?.as_array())
+    for (name, records) in left_model.as_object()? {
+        let (Some(records), Some(output)) = (records.as_array(), right_model.get(name)?.as_array())
         else {
             continue;
         };
@@ -87,6 +87,31 @@ fn ordinal_identities(left: &CadIr, right: &CadIr) -> Option<BTreeMap<String, St
                 || !targets.insert(target.to_owned())
             {
                 return None;
+            }
+        }
+    }
+    // Neutral native_ref fields point at native records outside the model
+    // arenas. Map those identities ordinally within each own-namespace arena
+    // under the same conservative rule, so a preserved native reference
+    // rewrites instead of refusing the whole arena comparison.
+    if let (Some(left_namespace), Some(right_namespace)) = (
+        left.native.namespace("rhino"),
+        right.native.namespace("rhino"),
+    ) {
+        for (arena, records) in left_namespace.arenas() {
+            let Some(right_records) = right_namespace.arenas().get(arena) else {
+                continue;
+            };
+            if records.len() != right_records.len() {
+                continue;
+            }
+            for (record, output) in records.iter().zip(right_records) {
+                let target = output.id().to_owned();
+                if ids.insert(record.id().to_owned(), target.clone()).is_some()
+                    || !targets.insert(target)
+                {
+                    return None;
+                }
             }
         }
     }

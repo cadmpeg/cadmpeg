@@ -15,6 +15,11 @@ cadmpeg_core::named_optional_field!(
     u32,
     "trailing_reference_record_index"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_trailing_reference_offset,
+    u64,
+    "trailing_reference_offset"
+);
 /// Thread construction form selected by the scope prefix and payload marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesignThreadForm {
@@ -307,7 +312,11 @@ struct DesignThreadConstructionWire {
     )]
     trailing_reference_record_index: Option<u32>,
     /// Byte offset of `trailing_reference_record_index`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_trailing_reference_offset"
+    )]
     trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
