@@ -83,6 +83,7 @@ pub(super) struct DesignProducts<'a> {
 
 /// Decoded geometry that Design features bind to.
 pub(super) struct DesignGeometry<'a> {
+    pub(super) primary_brep: Option<&'a str>,
     pub(super) bodies: &'a [Body],
     pub(super) regions: &'a [Region],
     pub(super) shells: &'a [Shell],
@@ -730,6 +731,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &mut design.asm_histories,
         },
     );
+    losses.extend(crate::history::thread_face::bind(
+        &mut model.features,
+        &crate::history::thread_face::Inputs {
+            scopes: &design.design_parameter_scopes,
+            topologies: &model.feature_input_topologies,
+            histories: &design.asm_histories,
+            faces: geometry.faces,
+            primary_brep: geometry.primary_brep,
+        },
+    ));
     crate::history::bind_feature_path_selections(
         &mut model.features,
         &design.design_parameter_scopes,
