@@ -955,15 +955,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
-**Question.** Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
+**Question.** When the transition deletes more faces than the group has members, which deleted faces does the group select? Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
 
-**Known.** Seven of sixteen DeleteFace groups in one public local file retain native selections. Two groups contain five operands with ten opener-framed nodes whose second prelude scalar is `1`; the two-clause structure parser retains their raw programs. Two groups contain three unresolved operands whose referenced prefix ordinal has an empty face lane in the preceding topology. Two groups contain five operands with multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching; repeated fan patterns leave two edge matches for a node. One group contains one operand whose prefix lanes repeat a face fragment while its boundary endpoint fans require another face. Two members of a partially resolved group have complete face proofs; its third member has the empty prefix lane. The complete-boundary admission rule is defined in `f3d.md` §3.1.
+**Known.** `f3d.md` §3.1 "The transition that removes the faces" settles a group whose member count equals the deleted-face count. Healing can delete a further face, so a larger deleted set does not separate selected faces from healed faces. Such a group resolves only through the complete-boundary rule in `f3d.md` §3.1. Some of its operands have ten opener-framed nodes whose second prelude scalar is `1`, and the two-clause structure parser retains their raw programs. Some have a referenced prefix ordinal with an empty face lane in the preceding topology. Some have multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching. Some have prefix lanes that repeat a face fragment while the boundary endpoint fans require another face.
 
 **Need.** The complete single-clause grammar and its relation to closed-edge endpoints; the binding of an empty prefix lane to a preceding face; the directional or topology-entry rule that distinguishes repeated edge matches; and the ordinal and fragment rule for the mismatched prefix fan. Independent selections that vary these controls must distinguish the possible bindings.
 
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
-**Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
+**Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
 ### DR-171. Sketch support identity
 

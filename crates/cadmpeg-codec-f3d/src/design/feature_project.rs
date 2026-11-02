@@ -8132,7 +8132,13 @@ fn project_delete_face(
         face_operands,
     )
     .map_or_else(
-        || resolved_face_group(group, face_operands),
+        || {
+            if heal {
+                Ok(None)
+            } else {
+                resolved_face_group(group, face_operands)
+            }
+        },
         |face| Ok(Some(face)),
     )?;
     let faces = match faces {

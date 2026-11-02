@@ -19,6 +19,7 @@ mod body_index;
 mod cache;
 mod combine_selection;
 pub(crate) mod compact_lineage;
+mod delete_face;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
@@ -2915,6 +2916,7 @@ pub(crate) fn bind_feature_face_selections(
                 previous_state_id,
                 history,
                 state,
+                previous: selection_previous,
                 ..
             }) = selection_state
             else {
@@ -3062,6 +3064,22 @@ pub(crate) fn bind_feature_face_selections(
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteFace { faces, .. },
+                ) => {
+                    delete_face::bind_delete_face_selection(
+                        faces,
+                        feature_id,
+                        scope,
+                        groups,
+                        previous_state_id,
+                        transition,
+                        history
+                            .states()
+                            .get(selection_previous)
+                            .and_then(|state| history.topology(state)),
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Hole {
                         face: Some(face), ..
                     },
@@ -3132,6 +3150,7 @@ fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefiniti
                 | cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
                 | cadmpeg_ir::features::FeatureOperation::SplitFace { .. }
                 | cadmpeg_ir::features::FeatureOperation::Hole { face: Some(_), .. }
+                | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
         )
     )
 }
