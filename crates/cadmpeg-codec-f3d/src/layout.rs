@@ -565,6 +565,18 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `design_hole_direction_control` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
+/// ```
+pub(crate) mod design_hole_direction_control {
+    /// Offset of `control` (`u8`). Spec §3.1.
+    pub(crate) const CONTROL: usize = 28;
+}
+
 /// Byte offsets for the `paramesh_entry_name_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.

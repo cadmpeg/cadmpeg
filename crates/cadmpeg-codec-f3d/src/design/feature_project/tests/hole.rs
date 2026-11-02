@@ -76,8 +76,261 @@ fn set_extent(scope: &mut DesignParameterScope, control: u8, saved: bool) {
                 value: cadmpeg_ir::scalar::FiniteReal::try_from(1.0).unwrap(),
                 offset: 5,
             }),
+            direction_control: Some(crate::records::identity::Located {
+                value: 0,
+                offset: 6,
+            }),
         });
     }
+}
+
+fn set_direction_control(scope: &mut DesignParameterScope, value: Option<u8>) {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        if let Some(extent) = &mut slot.extent {
+            extent.direction_control =
+                value.map(|value| crate::records::identity::Located { value, offset: 6 });
+        }
+    }
+}
+
+fn set_carrier(
+    scope: &mut DesignParameterScope,
+    reference_type: u32,
+    position: [f64; 3],
+    locations: &[(u32, [f64; 3])],
+    face_selection: bool,
+) {
+    let locations: Vec<_> = locations
+        .iter()
+        .enumerate()
+        .map(|(index, (reference_type, position))| {
+            serde_json::json!({
+                "record_index": index, "position": position,
+                "position_offset": index, "reference_type": reference_type
+            })
+        })
+        .collect();
+    let mut construction = serde_json::json!({
+        "point_record_index": 1, "point_record_byte_offset": 2,
+        "position": position, "position_offset": 3,
+        "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
+        "point_parameters": [0.0, 0.0], "point_parameter_offsets": [5, 6],
+        "reference_type": reference_type, "reference_type_offset": 7,
+        "input_record_indices": [8], "input_record_offsets": [9],
+        "locations": locations
+    });
+    if face_selection {
+        construction["face_selection"] = serde_json::json!({
+            "record_index": 1, "byte_offset": 2, "class_tag": "451",
+            "asset_id": "11111111-1111-1111-1111-111111111111",
+            "asset_id_offset": 3,
+            "context_id": "22222222-2222-2222-2222-222222222222",
+            "context_id_offset": 4,
+            "identity_record_index": 5, "identity_record_offset": 6,
+            "primary_identity": 7, "primary_identity_offset": 8,
+            "next_record_index": 9, "next_byte_offset": 10
+        });
+    }
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+        slot.point = Some(serde_json::from_value(construction).unwrap());
+    }
+}
+
+fn projected_placements(
+    scope: &DesignParameterScope,
+) -> (
+    Option<Vec<cadmpeg_ir::features::holes::HolePlacement>>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let parameters = hole_parameters();
+    let indexed = [
+        (0, &parameters[0]),
+        (1, &parameters[1]),
+        (2, &parameters[2]),
+    ];
+    let mut losses = Vec::new();
+    let definition = project_hole(scope, &indexed, &[], &mut losses)
+        .unwrap()
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition else {
+        panic!("Hole definition");
+    };
+    (placements, losses)
+}
+
+fn directed(position: [f64; 3]) -> cadmpeg_ir::features::holes::HolePlacement {
+    directed_along(position, -1.0)
+}
+
+fn directed_along(position: [f64; 3], z: f64) -> cadmpeg_ir::features::holes::HolePlacement {
+    cadmpeg_ir::features::holes::HolePlacement::Directed {
+        position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            position[0],
+            position[1],
+            position[2],
+        ))
+        .unwrap(),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
+            0.0, 0.0, z,
+        ))
+        .unwrap(),
+    }
+}
+
+#[test]
+fn hole_placements_come_from_the_carrier_form_in_millimetres_against_the_normal() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+
+    set_carrier(
+        &mut scope,
+        13,
+        [0.0; 3],
+        &[(10, [1.0, 1.5, 2.0]), (10, [3.0, 1.5, 2.0])],
+        true,
+    );
+    let (placements, losses) = projected_placements(&scope);
+    assert_eq!(
+        placements,
+        Some(vec![
+            directed([10.0, 15.0, 20.0]),
+            directed([30.0, 15.0, 20.0])
+        ])
+    );
+    assert!(losses.is_empty());
+
+    set_carrier(
+        &mut scope,
+        19,
+        [1.0, 1.5, 2.0],
+        &[(17, [1.0, 1.5, 2.0])],
+        false,
+    );
+    let (placements, losses) = projected_placements(&scope);
+    assert_eq!(placements, Some(vec![directed([10.0, 15.0, 20.0])]));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn hole_direction_control_selects_the_travel_of_every_placement() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    set_carrier(
+        &mut scope,
+        13,
+        [0.0; 3],
+        &[(10, [1.0, 1.5, 2.0]), (10, [3.0, 1.5, 2.0])],
+        true,
+    );
+    set_direction_control(&mut scope, Some(1));
+    let (placements, losses) = projected_placements(&scope);
+    assert_eq!(
+        placements,
+        Some(vec![
+            directed_along([10.0, 15.0, 20.0], 1.0),
+            directed_along([30.0, 15.0, 20.0], 1.0)
+        ])
+    );
+    assert!(losses.is_empty());
+
+    set_direction_control(&mut scope, None);
+    let (placements, losses) = projected_placements(&scope);
+    assert_eq!(placements, None);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::HolePlacementUnproven.kind()
+    );
+}
+
+#[test]
+fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    let cases: [(u32, [f64; 3], &[(u32, [f64; 3])]); 4] = [
+        (13, [0.0; 3], &[]),
+        (
+            13,
+            [0.0; 3],
+            &[(10, [1.0, 1.5, 2.0]), (17, [3.0, 1.5, 2.0])],
+        ),
+        (19, [1.0, 1.5, 2.0], &[(17, [3.0, 1.5, 2.0])]),
+        (18, [1.0, 1.5, 2.0], &[(17, [1.0, 1.5, 2.0])]),
+    ];
+    for (reference_type, position, locations) in cases {
+        set_carrier(&mut scope, reference_type, position, locations, false);
+        let (placements, losses) = projected_placements(&scope);
+        assert_eq!(placements, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::HolePlacementUnproven.kind()
+        );
+    }
+}
+
+#[test]
+fn hole_without_a_carrier_reports_its_unproved_placement() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    let (placements, losses) = projected_placements(&scope);
+    assert_eq!(placements, None);
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn through_all_admits_a_carrier_selection_only_on_a_sketch_point_carrier() {
+    let parameters = hole_parameters();
+    let indexed = [(1, &parameters[1]), (2, &parameters[2])];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 1, true);
+
+    set_carrier(&mut scope, 13, [0.0; 3], &[(10, [1.0, 1.5, 2.0])], true);
+    let definition = project_hole(&scope, &indexed, &[], &mut Vec::new())
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            ..
+        })
+    ));
+
+    set_carrier(
+        &mut scope,
+        19,
+        [1.0, 1.5, 2.0],
+        &[(17, [1.0, 1.5, 2.0])],
+        true,
+    );
+    let mut losses = Vec::new();
+    assert!(project_hole(&scope, &indexed, &[], &mut losses)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::HoleExtentUnproven.kind()
+    );
 }
 
 fn face_operand(
@@ -296,6 +549,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
             leading_word: None,
             extent_control: None,
             saved_non_distance_depth: None,
+            direction_control: None,
         });
     }
     let parameters = hole_parameters();

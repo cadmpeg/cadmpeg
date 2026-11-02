@@ -2188,6 +2188,27 @@ source = "spec"
 anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
 
 [[record]]
+name = "design_hole_direction_control"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Type versions `5` and `7` store a direction control"
+size = 29
+note = "Offsets are relative to the start of the Hole extent controls of type versions 5 and 7."
+
+[[record.gap]]
+offset = 0
+size = 28
+note = "The extent controls and the fields that follow them are not part of this record."
+
+[[record.field]]
+name = "control"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "Type versions `5` and `7` store a direction control"
+
+[[record]]
 name = "design_hole_point_data_v1_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
