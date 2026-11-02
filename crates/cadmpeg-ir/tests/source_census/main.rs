@@ -29,6 +29,7 @@ mod reader_routes;
 const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-asm/src/brep/mod.rs", "AsmBrep", "wire"),
     ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
+    ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
     (
         "crates/cadmpeg-asm/src/brep/records.rs",
         "FaceSidedness",
