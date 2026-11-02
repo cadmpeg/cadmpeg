@@ -90,7 +90,6 @@ struct SettingRecord {
     byte_len: u64,
     typecode: String,
     sha256: String,
-    parse_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -616,10 +615,13 @@ pub(crate) fn install(
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             typecode: typecode_text(value.typecode),
             sha256: sha256_text(&scan.data[value.source.range.clone()]),
-            parse_error: None,
         });
     }
+    // Settings decode typed with the source unit: a document without a
+    // physical millimetre binding still decodes its settings instead of
+    // retaining them as opaque source (#223 item 9).
     let binding = UnitBinding::from_units(settings.units.as_ref());
+    let scale = binding.neutral_scale().unwrap_or(MillimeterScale::IDENTITY);
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
@@ -646,44 +648,13 @@ pub(crate) fn install(
         }
     }
     let mut render_settings_seen = false;
+    let mut give_ups = Vec::new();
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
         }
         for record in &table.records {
-            if matches!(
-                record.typecode,
-                ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
-            ) && binding.neutral_scale().is_none()
-            {
-                let message = format!("setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                record.typecode,
-                record.range.start,
-                binding.label());
-
-                losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
-
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: table.typecode,
-                    record: record.clone(),
-                });
-
-                setting_records.push(SettingRecord {
-                    id: numbered_id(
-                        "rhino:document:setting#unit-binding-",
-                        setting_records.len(),
-                    ),
-                    byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: typecode_text(record.typecode),
-                    sha256: sha256_text(&scan.data[record.range.clone()]),
-                    parse_error: Some(message),
-                });
-                continue;
-            }
             let result = if record.typecode == ANNOTATION_SETTINGS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
                 match annotation_settings(ctx, scan.data, record.body(), scale) {
                     Ok(value) => {
                         annotations.push(value);
@@ -692,9 +663,6 @@ pub(crate) fn install(
                     Err(error) => Err(error),
                 }
             } else if record.typecode == GRID_DEFAULTS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
                 match grid_defaults(scan.data, record.body(), scale) {
                     Ok(value) => {
                         grids.push(value);
@@ -703,9 +671,6 @@ pub(crate) fn install(
                     Err(error) => Err(error),
                 }
             } else if record.typecode == RENDER_SETTINGS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
                 match render_settings(ctx, scan.data, record.body(), scan.archive, scale) {
                     Ok(value) => {
                         renders.push(value);
@@ -743,19 +708,28 @@ pub(crate) fn install(
                 if let FramingError::Resource(limit) = &error {
                     return Err(CodecError::ResourceLimit(*limit));
                 }
-
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: table.typecode,
-                    record: record.clone(),
-                });
-
-                setting_records.push(SettingRecord {
-                    id: numbered_id("rhino:document:setting#error-", setting_records.len()),
-                    byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: typecode_text(record.typecode),
-                    sha256: sha256_text(&scan.data[record.range.clone()]),
-                    parse_error: Some(format!("{error}")),
-                });
+                // A settings record that fails to parse is a given-up
+                // `rhino.table_record` part (#215 rule 1, #223 item 9).
+                let dropped = match record.typecode {
+                    ANNOTATION_SETTINGS => {
+                        vec!["rhino:document:annotation_settings#current".to_owned()]
+                    }
+                    GRID_DEFAULTS => {
+                        vec!["rhino:document:grid_defaults#current".to_owned()]
+                    }
+                    RENDER_SETTINGS => {
+                        vec!["rhino:document:render_settings#current".to_owned()]
+                    }
+                    _ => Vec::new(),
+                };
+                crate::container::settings_record_give_up(
+                    &mut give_ups,
+                    scan.data.len(),
+                    table.typecode,
+                    record,
+                    dropped,
+                    &error,
+                );
             }
         }
     }
@@ -772,6 +746,7 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        give_ups,
     })
 }
 
