@@ -271,8 +271,14 @@ fn report_unresolved_dimension_companions(report: &mut DecodeBody, count: usize)
 fn report_unresolved_configuration_rules(
     report: &mut DecodeBody,
     configurations: &[crate::records::configuration::DesignConfiguration],
+    unbound_roots: usize,
     ir: &CadIr,
 ) {
+    if unbound_roots != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationActiveRowUnbound, format_args!(
+            "{unbound_roots} Design configuration root record(s) were retained without an admitted active row of a unique table document."
+        ),);
+    }
     let count =
         crate::design::configurations::unresolved_configuration_member_count(configurations);
     if count != 0 {
@@ -302,7 +308,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
-            "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
+            "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
         ),);
     }
 }
@@ -2807,6 +2813,10 @@ impl<'a> F3dDecodeSession<'a> {
                 assembly_joints: &model.assembly_joints,
             },
             geometry: design_intent::DesignGeometry {
+                primary_brep: match path {
+                    FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
+                    FinalizePath::Bodyless(_) => None,
+                },
                 bodies: &model.bodies,
                 regions: &model.regions,
                 shells: &model.shells,
@@ -3052,6 +3062,7 @@ impl<'a> F3dDecodeSession<'a> {
                     report_unresolved_configuration_rules(
                         &mut self.report,
                         &design.design_configurations,
+                        design.configuration_roots_unbound,
                         &self.ir,
                     );
                 }

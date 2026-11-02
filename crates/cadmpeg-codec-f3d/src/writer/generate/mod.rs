@@ -122,6 +122,12 @@ pub(super) fn write_new(
                     configuration.entry_name()
                 )));
             }
+            if configuration.active_row().is_some() {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D generation does not write the Design configuration root record"
+                        .into(),
+                ));
+            }
             let payload =
                 crate::records::configuration::encode_configuration_payload(configuration)?;
             archive

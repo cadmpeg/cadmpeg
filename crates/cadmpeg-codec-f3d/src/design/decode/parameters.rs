@@ -272,10 +272,11 @@ pub(in crate::design) fn parse_design_parameter(
             };
         }
         if class_tag.as_str() == "287" {
-            return match parse_legacy_287_design_parameter(payload, class_tag, record_index) {
-                Ok(value) => value.map(Ok),
-                Err(error) => Some(Err(error)),
-            };
+            match parse_legacy_287_design_parameter(payload, class_tag.clone(), record_index) {
+                Ok(Some(value)) => return Some(Ok(value)),
+                Err(error) => return Some(Err(error)),
+                Ok(None) => {}
+            }
         }
         let compact_owned = payload.get(11..26) == Some(&[0; 15])
             && payload.get(30) == Some(&1)

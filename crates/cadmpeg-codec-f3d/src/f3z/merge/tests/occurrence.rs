@@ -386,7 +386,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         serde_json::Map::new(),
     )
     .unwrap();
@@ -421,7 +420,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         configurations[0].id(),
         "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
     );
-    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+    assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
 
 #[test]
@@ -443,7 +442,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         configuration_payload.clone(),
     )
     .expect("admitted configuration payload");
@@ -511,7 +509,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_configurations[0].payload(),
-        configuration_payload,
+        &configuration_payload,
         "configuration text and extension map keys are source payload, not identities"
     );
 }

@@ -320,11 +320,49 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             f3d_with_configuration(
                 &synthetic_geometry_smbh(),
                 "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg",
-                br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#,
+                &golden_configuration_document(),
             ),
         ),
         ("generated_unit_cube", encoder_generated_unit_cube()),
     ]
+}
+
+/// A table whose parameter and feature columns name records that the
+/// geometry-only fixture lacks, beside a property column.
+fn golden_configuration_document() -> Vec<u8> {
+    use crate::test_support::configuration_table::{
+        bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
+    };
+    serde_json::to_vec(&table_document(
+        "1",
+        &[
+            ("P", property_target("Part Number")),
+            ("W", object_target("71", "UserParameterValue")),
+            ("S", object_target("40", "DcFeature")),
+        ],
+        &[
+            (
+                "wide",
+                "Wide",
+                vec![
+                    ("P", string_cell("W-1")),
+                    ("W", expression_cell("25 mm", 2.5)),
+                    ("S", bool_cell(false)),
+                ],
+            ),
+            (
+                "narrow",
+                "Narrow",
+                vec![
+                    ("P", string_cell("N-1")),
+                    ("W", expression_cell("10 mm", 1.0)),
+                    ("S", bool_cell(true)),
+                ],
+            ),
+        ],
+        &["narrow", "wide"],
+    ))
+    .unwrap()
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {

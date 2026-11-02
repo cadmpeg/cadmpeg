@@ -5546,6 +5546,7 @@ pub(super) fn project_fixed_revolve_with_entities(
             operation,
             angle,
             second_side,
+            solid,
             ..
         },
     )) = &scope.payload()
@@ -5663,7 +5664,7 @@ pub(super) fn project_fixed_revolve_with_entities(
                 profile: revolve_profile,
                 axis,
                 extent,
-                solid: None,
+                solid: *solid,
                 face_maker: None,
                 fuse_order: None,
                 allow_multi_profile_faces: None,
@@ -5672,7 +5673,7 @@ pub(super) fn project_fixed_revolve_with_entities(
                 cadmpeg_ir::features::PartialRevolveConstruction::Axis {
                     profile: revolve_profile,
                     extent: Some(extent),
-                    solid: None,
+                    solid: *solid,
                     face_maker: None,
                     fuse_order: None,
                     allow_multi_profile_faces: None,
@@ -5723,6 +5724,7 @@ fn revolve_face_axis_operand<'a>(
 /// Orient partial-turn axes using the source sweep convention.
 pub(crate) fn orient_revolve_axes(
     features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     (linear_tolerance, angular_tolerance): (f64, f64),
@@ -5732,6 +5734,18 @@ pub(crate) fn orient_revolve_axes(
     };
 
     for feature in features {
+        let reversed = scopes.iter().any(|scope| {
+            feature.native_ref.as_deref() == Some(scope.id.as_str())
+                && matches!(
+                    scope.payload(),
+                    crate::records::feature::scope::DesignScopePayload::Revolve(Some(
+                        crate::records::feature::path_features::DesignRevolveConstruction {
+                            reversed: true,
+                            ..
+                        }
+                    ))
+                )
+        });
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
                 definition
@@ -5758,6 +5772,7 @@ pub(crate) fn orient_revolve_axes(
                             &axis,
                             sketch,
                             sketch_entities,
+                            reversed,
                             (linear_tolerance, angular_tolerance),
                         )
                     }),
@@ -5769,12 +5784,14 @@ pub(crate) fn orient_revolve_axes(
 }
 
 /// The axis directed so that a right-handed turn carries the profile of
-/// `sketch` toward the sketch normal, or `None` when the axis is not parallel
-/// to the sketch plane or the profile does not lie on one side of the axis.
+/// `sketch` toward the sketch normal, or toward its reverse when `reversed`, or
+/// `None` when the axis is not parallel to the sketch plane or the profile does
+/// not lie on one side of the axis.
 fn oriented_revolve_axis(
     axis: &cadmpeg_ir::features::RevolutionAxis,
     sketch: &cadmpeg_ir::sketches::Sketch,
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    reversed: bool,
     (linear_tolerance, angular_tolerance): (f64, f64),
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
@@ -5809,13 +5826,13 @@ fn oriented_revolve_axis(
         }
     }
     Some(cadmpeg_ir::features::RevolutionAxis {
-        direction: if positive_side? {
-            axis.direction
-        } else {
+        direction: if positive_side? == reversed {
             // Reversing a zero component gives -0.0; keep it a plain zero.
             cadmpeg_ir::features::FeatureDirection3::from_unit_without_small_components(
                 cadmpeg_ir::units::UnitVector3::normalized(axis.direction.reversed().get())?,
             )
+        } else {
+            axis.direction
         },
         ..axis.clone()
     })

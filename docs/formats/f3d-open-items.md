@@ -905,18 +905,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The neutral thread leaves `modeled` absent.
 
-### DR-148. Target references in populated configuration tables
-
-**Question.** How does an authored configuration table encode its driven parameter and feature targets, row identities, and cell values?
-
-**Known.** The table entries in seven public parametric hardware designs and 37 recipe uploads contain the JSON object `{}`. Each entry has zero rows and cells. The Design `BulkStream` contains the table serializer trigger and separate `DesignConfigurationRoot` records. The existing configuration decoder admits named JSON variant objects and joins parameter override names to unique neutral parameter identities. Design parameter records carry their own indexed identities in the Design `BulkStream`.
-
-**Need.** Legally available designs with at least two authored configurations, a changed parameter cell, and a changed feature state, with the corresponding table entries and Design records.
-
-**Conflict.** None.
-
-**Note.** Unassigned JSON members retain their native values and emit `configuration.member-unassigned`. The neutral configuration arena supports parameter overrides and evaluated feature states.
-
 ### DR-149. Text-bearing document parameter prefix
 
 **Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
@@ -1073,6 +1061,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** No stored field separates an origin identity from an ASM identity with the same number.
 
+### DR-204. Row default flag and revision members of configuration tables
+
+**Question.** What do a row `default` value `true`, a column `isCustom` value `true`, a nonempty `cachedRevIds` object, and the row `configRevisionId` state in a configuration table?
+
+**Known.** Every row in the populated tables stores `default` `false` and a `configRevisionId` UUID that differs from the row id. Every column stores `isCustom` `false`, and `cachedRevIds` is `{}`. These values stay the same when the active row, one parameter cell, one suppression cell, one row name, one row copy, or one column target changes.
+
+**Need.** A saved design with a row marked as the default, a design with a customized column, and a design saved again after changes to configured rows.
+
+**Conflict.** None.
+
+**Note.** The decoder retains these members in the native table document. A `default` or `isCustom` value `true` and each member of `cachedRevIds` emit `configuration.member-unassigned`.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
@@ -1152,3 +1152,15 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** Local corpus files retain ten additional bodies in the Body container and terminal ASM state while the producer's current view and STEP export contain five bodies. The complete registered whole-body selection family has 36 records; all 36 decode. Its two Remove selections name two distinct browser nodes already covered by the consuming-scope rule.
 
 **Note.** Preserve bodies while the browser-entry state and timeline endpoint remain unresolved. Creator family and container order supply comparison groups for the controlled saves.
+
+### DR-242. Thread face continuation through later topology rewrites
+
+**Question.** Which stored relation carries a Thread selection from its result face to the selected region after a later operation rewrites that face?
+
+**Known.** The ASM transition chain preserves stable entity slots across record updates. A later transition can retain the threaded cylinder's slot, axis, and radius while it updates that face, deletes another face, and inserts a replacement face. The Thread selection names its preceding topology.
+
+**Need.** Public controlled Thread designs followed by face splits, face deletion, and face motion, with the selected threaded regions identified before and after each operation.
+
+**Conflict.** None.
+
+**Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
