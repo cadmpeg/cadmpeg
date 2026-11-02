@@ -2101,6 +2101,8 @@ The table lists the classes whose bodies this specification describes, the strea
 
 ## 3. Parasolid stream
 
+[`parasolid.md`](parasolid.md) gives the transmit-stream grammar that SLDPRT shares with NX: the binary transmit header, the XMT index encoding, and the schema self-description.
+
 ### 3.1 Stream header
 
 ```
