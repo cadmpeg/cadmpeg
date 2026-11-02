@@ -772,13 +772,12 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
                 retained.offset(),
                 cadmpeg_core::decode::u64_from_index(start)
             );
-            let stub = unknowns
-                .iter()
-                .find(|record| record.id == *id)
-                .unwrap();
+            let stub = unknowns.iter().find(|record| record.id == *id).unwrap();
             for link in stub.links.iter() {
                 assert!(
-                    unknowns.iter().any(|record| record.id.as_str() == link.as_str()),
+                    unknowns
+                        .iter()
+                        .any(|record| record.id.as_str() == link.as_str()),
                     "stub link {link} names a native record"
                 );
             }

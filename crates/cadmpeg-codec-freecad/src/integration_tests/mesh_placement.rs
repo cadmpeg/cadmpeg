@@ -421,15 +421,17 @@ fn application_mesh_nested_link_fanout_has_a_shared_work_bound() {
     let result = decode(&object_refs, &[]);
     // Links without a stated placement withhold before expansion, so the
     // shared work bound is never reached. Every nested use is withheld.
-    assert!(!result.report().losses.iter().any(|loss| loss.code.to_string()
-        == "fcstd/geometry.mesh-placement-bounded"));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "fcstd/geometry.mesh-placement-bounded"));
     assert_eq!(
         result
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string()
-                == "fcstd/geometry.mesh-placement-not-transferred")
+            .filter(|loss| loss.code.to_string() == "fcstd/geometry.mesh-placement-not-transferred")
             .count(),
         601
     );
@@ -440,4 +442,3 @@ fn application_mesh_nested_link_fanout_has_a_shared_work_bound() {
         [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, 0.0]],
     );
 }
-

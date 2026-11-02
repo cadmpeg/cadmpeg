@@ -140,8 +140,7 @@ fn absence_of_visibility_is_distinct_from_an_explicit_visible_gate() {
     let ir = CadIr::empty();
     assert_eq!(
         ir.effective_visibility(&AppearanceTarget::Record {
-            arena: crate::document::ArenaName::parse("bodies")
-                .expect("registered bodies arena"),
+            arena: crate::document::ArenaName::parse("bodies").expect("registered bodies arena"),
             id: "test:display:body#unassigned".into(),
         }),
         None

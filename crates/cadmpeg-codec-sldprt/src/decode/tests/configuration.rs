@@ -138,7 +138,12 @@ fn native_configuration_without_a_decoded_partition_keeps_unresolved_membership(
     });
     let body = BodyId::mint("test:model:entity#body:other").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(3, vec![body.clone()])],
+        Some("Contents/Config-3-Partition"),
+    )
+    .unwrap();
 
     assert_eq!(ir.model.configurations[0].source_index, Some(4));
     assert!(ir.model.configurations[0].bodies.is_none());
@@ -158,12 +163,10 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
-        BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                "Default".into(),
-            ),
-        ]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+            "Default".into(),
+        )]),
     ));
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
@@ -181,7 +184,12 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
     });
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(3, vec![body.clone()])],
+        Some("Contents/Config-3-Partition"),
+    )
+    .unwrap();
     mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
 
     let configuration = &ir.model.configurations[0];
@@ -200,12 +208,10 @@ fn duplicate_active_names_do_not_adopt_a_partition() {
                     "sldprt:test"
                 )),
             ),
-            BTreeMap::from([
-                (
-                    cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                    "Default".into(),
-                ),
-            ]),
+            BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            )]),
         ));
         for (ordinal, source_index) in [(0, None), (1, second_index)] {
             ir.model.configurations.push(DesignConfiguration {
@@ -225,7 +231,12 @@ fn duplicate_active_names_do_not_adopt_a_partition() {
             });
         }
         let body = BodyId::mint("test:model:entity#body:active").unwrap();
-        assign_configuration_bodies(&mut ir, vec![(3, vec![body])], Some("Contents/Config-3-Partition")).unwrap();
+        assign_configuration_bodies(
+            &mut ir,
+            vec![(3, vec![body])],
+            Some("Contents/Config-3-Partition"),
+        )
+        .unwrap();
         assert_eq!(ir.model.configurations[0].source_index, None);
         assert_eq!(ir.model.configurations[1].source_index, second_index);
         assert!(ir.model.configurations[0].bodies.is_none());
@@ -275,16 +286,19 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
-        BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                "Default".into(),
-            ),
-        ]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+            "Default".into(),
+        )]),
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(3, vec![body.clone()])],
+        Some("Contents/Config-3-Partition"),
+    )
+    .unwrap();
     mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
 
     assert_eq!(ir.model.configurations.len(), 1);
@@ -314,12 +328,10 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
-        BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                "Default".into(),
-            ),
-        ]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+            "Default".into(),
+        )]),
     ));
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),

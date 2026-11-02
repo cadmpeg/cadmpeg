@@ -386,8 +386,14 @@ pub(super) fn decode(
         let target_steps =
             expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), ctx)?;
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
-            let targets =
-                appearance_targets(target_step, exchange, topology, &entity_ids, indices, &ir.model);
+            let targets = appearance_targets(
+                target_step,
+                exchange,
+                topology,
+                &entity_ids,
+                indices,
+                &ir.model,
+            );
             if targets.is_empty() {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"

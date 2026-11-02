@@ -116,7 +116,6 @@ impl ExactProfiles {
         self.0.insert(lane.to_owned(), profiles);
     }
 
-
     fn of(&self, lane: &str) -> Option<&[crate::carchive::SketchProfile]> {
         self.0.get(lane).map(Vec::as_slice)
     }

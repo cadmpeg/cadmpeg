@@ -28,7 +28,10 @@ pub(crate) fn is_symmetric_distance_layout(
     class_tag == "415"
         && paired_class_tag == "265"
         && reference_count_delta == u64_from_index(symmetric::REFERENCE_COUNT)
-        && matches!((frame_length, reference_member_count), (Some(447), 5) | (Some(469), 7))
+        && matches!(
+            (frame_length, reference_member_count),
+            (Some(447), 5) | (Some(469), 7)
+        )
 }
 
 fn variant(

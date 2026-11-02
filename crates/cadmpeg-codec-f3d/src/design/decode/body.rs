@@ -1182,9 +1182,7 @@ pub(crate) fn decode_design_body_bindings(
                         source_bodies.iter().copied(),
                         binding.asm_key,
                     )?
-                    .map(|key| {
-                        cadmpeg_asm::brep::records::identity::NativeRowId::from(key.id())
-                    })
+                    .map(|key| cadmpeg_asm::brep::records::identity::NativeRowId::from(key.id()))
                 };
                 let id = design_record_id(
                     &entry.name,

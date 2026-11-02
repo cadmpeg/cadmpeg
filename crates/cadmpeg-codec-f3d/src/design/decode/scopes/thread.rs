@@ -103,13 +103,15 @@ pub(super) fn exact_thread_construction(
         || !construction
             .form
             .class_pair_holds(scope.class_tag.as_str(), scope.paired_class_tag.as_str())
-        || !construction.designation_offset.is_some_and(|designation_offset| {
-            scope.byte_offset().is_some_and(|scope_offset| {
-                construction
-                    .form
-                    .designation_offset_holds(designation_offset, scope_offset)
+        || !construction
+            .designation_offset
+            .is_some_and(|designation_offset| {
+                scope.byte_offset().is_some_and(|scope_offset| {
+                    construction
+                        .form
+                        .designation_offset_holds(designation_offset, scope_offset)
+                })
             })
-        })
         || !construction
             .form
             .reference_count_holds(scope.reference_members().len())

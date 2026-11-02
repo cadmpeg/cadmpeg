@@ -158,14 +158,14 @@ fn stored_body_map_requires_complete_unique_membership() {
         std::slice::from_ref(&binding),
         Some(&keyed),
     );
-    assert!(matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.as_slice() == [expected]));
+    assert!(
+        matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.as_slice() == [expected])
+    );
     for body in [
         None,
-        Some(
-            cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                "f3d:asm:body-native-key#2".to_owned(),
-            ),
-        ),
+        Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#2".to_owned(),
+        )),
     ] {
         let mut other = binding.clone();
         other.body = body;

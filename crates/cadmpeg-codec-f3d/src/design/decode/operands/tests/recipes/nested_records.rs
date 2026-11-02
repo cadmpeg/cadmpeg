@@ -29,7 +29,9 @@ use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::ids::FaceId;
 
 fn tagged_faces(ids: &[&str]) -> Vec<cadmpeg_ir::topology::Face> {
-    let model = cadmpeg_ir::examples::unit_cube().expect("synthetic cube").model;
+    let model = cadmpeg_ir::examples::unit_cube()
+        .expect("synthetic cube")
+        .model;
     ids.iter()
         .enumerate()
         .map(|(index, id)| {
@@ -1162,7 +1164,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "f3d:brep:entity#50-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
@@ -1171,7 +1175,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#xref-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "f3d:brep:entity#xref-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
@@ -1202,7 +1208,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&local_recipe),
         &[PersistentSubentityTag {
             id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "f3d:brep:entity#50-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
@@ -1517,7 +1525,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#50-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "f3d:brep:entity#50-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
@@ -1526,7 +1536,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#51-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "f3d:brep:entity#51-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("4").unwrap(),
@@ -1535,7 +1547,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("f3d:brep:entity#xref-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "f3d:brep:entity#xref-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),

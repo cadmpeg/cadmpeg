@@ -236,7 +236,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-b-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#face-b-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -245,7 +247,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-a-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#face-a-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -254,7 +258,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-c-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#face-c-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -263,7 +269,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:edge#edge-b-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:edge#edge-b-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -272,7 +280,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:edge#edge-c-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:edge#edge-c-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -318,7 +328,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-a-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#face-a-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
@@ -327,7 +339,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-b-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#face-b-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),

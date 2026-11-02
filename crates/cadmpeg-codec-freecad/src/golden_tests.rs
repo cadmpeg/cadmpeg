@@ -706,12 +706,9 @@ mod damaged {
 
     /// Store `DOCUMENT` as one uncompressed archive member.
     fn damaged_bytes() -> Vec<u8> {
-        cadmpeg_test_support::zip_fixture::archive(
-            &[cadmpeg_test_support::zip_fixture::RawEntry::stored(
-                "Document.xml",
-                DOCUMENT,
-            )],
-        )
+        cadmpeg_test_support::zip_fixture::archive(&[
+            cadmpeg_test_support::zip_fixture::RawEntry::stored("Document.xml", DOCUMENT),
+        ])
     }
 
     /// The committed damaged fixture matches its builder, byte for byte.
@@ -734,4 +731,3 @@ mod damaged {
         assert_eq!(committed, built, "the damaged fixture matches its builder");
     }
 }
-

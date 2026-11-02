@@ -307,11 +307,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         let members = loop_
             .coedges()
             .iter()
-            .map(|id| {
-                coedges
-                    .get(id.as_str())
-                    .map(|coedge| coedge.edge.as_str())
-            })
+            .map(|id| coedges.get(id.as_str()).map(|coedge| coedge.edge.as_str()))
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default();
         rings.push((*key, members));

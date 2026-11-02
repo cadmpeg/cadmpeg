@@ -2,8 +2,8 @@
 //! Design body members, bounds, bindings and visibility.
 
 use super::identity::NativeRecordId;
-use cadmpeg_asm::brep::records::identity::NativeRowId;
 use super::mesh::DesignMeshSceneBounds;
+use cadmpeg_asm::brep::records::identity::NativeRowId;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;

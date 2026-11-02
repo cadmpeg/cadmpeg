@@ -51,7 +51,9 @@ fn limit_dimensions_round_trip_with_and_without_a_nominal() {
             .expect("dimension");
         assert_eq!(dimension.nominal().is_some(), with_nominal);
         if let Some(nominal) = dimension.nominal() {
-            assert!((nominal.literal().expect("literal nominal").value.get() - 35.0).abs() < EPS_LIMIT);
+            assert!(
+                (nominal.literal().expect("literal nominal").value.get() - 35.0).abs() < EPS_LIMIT
+            );
         }
         let Some(DimensionTolerance::Limits { lower, upper }) = dimension.tolerance() else {
             panic!("limits: {dimension:?}");

@@ -500,9 +500,7 @@ pub(super) fn fixed_kind_path_operations(
                 record_indexes: vec![80, 81, 82, 83, 84, 85],
                 value_offsets: Some(
                     (0..6)
-                        .map(|ordinal| {
-                            u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                        })
+                        .map(|ordinal| { u64_from_index(sweep_scalar_start + ordinal * 111 + 40) })
                         .collect(),
                 ),
             }
@@ -558,9 +556,7 @@ pub(super) fn fixed_kind_path_operations(
                 record_indexes: vec![80, 81, 82, 83, 84, 85],
                 value_offsets: Some(
                     (0..6)
-                        .map(|ordinal| {
-                            u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                        })
+                        .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
                         .collect(),
                 ),
             },
@@ -600,9 +596,7 @@ pub(super) fn fixed_kind_path_operations(
                 record_indexes: vec![80, 81, 82, 83, 84, 85],
                 value_offsets: Some(
                     (0..6)
-                        .map(|ordinal| {
-                            u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                        })
+                        .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
                         .collect(),
                 ),
             },
@@ -756,9 +750,7 @@ pub(super) fn fixed_kind_path_operations(
                 record_indexes: vec![80, 81, 82, 83, 84, 85],
                 value_offsets: Some(
                     (0..6)
-                        .map(|ordinal| {
-                            u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                        })
+                        .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
                         .collect(),
                 ),
             },

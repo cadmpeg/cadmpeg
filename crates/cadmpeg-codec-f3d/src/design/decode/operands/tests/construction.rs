@@ -1712,7 +1712,10 @@ fn remove_body_group_with_a_three_byte_discriminant_names_its_bodies() {
             .collect::<Vec<_>>(),
         [2184]
     );
-    assert_eq!(group.paired_byte_offset, Some(u64_from_index(bytes.len() - 11)));
+    assert_eq!(
+        group.paired_byte_offset,
+        Some(u64_from_index(bytes.len() - 11))
+    );
     assert!(crate::design::feature_project::project_remove_body(
         &scope,
         std::slice::from_ref(&group)

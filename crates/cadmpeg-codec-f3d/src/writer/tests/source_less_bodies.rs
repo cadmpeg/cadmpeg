@@ -138,8 +138,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     source_less.model.edges[0].native_ref = Some(edge_row.to_string());
     source_less.model.vertices[0].native_ref = Some(vertex_row.to_string());
     assert_eq!(
-        source_less.model.coedges[0].edge,
-        source_less.model.edges[0].id,
+        source_less.model.coedges[0].edge, source_less.model.edges[0].id,
         "the coedge-owned link shares its owning edge's row with the edge tag"
     );
     let coedge_index = 5;
@@ -218,13 +217,15 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ]
     .into_iter()
     .enumerate()
-    .map(|(ordinal, (target, target_coedge, unix_microseconds))| CreationTimestamp {
-        id: format!("f3d:generated:creation-timestamp#{ordinal}"),
-        target,
-        target_coedge,
-        record_index: 0,
-        unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(unix_microseconds).unwrap(),
-    })
+    .map(
+        |(ordinal, (target, target_coedge, unix_microseconds))| CreationTimestamp {
+            id: format!("f3d:generated:creation-timestamp#{ordinal}"),
+            target,
+            target_coedge,
+            record_index: 0,
+            unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(unix_microseconds).unwrap(),
+        },
+    )
     .collect();
 
     drop(native);

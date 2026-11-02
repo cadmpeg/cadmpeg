@@ -236,10 +236,8 @@ impl AppearanceTarget {
     /// Returns `None` when no neutral record's `native_ref` names the owner;
     /// the binding then has no neutral home and is not projected.
     pub fn record_for(model: &crate::document::Model, owner: &str) -> Option<Self> {
-        crate::schema::native_links::linking_record(model, owner).map(|(arena, id)| Self::Record {
-            arena,
-            id,
-        })
+        crate::schema::native_links::linking_record(model, owner)
+            .map(|(arena, id)| Self::Record { arena, id })
     }
 
     /// Returns the specific geometry target for an addressed neutral geometry record.

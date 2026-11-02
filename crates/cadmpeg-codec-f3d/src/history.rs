@@ -8957,19 +8957,19 @@ pub(crate) fn historical_topology_with_tags(
         return Ok(None);
     };
     for tag in &brep.persistent_subentity_tags {
-        let face = brep.asm.faces.iter().find(|face| {
-            face.native_ref.as_deref() == Some(tag.target.as_str())
-        });
-        let edge = brep.asm.edges.iter().find(|edge| {
-            edge.native_ref.as_deref() == Some(tag.target.as_str())
-        });
+        let face = brep
+            .asm
+            .faces
+            .iter()
+            .find(|face| face.native_ref.as_deref() == Some(tag.target.as_str()));
+        let edge = brep
+            .asm
+            .edges
+            .iter()
+            .find(|edge| edge.native_ref.as_deref() == Some(tag.target.as_str()));
         let (entity_kind, entity_ref) = match (face, edge) {
-            (Some(face), _) => {
-                (AsmHistoricalEntityKind::Face, stable_ref(face.id.as_str()))
-            }
-            (None, Some(edge)) => {
-                (AsmHistoricalEntityKind::Edge, stable_ref(edge.id.as_str()))
-            }
+            (Some(face), _) => (AsmHistoricalEntityKind::Face, stable_ref(face.id.as_str())),
+            (None, Some(edge)) => (AsmHistoricalEntityKind::Edge, stable_ref(edge.id.as_str())),
             _ => continue,
         };
         let Some(entity_ref) = entity_ref else {

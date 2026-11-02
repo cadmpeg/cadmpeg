@@ -485,7 +485,6 @@ fn decode_carrier_values(
     Some(g)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::index::scan_carriers;

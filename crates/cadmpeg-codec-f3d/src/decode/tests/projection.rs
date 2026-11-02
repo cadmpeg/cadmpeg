@@ -1460,7 +1460,10 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     native.design_parameter_scopes.push(scope.clone());
     let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer { scope: cadmpeg_ir::document::ContentScope::full(), geometry_transferred: true });
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        });
     report_design_projection_gaps(
         &mut report,
         &cadmpeg_test_support::service_decode_context(),
@@ -1488,8 +1491,9 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
             draft.layout_fixture_tail();
             draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
                 crate::records::feature::emboss::DesignEmbossConstruction {
-                    control_words:
-                        crate::records::feature::emboss::DesignEmbossControlWords::Two([7, 9]),
+                    control_words: crate::records::feature::emboss::DesignEmbossControlWords::Two(
+                        [7, 9],
+                    ),
                     native_pair: Some([17, 23]),
                     additional_native_pairs: None,
                     depth_owner: crate::records::identity::Sourced::at(60, 29),
@@ -1506,7 +1510,10 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         .unwrap();
     native.design_parameter_scopes = vec![scope];
     let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer { scope: cadmpeg_ir::document::ContentScope::full(), geometry_transferred: true });
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        });
     report_design_projection_gaps(
         &mut report,
         &cadmpeg_test_support::service_decode_context(),

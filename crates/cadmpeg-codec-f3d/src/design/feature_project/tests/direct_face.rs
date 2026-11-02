@@ -205,7 +205,12 @@ fn wall_slots_project_thickness_direction_mode_and_corners() {
         else {
             panic!("expected a shell");
         };
-        (thickness.unwrap().literal().expect("literal").get(), outward, mode, join)
+        (
+            thickness.unwrap().literal().expect("literal").get(),
+            outward,
+            mode,
+            join,
+        )
     };
     assert_eq!(
         project(&wall_slot_scope(0.2, None, false)),
@@ -402,10 +407,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     };
     assert_eq!(bodies, BodySelection::Native(group.id.clone()));
     assert_eq!(
-        translation.map(|component| component
-            .literal()
-            .expect("literal translation")
-            .get()),
+        translation.map(|component| component.literal().expect("literal translation").get()),
         [70., 110., 130.]
     );
     assert_eq!(
@@ -413,14 +415,11 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         cadmpeg_ir::math::Point3::new(0., 0., 0.)
     );
     assert_eq!(rotation.direction.z, -1.);
-    assert!((rotation
-        .angle
-        .literal()
-        .expect("literal angle")
-        .get()
-        - std::f64::consts::FRAC_PI_2)
-        .abs()
-        <= f64::EPSILON);
+    assert!(
+        (rotation.angle.literal().expect("literal angle").get() - std::f64::consts::FRAC_PI_2)
+            .abs()
+            <= f64::EPSILON
+    );
     assert_eq!(copies, cadmpeg_ir::Dimension::Literal(0));
     assert!(super::super::project_move(&scope, &[]).is_none());
     assert!(super::super::project_move(&scope, &[group.clone(), group.clone()]).is_none());

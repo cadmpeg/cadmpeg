@@ -118,8 +118,11 @@ impl Brep {
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) =
-                resolve_body_selector(&self.asm.bodies, self.asm.body_native_keys.iter(), *selector)?
+            let Some(body) = resolve_body_selector(
+                &self.asm.bodies,
+                self.asm.body_native_keys.iter(),
+                *selector,
+            )?
             else {
                 continue;
             };
@@ -420,8 +423,7 @@ pub(crate) fn link_target_for(
                 let coedge = coedges.iter().find(|coedge| coedge.id.as_str() == id)?;
                 let edge = edges.iter().find(|edge| edge.id == coedge.edge)?;
                 let row = edge.native_ref.clone()?;
-                let index =
-                    cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())?;
+                let index = cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())?;
                 Some((row, Some(index)))
             }
             _ => None,

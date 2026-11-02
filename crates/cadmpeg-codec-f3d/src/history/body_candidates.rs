@@ -117,9 +117,11 @@ impl<'a> BodyCandidates<'a> {
                 .collect::<std::collections::HashSet<_>>();
             let mut latest = HashMap::<&BodyId, &PersistentDesignLink>::new();
             for link in self.links {
-                let Some(body) = self.bodies.iter().find(|body| {
-                    body.native_ref.as_deref() == Some(link.target.as_str())
-                }) else {
+                let Some(body) = self
+                    .bodies
+                    .iter()
+                    .find(|body| body.native_ref.as_deref() == Some(link.target.as_str()))
+                else {
                     continue;
                 };
 

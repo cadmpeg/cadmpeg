@@ -733,9 +733,11 @@ mod tests {
             .appearances
             .iter()
             .any(|asset| asset.id.as_str().contains("143de0ff")));
-        assert!(ir.model.appearance_bindings.iter().all(|binding| {
-            !binding.appearance.as_str().contains("143de0ff")
-        }));
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| { !binding.appearance.as_str().contains("143de0ff") }));
         assert!(ir
             .model
             .appearance_bindings

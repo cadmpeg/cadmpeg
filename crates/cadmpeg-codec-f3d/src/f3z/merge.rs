@@ -857,7 +857,11 @@ fn place_contained_poses_with_protected(
         .into_iter()
         .rev()
         .try_fold(Transform::identity(), |world, position| {
-            world.compose(ir.model.occurrences[position].transform.unwrap_or(Transform::identity()))
+            world.compose(
+                ir.model.occurrences[position]
+                    .transform
+                    .unwrap_or(Transform::identity()),
+            )
         })
         .map_err(|_| CodecError::malformed("F3Z component-path source frame overflow"))?;
     let source_scope = boundary_index.and_then(|boundary| {
@@ -1090,7 +1094,11 @@ fn place_contained_poses_with_protected(
                             })?;
                         if contained_frames_agree(source_pose, stored) {
                             stored = source_world
-                                .compose(ir.model.occurrences[instance].transform.unwrap_or(Transform::identity()))
+                                .compose(
+                                    ir.model.occurrences[instance]
+                                        .transform
+                                        .unwrap_or(Transform::identity()),
+                                )
                                 .and_then(|world| world.compose(*below))
                                 .map_err(|_| {
                                     CodecError::malformed("F3Z contained current frame overflow")
@@ -1243,7 +1251,11 @@ fn place_contained_poses_with_protected(
             .iter()
             .rev()
             .try_fold(Transform::identity(), |world, &parent| {
-                world.compose(ir.model.occurrences[parent].transform.unwrap_or(Transform::identity()))
+                world.compose(
+                    ir.model.occurrences[parent]
+                        .transform
+                        .unwrap_or(Transform::identity()),
+                )
             })
             .map_err(|_| CodecError::malformed("F3Z occurrence world transform is not finite"))?;
         let local = parent_world
@@ -1252,7 +1264,8 @@ fn place_contained_poses_with_protected(
             .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
             if occurrence.transform.is_some_and(|transform| {
-                transform.rows() == Transform::identity().rows() && local.rows() != Transform::identity().rows()
+                transform.rows() == Transform::identity().rows()
+                    && local.rows() != Transform::identity().rows()
             }) {
                 left_identity += 1;
             }

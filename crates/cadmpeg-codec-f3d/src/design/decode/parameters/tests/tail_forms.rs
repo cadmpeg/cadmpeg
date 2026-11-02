@@ -118,7 +118,10 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
         assert_eq!(parameter.expression(), "t");
         assert_eq!(parameter.source_kind(), "AlongDistance");
         let discriminator = parameter.family_discriminator().expect("discriminator");
-        assert_eq!((discriminator.value.code(), discriminator.offset), (0, Some(26)));
+        assert_eq!(
+            (discriminator.value.code(), discriminator.offset),
+            (0, Some(26))
+        );
     }
     let mut document = parameter_record(None, "3 mm", "User Parameter", Some("mm"), "w", 0.3);
     document[22..30].copy_from_slice(&0u64.to_le_bytes());

@@ -74,5 +74,5 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
     }
 }
 
-mod property_linkage;
 mod coil;
+mod property_linkage;

@@ -531,8 +531,14 @@ fn rectangular_pattern_single_instance_direction_keeps_its_stored_distance() {
         panic!("single-instance direction did not resolve");
     };
     let ir = rectangular_parameter_document(&parameters);
-    assert_eq!(pattern.directions()[0].spacing(&ir).expect("spacing").get(), 5.0);
-    assert_eq!(pattern.directions()[1].spacing(&ir).expect("spacing").get(), 10.0);
+    assert_eq!(
+        pattern.directions()[0].spacing(&ir).expect("spacing").get(),
+        5.0
+    );
+    assert_eq!(
+        pattern.directions()[1].spacing(&ir).expect("spacing").get(),
+        10.0
+    );
     assert_eq!(pattern.rows().len(), 1);
     assert_eq!(pattern.rows()[0].len(), 2);
 }

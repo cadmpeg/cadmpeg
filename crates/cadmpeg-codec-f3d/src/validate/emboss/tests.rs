@@ -359,13 +359,13 @@ fn counted_scope(
                     .collect()
             });
             let control_bytes = if one_word { 4 } else { 8 };
-            construction.depth_owner = Sourced::at(ids[0], 21 + control_bytes,);
-            construction.auxiliary_group = Sourced::at(ids[2], 32 + control_bytes,);
-            construction.horizontal_owner = Sourced::at(ids[4], 43 + control_bytes,);
-            construction.rotation_owner = Sourced::at(ids[6], suffix + 1,);
-            construction.face_group = Sourced::at(ids[8], suffix + 12,);
-            construction.vertical_owner = Sourced::at(ids[10], suffix + 23,);
-            construction.profile_group = Sourced::at(ids[12], suffix + 38,);
+            construction.depth_owner = Sourced::at(ids[0], 21 + control_bytes);
+            construction.auxiliary_group = Sourced::at(ids[2], 32 + control_bytes);
+            construction.horizontal_owner = Sourced::at(ids[4], 43 + control_bytes);
+            construction.rotation_owner = Sourced::at(ids[6], suffix + 1);
+            construction.face_group = Sourced::at(ids[8], suffix + 12);
+            construction.vertical_owner = Sourced::at(ids[10], suffix + 23);
+            construction.profile_group = Sourced::at(ids[12], suffix + 38);
         })
         .unwrap();
     scope

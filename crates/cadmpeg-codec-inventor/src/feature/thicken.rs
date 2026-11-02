@@ -228,7 +228,9 @@ pub(crate) fn operation<'a>(
         let distance = offset_distance(source, property, parameter, dimension)?;
         return Ok(FeatureOperation::MoveFace {
             faces: FaceSelection::Native(selections.id()),
-            motion: FaceMotion::Offset { distance: cadmpeg_ir::features::Dimension::Literal(distance) },
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::features::Dimension::Literal(distance),
+            },
         });
     }
     Ok(FeatureOperation::Thicken {

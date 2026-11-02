@@ -3,8 +3,7 @@ use super::*;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::{
-    BooleanKind, FeatureResultMembers, FeatureResultTopology, NativeSelections,
-    SplitBodyTool,
+    BooleanKind, FeatureResultMembers, FeatureResultTopology, NativeSelections, SplitBodyTool,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 
@@ -103,7 +102,11 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
     let motion = FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies: BodySelection::local(vec!["target".into(), "tool".into()], "selection".into())
             .expect("distinct wrappers"),
-        translation: [cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO), cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO), cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO)],
+        translation: [
+            cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO),
+            cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO),
+            cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO),
+        ],
         rotation: None,
         copies: cadmpeg_ir::Dimension::Literal(0),
     });

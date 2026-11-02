@@ -20,9 +20,10 @@ use std::collections::HashMap;
 /// lane does not already hold. Omitting it keeps the re-decode from gaining
 /// an engine binding the source never stated.
 fn is_literal_binding(parameter: &cadmpeg_ir::features::DesignParameter) -> bool {
-    parameter.value.as_ref().is_some_and(|value| {
-        parameter.expression == Expression::literal(value)
-    })
+    parameter
+        .value
+        .as_ref()
+        .is_some_and(|value| parameter.expression == Expression::literal(value))
 }
 
 pub(in crate::writer) fn parameter_reference(

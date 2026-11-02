@@ -179,14 +179,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .native_ref
         .clone()
         .expect("decoded edge links its ownership row");
-    let owner_coedge = cadmpeg_asm::brep::records::neutral_record_index(
-        source_less.model.coedges[0].id.as_str(),
-    )
-    .expect("decoded coedge carries a record index");
-    let tolerant_coedge = cadmpeg_asm::brep::records::neutral_record_index(
-        source_less.model.coedges[1].id.as_str(),
-    )
-    .expect("decoded coedge carries a record index");
+    let owner_coedge =
+        cadmpeg_asm::brep::records::neutral_record_index(source_less.model.coedges[0].id.as_str())
+            .expect("decoded coedge carries a record index");
+    let tolerant_coedge =
+        cadmpeg_asm::brep::records::neutral_record_index(source_less.model.coedges[1].id.as_str())
+            .expect("decoded coedge carries a record index");
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
@@ -576,9 +574,7 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                tolerant_vertex.clone(),
-            ),
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_vertex.clone()),
             record_index: 0,
             leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
@@ -650,9 +646,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                tolerant_vertex.clone(),
-            ),
+            owner: cadmpeg_asm::brep::records::identity::NativeRowId::from(tolerant_vertex.clone()),
             record_index: 0,
             leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},

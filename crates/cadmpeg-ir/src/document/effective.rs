@@ -352,7 +352,10 @@ impl CadIr {
                     ids.insert(source.object_id.as_str());
                 }
             }
-            AppearanceTarget::TriangleGroup { tessellation, group } => {
+            AppearanceTarget::TriangleGroup {
+                tessellation,
+                group,
+            } => {
                 ids.insert(tessellation.as_str());
                 ids.insert(group.as_str());
                 if let Some(source) = self

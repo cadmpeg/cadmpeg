@@ -457,10 +457,12 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
             if owner.is_none() {
                 wrong_owner["owner_record_index"] = serde_json::json!(2);
                 assert!(
-                    serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_owner)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("owner_record_index")
+                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                        wrong_owner
+                    )
+                    .unwrap_err()
+                    .to_string()
+                    .contains("owner_record_index")
                 );
             } else {
                 // Owner-less dimension and feature parameters store a null

@@ -1845,7 +1845,10 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
         ("modeled", serde_json::json!(null)),
         ("standard", serde_json::json!("")),
         ("designation", serde_json::json!(" ")),
-        ("pitch", serde_json::json!({"kind": "literal", "value": 0.0})),
+        (
+            "pitch",
+            serde_json::json!({"kind": "literal", "value": 0.0}),
+        ),
     ] {
         let mut wire = minimal.clone();
         wire[field] = value;

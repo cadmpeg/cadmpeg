@@ -231,4 +231,3 @@ mod damaged {
         assert_eq!(committed, built, "the damaged fixture matches its builder");
     }
 }
-

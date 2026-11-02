@@ -501,9 +501,7 @@ fn a_quarter_turn_lands_on_the_positive_normal_side() {
 
     let extent = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
-            ),
+            angle: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN),
         },
     };
     for (start, end, low_x, high_x) in [

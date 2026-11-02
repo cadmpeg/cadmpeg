@@ -1862,7 +1862,6 @@ pub(super) fn scan_deltas_with_owner_attrs(
     )
 }
 
-
 #[cfg(test)]
 fn scan_with_curve_attrs_excluding(
     body: &[u8],

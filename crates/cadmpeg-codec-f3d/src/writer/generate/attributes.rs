@@ -67,9 +67,12 @@ impl<'a> AttributeIndex<'a> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
-            if let Some(body) = target.model.bodies.iter().find(|body| {
-                key.owns_native_ref(body.native_ref.as_deref())
-            }) {
+            if let Some(body) = target
+                .model
+                .bodies
+                .iter()
+                .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
+            {
                 body_keys.entry(body.id.as_str()).or_insert(key);
             }
         }
@@ -131,15 +134,30 @@ impl<'a> AttributeIndex<'a> {
             let Some(id) = neutral else {
                 continue;
             };
-            let entry = if target.model.bodies.iter().any(|body| body.id.as_str() == id) {
+            let entry = if target
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.as_str() == id)
+            {
                 &mut body_timestamps
             } else if target.model.faces.iter().any(|face| face.id.as_str() == id) {
                 &mut face_timestamps
             } else if target.model.edges.iter().any(|edge| edge.id.as_str() == id) {
                 &mut edge_timestamps
-            } else if target.model.coedges.iter().any(|coedge| coedge.id.as_str() == id) {
+            } else if target
+                .model
+                .coedges
+                .iter()
+                .any(|coedge| coedge.id.as_str() == id)
+            {
                 &mut coedge_timestamps
-            } else if target.model.vertices.iter().any(|vertex| vertex.id.as_str() == id) {
+            } else if target
+                .model
+                .vertices
+                .iter()
+                .any(|vertex| vertex.id.as_str() == id)
+            {
                 &mut vertex_timestamps
             } else {
                 continue;

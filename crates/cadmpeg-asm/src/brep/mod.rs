@@ -803,7 +803,8 @@ fn link_native_refs(
     Ok(())
 }
 
-fn inherited_attribute_target(    mut owner: i64,
+fn inherited_attribute_target(
+    mut owner: i64,
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
 ) -> Option<AttributeTarget> {

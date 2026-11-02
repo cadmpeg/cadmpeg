@@ -906,10 +906,7 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
-    (
-        SldprtLossCode::TopologyFaceWithheld,
-        Representation::Model,
-    ),
+    (SldprtLossCode::TopologyFaceWithheld, Representation::Model),
     (
         SldprtLossCode::TopologyFinRecordAmbiguous,
         Representation::Model,

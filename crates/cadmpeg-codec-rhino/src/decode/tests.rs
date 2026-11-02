@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure,
+    brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense, edge_param_range,
+    edge_vertices, face_components, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand, with_expand_bytes,
+    BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary,
+    DecodeContext, ReferenceFailure,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;

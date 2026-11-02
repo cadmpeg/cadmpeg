@@ -3121,11 +3121,15 @@ fn project_thread(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
-                diameter: thread_fields.diameter.map(cadmpeg_ir::features::Dimension::Literal),
+                diameter: thread_fields
+                    .diameter
+                    .map(cadmpeg_ir::features::Dimension::Literal),
                 extent: None,
                 standard: thread_fields.standard,
                 designation: thread_fields.designation,
-                pitch: thread_fields.pitch.map(cadmpeg_ir::features::Dimension::Literal),
+                pitch: thread_fields
+                    .pitch
+                    .map(cadmpeg_ir::features::Dimension::Literal),
                 modeled: None,
             }),
         ),
@@ -3879,8 +3883,7 @@ fn project_fillet(
     .ok()?;
     let mut groups = Vec::new();
     for operand in operands {
-        let PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } = &operand.set.kind
-        else {
+        let PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } = &operand.set.kind else {
             return None;
         };
         let Some(radius) = reference_binding(

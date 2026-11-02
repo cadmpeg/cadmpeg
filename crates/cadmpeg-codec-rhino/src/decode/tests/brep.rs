@@ -2,11 +2,11 @@
 
 use super::super::decode_pcurves;
 use super::{
-    brep_free_vertex_indices, face_components, line_nurbs,
-    region_shell_groups_without_records, source_shaped_plane_brep, stage_brep, with_expand_bytes,
-    ArchiveVersion, Body, BodyKind, BrepDraft, BrepTransferInput, BrepTransferKind, CadIr, Curve,
-    CurveGeometry, MillimeterScale, NativeUnknownRecord, PcurveGeometry, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SourceObjectAssociation, Surface, UnknownId,
+    brep_free_vertex_indices, face_components, line_nurbs, region_shell_groups_without_records,
+    source_shaped_plane_brep, stage_brep, with_expand_bytes, ArchiveVersion, Body, BodyKind,
+    BrepDraft, BrepTransferInput, BrepTransferKind, CadIr, Curve, CurveGeometry, MillimeterScale,
+    NativeUnknownRecord, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SourceObjectAssociation, Surface, UnknownId,
 };
 use crate::loss::RhinoLossCode;
 

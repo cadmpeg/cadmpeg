@@ -94,7 +94,10 @@ fn absent_flattened_scope_payloads_preserve_the_wire() {
 #[test]
 fn revolve_opposite_angle_preserves_wire_and_rejects_partial_source_location() {
     let base = r#"{"operation":"join","angle":1.5,"angle_record_index":3"#;
-    for tail in ["}", ",\"opposite_angle_record_index\":4,\"opposite_angle_offset\":80}"] {
+    for tail in [
+        "}",
+        ",\"opposite_angle_record_index\":4,\"opposite_angle_offset\":80}",
+    ] {
         let wire = format!("{base}{tail}");
         let value: crate::records::feature::path_features::DesignRevolveConstruction =
             serde_json::from_str(&wire).expect("revolve construction");

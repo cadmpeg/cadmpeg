@@ -375,13 +375,7 @@ impl DecodeBudget {
         ));
         let limit = self.policy.limits.max_entities;
         let before = self.entities.get().max(self.account.entities_used());
-        self.admit(
-            ResourceDimension::Entities,
-            before,
-            limit,
-            count,
-            operation,
-        )?;
+        self.admit(ResourceDimension::Entities, before, limit, count, operation)?;
         self.account.charge_entities(limit, count, operation)?;
         self.entities.set(self.entities.get() + count);
         #[cfg(feature = "test-support")]

@@ -658,7 +658,7 @@ impl F3dLossCode {
         Self::WriterPmiOmitted,
         Self::WriterProductOmitted,
         Self::WriterSourceAssociationOmitted,
-];
+    ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
@@ -1344,10 +1344,7 @@ mod tests {
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: Vec<&str> = F3dLossCode::ALL
-            .iter()
-            .map(|c| c.code())
-            .collect();
+        let codes: Vec<&str> = F3dLossCode::ALL.iter().map(|c| c.code()).collect();
         assert_eq!(
             codes,
             [

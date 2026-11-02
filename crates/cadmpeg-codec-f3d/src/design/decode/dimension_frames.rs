@@ -758,24 +758,24 @@ pub(crate) fn bind_recipe_reference_candidates(
     }) {
         let matching_selector = tag.selector == reference.selector;
         let Some(neutral) = crate::brep::link_neutral_id(
-            bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+            bodies,
+            faces,
+            edges,
+            vertices,
+            coedges,
+            &tag.target,
+            tag.target_coedge,
         ) else {
             continue;
         };
         let neutral = neutral.as_str();
-        if let Some(face) = faces
-            .iter()
-            .find(|face| face.id.as_str() == neutral)
-        {
+        if let Some(face) = faces.iter().find(|face| face.id.as_str() == neutral) {
             if matching_selector {
                 reference.candidate_faces.push(face.id.clone());
             } else {
                 reference.alternate_selector_faces.push(face.id.clone());
             }
-        } else if let Some(edge) = edges
-            .iter()
-            .find(|edge| edge.id.as_str() == neutral)
-        {
+        } else if let Some(edge) = edges.iter().find(|edge| edge.id.as_str() == neutral) {
             if matching_selector {
                 reference.candidate_edges.push(edge.id.clone());
             } else {

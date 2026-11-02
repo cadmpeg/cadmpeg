@@ -75,12 +75,16 @@ pub(crate) fn scan_construction_curve_identities(
         let Ok(bytes) = scan.entry_bytes(&entry.name) else {
             continue;
         };
-        let Some(g_off) = curve.byte_offset.and_then(|b| usize::try_from(b).ok()).and_then(|b| {
-            curve
-                .geometry_offset
-                .and_then(|g| usize::try_from(g).ok())
-                .and_then(|g| b.checked_add(g))
-        }) else {
+        let Some(g_off) = curve
+            .byte_offset
+            .and_then(|b| usize::try_from(b).ok())
+            .and_then(|b| {
+                curve
+                    .geometry_offset
+                    .and_then(|g| usize::try_from(g).ok())
+                    .and_then(|g| b.checked_add(g))
+            })
+        else {
             continue;
         };
         let is_analytic_shape = match geometry {

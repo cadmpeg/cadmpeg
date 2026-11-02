@@ -196,7 +196,9 @@ impl serde::Serialize for NativeRecordIdentity<'_> {
 /// (for example an edge's ownership row) instead of naming a neutral record,
 /// so no native row holds a neutral back-link. Resolution runs through the
 /// neutral record's `native_ref`, which names the same row id.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct NativeRowId(String);
@@ -204,11 +206,7 @@ pub struct NativeRowId(String);
 impl NativeRowId {
     /// Name an ASM row of `kind` at `record_index` in `namespace`.
     #[must_use]
-    pub fn row_id(
-        namespace: &NativeRecordNamespace,
-        kind: &str,
-        record_index: u32,
-    ) -> Self {
+    pub fn row_id(namespace: &NativeRecordNamespace, kind: &str, record_index: u32) -> Self {
         Self(namespace.id(kind, record_index))
     }
 

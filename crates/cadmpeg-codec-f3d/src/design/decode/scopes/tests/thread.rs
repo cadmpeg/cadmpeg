@@ -689,10 +689,8 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
                 .unwrap()
                 .into_record("test", 1000 + u64_from_index(ordinal) * 200)
                 .unwrap();
-                let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
-                    owner,
-                )
-                .unwrap();
+                let mut wire =
+                    crate::records::parameters::DesignParameterOwnerWire::try_from(owner).unwrap();
                 wire.record_index = index;
                 wire.scope_record_index = 100;
                 wire.local_ordinal = u32::try_from(ordinal).unwrap();

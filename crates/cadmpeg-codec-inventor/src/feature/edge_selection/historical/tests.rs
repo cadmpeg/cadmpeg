@@ -382,7 +382,9 @@ pub(crate) fn fixture(
         FeatureOperation::Chamfer {
             groups: NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::Native(native),
-                spec: ChamferSpec::Distance { distance: cadmpeg_ir::Dimension::Literal(distance) },
+                spec: ChamferSpec::Distance {
+                    distance: cadmpeg_ir::Dimension::Literal(distance),
+                },
             }),
             flip_direction: true,
         }
@@ -390,7 +392,9 @@ pub(crate) fn fixture(
         FeatureOperation::Fillet {
             groups: NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::Native(native),
-                radius: RadiusSpec::Constant { radius: cadmpeg_ir::Dimension::Literal(distance) },
+                radius: RadiusSpec::Constant {
+                    radius: cadmpeg_ir::Dimension::Literal(distance),
+                },
                 tangency_weight: None,
             }),
         }

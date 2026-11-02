@@ -8,8 +8,7 @@ use crate::native::F3dNative;
 
 pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
     // Canonical native row id to the neutral entity linked from it.
-    let mut owners: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut owners: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for body in &target.model.bodies {
         if let Some(native_ref) = body.native_ref.as_deref() {
             owners
@@ -57,12 +56,7 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
             .edges()
             .iter()
             .map(|member| member.as_str())
-            .chain(
-                record
-                    .members
-                    .free_vertex()
-                    .map(|vertex| vertex.as_str()),
-            )
+            .chain(record.members.free_vertex().map(|vertex| vertex.as_str()))
             .filter_map(|member| owners.get(member))
             .collect::<Vec<_>>();
         let Some(shell) = target.model.shells.iter().find(|shell| {
@@ -82,27 +76,35 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
         match &mut record.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
                 edges.retain(|edge| {
-                    owners
-                        .get(edge.as_str())
-                        .is_some_and(|neutral| shell.wire_edges().iter().any(|candidate| &candidate.as_str() == neutral))
+                    owners.get(edge.as_str()).is_some_and(|neutral| {
+                        shell
+                            .wire_edges()
+                            .iter()
+                            .any(|candidate| &candidate.as_str() == neutral)
+                    })
                 });
                 !edges.is_empty()
             }
-            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => owners
-                .get(vertex.as_str())
-                .is_some_and(|neutral| {
+            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
+                owners.get(vertex.as_str()).is_some_and(|neutral| {
                     shell
                         .free_vertices()
                         .iter()
                         .any(|candidate| &candidate.as_str() == neutral)
-                }),
+                })
+            }
         }
     });
     native.edge_ownerships.retain(|record| {
         let Some(edge) = owners.get(record.id().as_str()) else {
             return false;
         };
-        if target.model.edges.iter().all(|candidate| candidate.id.as_str() != edge) {
+        if target
+            .model
+            .edges
+            .iter()
+            .all(|candidate| candidate.id.as_str() != edge)
+        {
             return false;
         }
         match record.owner_coedge_index {

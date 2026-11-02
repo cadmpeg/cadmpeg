@@ -145,6 +145,9 @@ fn parameter_scan_reaches_each_header_within_a_length_budget() {
     assert!(visited.contains(&valid_at));
     assert_eq!(
         visited.len(),
-        visited.iter().collect::<std::collections::HashSet<_>>().len()
+        visited
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
     );
 }

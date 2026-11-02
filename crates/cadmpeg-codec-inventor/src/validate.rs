@@ -2048,8 +2048,14 @@ fn validate_features(
                 });
             if !label_matches
                 || !selection_matches
-                || *diameter != thread_fields.diameter.map(cadmpeg_ir::features::Dimension::Literal)
-                || *pitch != thread_fields.pitch.map(cadmpeg_ir::features::Dimension::Literal)
+                || *diameter
+                    != thread_fields
+                        .diameter
+                        .map(cadmpeg_ir::features::Dimension::Literal)
+                || *pitch
+                    != thread_fields
+                        .pitch
+                        .map(cadmpeg_ir::features::Dimension::Literal)
                 || *standard != thread_fields.standard
                 || *designation != thread_fields.designation
                 || modeled.is_some()

@@ -179,7 +179,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let candidate_tags = [
         PersistentSubentityTag {
             id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#same-stream-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#same-stream-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
@@ -188,7 +190,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
         PersistentSubentityTag {
             id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-selector-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#other-selector-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
@@ -197,7 +201,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-stream-row".to_owned()),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "test:model:face#other-stream-row".to_owned(),
+            ),
             target_coedge: None,
             selector: 0,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
@@ -294,7 +300,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#same-stream-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "test:model:face#same-stream-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
@@ -303,7 +311,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-selector-row".to_owned()),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                    "test:model:face#other-selector-row".to_owned(),
+                ),
                 target_coedge: None,
                 selector: 2,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),

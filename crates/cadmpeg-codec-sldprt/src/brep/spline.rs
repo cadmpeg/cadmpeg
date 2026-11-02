@@ -303,10 +303,11 @@ fn scan_arrays(
                 if let Some(attr) = cadmpeg_parasolid::pointer::read_at(bytes, &mut values_at)
                     .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
                 {
-                    arrays.compact.entry(attr).or_default().push(CompactArray {
-                        count,
-                        values_at,
-                    });
+                    arrays
+                        .compact
+                        .entry(attr)
+                        .or_default()
+                        .push(CompactArray { count, values_at });
                 }
             }
         }
@@ -1476,7 +1477,6 @@ pub(crate) fn scan_surface_carriers(
     }
     out
 }
-
 
 #[cfg(test)]
 mod tests {

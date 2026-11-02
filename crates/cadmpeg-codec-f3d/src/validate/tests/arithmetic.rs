@@ -358,9 +358,7 @@ fn annotation_metadata_interval_findings(
                             125 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
                         ),
                         role: 1,
-                        role_offset: Some(
-                            135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                        ),
+                        role_offset: Some(135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15),
                     }
                 })
                 .collect(),

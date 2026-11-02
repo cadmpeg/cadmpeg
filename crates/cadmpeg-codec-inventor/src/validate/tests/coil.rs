@@ -137,9 +137,7 @@ fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
             height: cadmpeg_ir::Dimension::Literal(Length::new(6.0).expect("height")),
         },
         CoilExtent::HeightPitch {
-            height: cadmpeg_ir::Dimension::Literal(
-                NonZeroLength::new(6.0).expect("height")
-            ),
+            height: cadmpeg_ir::Dimension::Literal(NonZeroLength::new(6.0).expect("height")),
             pitch: cadmpeg_ir::Dimension::Literal(pitch),
         },
         CoilExtent::Spiral {
@@ -161,12 +159,12 @@ fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
                             .expect("frame"),
                         },
                         diameter: cadmpeg_ir::Dimension::Literal(
-                            PositiveLength::new(10.0).expect("diameter")
+                            PositiveLength::new(10.0).expect("diameter"),
                         ),
                         extent: extent.clone(),
                         section: CoilSection::Circular {
                             diameter: cadmpeg_ir::Dimension::Literal(
-                                PositiveLength::new(1.0).expect("section")
+                                PositiveLength::new(1.0).expect("section"),
                             ),
                         },
                         section_placement: CoilSectionPlacement::Center,

@@ -81,8 +81,13 @@ pub(crate) fn plan(
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity(), input.limits)
-                .and_then(|()| finish(&resolution));
+            let patch = admit_unedited(
+                &allocation_context,
+                input.ir,
+                resolution.fidelity(),
+                input.limits,
+            )
+            .and_then(|()| finish(&resolution));
             match patch {
                 Ok(body) => return Ok(body),
                 Err(error @ CodecError::UnsupportedContent(_)) => reason = Some(error.to_string()),

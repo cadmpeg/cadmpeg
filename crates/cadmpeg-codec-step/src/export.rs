@@ -1022,8 +1022,7 @@ impl<'a> Builder<'a> {
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
-                AppearanceTarget::Body(_)
-                | AppearanceTarget::TriangleGroup { .. } => continue,
+                AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -1036,8 +1035,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Occurrence(id) => id.as_str().to_owned(),
                     AppearanceTarget::Record { id, .. } => id.clone(),
-                    AppearanceTarget::Body(_)
-                    | AppearanceTarget::TriangleGroup { .. } => continue,
+                    AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;

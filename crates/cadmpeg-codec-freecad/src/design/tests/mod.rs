@@ -209,13 +209,16 @@ fn assert_native_retention_as(
     assert_eq!(
         losses
             .iter()
-            .filter(|loss| loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == extra_code)
+            .filter(|loss| loss.code.namespace() == "fcstd" && loss.code.local_code() == extra_code)
             .count(),
         extra,
         "{losses:?}"
     );
-    assert_eq!(losses.len(), expected + unreadable.len() + extra, "{losses:?}");
+    assert_eq!(
+        losses.len(),
+        expected + unreadable.len() + extra,
+        "{losses:?}"
+    );
     let unrepresented = if unreadable.is_empty() {
         cadmpeg_ir::ArenaClasses::new()
     } else {
