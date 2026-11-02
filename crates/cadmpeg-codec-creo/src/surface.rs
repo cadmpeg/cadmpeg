@@ -3848,6 +3848,11 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
             {
                 value_end = value_offset + compound_close.offset;
             }
+            if payload.get(value_offset) == Some(&psb::token::SCALAR_BODY) {
+                if let Some(close) = prototype_block_close(&payload[value_offset..value_end]) {
+                    value_end = value_offset + close;
+                }
+            }
             parameters.push(NamedPrototypeParameterRange {
                 name,
                 offset: token_offset,
@@ -3864,6 +3869,16 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
     }
     frames.as_mut_slice().sort_by_key(|left| left.offset);
     frames
+}
+
+/// The start of a terminal `f1 f7 <nonzero reference>` prototype block close
+/// in a field body.
+fn prototype_block_close(body: &[u8]) -> Option<usize> {
+    (0..body.len()).rev().find(|&start| {
+        body.get(start..start + 2) == Some(&[0xf1, psb::token::ENTITY_REF])
+            && psb::reference_id(body, start + 2)
+                .is_ok_and(|(reference, end)| reference != 0 && end == body.len())
+    })
 }
 
 /// Decode bounded named surface-prototype parameter records.

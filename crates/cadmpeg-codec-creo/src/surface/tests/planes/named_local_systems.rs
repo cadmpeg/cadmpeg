@@ -82,6 +82,34 @@ fn named_local_system_splits_zero_before_coordinate_token() {
 }
 
 #[test]
+fn named_local_system_ends_before_the_prototype_block_close() {
+    let payload = b"srf_prim_ptr(plane)\0\
+        \xe0\x02local_sys\0\xf9\x04\x03\x0f\x18\xe6\x0f\x18\x10\x18\xe6\xf1\xf7\x0f\xe3";
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
+    let field = records[0].field("local_sys").expect("local system");
+
+    assert_eq!(
+        field.body,
+        b"\xf9\x04\x03\x0f\x18\xe6\x0f\x18\x10\x18\xe6".to_vec()
+    );
+    assert_eq!(
+        field.value,
+        SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                .expect("valid scalar array");
+            array
+                .fill_values(
+                    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]
+                        .map(Some)
+                        .to_vec(),
+                )
+                .expect("matching scalar extent");
+            array
+        })
+    );
+}
+
+#[test]
 fn named_local_system_decodes_terminal_zero_slot() {
     let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
     let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
