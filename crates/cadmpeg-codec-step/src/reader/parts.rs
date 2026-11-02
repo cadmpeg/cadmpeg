@@ -33,24 +33,33 @@ pub(crate) fn decode_parsed(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let mut decoded = super::decode_exchange(input, exchange, diagnostics, ctx, packaging)?;
-    let (model, native, fidelity, mut losses) = parts.into_parts();
+    let (model, mut native, fidelity, mut losses) = parts.into_parts();
     // STEP parse callbacks return their records without staging neutral
     // content; only the native stubs, fidelity and losses leave the parts.
+    // The part output holds only this codec's namespace.
     debug_assert!(model.entity_count() == 0);
-    for (format, mut namespace) in native.0 {
-        let destination = decoded.ir.native.namespace_mut(format);
-        for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
-            let existing = destination.arenas_mut().entry(arena).or_default();
-            if records
-                .iter()
-                .any(|record| existing.iter().any(|known| known.id() == record.id()))
-            {
-                return Err(CodecError::malformed(
-                    "given-up part stub duplicates a native record",
-                ));
-            }
-            existing.append(&mut records);
+    debug_assert!(native
+        .loss_counts()
+        .iter()
+        .all(|count| count.format == "step"));
+    let staged = std::mem::take(native.namespace_mut("step").arenas_mut());
+    for (arena, mut records) in staged {
+        let existing = decoded
+            .ir
+            .native
+            .namespace_mut("step")
+            .arenas_mut()
+            .entry(arena)
+            .or_default();
+        if records
+            .iter()
+            .any(|record| existing.iter().any(|known| known.id() == record.id()))
+        {
+            return Err(CodecError::malformed(
+                "given-up part stub duplicates a native record",
+            ));
         }
+        existing.append(&mut records);
     }
     decoded.source_fidelity.append(fidelity)?;
     decoded.body.losses.append(&mut losses);
