@@ -2171,18 +2171,11 @@ own site, never a partition with its deltas. A partition that carries geometry
 is the result of the features that follow the import, and its LocalBodies are then that
 import's input, not the part.
 
-**Tolerance slots.** A plain stream can store real values in the FACE, EDGE and vertex-use
-tolerance slots (§4): faces `1e-8` or `0.0`, edges and vertices `2e-8` to `2.8e-4` m. It can
-instead store the null-real sentinel, as every partition does.
-
-A plain stream frames its records on the null-real sentinel, on `0.0`, or on a value in
+**Tolerance slots.** FACE, EDGE and vertex-use tolerance slots (§4) hold the null-real
+sentinel or a real value. FACE permits `0.0` and valued tolerances in partition and plain
+streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 `[1e-12, 1e-2]` m. A two-byte big-endian integer pair read as one f64 is a NORMAL value near
 1e-302, below that range.
-
-Partition and deltas streams frame records only on the sentinel.
-
-In every stream, a FACE or EDGE header frames only on a tolerance slot that holds the sentinel,
-`0.0`, or a value in that range.
 
 ---
 
