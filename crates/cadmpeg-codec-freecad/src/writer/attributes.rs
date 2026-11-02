@@ -138,6 +138,16 @@ fn through_schema(
     if old.len() != attribute.values.len() {
         return Ok(None);
     }
+    if matches!(original.family, crate::native::PropertyFamily::Link) {
+        // Link targets project one to one from the native link records.
+        // When the neutral values still equal that projection, the native
+        // XML is already their encoding; an edited link regenerates
+        // elsewhere, never by scalar rewrite.
+        if old == attribute.values {
+            return xml::native_named(&property, names);
+        }
+        return Ok(None);
+    }
     let Some(values) = property.values_mut() else {
         return Ok(None);
     };
@@ -157,7 +167,10 @@ fn through_schema(
         let Some(replacement) = attribute.values.get(cursor).and_then(Option::as_ref) else {
             return Ok(None);
         };
-        if std::mem::discriminant(&old[cursor]) != std::mem::discriminant(replacement) {
+        let Some(previous) = old[cursor].as_ref() else {
+            return Ok(None);
+        };
+        if std::mem::discriminant(previous) != std::mem::discriminant(replacement) {
             return Ok(None);
         }
         let scalar = match replacement {

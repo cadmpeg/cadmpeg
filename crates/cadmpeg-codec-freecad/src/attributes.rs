@@ -196,7 +196,7 @@ pub(crate) fn target(ir: &CadIr, owner: &str) -> Option<AttributeTarget> {
 
 /// A property's value order is retained. Container/count and transport fields
 /// are framing; only admitted scalar, vector, and reference values project.
-pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
+pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeValue>>> {
     let Some(PropertyBody::Persisted {
         values,
         links,
@@ -210,17 +210,38 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         return None;
     }
     if !links.is_empty() {
-        return links
-            .iter()
-            .map(|link| {
-                link.as_ref()
-                    .filter(|link| link.document().is_none() && link.subelements().is_empty())
-                    .and_then(|link| {
-                        link.object()
-                            .map(|object| AttributeValue::Reference(object.to_owned()))
+        return Some(
+            links
+                .iter()
+                .map(|link| {
+                    Some(match link.as_ref() {
+                        // A source slot that names no object and no
+                        // subelement is an empty reference, distinct from
+                        // a slot whose part was given up.
+                        None => AttributeValue::EmptyReference,
+                        Some(link) => {
+                            let object = link.object().map(str::to_owned);
+                            let subelements = link.subelements().to_vec();
+                            match link.document() {
+                                Some(document) => AttributeValue::ExternalReference {
+                                    document: document.as_str().to_owned(),
+                                    object,
+                                    subelements,
+                                },
+                                None if !subelements.is_empty() => AttributeValue::SubReference {
+                                    object,
+                                    subelements,
+                                },
+                                None => match object {
+                                    Some(object) => AttributeValue::Reference(object),
+                                    None => AttributeValue::EmptyReference,
+                                },
+                            }
+                        }
                     })
-            })
-            .collect();
+                })
+                .collect::<Vec<Option<AttributeValue>>>(),
+        );
     }
     let mut projected = Vec::new();
     for value in values {
@@ -268,7 +289,7 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         }?;
         projected.push(item);
     }
-    (!projected.is_empty()).then_some(projected)
+    (!projected.is_empty()).then_some(projected.into_iter().map(Some).collect())
 }
 
 /// Canonical semantic text for legacy string-valued parameter maps. This is
@@ -278,6 +299,7 @@ pub(crate) fn semantic_text(property: &PropertyRecord) -> Option<String> {
     let values = values
         .into_iter()
         .map(|value| {
+            let value = value?;
             Some(match value {
                 AttributeValue::String(value) | AttributeValue::Reference(value) => {
                     serde_json::Value::String(value)
@@ -321,7 +343,7 @@ pub(crate) fn document_property(
     let Some(values) = values(property) else {
         return Ok(None);
     };
-    Ok(Some(SourceAttribute::new(
+    Ok(Some(SourceAttribute::new_optional(
         ctx,
         AttributeId::mint(crate::native::model_id(
             "attribute",
@@ -389,7 +411,7 @@ fn transfer_impl(
             let Some(target) = target(ir, &property.owner) else {
                 continue;
             };
-            attributes.push(SourceAttribute::new(
+            attributes.push(SourceAttribute::new_optional(
                 ctx,
                 AttributeId::mint(crate::native::model_id(
                     "attribute",
