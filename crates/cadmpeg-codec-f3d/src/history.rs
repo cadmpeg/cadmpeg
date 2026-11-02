@@ -1689,7 +1689,6 @@ pub(crate) fn bind_feature_outputs(
     Ok(losses)
 }
 
-/// The history state a feature's scope produces and the state it follows.
 fn combine_states_applied_operation(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1704,6 +1703,7 @@ fn combine_states_applied_operation(
         })
 }
 
+/// The history state a feature's scope produces and the state it follows.
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
