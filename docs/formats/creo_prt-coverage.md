@@ -209,8 +209,11 @@ that gate.
   row-major direction matrix and three-slot chart origin. Named prototypes and
   positional plane rows use one expansion gate. The direction columns must be
   a right-handed signed basis, and the twelve finite slots must consume the
-  complete bounded body. Incomplete origins remain native with an explicit
-  loss. Existing carrier and chart witnesses remain active. A connected source
+  complete bounded body. Incomplete origins remain native with one
+  `geometry.plane-compact-frame-unresolved` loss at the selected local-system
+  row and offset. The search for the local-system compound close records no
+  refusal at an `e3` inside a scalar payload. Existing carrier and chart
+  witnesses remain active. A connected source
   component that uses this frame form transfers its faces only when every
   source face passes admission. Otherwise each projected face stays native with
   `geometry.brep-compact-frame-component-unresolved`.
