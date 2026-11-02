@@ -2,6 +2,7 @@
 //! Compare generated conic and spline helpers with their current parent geometry.
 
 use super::{close, distance2, endpoints, sketch_locus_point, Geometries};
+use crate::math::portable::Portable;
 use crate::math::Point2;
 use crate::sketches::{
     SketchEntityId, SketchGeometryDefinition as Geometry, SketchInternalAlignment as Alignment,
@@ -10,7 +11,7 @@ use crate::sketches::{
 use crate::CadIr;
 
 fn placed(center: Point2, angle: f64, u: f64, v: f64) -> Option<Point2> {
-    let (sine, cosine) = angle.sin_cos();
+    let (sine, cosine) = angle.portable_sin_cos();
     let result = Point2::new(
         center.u + cosine * u - sine * v,
         center.v + sine * u + cosine * v,
@@ -49,7 +50,7 @@ fn axis_agrees(
     geometry: &Geometries<'_>,
 ) -> Option<bool> {
     let (start, end) = endpoints(helper, geometry)?;
-    let (sine, cosine) = angle.sin_cos();
+    let (sine, cosine) = angle.portable_sin_cos();
     let normal_distance =
         |point: Point2| ((point.u - origin.u) * sine - (point.v - origin.v) * cosine).abs();
     Some(
@@ -137,7 +138,7 @@ pub(super) fn check(
                 ..
             },
         ) => {
-            let focus = major_radius.get().hypot(minor_radius.get());
+            let focus = major_radius.get().portable_hypot(minor_radius.get());
             let first = placed(center.get(), major_angle.get(), focus, 0.0)?;
             let second = placed(center.get(), major_angle.get(), -focus, 0.0)?;
             Some(
