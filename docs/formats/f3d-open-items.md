@@ -1029,7 +1029,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What do a row `default` value `true`, a column `isCustom` value `true`, a nonempty `cachedRevIds` object, and the row `configRevisionId` state in a configuration table?
 
-**Known.** Every row in the populated tables stores `default` `false` and a `configRevisionId` UUID that differs from the row id. Every column stores `isCustom` `false`, and `cachedRevIds` is `{}`. Changes to the active row, one parameter cell, one suppression cell, one row name, one row copy, and one column target set none of these members.
+**Known.** Every row in the populated tables stores `default` `false` and a `configRevisionId` UUID that differs from the row id. Every column stores `isCustom` `false`, and `cachedRevIds` is `{}`. These values stay the same when the active row, one parameter cell, one suppression cell, one row name, one row copy, or one column target changes.
 
 **Need.** A saved design with a row marked as the default, a design with a customized column, and a design saved again after changes to configured rows.
 
