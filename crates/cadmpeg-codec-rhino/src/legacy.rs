@@ -1315,6 +1315,90 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     })
 }
 
+/// Project one parsed V1 annotation record into its neutral home
+/// (`SemanticAnnotation`). The typed native record stays in
+/// `legacy_v1_records`; this adds the neutral projection (#223 item 6).
+fn project_v1_annotation(
+    payload: &V1AnnotationPayload,
+    record_id: &str,
+    order: u32,
+) -> Result<cadmpeg_ir::semantic_annotations::SemanticAnnotation, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let (kind, runtime_type, texts, position) = match payload {
+        V1AnnotationPayload::TextBlock(block) => (
+            SemanticAnnotationKind::Text,
+            "v1_text_block",
+            vec![block.user_text.text.clone()],
+            block.plane.origin,
+        ),
+        V1AnnotationPayload::Leader(leader) => (
+            SemanticAnnotationKind::Leader,
+            "v1_leader",
+            Vec::new(),
+            leader.plane.origin,
+        ),
+        V1AnnotationPayload::LinearDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_linear_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+        V1AnnotationPayload::AngularDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_angular_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+        V1AnnotationPayload::RadialDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_radial_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+    };
+    let key = record_id
+        .rsplit_once('#')
+        .map(|(_, key)| key.to_owned())
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "V1 annotation record id has no key: {record_id}"
+            ))
+        })?;
+    let id = SemanticAnnotationId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "legacy", "v1-annotation"),
+        cadmpeg_ir::ids::IdentityKey::try_new(key)
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
+    );
+    let position = cadmpeg_ir::units::FiniteVector::new(position.map(|value| value.get()))
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "V1 annotation record {record_id} has no finite neutral position"
+            ))
+        })?;
+    let mut annotation = SemanticAnnotation::new(
+        id,
+        record_id.to_owned(),
+        kind,
+        runtime_type.to_owned(),
+        order,
+        record_id.to_owned(),
+    );
+    annotation.text = texts.into_iter().filter(|text| !text.is_empty()).collect();
+    annotation.position = Some(position);
+    Ok(annotation)
+}
+
 fn v1_direct_record(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
@@ -2792,6 +2876,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         decoded_nurbs_surfaces += 1;
                     } else {
                         decoded_nurbs_breps += 1;
+                    }
+                    if let V1DirectPayload::Annotation(payload) = &record.payload {
+                        ctx.charge_entities(1, "Rhino V1 semantic annotations")?;
+                        let order =
+                            u32::try_from(ir.model.semantic_annotations.len()).map_err(|_| {
+                                CodecError::malformed("V1 annotation order exceeds u32")
+                            })?;
+                        let annotation = project_v1_annotation(payload, &record.id, order)?;
+                        ir.model.semantic_annotations.push(annotation);
                     }
                     direct_records.push(record);
                     push_v1_record(

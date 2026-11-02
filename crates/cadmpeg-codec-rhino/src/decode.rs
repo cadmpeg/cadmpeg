@@ -1222,7 +1222,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+        use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 
         let identity = &object.identity;
         let detail = match crate::detail::decode(
@@ -1254,77 +1254,24 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let association = Self::source_association(identity)?;
-        let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
-        let feature_id = {
-            Ok::<_, cadmpeg_core::CodecError>(FeatureId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "detail", "feature"),
+        let drawing_id = {
+            Ok::<_, cadmpeg_core::CodecError>(DrawingId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "detail", "drawing"),
                 key.clone(),
             ))
         }?;
-        let view = &self.scan.data[detail.view_range.clone()];
-        let mut source_properties = BTreeMap::new();
-        insert_feature_property(
-            &mut source_properties,
-            format_args!("view_bytes"),
-            format_args!("{}", view.len()),
-        )?;
-        insert_feature_property(
-            &mut source_properties,
-            format_args!("view_sha256"),
-            format_args!("{}", sha256_hex(view)),
-        )?;
-        let mut parameters = BTreeMap::new();
-        insert_feature_property(
-            &mut parameters,
-            format_args!("boundary"),
-            format_args!("{curve_id}"),
-        )?;
-        insert_feature_property(
-            &mut parameters,
-            format_args!("page_per_model_ratio"),
-            format_args!("{}", detail.page_per_model_ratio.get()),
-        )?;
-        let feature = Feature {
-            id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(
-                self.session.document().model.features.len(),
-            ),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: Some(false),
-            needs_recompute: false,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties,
-            source_tag: Some("RhinoDetailView".to_string()),
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: "detail_view".into(),
-                    parameters: parameters
-                        .into_iter()
-                        .map(|(name, expression)| {
-                            (
-                                name,
-                                cadmpeg_ir::features::Dimension::Literal(
-                                    cadmpeg_ir::features::Expression::text(expression),
-                                ),
-                            )
-                        })
-                        .collect(),
-                }),
-            ),
-            native_ref: Some(
-                self.session.unknowns()[source_order]
-                    .id()
-                    .as_str()
-                    .to_owned(),
-            ),
-            product_definition: None,
-        };
+        let native_ref = self.session.unknowns()[source_order]
+            .id()
+            .as_str()
+            .to_owned();
+        let scale = cadmpeg_ir::scalar::PositiveReal::new(detail.page_per_model_ratio.get());
+        let visible = object
+            .attributes
+            .parsed()
+            .map(|attributes| attributes.visible);
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            commit_curve_tree(
+            let committed = commit_curve_tree(
                 session,
                 candidate,
                 candidate_annotations,
@@ -1336,13 +1283,36 @@ impl<'a> DecodeContext<'a> {
                     path: "detail-boundary",
                 },
             )?;
-            candidate.model.features.push(feature);
+            let mut relationships = BTreeMap::new();
+            relationships.insert(
+                cadmpeg_core::text::NonBlankString::new("boundary")
+                    .ok_or_else(|| "drawing boundary role is blank".to_owned())?,
+                vec![cadmpeg_ir::ReferenceSelection::new(
+                    cadmpeg_ir::ReferenceTarget::Local(committed.to_string()),
+                    Vec::new(),
+                )],
+            );
+            let order = u32::try_from(candidate.model.drawings.len())
+                .map_err(|_| "drawings exceed u32 order".to_owned())?;
+            candidate.model.drawings.push(Drawing {
+                visible,
+                relationships,
+                scale,
+                ..Drawing::new(
+                    drawing_id.clone(),
+                    identity.source_id.clone(),
+                    DrawingKind::View,
+                    "RhinoDetailView".to_owned(),
+                    order,
+                    Some(native_ref.clone()),
+                )
+            });
             Ok::<(), CandidateError>(())
         });
         match result {
             Ok(()) => {
                 self.geometry_transferred = true;
-                self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
+                self.mark_decoded(source_order);
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {

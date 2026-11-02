@@ -625,27 +625,39 @@ pub(crate) fn install(
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
-    let mut losses = Vec::new();
+    let losses = Vec::new();
     let mut opaque_records = Vec::new();
+    // Previews project to model assets keeping the preview bytes; the
+    // PresentationRecordDropped charge for previews is gone (#223 item 4).
     for (index, preview) in properties.previews.iter().enumerate() {
-        losses.push(
-            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
-                "{}: preview image has no admitted typed image resource",
-                numbered_id("rhino:document:preview#", index)
-            )),
-        );
-        if let Some((table, record)) = scan.tables.iter().find_map(|table| {
+        let preview_id = numbered_id("rhino:document:preview#", index);
+        let Some((table_typecode, record)) = scan.tables.iter().find_map(|table| {
             table
                 .records
                 .iter()
                 .find(|record| record.range == preview.source.range)
-                .map(|record| (table, record))
-        }) {
+                .map(|record| (table.typecode, record))
+        }) else {
+            continue;
+        };
+        let bytes = scan.data[record.body().clone()].to_vec();
+        let Some(data) = cadmpeg_ir::assets::AssetData::new(bytes) else {
             opaque_records.push(OpaqueRecord {
-                table_typecode: table.typecode,
+                table_typecode,
                 record: record.clone(),
             });
-        }
+            continue;
+        };
+        ctx.charge_entities(1, "rhino_preview_assets")?;
+        let id = cadmpeg_ir::assets::AssetId::mint(format!("rhino:model:asset#preview-{index:04}"))
+            .map_err(CodecError::malformed)?;
+        ir.model.assets.push(cadmpeg_ir::assets::Asset {
+            id,
+            name: None,
+            media_type: None,
+            content: cadmpeg_ir::assets::AssetContent::Embedded { data },
+            native_ref: Some(preview_id),
+        });
     }
     let mut render_settings_seen = false;
     let mut give_ups = Vec::new();
