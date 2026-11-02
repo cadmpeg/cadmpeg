@@ -27,6 +27,9 @@ pub(crate) struct DesignOffsetFacesOperation {
     pub(crate) distance_offset: u64,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_wall_slots, DesignShellWallSlots, "wall_slots");
+cadmpeg_core::named_optional_field!(deserialize_outside_wall, DesignShellOutsideWall, "outside");
+
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignShellOperation {
@@ -41,7 +44,11 @@ pub(crate) struct DesignShellOperation {
     /// Byte offset of the outward Boolean or of the present wall slot.
     pub(crate) outward_offset: u64,
     /// Fields that only the wall-slot form stores.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_wall_slots"
+    )]
     pub(crate) wall_slots: Option<DesignShellWallSlots>,
 }
 
@@ -53,7 +60,11 @@ pub(crate) struct DesignShellWallSlots {
     /// Whether offset corners are rounded instead of sharp.
     pub(crate) rounded_corners: bool,
     /// Outside wall of a scope that stores both walls.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_outside_wall"
+    )]
     pub(crate) outside: Option<DesignShellOutsideWall>,
 }
 
@@ -154,3 +165,58 @@ pub(crate) struct DesignDraftOperation {
 }
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod shell_wall_slot_wire_tests {
+    use super::{DesignShellOperation, DesignShellOutsideWall, DesignShellWallSlots};
+
+    fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
+        DesignShellOperation {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
+            thickness_record_index: 291,
+            thickness_offset: 100,
+            outward: false,
+            outward_offset: 23,
+            wall_slots: Some(DesignShellWallSlots {
+                tangent_chain: true,
+                rounded_corners: false,
+                outside,
+            }),
+        }
+    }
+
+    #[test]
+    fn wall_slots_are_present_or_their_keys_are_absent() {
+        let both = operation(Some(DesignShellOutsideWall {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.3).unwrap(),
+            thickness_record_index: 294,
+            thickness_offset: 200,
+        }));
+        let one = operation(None);
+        let without = DesignShellOperation {
+            wall_slots: None,
+            ..one.clone()
+        };
+        for value in [both, one, without] {
+            let wire = serde_json::to_value(&value).unwrap();
+            assert_eq!(
+                serde_json::from_value::<DesignShellOperation>(wire).unwrap(),
+                value
+            );
+        }
+        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        assert!(wire["wall_slots"].get("outside").is_none());
+        wire["wall_slots"]["outside"] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignShellOperation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("outside"), "{error}");
+
+        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        wire["wall_slots"] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignShellOperation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("wall_slots"), "{error}");
+    }
+}
