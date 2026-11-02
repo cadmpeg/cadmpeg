@@ -12,7 +12,6 @@ use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOff
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
-use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
@@ -618,7 +617,25 @@ fn parse_header_form(
         }
     };
     let evaluated_value = View::f64_le_at(payload, name_end)?;
-    if !is_parameter_tail(payload.get(name_end + 8..)?) || source_kind.is_empty() {
+    let tail = payload.get(name_end + 8..)?;
+    if !is_parameter_tail(tail) || source_kind.is_empty() {
+        return None;
+    }
+    // The `00 01 11` tail is the intermediate-family marker, not a
+    // collection reference: it admits discriminators 5 and 6 of the
+    // narrow form, and no wide form. Any other tail value names the
+    // parameter collection.
+    let wide_form = source_kind_at == expression_end + 11;
+    if tail[2] == 17
+        && (wide_form
+            || !family_discriminator.is_some_and(|value| {
+                matches!(
+                    value,
+                    crate::records::parameters::DesignParameterDiscriminator::Code5
+                        | crate::records::parameters::DesignParameterDiscriminator::Code6
+                )
+            }))
+    {
         return None;
     }
     Some(Ok(ParsedDesignParameter {
@@ -705,14 +722,7 @@ fn parse_legacy_287_design_parameter(
         let evaluated_value = payload.f64_at(name_end)?;
         let tail_start = name_end.checked_add(8)?;
         let tail = payload.get(tail_start..payload.len())?;
-        if tail.len() != legacy_287_tail::LEN
-            || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
-            || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
-            || tail[legacy_287_tail::ZERO_RUN_9..]
-                .iter()
-                .any(|byte| *byte != 0)
-            || source_kind.is_empty()
-        {
+        if !is_parameter_tail(tail) || source_kind.is_empty() {
             return None;
         }
         Some(Ok(ParsedDesignParameter {

@@ -300,10 +300,10 @@ fn construction_operand_auxiliary_paths_decode_the_extended_prefix() {
     assert_eq!(transformed.following_byte_offset(), Some(225));
 
     let wire = serde_json::to_value(&transformed).unwrap();
-    assert_eq!(wire["entity_ref_offset"], 57);
-    assert_eq!(wire["transform_offset"], 68);
+    assert!(wire.get("entity_ref_offset").is_none());
+    assert!(wire.get("transform_offset").is_none());
     let restored: DesignConstructionOperandPath = serde_json::from_value(wire).unwrap();
-    assert_eq!(restored.following_byte_offset(), Some(225));
+    assert_eq!(restored.following_byte_offset(), None);
 
     assert!(
         parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 2), 2339, &header).is_none()
