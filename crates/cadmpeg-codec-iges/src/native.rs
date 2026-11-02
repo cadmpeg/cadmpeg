@@ -3480,7 +3480,9 @@ pub(crate) fn store(
                                         &[0],
                                     )
                                 })
-                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                .map(|sequence| {
+                                    format!("iges:product:connect-point#D{sequence}")
+                                })
                         })
                         .collect::<Vec<_>>()
                 } else {
@@ -3551,7 +3553,9 @@ pub(crate) fn store(
                                     &[0],
                                 )
                             })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            .map(|sequence| {
+                                format!("iges:product:connect-point#D{sequence}")
+                            })
                     })
                     .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
@@ -3627,7 +3631,22 @@ pub(crate) fn store(
                             |target| matches!(target.entity_type, 320 | 420),
                         )
                     })
-                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                    // Link through the network native record the network
+                    // ProductDefinition names with its native_ref (#222 §7.7);
+                    // a definition owner names its definition record and an
+                    // instance owner its instance record.
+                    .and_then(|sequence| {
+                        let target = entries.get(&sequence)?;
+                        match target.entity_type {
+                            320 => Some(format!(
+                                "iges:product:network-definition#D{sequence}"
+                            )),
+                            420 => Some(format!(
+                                "iges:product:network-instance#D{sequence}"
+                            )),
+                            _ => None,
+                        }
+                    }),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
