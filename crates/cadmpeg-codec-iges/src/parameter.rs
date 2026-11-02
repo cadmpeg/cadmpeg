@@ -2836,6 +2836,10 @@ pub(crate) struct ParameterAssembly {
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
     pub(crate) given_up: BTreeSet<u32>,
+    /// Directory sequences with given-up Parameter Data fields, each with
+    /// its covering field-stub identities in slot order. A failed record
+    /// stage drops its stubs, so only formed records report (#215 rule 1).
+    pub(crate) given_up_fields: BTreeMap<u32, Vec<String>>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -4116,6 +4120,7 @@ fn assemble_with(
         quarantined,
         recoveries,
         given_up,
+        given_up_fields: BTreeMap::new(),
     })
 }
 
@@ -4136,6 +4141,7 @@ pub(crate) fn finish_admitted(
         quarantined: Vec::new(),
         recoveries: crate::card::FramingRecoveries::default(),
         given_up: BTreeSet::new(),
+        given_up_fields: BTreeMap::new(),
     }
 }
 

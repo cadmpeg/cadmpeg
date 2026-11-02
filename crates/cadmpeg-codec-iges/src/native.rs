@@ -312,17 +312,16 @@ struct NativeDisplayAttributes {
     id: String,
     source_entity: String,
     visible: bool,
-    line_font: DisplayRef,
-    level: DisplayRef,
+    line_font: Option<DisplayRef>,
+    level: Option<DisplayRef>,
     view: Option<i64>,
     line_weight_number: Option<i64>,
     line_weight_mm: Option<f64>,
-    color: DisplayRef,
+    color: Option<DisplayRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum DisplayRef {
-    Unreadable,
     Number(u64),
     Definition {
         pointer: i64,
@@ -333,7 +332,7 @@ enum DisplayRef {
 impl DisplayRef {
     fn definition(&self) -> Option<&str> {
         match self {
-            Self::Unreadable | Self::Number(_) => None,
+            Self::Number(_) => None,
             Self::Definition { target, .. } => target.as_deref(),
         }
     }
@@ -342,7 +341,6 @@ impl DisplayRef {
 impl Serialize for DisplayRef {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Unreadable => serializer.serialize_none(),
             Self::Number(number) => serializer.serialize_u64(*number),
             Self::Definition { pointer, .. } => serializer.serialize_i64(*pointer),
         }
@@ -356,14 +354,14 @@ impl Serialize for NativeDisplayAttributes {
             id: &'a str,
             source_entity: &'a str,
             visible: bool,
-            line_font_number: &'a DisplayRef,
+            line_font_number: &'a Option<DisplayRef>,
             line_font_definition: Option<&'a str>,
-            level_number: &'a DisplayRef,
+            level_number: &'a Option<DisplayRef>,
             level_definition: Option<&'a str>,
             view: Option<i64>,
             line_weight_number: Option<i64>,
             line_weight_mm: Option<f64>,
-            color_number: &'a DisplayRef,
+            color_number: &'a Option<DisplayRef>,
             color_definition: Option<&'a str>,
         }
         Wire {
@@ -371,14 +369,14 @@ impl Serialize for NativeDisplayAttributes {
             source_entity: &self.source_entity,
             visible: self.visible,
             line_font_number: &self.line_font,
-            line_font_definition: self.line_font.definition(),
+            line_font_definition: self.line_font.as_ref().and_then(DisplayRef::definition),
             level_number: &self.level,
-            level_definition: self.level.definition(),
+            level_definition: self.level.as_ref().and_then(DisplayRef::definition),
             view: self.view,
             line_weight_number: self.line_weight_number,
             line_weight_mm: self.line_weight_mm,
             color_number: &self.color,
-            color_definition: self.color.definition(),
+            color_definition: self.color.as_ref().and_then(DisplayRef::definition),
         }
         .serialize(serializer)
     }
@@ -390,12 +388,10 @@ fn resolve_display_ref(
     pointer: Option<i64>,
     kind: ReferenceKind,
     arena: &str,
-) -> DisplayRef {
-    let Some(pointer) = pointer else {
-        return DisplayRef::Unreadable;
-    };
+) -> Option<DisplayRef> {
+    let pointer = pointer?;
     if pointer >= 0 {
-        return DisplayRef::Number(pointer.unsigned_abs());
+        return Some(DisplayRef::Number(pointer.unsigned_abs()));
     }
     let target = references
         .get(&source_sequence)
@@ -405,7 +401,7 @@ fn resolve_display_ref(
                 .find_map(|reference| reference.resolved_target_sequence_for(kind))
         })
         .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"));
-    DisplayRef::Definition { pointer, target }
+    Some(DisplayRef::Definition { pointer, target })
 }
 
 fn resolved_label_display_definition(
@@ -2273,6 +2269,10 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
     pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
+    /// Directory sequences with given-up Parameter Data fields. A native
+    /// record that needs a tainted entity is dropped with it (#215 rule 2);
+    /// the covering loss names the entity.
+    pub(crate) given_up_fields: &'a BTreeMap<u32, Vec<String>>,
 }
 
 pub(crate) fn store_physical_cards(
@@ -2324,6 +2324,7 @@ pub(crate) fn store(
         structure_admitted,
         sequences,
         boundary_vertex_derivations,
+        given_up_fields,
     } = inputs;
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(scan.lines.len()),
@@ -2704,7 +2705,14 @@ pub(crate) fn store(
             })
         },
     )?;
-    let display_attributes = collect_native_items(directory.iter(), |entry| {
+    // A display record needs its entity; a tainted entity is named as
+    // changed in the covering loss, so its display record is dropped with
+    // it (#215 rule 2). The closure covers the drop without naming it.
+    let display_attributes = collect_native_items(
+        directory
+            .iter()
+            .filter(|entry| !given_up_fields.contains_key(&entry.sequence)),
+        |entry| {
         Ok(NativeDisplayAttributes {
             id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),

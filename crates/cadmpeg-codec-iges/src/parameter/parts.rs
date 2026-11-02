@@ -48,7 +48,8 @@ pub(crate) fn assemble(
         crate::reader::part("iges.parameter_section"),
         |children| {
             let mut source_parts = ConflictParts::default();
-            super::assemble_with(
+            let mut given_up_fields = BTreeMap::new();
+            let parsed = super::assemble_with(
                 scan,
                 directory,
                 excluded_directory,
@@ -71,6 +72,7 @@ pub(crate) fn assemble(
                             }));
                         }
                     }
+                    let mut field_stubs = Vec::new();
                     let parsed = parse_owned(
                         ctx,
                         SectionSource {
@@ -82,19 +84,36 @@ pub(crate) fn assemble(
                         lines,
                         global,
                         &mut source_parts,
+                        &mut field_stubs,
                     )?;
+                    // A failed record stage is dropped with its field stubs,
+                    // so only a formed record reports covering stubs (#215).
+                    if matches!(parsed, ParsedOwned::Record(_)) && !field_stubs.is_empty() {
+                        given_up_fields.insert(owned.entry.sequence, field_stubs);
+                    }
                     Ok(parsed)
                 },
-            )
+            )?;
+            Ok((parsed, given_up_fields))
         },
     )?;
-    Ok(result.unwrap_or_else(|| ParameterAssembly {
-        records: Vec::new(),
-        trailing_pointer_analysis: BTreeMap::new(),
-        quarantined: Vec::new(),
-        recoveries: crate::card::FramingRecoveries::default(),
-        given_up: section_given_up,
-    }))
+    let (assembly, given_up_fields) = result.unwrap_or_else(|| {
+        (
+            ParameterAssembly {
+                records: Vec::new(),
+                trailing_pointer_analysis: BTreeMap::new(),
+                quarantined: Vec::new(),
+                recoveries: crate::card::FramingRecoveries::default(),
+                given_up: section_given_up,
+                given_up_fields: BTreeMap::new(),
+            },
+            BTreeMap::new(),
+        )
+    });
+    Ok(ParameterAssembly {
+        given_up_fields,
+        ..assembly
+    })
 }
 
 /// The Parameter section bytes and the projector that reads source points from them.
@@ -112,6 +131,7 @@ fn parse_owned(
     lines: &BTreeMap<u32, &PhysicalLine>,
     global: &ResolvedGlobal,
     source_parts: &mut ConflictParts,
+    field_stubs: &mut Vec<String>,
 ) -> Result<ParsedOwned, CodecError> {
     let SectionSource {
         view: source,
@@ -204,6 +224,10 @@ fn parse_owned(
                             staged,
                         )?;
                     }
+                    // The record stage is fresh, so its unknowns stubs are
+                    // exactly this record's given-up fields, in slot order.
+                    // The caller reports them as the covering stubs (#215).
+                    field_stubs.extend(staged_unknowns(staged));
                 }
                 if let Some(projector) = source_points {
                     projector.emit(ctx, owned.entry, &record, staged)?;
@@ -412,6 +436,18 @@ fn physical_end(source: View<'_>, card: &PhysicalLine) -> Result<usize, CodecErr
         .checked_add(card.payload.len())
         .and_then(|end| end.checked_add(card.line_ending().len()))
         .ok_or_else(|| CodecError::malformed("IGES Parameter card extent overflows"))
+}
+
+/// The unknowns stubs staged in one fresh record stage, in stage order.
+fn staged_unknowns(staged: &PartOutput) -> Vec<String> {
+    staged
+        .native()
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .into_iter()
+        .flatten()
+        .map(|record| record.id().to_owned())
+        .collect()
 }
 
 /// Push parser working storage. It is not retained bytes
