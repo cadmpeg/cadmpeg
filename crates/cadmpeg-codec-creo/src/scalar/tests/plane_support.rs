@@ -497,6 +497,64 @@ fn trailing_rank_plane_support_constructs_orthogonal_directions() {
 }
 
 #[test]
+fn orthogonal_rank_images_with_a_signed_unit_row_read_as_rotations() {
+    // `71` and `b9` are the DICT forms of +/-1/sqrt(2) in both lanes.
+    const EPS_ROTATION_AXIS_TEST: f64 = 1e-12;
+    const POSITIVE: [u8; 7] = [0x71, 0xa0, 0x9e, 0x66, 0x7f, 0x3b, 0xcd];
+    const NEGATIVE: [u8; 7] = [0xb9, 0xa0, 0x9e, 0x66, 0x7f, 0x3b, 0xcd];
+    const ORIGIN: [u8; 9] = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let read = |body: &[u8]| {
+        crate::decode::with_service_context(|ctx| {
+            decode_plane_support_local_system(ctx, body, &ScalarCache::default(), &mut Vec::new())
+        })
+        .expect("decode the plane support local system")
+        .expect("complete frame")
+    };
+    // Rows [0, 1, 0], [-s, 0, s], [s, 0, s] and rows [s, 0, s], [s, 0, -s],
+    // [0, 1, 0]: each prefix is a right-handed rotation about a model axis.
+    let prefixed = [
+        &[0x18, 0x0f, 0x18][..],
+        &NEGATIVE,
+        &[0x18],
+        &POSITIVE,
+        &[0xe4, 0x18],
+        &POSITIVE,
+        &ORIGIN,
+    ]
+    .concat();
+    let trailing = [
+        &POSITIVE[..],
+        &[0x18],
+        &POSITIVE,
+        &[0xe4, 0x18],
+        &NEGATIVE,
+        &[0x18, 0x0f, 0x18],
+        &ORIGIN,
+    ]
+    .concat();
+    for (body, u_axis, normal) in [
+        (&prefixed, [0.0, -s, s], [0.0, s, s]),
+        (&trailing, [s, s, 0.0], [s, -s, 0.0]),
+    ] {
+        let (slots, layout) = read(body);
+        assert_eq!(layout, PlaneSupportFrameLayout::RotationColumns);
+        let (u, n) = rotation_plane_axes(&slots.get()).expect("rotation axes");
+        for (actual, expected) in u.into_iter().chain(n).zip(u_axis.into_iter().chain(normal)) {
+            assert!((actual - expected).abs() <= EPS_ROTATION_AXIS_TEST);
+        }
+        assert_eq!(&slots.get()[9..], &[2.25, 0.75, 11.0]);
+    }
+
+    // With `m = a` the rows are not orthogonal, so the support image stands.
+    let mut support = prefixed.clone();
+    support[20..27].copy_from_slice(&NEGATIVE);
+    let (slots, layout) = read(&support);
+    assert_eq!(layout, PlaneSupportFrameLayout::SupportTriples);
+    assert_eq!(slots.get()[3..6], [0.0, 0.0, 0.0]);
+}
+
+#[test]
 fn reflected_plane_support_component_constructs_orthogonal_directions() {
     let mut body = Vec::new();
     body.extend_from_slice(&positive_subunit_coordinate(0.6));
