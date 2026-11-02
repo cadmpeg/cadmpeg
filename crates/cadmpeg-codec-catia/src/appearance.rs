@@ -733,11 +733,6 @@ mod tests {
             .appearances
             .iter()
             .any(|asset| asset.id.as_str().contains("143de0ff")));
-        assert!(ir
-            .model
-            .appearance_bindings
-            .iter()
-            .all(|binding| !matches!(binding.target, AppearanceTarget::Source { .. })));
         assert!(ir.model.appearance_bindings.iter().all(|binding| {
             !binding.appearance.as_str().contains("143de0ff")
         }));
@@ -861,14 +856,6 @@ mod tests {
             ),
             (6, 0, 6, 6)
         );
-        assert_eq!(
-            ir.model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
-                .count(),
-            0
-        );
         assert!(ir
             .model
             .appearance_bindings
@@ -983,14 +970,6 @@ mod tests {
                 result.emitted_bindings
             ),
             (7, 0, 7, 6)
-        );
-        assert_eq!(
-            ir.model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
-                .count(),
-            0
         );
         assert!(ir
             .model
@@ -1132,14 +1111,6 @@ mod tests {
                 rgba[0], rgba[1], rgba[2], rgba[3]
             )));
         }
-        assert_eq!(
-            ir.model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
-                .count(),
-            0
-        );
     }
 
     #[test]

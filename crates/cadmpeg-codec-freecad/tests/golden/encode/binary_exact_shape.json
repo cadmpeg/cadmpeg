@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6117,
-      "payload_sha256": "5a2f586e12d384f81eb3e7d2d23be36fe559dc4b30ec4e9f2b5e5580ee894f2f"
+      "payload_len": 6177,
+      "payload_sha256": "ad7d4c7f048316b701828eda4c440109524b8bfe49194467fc8e03f9473a3dc6"
     },
     {
       "name": "BinaryCarrier.brp",
@@ -25,7 +25,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 21,
+        "attributes": 13,
         "bodies": 1,
         "coedges": 9,
         "colliders": 0,
@@ -85,11 +85,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
+        "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -99,9 +101,12 @@
         "feature_result_topologies": "dropped",
         "features": "written",
         "loops": "written",
+        "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
@@ -110,11 +115,13 @@
         "procedural_surfaces": "written",
         "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
@@ -132,26 +139,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#BinaryCarrier:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "native.records-omitted",
@@ -268,20 +255,20 @@
                 "fcstd:native:property#0:Uid": "written",
                 "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Label": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Label2": "regenerated",
+                "fcstd:native:property#BinaryCarrier:Label": "written",
+                "fcstd:native:property#BinaryCarrier:Label2": "written",
                 "fcstd:native:property#BinaryCarrier:Placement": "regenerated",
                 "fcstd:native:property#BinaryCarrier:Shape": "regenerated",
                 "fcstd:native:property#BinaryCarrier:ShapeMaterial": "written",
-                "fcstd:native:property#BinaryCarrier:Visibility": "regenerated",
+                "fcstd:native:property#BinaryCarrier:Visibility": "written",
                 "fcstd:native:property#BinaryCarrier:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "written",
+                "fcstd:native:property#CorpusMetadata:Label2": "written",
+                "fcstd:native:property#CorpusMetadata:License": "written",
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated"
+                "fcstd:native:property#CorpusMetadata:Purpose": "written",
+                "fcstd:native:property#CorpusMetadata:Visibility": "written"
               }
             },
             "shape_payloads": {
@@ -328,7 +315,7 @@
     "notes": [],
     "synthesis_cause": {
       "cause": "patch_declined",
-      "reason": "unsupported writer content: the typed property has no independent projection"
+      "reason": "unsupported writer content: current uncarried typed records require FCStd graph regeneration"
     },
     "write_path": {
       "fidelity": {

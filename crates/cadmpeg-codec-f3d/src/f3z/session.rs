@@ -284,7 +284,14 @@ impl<'a> F3zSession<'a> {
         let result = self
             .compose_into(&ctx, members)
             .map_err(DecodeFailure::from)
-            .and_then(|decoded| DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d")));
+            .and_then(|mut decoded| {
+                // Session composition bypasses the Codec wrapper, so stamp the
+                // digest of the same archive bytes the wrapper stamps on the
+                // normal path.
+                decoded.source_fidelity.decode_digest =
+                    cadmpeg_ir::hash::digest::Sha256Digest::digest(self.scan.source_image);
+                DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"))
+            });
         ctx.finish_session()?;
         result
     }

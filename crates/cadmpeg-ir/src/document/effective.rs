@@ -382,9 +382,6 @@ impl CadIr {
                     ids.insert(id.as_str());
                 }
             }
-            AppearanceTarget::Source { source_id } => {
-                ids.insert(source_id.as_str());
-            }
         }
         ids
     }
@@ -411,10 +408,6 @@ fn target_matches(item: &PresentationItem, target: &AppearanceTarget) -> bool {
         (PresentationItem::Tessellation { tessellation }, AppearanceTarget::Tessellation(id)) => {
             tessellation == id
         }
-        (
-            PresentationItem::Source { source_id: source },
-            AppearanceTarget::Source { source_id },
-        ) => source.as_str() == source_id,
         _ => false,
     }
 }

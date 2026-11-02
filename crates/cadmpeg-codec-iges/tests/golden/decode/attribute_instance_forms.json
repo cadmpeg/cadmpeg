@@ -5,110 +5,7 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "iges:application:attribute#D3:0:0",
-          "name": "iges.attribute_table.value.rows.0.0",
-          "native_ref": "iges:product:attribute-instance#D3",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#3"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 7
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D3:1:0",
-          "name": "iges.attribute_table.value.rows.0.1",
-          "native_ref": "iges:product:attribute-instance#D3",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#3"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "STEEL"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:0:0",
-          "name": "iges.attribute_table.value.rows.0.0",
-          "native_ref": "iges:product:attribute-instance#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 8
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:1:0",
-          "name": "iges.attribute_table.value.rows.0.1",
-          "native_ref": "iges:product:attribute-instance#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "IRON"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:2:0",
-          "name": "iges.attribute_table.value.rows.1.0",
-          "native_ref": "iges:product:attribute-instance#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 9
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:3:0",
-          "name": "iges.attribute_table.value.rows.1.1",
-          "native_ref": "iges:product:attribute-instance#D5",
-          "target": {
-            "id": {
-              "source_id": "iges:entity:directory#5"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BRASS"
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -673,7 +570,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "bb295e66a14c71af1ce1c352be2e297bc574c2fe856038d32fd846ce24b6dcdc",
+    "decode_digest": "1606a0dc6016f9047316012b09ad5dcb287254edbe05438be56eeadb0288b1d1",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

@@ -277,7 +277,10 @@ fn decoded_without_a_model() -> cadmpeg_ir::codec::Decoded {
     cadmpeg_ir::codec::Decoded {
         ir: cadmpeg_ir::document::CadIr::empty(),
         body,
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::with_annotations(
+            cadmpeg_ir::Annotations::default(),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"no-model"),
+        ),
     }
 }
 

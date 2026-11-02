@@ -193,8 +193,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#ConicWitness:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -208,8 +211,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#ConicWitness:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -223,8 +229,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#ConicWitness:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -238,8 +247,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#ConicWitness:Label2",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -253,8 +265,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#ConicWitness:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -268,8 +283,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#ConicWitness:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -283,8 +301,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#ConicWitness:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -298,8 +319,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#ConicWitness:Visibility",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -313,98 +337,16 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#ConicWitness:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#ConicWitness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#ConicWitness"
+            },
+            "kind": "record"
           },
           "values": [
             {
               "kind": "integer",
               "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Rotated and bounded sketch conic parameterization"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
             }
           ]
         }
@@ -1583,7 +1525,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9c455d16bf262ef25514f91e2f7b30172943151e13ebd0bbf1799ddd7302126d",
+    "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

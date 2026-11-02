@@ -322,7 +322,10 @@ mod tests {
         Decoded {
             ir,
             body: DecodeBody::new(transfer),
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::with_annotations(
+                cadmpeg_ir::Annotations::default(),
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(b"test-support depth cut"),
+            ),
         }
     }
 

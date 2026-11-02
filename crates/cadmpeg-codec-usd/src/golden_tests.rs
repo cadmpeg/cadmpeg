@@ -121,6 +121,11 @@ fn golden_example_encodes_hold() {
 }
 
 #[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&UsdCodec, &layer_inputs());
+}
+
+#[test]
 fn golden_output_is_deterministic() {
     harness().check_determinism_inputs(&layer_inputs(), &layer_branches());
     harness().check_determinism_inputs(

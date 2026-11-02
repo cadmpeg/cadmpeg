@@ -373,16 +373,26 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             .collect(),
         native_ref: None,
     });
-    brep.body_native_keys.push(BodyNativeKey {
+    let key = BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
             cadmpeg_asm::asm_format!("inventor"),
         ),
         record_index: 1,
-        body: id(1).try_into().expect("synthetic identity"),
         body_ordinal: 0,
         source_brep: None,
         asm_body_key: Some(7),
+    };
+    brep.bodies.push(cadmpeg_ir::topology::Body {
+        id: id(1).try_into().expect("synthetic identity"),
+        native_ref: Some(key.id()),
+        kind: cadmpeg_ir::topology::BodyKind::default(),
+        regions: vec![id(2).try_into().expect("synthetic identity")],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
     });
+    brep.body_native_keys.push(key);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("synthetic profile fixture");

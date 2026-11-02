@@ -212,3 +212,62 @@ fn goldens_hold_no_native_back_links() {
         &harness().fixture_inputs(),
     );
 }
+
+/// §4.5 damaged fixtures (#215): one bounded corruption with its builder.
+///
+/// The builder reads the frozen `ap214_sheet` fixture and replaces the final
+/// coordinate of its `#4` cartesian point with a non-numeric token. The
+/// statement keeps its terminator, so the exchange frames the part and gives
+/// it up; the semantic reader omits the records that need the point.
+mod damaged {
+    /// Undamaged stem the builder corrupts.
+    const BASE: &str = "ap214_sheet";
+    /// Damaged stem under `tests/fixtures/damaged/`.
+    const STEM: &str = "damaged/ap214_sheet_bad_real";
+
+    /// The exact bytes the builder replaces, and their replacement.
+    const OLD: &[u8] = b"#4=CARTESIAN_POINT('',(10.,0.,0.));";
+    const NEW: &[u8] = b"#4=CARTESIAN_POINT('',(10.,0.,?.));";
+
+    /// Apply the corruption to undamaged fixture bytes.
+    fn damaged_bytes(base: &[u8]) -> Vec<u8> {
+        assert_eq!(OLD.len(), NEW.len(), "the corruption keeps every offset");
+        let mut corrupted = base.to_vec();
+        let position = corrupted
+            .windows(OLD.len())
+            .position(|window| window == OLD)
+            .expect("the base fixture holds the corrupted statement");
+        assert!(
+            corrupted[(position + OLD.len())..]
+                .windows(OLD.len())
+                .all(|window| window != OLD),
+            "the corrupted statement occurs once"
+        );
+        corrupted[position..position + NEW.len()].copy_from_slice(NEW);
+        corrupted
+    }
+
+    /// The committed damaged fixture matches its builder, byte for byte.
+    ///
+    /// `UPDATE_GOLDEN_FIXTURES=1` rewrites the frozen input from the builder.
+    #[test]
+    fn damaged_fixture_matches_builder() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let base =
+            std::fs::read(manifest.join(format!("tests/fixtures/{BASE}.p21")))
+                .expect("the base fixture is committed");
+        let built = damaged_bytes(&base);
+        let path = manifest.join(format!("tests/fixtures/{STEM}.p21"));
+        if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+            std::fs::create_dir_all(path.parent().expect("damaged fixture dir"))
+                .expect("create damaged fixture dir");
+            std::fs::write(&path, &built).expect("write damaged fixture");
+            return;
+        }
+        let committed = std::fs::read(&path).expect(
+            "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-step damaged`",
+        );
+        assert_eq!(committed, built, "the damaged fixture matches its builder");
+    }
+}
+

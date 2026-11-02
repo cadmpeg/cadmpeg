@@ -144,7 +144,6 @@ fn target_name<'a>(
         {
             names.get(id)
         }
-        AppearanceTarget::Source { source_id } => names.get(source_id),
         AppearanceTarget::Occurrence(id) => names.get(id.as_str()),
         _ => selection(target).and_then(|(id, _)| names.get(id)),
     }

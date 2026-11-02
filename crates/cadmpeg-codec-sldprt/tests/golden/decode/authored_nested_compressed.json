@@ -1010,7 +1010,7 @@
         }
       }
     },
-    "decode_digest": "35d53f1ec8cec49087dbf8e9b32b12b829b7dd93c1a95a3db9b7370049d0bd60",
+    "decode_digest": "8fc844fb6e307317f4ef7a3163fa1ee27bc7af66e14418ebd5441e54b70c956c",
     "retained_records": {
       "sldprt:file:block#1100": {
         "bytes": {

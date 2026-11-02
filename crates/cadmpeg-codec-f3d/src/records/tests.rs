@@ -586,7 +586,9 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
         design_parameter_companions: vec![source.clone()],
         ..Default::default()
     };
-    native.retained_fidelity().expect("source fidelity");
+    native
+        .retained_fidelity(&cadmpeg_test_support::service_decode_context())
+        .expect("source fidelity");
     let legacy = wire.replace("timestamp_micros", "opaque_value");
     assert!(serde_json::from_str::<DesignParameterCompanion>(&legacy).is_err());
     for (invalid, field) in [
@@ -1586,7 +1588,7 @@ fn visual_token_wire_preserves_revision_spelling() {
 #[test]
 fn sketch_link_sidecar_rejects_present_sentinels() {
     for sense in [-1, super::sketch_links::SKETCH_LINK_SENSE_UNCONSTRAINED] {
-        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+        let wire = serde_json::json!({"id": "link", "target": "f3d:asm:edge-ownership#0",
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         assert!(serde_json::from_value::<super::sketch_links::SketchCurveLink>(wire).is_err());
     }
@@ -1595,7 +1597,7 @@ fn sketch_link_sidecar_rejects_present_sentinels() {
 #[test]
 fn sketch_link_sidecar_preserves_all_non_sentinel_senses() {
     for sense in [i64::MIN, -2, 0, 1, 2, i64::MAX] {
-        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+        let wire = serde_json::json!({"id": "link", "target": "f3d:asm:edge-ownership#0",
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         let record: super::sketch_links::SketchCurveLink =
             serde_json::from_value(wire.clone()).unwrap();

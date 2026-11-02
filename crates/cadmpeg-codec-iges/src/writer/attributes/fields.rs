@@ -2,7 +2,7 @@
 //! Resolve current neutral attribute references or out-of-scope typed values.
 
 use super::{
-    string_field, AttributeTarget, AttributeValue, BTreeMap, LinkedAttributes, NativeRecord,
+    AttributeTarget, AttributeValue, BTreeMap, LinkedAttributes, NativeRecord,
     SourceAttribute,
 };
 use serde_json::Value;
@@ -54,10 +54,8 @@ impl Fields<'_> {
     pub(super) fn has_native_values(&self) -> bool {
         self.native.is_some()
     }
-    pub(super) fn is_self_owned(&self, record: &NativeRecord) -> bool {
+    pub(super) fn is_self_owned(&self) -> bool {
         self.owner.is_none()
-            || matches!(&self.owner, Some(AttributeTarget::Source { source_id })
-            if source_id == record.id() || Some(source_id.as_str()) == string_field(record, "source_entity").as_deref())
     }
     pub(super) fn attribute_ids(&self) -> impl Iterator<Item = String> + '_ {
         self.values

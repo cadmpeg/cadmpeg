@@ -625,7 +625,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "f16d4192428100ec98ca28324d36b80e63f6b1bde51a4904c7a773869f6c59cb",
+    "decode_digest": "c423f28e6f8035adebcc8c771715ea9aa1f1e6a9e5f37143677801820a391b13",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

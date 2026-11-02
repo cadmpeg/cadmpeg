@@ -16,6 +16,7 @@ use std::fmt;
 
 pub use self::loss::DecodeLossCode;
 use crate::document::CadIr;
+use crate::hash::digest::Sha256Digest;
 use crate::report::{
     check::Finding,
     decode::{Coverage, DecodeReport, DecodeTransfer},
@@ -556,7 +557,13 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, DecodeFailure> {
+        // The digest of the input bytes is the same computation for every
+        // format, so the wrapper stamps it here: each decode carries the
+        // digest of the bytes it actually read, and an F3Z merge carries the
+        // digest of the archive.
+        let digest = Sha256Digest::digest(root.window());
         let mut decoded = self.decode_impl(ctx, root)?;
+        decoded.source_fidelity.decode_digest = digest;
         crate::validate::evaluation_cycles::give_up_evaluation_cycles(
             ctx,
             &mut decoded.ir,

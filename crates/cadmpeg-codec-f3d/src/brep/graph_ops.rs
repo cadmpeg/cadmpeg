@@ -73,11 +73,19 @@ impl Brep {
         if regions.is_empty() {
             return Ok(0);
         }
+        // The neutral body resolves through its `native_ref`, which names the
+        // matched key row.
         let selected = self
             .asm
             .body_native_keys
             .iter()
-            .map(|key| key.body.clone())
+            .filter_map(|key| {
+                self.asm
+                    .bodies
+                    .iter()
+                    .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
+                    .map(|body| body.id.clone())
+            })
             .filter(|body| !regions.contains(body))
             .collect::<Vec<_>>();
         if selected.len() != selector_count {
@@ -99,8 +107,27 @@ impl Brep {
     fn sketch_region_bodies(&self) -> HashSet<BodyId> {
         let mut linked_edges = HashSet::new();
         for link in &self.sketch_curve_links {
-            if let AttributeTarget::Edge(edge) = &link.target {
-                linked_edges.insert(edge.as_str());
+            if link.target_coedge.is_some() {
+                continue;
+            }
+            let Some(neutral) = super::link_neutral_id(
+                &self.asm.bodies,
+                &self.asm.faces,
+                &self.asm.edges,
+                &self.asm.vertices,
+                &self.asm.coedges,
+                &link.target,
+                link.target_coedge,
+            ) else {
+                continue;
+            };
+            if self
+                .asm
+                .edges
+                .iter()
+                .any(|edge| edge.id.as_str() == neutral)
+            {
+                linked_edges.insert(neutral);
             }
         }
         let mut attributed_faces = HashSet::new();
@@ -150,7 +177,7 @@ impl Brep {
                                 .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
                                 .all(|edge| {
                                     edge_count += 1;
-                                    linked_edges.contains(edge)
+                                    linked_edges.contains(*edge)
                                 })
                     })
             });
@@ -168,11 +195,30 @@ impl Brep {
         ctx: &DecodeContext<'_>,
         selected: Vec<BodyId>,
     ) -> Result<(), CodecError> {
+        // Canonical native row id to resolved neutral identity, both owned.
+        let owners = super::native_row_owners(&self.asm);
+        let coedge_ids = self
+            .asm
+            .coedges
+            .iter()
+            .map(|coedge| coedge.id.as_str().to_owned())
+            .collect::<std::collections::HashSet<_>>();
+        let surface_ids = self
+            .asm
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str().to_owned())
+            .collect::<std::collections::HashSet<_>>();
         let reachable = {
+            // Bodies carrying a key row resolve through it; unkeyed bodies stay.
             let mut native_bodies = HashSet::new();
-            for native in &self.asm.body_native_keys {
-                let body = native.body.as_str().to_owned();
-                native_bodies.insert(body);
+            for key in &self.asm.body_native_keys {
+                let id = key.id();
+                for body in &self.asm.bodies {
+                    if body.native_ref.as_deref() == Some(id.as_str()) {
+                        native_bodies.insert(body.id.as_str().to_owned());
+                    }
+                }
             }
             let mut reachable = HashSet::new();
             for body in selected {
@@ -196,18 +242,6 @@ impl Brep {
                 bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces,
                 curves, pcurves
             );
-            macro_rules! native_dependencies {
-                ($($field:ident => $owner:ident),*) => {$(
-                    for row in &self.asm.$field {
-                        add_dependencies(ctx, &mut adjacency, row.$owner.as_str(), row)?;
-                    }
-                )*};
-            }
-            native_dependencies!(edge_continuities => edge, edge_ownerships => edge,
-                vertex_ownerships => vertex,
-                tolerant_coedge_parameters => coedge, tolerant_edge_tails => edge,
-                tolerant_vertex_tails => vertex, mesh_surface_sentinels => surface,
-                transform_hints => body, body_native_keys => body, wire_topologies => shell);
             for row in &self.asm.face_sidedness {
                 add_dependencies(ctx, &mut adjacency, &row.id(), row)?;
                 for face in &self.asm.faces {
@@ -237,20 +271,73 @@ impl Brep {
             }
             reachable
         };
-        macro_rules! select {
-            ($($field:ident => $owner:ident),*) => {$(
-                self.asm.$field = select_rows(std::mem::take(&mut self.asm.$field), &reachable, |row| row.$owner.as_str());
+        macro_rules! select_neutral {
+            ($($field:ident),*) => {$(
+                self.asm.$field = select_rows(std::mem::take(&mut self.asm.$field), &reachable, |row| row.id.as_str());
             )*};
         }
-        select!(bodies => id, regions => id, shells => id, faces => id,
-            loops => id, coedges => id, edges => id, vertices => id,
-            points => id, surfaces => id, curves => id, pcurves => id,
-            edge_continuities => edge, edge_ownerships => edge,
-            vertex_ownerships => vertex,
-            tolerant_coedge_parameters => coedge,
-            tolerant_edge_tails => edge, tolerant_vertex_tails => vertex,
-            mesh_surface_sentinels => surface, transform_hints => body,
-            body_native_keys => body, wire_topologies => shell);
+        select_neutral!(bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves);
+        let owned = |row: &str| owners.get(row).map(String::as_str);
+        self.asm.edge_ownerships.retain(|row| {
+            owned(&row.id()).is_some_and(|edge| reachable.contains(edge))
+        });
+        self.asm.edge_continuities.retain(|row| {
+            owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge))
+        });
+        self.asm.vertex_ownerships.retain(|row| {
+            owned(&row.id()).is_some_and(|vertex| reachable.contains(vertex))
+        });
+        self.asm.tolerant_coedge_parameters.retain(|row| {
+            cadmpeg_asm::brep::records::native_entity_id(&row.source_namespace, row.record_index)
+                .is_some_and(|entity| {
+                    coedge_ids.contains(entity.as_str()) && reachable.contains(entity.as_str())
+                })
+        });
+        self.asm.tolerant_edge_tails.retain(|row| {
+            owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge))
+        });
+        self.asm.tolerant_vertex_tails.retain(|row| {
+            owned(row.owner.as_str()).is_some_and(|vertex| reachable.contains(vertex))
+        });
+        self.asm.mesh_surface_sentinels.retain(|row| {
+            cadmpeg_asm::brep::records::native_entity_id(&row.source_namespace, row.record_index)
+                .is_some_and(|entity| {
+                    surface_ids.contains(entity.as_str()) && reachable.contains(entity.as_str())
+                })
+        });
+        self.asm.transform_hints.retain(|row| {
+            owned(row.owner.as_str()).is_some_and(|body| reachable.contains(body))
+        });
+        self.asm.body_native_keys.retain(|row| {
+            owned(&row.id()).is_some_and(|body| reachable.contains(body))
+        });
+        self.asm.wire_topologies.retain(|row| {
+            let member_neutrals = row
+                .members
+                .edges()
+                .iter()
+                .map(|member| member.as_str())
+                .chain(
+                    row.members
+                        .free_vertex()
+                        .map(|vertex| vertex.as_str()),
+                )
+                .filter_map(|member| owners.get(member))
+                .collect::<Vec<_>>();
+            self.asm.shells.iter().any(|shell| {
+                reachable.contains(shell.id.as_str())
+                    && member_neutrals.iter().any(|neutral| {
+                        shell
+                            .wire_edges()
+                            .iter()
+                            .any(|edge| &edge.as_str() == neutral)
+                            || shell
+                                .free_vertices()
+                                .iter()
+                                .any(|vertex| &vertex.as_str() == neutral)
+                    })
+            })
+        });
         self.asm
             .face_sidedness
             .retain(|row| reachable.contains(&row.id()));
@@ -276,6 +363,31 @@ impl Brep {
             &reachable,
             |row| &row.target,
         );
+        let link_retained = |target: &cadmpeg_asm::brep::records::identity::NativeRowId,
+                             target_coedge: Option<u32>| {
+            super::link_neutral_id(
+                &self.asm.bodies,
+                &self.asm.faces,
+                &self.asm.edges,
+                &self.asm.vertices,
+                &self.asm.coedges,
+                target,
+                target_coedge,
+            )
+            .is_some_and(|neutral| reachable.contains(&neutral))
+        };
+        self.sketch_curve_links.retain(|row| {
+            link_retained(&row.target, row.target_coedge)
+        });
+        self.persistent_design_links.retain(|row| {
+            link_retained(&row.target, row.target_coedge)
+        });
+        self.persistent_subentity_tags.retain(|row| {
+            link_retained(&row.target, row.target_coedge)
+        });
+        self.creation_timestamps.retain(|row| {
+            link_retained(&row.target, row.target_coedge)
+        });
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
             if reachable.contains(&row.id) {
@@ -283,26 +395,6 @@ impl Brep {
             }
         }
         self.asm.annotation_records = annotations;
-        self.sketch_curve_links = select_links(
-            std::mem::take(&mut self.sketch_curve_links),
-            &reachable,
-            |row| &row.target,
-        );
-        self.persistent_design_links = select_links(
-            std::mem::take(&mut self.persistent_design_links),
-            &reachable,
-            |row| &row.target,
-        );
-        self.persistent_subentity_tags = select_links(
-            std::mem::take(&mut self.persistent_subentity_tags),
-            &reachable,
-            |row| &row.target,
-        );
-        self.creation_timestamps = select_links(
-            std::mem::take(&mut self.creation_timestamps),
-            &reachable,
-            |row| &row.target,
-        );
         Ok(())
     }
 

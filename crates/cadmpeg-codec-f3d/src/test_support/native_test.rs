@@ -33,12 +33,35 @@ pub(crate) fn timestamp_attribute(
 
 pub(crate) fn edit_timestamp_attribute(
     ir: &mut cadmpeg_ir::document::CadIr,
-    target: &cadmpeg_ir::attributes::AttributeTarget,
+    row: &cadmpeg_asm::brep::records::identity::NativeRowId,
+    target_coedge: Option<u32>,
     value: cadmpeg_ir::scalar::FiniteReal,
 ) {
-    use cadmpeg_ir::attributes::AttributeValue;
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let neutral = crate::brep::link_neutral_id(
+        &ir.model.bodies,
+        &ir.model.faces,
+        &ir.model.edges,
+        &ir.model.vertices,
+        &ir.model.coedges,
+        row,
+        target_coedge,
+    )
+    .expect("linked timestamp target");
+    fn target_id(target: &AttributeTarget) -> Option<&str> {
+        match target {
+            AttributeTarget::Body(id) => Some(id.as_str()),
+            AttributeTarget::Face(id) => Some(id.as_str()),
+            AttributeTarget::Edge(id) => Some(id.as_str()),
+            AttributeTarget::Coedge(id) => Some(id.as_str()),
+            AttributeTarget::Vertex(id) => Some(id.as_str()),
+            AttributeTarget::Record { id, .. } => Some(id.as_str()),
+            _ => None,
+        }
+    }
     let mut attributes = ir.model.attributes.iter_mut().filter(|attribute| {
-        &attribute.target == target && crate::brep::creation_timestamp_value(attribute).is_some()
+        target_id(&attribute.target).as_deref() == Some(neutral.as_str())
+            && crate::brep::creation_timestamp_value(attribute).is_some()
     });
     let attribute = attributes.next().expect("canonical timestamp attribute");
     assert!(
@@ -92,6 +115,66 @@ pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
     ));
 }
 
+/// Rename one unit-cube coedge to the neutral id a tolerant-coedge native
+/// record pairs with, fixing loop rings, vertex-use anchors, and radial links.
+///
+/// Tolerant-coedge parameters pair with their neutral carrier by shared
+/// source record: the neutral id is `{scope}brep:entity#{record_index}` for
+/// the record's source namespace. Synthetic cube ids carry no numeric record
+/// suffix, so the targeted coedge takes the paired identity for `namespace`.
+pub(crate) fn pair_cube_coedge_with_native_record(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    namespace: &cadmpeg_asm::brep::records::identity::NativeRecordNamespace,
+    ordinal: usize,
+    record_index: u32,
+) -> cadmpeg_ir::ids::CoedgeId {
+    let paired = cadmpeg_ir::ids::CoedgeId::mint(
+        cadmpeg_asm::brep::records::native_entity_id(namespace, record_index)
+            .expect("paired coedge identity"),
+    )
+    .expect("paired coedge identity");
+    let previous = std::mem::replace(&mut ir.model.coedges[ordinal].id, paired.clone());
+    for coedge in &mut ir.model.coedges {
+        if coedge.radial_next == previous {
+            coedge.radial_next = paired.clone();
+        }
+    }
+    for loop_ in &mut ir.model.loops {
+        let cadmpeg_ir::topology::LoopBoundary::Ring(ring) = loop_.boundary.clone() else {
+            continue;
+        };
+        if !ring.coedges().contains(&previous) {
+            continue;
+        }
+        let coedges = ring
+            .coedges()
+            .iter()
+            .map(|id| {
+                if *id == previous {
+                    paired.clone()
+                } else {
+                    id.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let vertex_uses = ring
+            .vertex_uses()
+            .iter()
+            .map(|use_| {
+                let mut use_ = use_.clone();
+                if use_.after == previous {
+                    use_.after = paired.clone();
+                }
+                use_
+            })
+            .collect::<Vec<_>>();
+        loop_
+            .replace_ring(coedges, vertex_uses)
+            .expect("paired coedge ring stays well-formed");
+    }
+    paired
+}
+
 pub(crate) trait TestEncode {
     fn encode(
         &self,
@@ -117,6 +200,25 @@ impl TestEncode for F3dCodec {
 pub(crate) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
     crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
         .unwrap()
+}
+
+/// Neutral entity a canonical native row links, resolved through the neutral
+/// record's `native_ref`. Coedge targets name their owning edge's row with
+/// the coedge source index.
+pub(crate) fn native_row_neutral(
+    ir: &cadmpeg_ir::document::CadIr,
+    row: &cadmpeg_asm::brep::records::identity::NativeRowId,
+    target_coedge: Option<u32>,
+) -> Option<String> {
+    crate::brep::link_neutral_id(
+        &ir.model.bodies,
+        &ir.model.faces,
+        &ir.model.edges,
+        &ir.model.vertices,
+        &ir.model.coedges,
+        row,
+        target_coedge,
+    )
 }
 
 pub(crate) struct F3dNativeMut<'a> {

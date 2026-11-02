@@ -915,6 +915,7 @@
         }
       }
     },
+    "decode_digest": "6afc394d1e9c64a779da79f7893fb7cd66072102ec47298d56f00f5329a5c242",
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {

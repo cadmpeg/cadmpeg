@@ -15,6 +15,7 @@ use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Vertex};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -55,16 +56,16 @@ impl Brep {
         let mut persistent_subentity_tags = Vec::new();
         let mut creation_timestamps = Vec::new();
         for attribute in &asm.attributes {
-            if let Some(link) = sketch_curve_link(attribute) {
+            if let Some(link) = sketch_curve_link(&asm, attribute) {
                 sketch_curve_links.push(link);
             }
-            for link in self::persistent_design_links(attribute)? {
+            for link in self::persistent_design_links(&asm, attribute)? {
                 persistent_design_links.push(link);
             }
-            for tag in self::persistent_subentity_tags(attribute)? {
+            for tag in self::persistent_subentity_tags(&asm, attribute)? {
                 persistent_subentity_tags.push(tag);
             }
-            if let Some(timestamp) = creation_timestamp(attribute) {
+            if let Some(timestamp) = creation_timestamp(&asm, attribute) {
                 creation_timestamps.push(timestamp);
             }
         }
@@ -86,16 +87,24 @@ impl Brep {
             .iter()
             .all(|body| body.asm_body_key.is_none());
         let mut selectors = HashMap::new();
-        for body in &self.asm.body_native_keys {
+        for key in &self.asm.body_native_keys {
             let selector = if ordinal_mode {
-                Some(u64::from(body.body_ordinal))
+                Some(u64::from(key.body_ordinal))
             } else {
-                body.asm_body_key
+                key.asm_body_key
             };
             let Some(selector) = selector else {
                 continue;
             };
-            selectors.insert(body.body.clone(), selector);
+            let Some(body) = self
+                .asm
+                .bodies
+                .iter()
+                .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
+            else {
+                continue;
+            };
+            selectors.insert(body.id.clone(), selector);
         }
         selectors
     }
@@ -109,7 +118,8 @@ impl Brep {
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) = resolve_body_selector(self.asm.body_native_keys.iter(), *selector)?
+            let Some(body) =
+                resolve_body_selector(&self.asm.bodies, self.asm.body_native_keys.iter(), *selector)?
             else {
                 continue;
             };
@@ -274,41 +284,256 @@ pub(crate) fn decode_history_with_subtypes(
     )?)
 }
 
-/// Resolve one Design body selector within one BREP blob. Exact native keys
-/// take precedence; an absent key falls back to the zero-based body ordinal.
-pub(crate) fn resolve_body_selector<'a>(
+/// Match one Design body selector to its native key row within one BREP blob.
+/// Exact native keys take precedence; an absent key falls back to the
+/// zero-based body ordinal.
+pub(crate) fn resolve_body_key_row<'a>(
     body_keys: impl Iterator<Item = &'a BodyNativeKey> + Clone,
     selector: u64,
-) -> Result<Option<&'a BodyId>, cadmpeg_core::CodecError> {
+) -> Result<Option<&'a BodyNativeKey>, cadmpeg_core::CodecError> {
     let mut direct = None;
-    for body in body_keys.clone() {
-        if body.asm_body_key == Some(selector) {
-            if direct.is_some() {
+    let mut direct_matches = 0;
+    for key in body_keys.clone() {
+        if key.asm_body_key == Some(selector) {
+            direct_matches += 1;
+            if direct_matches > 1 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D body selector {selector} matches multiple native body keys"
                 )));
             }
-            direct = Some(&body.body);
+            direct = Some(key);
         }
     }
-    if direct.is_some() {
+    if direct_matches > 0 {
         return Ok(direct);
     }
     let Ok(ordinal) = u32::try_from(selector) else {
         return Ok(None);
     };
     let mut matched = None;
-    for body in body_keys {
-        if body.body_ordinal == ordinal {
-            if matched.is_some() {
+    let mut ordinal_matches = 0;
+    for key in body_keys {
+        if key.body_ordinal == ordinal {
+            ordinal_matches += 1;
+            if ordinal_matches > 1 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D body selector {selector} matches multiple body ordinals"
                 )));
             }
-            matched = Some(&body.body);
+            matched = Some(key);
         }
     }
     Ok(matched)
+}
+
+/// Resolve one Design body selector within one BREP blob. Exact native keys
+/// take precedence; an absent key falls back to the zero-based body ordinal.
+/// The neutral body resolves through its `native_ref`, which names the
+/// matched key row.
+pub(crate) fn resolve_body_selector<'a>(
+    bodies: &'a [Body],
+    body_keys: impl Iterator<Item = &'a BodyNativeKey> + Clone,
+    selector: u64,
+) -> Result<Option<BodyId>, cadmpeg_core::CodecError> {
+    let keyed_body = |key: &BodyNativeKey| {
+        bodies
+            .iter()
+            .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
+            .map(|body| body.id.clone())
+    };
+    Ok(resolve_body_key_row(body_keys, selector)?.and_then(|key| keyed_body(key)))
+}
+
+/// Canonical native row carrying an attribute target's entity.
+///
+/// The returned row id names a body key, face key or sidedness, edge
+/// ownership or vertex ownership row; the neutral entity's `native_ref`
+/// names the same row. A coedge target names its owning edge's ownership row
+/// with the coedge source index, since coedges hold no canonical row. Any
+/// other target has no neutral-resolvable home under check 8.
+pub(crate) fn link_target_for(
+    bodies: &[Body],
+    faces: &[Face],
+    edges: &[Edge],
+    vertices: &[Vertex],
+    coedges: &[Coedge],
+    target: &AttributeTarget,
+) -> Option<(String, Option<u32>)> {
+    match target {
+        AttributeTarget::Body(id) => bodies
+            .iter()
+            .find(|body| &body.id == id)?
+            .native_ref
+            .clone()
+            .map(|row| (row, None)),
+        AttributeTarget::Face(id) => faces
+            .iter()
+            .find(|face| &face.id == id)?
+            .native_ref
+            .clone()
+            .map(|row| (row, None)),
+        AttributeTarget::Edge(id) => edges
+            .iter()
+            .find(|edge| &edge.id == id)?
+            .native_ref
+            .clone()
+            .map(|row| (row, None)),
+        AttributeTarget::Vertex(id) => vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)?
+            .native_ref
+            .clone()
+            .map(|row| (row, None)),
+        AttributeTarget::Coedge(id) => {
+            let coedge = coedges.iter().find(|coedge| &coedge.id == id)?;
+            let edge = edges.iter().find(|edge| edge.id == coedge.edge)?;
+            let row = edge.native_ref.clone()?;
+            let index = cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())?;
+            Some((row, Some(index)))
+        }
+        AttributeTarget::Record { arena, id } => match arena.as_str() {
+            "bodies" => bodies
+                .iter()
+                .find(|body| body.id.as_str() == id)?
+                .native_ref
+                .clone()
+                .map(|row| (row, None)),
+            "faces" => faces
+                .iter()
+                .find(|face| face.id.as_str() == id)?
+                .native_ref
+                .clone()
+                .map(|row| (row, None)),
+            "edges" => edges
+                .iter()
+                .find(|edge| edge.id.as_str() == id)?
+                .native_ref
+                .clone()
+                .map(|row| (row, None)),
+            "vertices" => vertices
+                .iter()
+                .find(|vertex| vertex.id.as_str() == id)?
+                .native_ref
+                .clone()
+                .map(|row| (row, None)),
+            "coedges" => {
+                let coedge = coedges.iter().find(|coedge| coedge.id.as_str() == id)?;
+                let edge = edges.iter().find(|edge| edge.id == coedge.edge)?;
+                let row = edge.native_ref.clone()?;
+                let index =
+                    cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())?;
+                Some((row, Some(index)))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Map each linked native row id to the neutral entity linked from it.
+///
+/// Bodies, faces, edges and vertices carry `native_ref` naming their canonical
+/// native row (a body key, face key or sidedness, edge ownership or vertex
+/// ownership row). Writers resolve native rows through this map instead of
+/// reading neutral ids from native fields.
+pub(crate) fn native_row_owners(asm: &AsmBrep) -> HashMap<String, String> {
+    let mut owners = HashMap::new();
+    for body in &asm.bodies {
+        if let Some(native_ref) = body.native_ref.as_deref() {
+            owners
+                .entry(native_ref.to_owned())
+                .or_insert_with(|| body.id.as_str().to_owned());
+        }
+    }
+    for face in &asm.faces {
+        if let Some(native_ref) = face.native_ref.as_deref() {
+            owners
+                .entry(native_ref.to_owned())
+                .or_insert_with(|| face.id.as_str().to_owned());
+        }
+    }
+    for edge in &asm.edges {
+        if let Some(native_ref) = edge.native_ref.as_deref() {
+            owners
+                .entry(native_ref.to_owned())
+                .or_insert_with(|| edge.id.as_str().to_owned());
+        }
+    }
+    for vertex in &asm.vertices {
+        if let Some(native_ref) = vertex.native_ref.as_deref() {
+            owners
+                .entry(native_ref.to_owned())
+                .or_insert_with(|| vertex.id.as_str().to_owned());
+        }
+    }
+    owners
+}
+
+/// Neutral coedge a coedge-owned link row targets.
+///
+/// The link names its owning edge's ownership row with the coedge source
+/// index; coedges hold no canonical row of their own.
+pub(crate) fn link_coedge<'a>(
+    coedges: &'a [cadmpeg_ir::topology::Coedge],
+    edge_id: &str,
+    index: u32,
+) -> Option<&'a cadmpeg_ir::topology::Coedge> {
+    coedges.iter().find(|coedge| {
+        coedge.edge.as_str() == edge_id
+            && cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str()) == Some(index)
+    })
+}
+
+/// Neutral entity a native link row targets.
+///
+/// Direct targets resolve through the neutral entity's `native_ref`, which
+/// names the link's canonical row. Coedge targets name their owning edge's
+/// ownership row with the coedge source index, since coedges hold no
+/// canonical row of their own.
+pub(crate) fn link_neutral_id(
+    bodies: &[Body],
+    faces: &[Face],
+    edges: &[Edge],
+    vertices: &[Vertex],
+    coedges: &[Coedge],
+    target: &cadmpeg_asm::brep::records::identity::NativeRowId,
+    target_coedge: Option<u32>,
+) -> Option<String> {
+    let direct = || {
+        bodies
+            .iter()
+            .find(|body| body.native_ref.as_deref() == Some(target.as_str()))
+            .map(|body| body.id.as_str())
+            .or_else(|| {
+                faces
+                    .iter()
+                    .find(|face| face.native_ref.as_deref() == Some(target.as_str()))
+                    .map(|face| face.id.as_str())
+            })
+            .or_else(|| {
+                edges
+                    .iter()
+                    .find(|edge| edge.native_ref.as_deref() == Some(target.as_str()))
+                    .map(|edge| edge.id.as_str())
+            })
+            .or_else(|| {
+                vertices
+                    .iter()
+                    .find(|vertex| vertex.native_ref.as_deref() == Some(target.as_str()))
+                    .map(|vertex| vertex.id.as_str())
+            })
+            .map(str::to_owned)
+    };
+    match target_coedge {
+        None => direct(),
+        Some(index) => {
+            let edge = edges
+                .iter()
+                .find(|edge| edge.native_ref.as_deref() == Some(target.as_str()))?;
+            link_coedge(coedges, edge.id.as_str(), index)
+                .map(|coedge| coedge.id.as_str().to_owned())
+        }
+    }
 }
 
 /// The five members every `sketch_attrib_def` payload form writes.
@@ -396,12 +621,21 @@ fn attribute_family(attribute: &SourceAttribute, family: &str) -> Option<usize> 
     None
 }
 
-fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
+fn sketch_curve_link(asm: &AsmBrep, attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     let family = attribute_family(attribute, "sketch_attrib_def")?;
     let payload = sketch_link_payload(&attribute.values[family + 1..])?;
+    let (target, target_coedge) = link_target_for(
+        &asm.bodies,
+        &asm.faces,
+        &asm.edges,
+        &asm.vertices,
+        &asm.coedges,
+        &attribute.target,
+    )?;
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: target.into(),
+        target_coedge,
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
         sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
@@ -411,6 +645,7 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
 }
 
 fn persistent_design_links(
+    asm: &AsmBrep,
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentDesignLink>, CodecError> {
     let AttributeTarget::Body(_) = &attribute.target else {
@@ -452,12 +687,23 @@ fn persistent_design_links(
         let ordinal = u32::try_from(links.len()).map_err(|_| {
             CodecError::Malformed("F3D persistent design link ordinal overflows".into())
         })?;
+        let Some((target, target_coedge)) = link_target_for(
+            &asm.bodies,
+            &asm.faces,
+            &asm.edges,
+            &asm.vertices,
+            &asm.coedges,
+            &attribute.target,
+        ) else {
+            continue;
+        };
         let link = PersistentDesignLink {
             id: format!(
                 "f3d:design:persistent-design-link#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: target.into(),
+            target_coedge,
             design_id,
             design_reference,
             ordinal,
@@ -468,6 +714,7 @@ fn persistent_design_links(
 }
 
 fn persistent_subentity_tags(
+    asm: &AsmBrep,
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentSubentityTag>, CodecError> {
     if !matches!(
@@ -542,7 +789,19 @@ fn persistent_subentity_tags(
                 "f3d:design:persistent-subentity-tag#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: link_target_for(
+                &asm.bodies,
+                &asm.faces,
+                &asm.edges,
+                &asm.vertices,
+                &asm.coedges,
+                &attribute.target,
+            )
+            .map(|(target, _)| target.into())
+            .ok_or_else(|| {
+                CodecError::malformed("F3D persistent subentity tag has an unlinked target")
+            })?,
+            target_coedge: None,
             selector: *selector,
             token,
             design_references,
@@ -619,12 +878,21 @@ pub(crate) fn creation_timestamp_value(
     Some(*unix_microseconds)
 }
 
-fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+fn creation_timestamp(asm: &AsmBrep, attribute: &SourceAttribute) -> Option<CreationTimestamp> {
     let unix_microseconds = creation_timestamp_value(attribute)?;
     let record_index = attribute_key(attribute).parse().ok()?;
+    let (target, target_coedge) = link_target_for(
+        &asm.bodies,
+        &asm.faces,
+        &asm.edges,
+        &asm.vertices,
+        &asm.coedges,
+        &attribute.target,
+    )?;
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: target.into(),
+        target_coedge,
         record_index,
         unix_microseconds,
     })

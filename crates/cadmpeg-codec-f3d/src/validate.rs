@@ -1597,8 +1597,8 @@ fn validate_body_bindings(
                         key.source_brep.is_none()
                     }
             });
-            match crate::brep::resolve_body_selector(source_keys, binding.asm_body_key) {
-                Ok(Some(resolved)) => resolved == body,
+            match crate::brep::resolve_body_key_row(source_keys, binding.asm_body_key) {
+                Ok(Some(resolved)) => resolved.id() == body.as_str(),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Ok(None) | Err(_) => false,
             }
@@ -4225,6 +4225,11 @@ fn valid_vertex_recipe(
             reference,
             &native.persistent_subentity_tags,
             Some(&scope.id),
+            &ctx.ir.model.bodies,
+            &ctx.ir.model.faces,
+            &ctx.ir.model.edges,
+            &ctx.ir.model.vertices,
+            &ctx.ir.model.coedges,
         );
     }
     let program_byte_length = u64::try_from(vertex.recipe_program.len())
@@ -6278,6 +6283,11 @@ fn validate_body_recipe_operands<'a>(
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
+        &ctx.ir.model.bodies,
+        &ctx.ir.model.faces,
+        &ctx.ir.model.edges,
+        &ctx.ir.model.vertices,
+        &ctx.ir.model.coedges,
     );
     history::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
@@ -6894,6 +6904,11 @@ fn validate_edge_operands<'a>(
                 design_reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
+                &ctx.ir.model.bodies,
+                &ctx.ir.model.faces,
+                &ctx.ir.model.edges,
+                &ctx.ir.model.vertices,
+                &ctx.ir.model.coedges,
             ),
             None => Vec::new(),
         };
@@ -6907,6 +6922,11 @@ fn validate_edge_operands<'a>(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
+                    &ctx.ir.model.bodies,
+                    &ctx.ir.model.faces,
+                    &ctx.ir.model.edges,
+                    &ctx.ir.model.vertices,
+                    &ctx.ir.model.coedges,
                 );
             }
         }
@@ -7124,6 +7144,11 @@ fn validate_edge_treatment_vertex_operands<'a>(
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
+                &ctx.ir.model.bodies,
+                &ctx.ir.model.faces,
+                &ctx.ir.model.edges,
+                &ctx.ir.model.vertices,
+                &ctx.ir.model.coedges,
             );
         }
     }
@@ -7282,9 +7307,24 @@ fn validate_face_operands<'a>(
                         crate::ids::same_native_occurrence(&tag.id, &operand.id)
                             && tag.design_references.contains(&design_reference)
                     })
-                    .filter_map(|tag| match &tag.target {
-                        cadmpeg_ir::attributes::AttributeTarget::Face(id) => Some(id),
-                        _ => None,
+                    .filter_map(|tag| {
+                        crate::brep::link_neutral_id(
+                            &ctx.ir.model.bodies,
+                            &ctx.ir.model.faces,
+                            &ctx.ir.model.edges,
+                            &ctx.ir.model.vertices,
+                            &ctx.ir.model.coedges,
+                            &tag.target,
+                            tag.target_coedge,
+                        )
+                        .and_then(|id| {
+                            ctx.ir
+                                .model
+                                .faces
+                                .iter()
+                                .find(|face| face.id.as_str() == id)
+                                .map(|face| face.id.clone())
+                        })
                     })
             })
             .collect::<Vec<_>>();
@@ -7300,6 +7340,11 @@ fn validate_face_operands<'a>(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
+                    &ctx.ir.model.bodies,
+                    &ctx.ir.model.faces,
+                    &ctx.ir.model.edges,
+                    &ctx.ir.model.vertices,
+                    &ctx.ir.model.coedges,
                 );
             }
         }
@@ -7314,8 +7359,8 @@ fn validate_face_operands<'a>(
             .collect::<std::collections::HashSet<_>>();
         let expected_unreferenced_faces = expected_faces
             .iter()
-            .copied()
-            .filter(|face| !referenced_faces.contains(face))
+            .cloned()
+            .filter(|face| !referenced_faces.contains(&face))
             .collect::<Vec<_>>();
         let mut expected_alternate_selector_faces = expected_references
             .iter()
@@ -7651,15 +7696,16 @@ fn split_direct_face_admitted(
             && recipe_kind == records::recipes::ConstructionRecipeKind::Face)
 }
 
-fn face_ids_match_refs(
-    actual: &[cadmpeg_ir::ids::FaceId],
-    expected: &[&cadmpeg_ir::ids::FaceId],
-) -> bool {
+fn face_ids_match_refs<A, E>(actual: &[A], expected: &[E]) -> bool
+where
+    A: std::borrow::Borrow<cadmpeg_ir::ids::FaceId>,
+    E: std::borrow::Borrow<cadmpeg_ir::ids::FaceId>,
+{
     actual.len() == expected.len()
         && actual
             .iter()
             .zip(expected)
-            .all(|(actual, expected)| actual == *expected)
+            .all(|(actual, expected)| actual.borrow() == expected.borrow())
 }
 
 /// Report face-group members with no resolved recipe operand.
@@ -8213,6 +8259,11 @@ fn validate_dimension_recipe_records<'a>(
                         reference,
                         &native.persistent_subentity_tags,
                         Some(&record.id),
+                        &ctx.ir.model.bodies,
+                        &ctx.ir.model.faces,
+                        &ctx.ir.model.edges,
+                        &ctx.ir.model.vertices,
+                        &ctx.ir.model.coedges,
                     );
                 }
                 frame_length >= 11
@@ -9187,12 +9238,19 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         .iter()
         .map(|body| &body.id)
         .collect::<std::collections::HashSet<_>>();
-    let mut body_links: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
+    let mut body_links: std::collections::BTreeMap<String, Vec<_>> =
+        std::collections::BTreeMap::new();
     for link in &native.persistent_design_links {
-        let target_key = match &link.target {
-            cadmpeg_ir::attributes::AttributeTarget::Body(id) if body_ids.contains(id) => Some(id),
-            _ => None,
-        };
+        let target_key = crate::brep::link_neutral_id(
+            &ir.model.bodies,
+            &ir.model.faces,
+            &ir.model.edges,
+            &ir.model.vertices,
+            &ir.model.coedges,
+            &link.target,
+            link.target_coedge,
+        )
+        .filter(|id| body_ids.iter().any(|body| body.as_str() == id));
         let Some(target_key) = target_key else {
             push_constant_finding(
                 findings,
@@ -9240,12 +9298,21 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut subentity_tags: std::collections::BTreeMap<_, Vec<_>> =
         std::collections::BTreeMap::new();
     for tag in &native.persistent_subentity_tags {
-        let Some(target_key) = (match &tag.target {
-            cadmpeg_ir::attributes::AttributeTarget::Face(id) if face_ids.contains(id) => {
-                Some((1_u8, id.as_str()))
+        let neutral = crate::brep::link_neutral_id(
+            &ir.model.bodies,
+            &ir.model.faces,
+            &ir.model.edges,
+            &ir.model.vertices,
+            &ir.model.coedges,
+            &tag.target,
+            tag.target_coedge,
+        );
+        let Some(target_key) = (match neutral.as_deref() {
+            Some(id) if face_ids.iter().any(|face| face.as_str() == id) => {
+                Some((1_u8, id.to_owned()))
             }
-            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edge_ids.contains(id) => {
-                Some((0_u8, id.as_str()))
+            Some(id) if edge_ids.iter().any(|edge| edge.as_str() == id) => {
+                Some((0_u8, id.to_owned()))
             }
             _ => None,
         }) else {

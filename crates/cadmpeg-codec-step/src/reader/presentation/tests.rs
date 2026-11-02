@@ -523,7 +523,9 @@ fn overriding_style_suppresses_the_base_binding() {
 #4=PRESENTATION_STYLE_ASSIGNMENT((#3));
 #10=STYLED_ITEM('',(#2),#20);
 #11=OVER_RIDING_STYLED_ITEM('',(#4),#20,#10);
-#20=SOURCE_ITEM();",
+#20=POLYLINE('',(#21,#22));
+#21=CARTESIAN_POINT('',(0.,0.,0.));
+#22=CARTESIAN_POINT('',(1.,0.,0.));",
     );
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     let binding = &result.ir().model.appearance_bindings[0];
@@ -1200,7 +1202,7 @@ fn complex_colour_rgb_inherits_name_and_components() {
 #3=STYLED_ITEM('',(#2),#4);
 #4=SOURCE_ITEM();",
     );
-    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
+    assert!(result.ir().model.appearance_bindings.is_empty());
     let appearance = result
         .ir()
         .model

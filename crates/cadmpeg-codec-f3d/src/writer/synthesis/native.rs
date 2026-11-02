@@ -217,23 +217,22 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         .retain(|header| reachable.contains(&header.record_index));
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
+    super::body_keys::reconcile(target, &mut native)?;
     native.body_native_keys.retain(|record| {
-        target
-            .model
-            .bodies
-            .iter()
-            .any(|body| body.id == record.body)
+        target.model.bodies.iter().any(|body| {
+            body.native_ref.as_deref() == Some(record.id().as_str())
+        })
     });
     native.body_visibilities.retain(|record| {
-        target
-            .model
-            .bodies
-            .iter()
-            .any(|body| body.id == record.body)
+        target.model.bodies.iter().any(|body| {
+            body.native_ref.as_deref() == Some(record.body.as_str())
+        })
     });
-    native
-        .edge_continuities
-        .retain(|record| target.model.edges.iter().any(|edge| edge.id == record.edge));
+    native.edge_continuities.retain(|record| {
+        target.model.edges.iter().any(|edge| {
+            edge.native_ref.as_deref() == Some(record.owner.as_str())
+        })
+    });
     native.face_sidedness.retain(|record| {
         target.model.faces.iter().any(|face| {
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
@@ -246,28 +245,55 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         .enumerate()
         .filter_map(|(ordinal, attribute)| {
             let unix_microseconds = crate::brep::creation_timestamp_value(attribute)?;
-            let existing = native
-                .creation_timestamps
-                .iter()
-                .find(|record| record.target == attribute.target);
+            let (row, target_coedge) = crate::brep::link_target_for(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &attribute.target,
+            )?;
+            let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
+            let existing = native.creation_timestamps.iter().find(|record| {
+                record.target == row && record.target_coedge == target_coedge
+            });
             Some(crate::records::recipes::CreationTimestamp {
                 id: existing.map_or_else(
                     || format!("f3d:design:creation-timestamp#generated-{ordinal}"),
                     |record| record.id.clone(),
                 ),
-                target: attribute.target.clone(),
+                target: row,
+                target_coedge,
                 record_index: existing
                     .map_or(u32::try_from(ordinal).ok()?, |record| record.record_index),
                 unix_microseconds,
             })
         })
-        .filter(|record| target_exists(target, &record.target))
         .collect();
-    native
-        .persistent_design_links
-        .retain(|record| target_exists(target, &record.target) && record.design_reference < 0);
+    native.persistent_design_links.retain(|record| {
+        crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some()
+            && record.design_reference < 0
+    });
     native.persistent_subentity_tags.retain(|record| {
-        target_exists(target, &record.target)
+        crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some()
             && record
                 .design_references
                 .iter()
@@ -277,18 +303,21 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     // which are layout identities rather than content.
     let mut link_ordinals = BTreeMap::new();
     for record in &mut native.persistent_design_links {
-        let ordinal = link_ordinals.entry(record.target.clone()).or_insert(0);
+        let ordinal = link_ordinals
+            .entry((record.target.clone(), record.target_coedge))
+            .or_insert(0);
         record.ordinal = *ordinal;
         *ordinal += 1;
     }
     let mut tag_ordinals = BTreeMap::new();
     for record in &mut native.persistent_subentity_tags {
-        let ordinal = tag_ordinals.entry(record.target.clone()).or_insert(0);
+        let ordinal = tag_ordinals
+            .entry((record.target.clone(), record.target_coedge))
+            .or_insert(0);
         record.ordinal = *ordinal;
         *ordinal += 1;
     }
     super::act::reconcile(target, &mut native, losses)?;
-    super::body_keys::reconcile(target, &mut native)?;
     super::geometry::reconcile(target, &mut native);
     super::design::regenerate(target, &mut native, losses)?;
     target.model.assembly_joints.clear();
@@ -297,18 +326,6 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         native.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
-}
-
-fn target_exists(ir: &CadIr, target: &cadmpeg_ir::attributes::AttributeTarget) -> bool {
-    use cadmpeg_ir::attributes::AttributeTarget;
-    match target {
-        AttributeTarget::Body(id) => ir.model.bodies.iter().any(|record| &record.id == id),
-        AttributeTarget::Face(id) => ir.model.faces.iter().any(|record| &record.id == id),
-        AttributeTarget::Edge(id) => ir.model.edges.iter().any(|record| &record.id == id),
-        AttributeTarget::Coedge(id) => ir.model.coedges.iter().any(|record| &record.id == id),
-        AttributeTarget::Vertex(id) => ir.model.vertices.iter().any(|record| &record.id == id),
-        _ => false,
-    }
 }
 
 /// Rejoin independently admitted body candidates using one output key space.
@@ -328,18 +345,20 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             .model
             .bodies
             .iter()
-            .any(|body| body.id == record.body)
+            .any(|body| body.native_ref.as_deref() == Some(record.id().as_str()))
     });
     native.body_visibilities.retain(|record| {
+        target.model.bodies.iter().any(|body| {
+            body.native_ref.as_deref() == Some(record.body.as_str())
+        })
+    });
+    native.edge_continuities.retain(|record| {
         target
             .model
-            .bodies
+            .edges
             .iter()
-            .any(|body| body.id == record.body)
+            .any(|edge| edge.native_ref.as_deref() == Some(record.owner.as_str()))
     });
-    native
-        .edge_continuities
-        .retain(|record| target.model.edges.iter().any(|edge| edge.id == record.edge));
     native.face_sidedness.retain(|record| {
         target.model.faces.iter().any(|face| {
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
@@ -352,29 +371,55 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
         .enumerate()
         .filter_map(|(ordinal, attribute)| {
             let unix_microseconds = crate::brep::creation_timestamp_value(attribute)?;
-            let existing = native
-                .creation_timestamps
-                .iter()
-                .find(|record| record.target == attribute.target);
+            let (row, target_coedge) = crate::brep::link_target_for(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &attribute.target,
+            )?;
+            let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
+            let existing = native.creation_timestamps.iter().find(|record| {
+                record.target == row && record.target_coedge == target_coedge
+            });
             Some(crate::records::recipes::CreationTimestamp {
                 id: existing.map_or_else(
                     || format!("f3d:design:creation-timestamp#generated-{ordinal}"),
                     |record| record.id.clone(),
                 ),
-                target: attribute.target.clone(),
+                target: row,
+                target_coedge,
                 record_index: existing
                     .map_or(u32::try_from(ordinal).ok()?, |record| record.record_index),
                 unix_microseconds,
             })
         })
-        .filter(|record| target_exists(target, &record.target))
         .collect();
-    native
-        .persistent_design_links
-        .retain(|record| target_exists(target, &record.target));
-    native
-        .persistent_subentity_tags
-        .retain(|record| target_exists(target, &record.target));
+    native.persistent_design_links.retain(|record| {
+        crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some()
+    });
+    native.persistent_subentity_tags.retain(|record| {
+        crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some()
+    });
     super::geometry::reconcile(target, &mut native);
     target.native.0.remove("f3d");
     super::design::with_context(|ctx| {

@@ -88,7 +88,7 @@ fn decode_container<'a>(
     let dialects = crate::dialect::layers(&matched, &container.rse.active_carrier)?;
     let source_parts = std::mem::replace(
         &mut container.rse.source_parts,
-        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx),
     );
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
     let presentation_inventory =

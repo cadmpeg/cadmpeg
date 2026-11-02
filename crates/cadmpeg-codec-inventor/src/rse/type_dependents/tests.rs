@@ -76,7 +76,7 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
     assert_eq!(version, 18);
     let frame = crate::records::frame_type_table(meta.body)
         .expect("the metadata body holds a type table frame");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let slots = ctx
         .decode_part(
             &mut output,

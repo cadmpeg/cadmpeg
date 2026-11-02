@@ -3,11 +3,11 @@
 
 use std::cell::Cell;
 
+use super::budget::DecodeBudget;
 use super::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ExpandSpec, ResourceDimension,
     ResourceLimit, SpaceId,
 };
-use super::budget::DecodeBudget;
 
 #[derive(Debug, Clone)]
 pub(super) struct BudgetState {
@@ -130,6 +130,7 @@ pub struct DecodeCheckpoint {
     state: BudgetState,
     depth: DecodeDepth,
     spaces: usize,
+    source_digest: Option<[u8; 32]>,
 }
 
 /// Charge totals between ordered budget observations and expansion boundaries.
@@ -177,6 +178,7 @@ impl DecodeCheckpoint {
         let ctx = DecodeContext::new(arena, &self.state.policy, self.depth);
         ctx.budget.restore(&self.state);
         ctx.derived_spaces.set(self.spaces);
+        ctx.source_digest.set(self.source_digest);
         *ctx.budget.trace.borrow_mut() = Some(Vec::new());
         ctx
     }
@@ -206,6 +208,7 @@ impl DecodeContext<'_> {
             ),
             derived_spaces: Cell::new(0),
             companions: None,
+            source_digest: Cell::new(self.source_digest.get()),
         };
         local.budget.restore(&checkpoint.state);
         local.derived_spaces.set(checkpoint.spaces);
@@ -239,6 +242,7 @@ impl DecodeContext<'_> {
             state: self.budget.state(),
             depth: self.depth(),
             spaces: self.derived_spaces.get(),
+            source_digest: self.source_digest.get(),
         }
     }
 

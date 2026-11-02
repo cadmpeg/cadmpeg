@@ -19,7 +19,7 @@ use cadmpeg_ir::{
         SpatialSketchEntity,
     },
     subd::SubdSurface,
-    topology::{Body, Face, Region, Shell},
+    topology::{Body, Coedge, Edge, Face, Region, Shell, Vertex},
     units::Tolerances,
 };
 
@@ -87,6 +87,9 @@ pub(super) struct DesignGeometry<'a> {
     pub(super) regions: &'a [Region],
     pub(super) shells: &'a [Shell],
     pub(super) faces: &'a [Face],
+    pub(super) edges: &'a [Edge],
+    pub(super) vertices: &'a [Vertex],
+    pub(super) coedges: &'a [Coedge],
     pub(super) surfaces: &'a [Surface],
     pub(super) subds: &'a [SubdSurface],
     pub(super) assets: &'a [Asset],
@@ -549,6 +552,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
     );
+    let body_key_bodies = inputs
+        .geometry
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            body.native_ref
+                .as_ref()
+                .map(|native_ref| (native_ref.clone(), body.id.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -568,6 +581,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             legacy_loft_body_carriers: &design.design_loft_legacy_body_carriers,
             placements: &design.design_sketch_placements,
             body_bindings: &prereqs.design_body_bindings,
+            body_key_bodies: Some(&body_key_bodies),
             component_naming_spaces: &prereqs.design_component_naming_spaces,
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
@@ -1418,6 +1432,11 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     crate::history::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
@@ -1484,6 +1503,11 @@ fn extend_related_design_records(
         &mut design.design_edge_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     design.asm_face_boundaries = crate::history::bind_edge_operand_history_candidates(
         &mut design.design_edge_operands,
@@ -1503,6 +1527,11 @@ fn extend_related_design_records(
     crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
         &mut design.design_edge_treatment_vertex_operands,
         geometry.persistent_subentity_tags,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     crate::history::bind_edge_treatment_vertex_history(
         &mut design.design_edge_treatment_vertex_operands,
@@ -1521,6 +1550,11 @@ fn extend_related_design_records(
     crate::design::decode::operands::bind_vertex_recipe_candidates(
         &mut design.design_parameter_scopes,
         geometry.persistent_subentity_tags,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     crate::history::bind_vertex_recipe_history(
         &mut design.design_parameter_scopes,
@@ -1539,6 +1573,11 @@ fn extend_related_design_records(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     crate::history::bind_face_operand_history_candidates(
         ctx,
@@ -1600,6 +1639,11 @@ fn extend_related_design_records(
     crate::design::decode::dimension_frames::bind_dimension_recipe_reference_candidates(
         &mut design.design_dimension_recipe_records,
         geometry.persistent_subentity_tags,
+        geometry.bodies,
+        geometry.faces,
+        geometry.edges,
+        geometry.vertices,
+        geometry.coedges,
     );
     crate::design::decode::dimension_frames::bind_dimension_recipe_edge_operands(
         &mut design.design_dimension_recipe_records,

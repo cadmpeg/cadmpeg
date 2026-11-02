@@ -1153,12 +1153,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:body#record-000000-offset-177.caps",
-              "rhino:object:surface#record-000000-offset-177.lateral-0",
-              "rhino:object:surface#record-000000-offset-177.lateral-1"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],
@@ -1455,6 +1450,7 @@
         }
       }
     },
+    "decode_digest": "fe90cc58532af26b164a45003ddf34074b19c1e2d01b48ee622c10e515b5cbc8",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

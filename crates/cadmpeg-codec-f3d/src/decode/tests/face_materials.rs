@@ -225,7 +225,7 @@ fn make_body_binding(
     stream: &str,
     asm_key_offset: u64,
     entity_suffix: u64,
-    body: &str,
+    row: &str,
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire {
@@ -242,7 +242,7 @@ fn make_body_binding(
             entity_suffix_offset: asm_key_offset + 8,
             blob_name: "BREP.synthetic.smbh".into(),
             blob_name_offset: asm_key_offset + 32,
-            body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
+            body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(row.to_owned())),
         },
     )
     .unwrap()
@@ -271,11 +271,11 @@ fn apply_body_presentation_names_joins_custom_name_stream_qualified() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = None;
         ir.model.bodies[0].visible = Some(true);
 
-        let binding = make_body_binding(stream, 100, entity, body_id.as_str());
+        let binding = make_body_binding(stream, 100, entity, "f3d:asm:body-native-key#1");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
         assert_eq!(ir.model.bodies[0].name.as_deref(), Some("Bottom"));
     });
@@ -290,11 +290,11 @@ fn apply_body_presentation_names_skips_when_stream_mismatches() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = None;
         ir.model.bodies[0].visible = Some(true);
 
-        let binding = make_body_binding(binding_stream, 100, entity, body_id.as_str());
+        let binding = make_body_binding(binding_stream, 100, entity, "f3d:asm:body-native-key#1");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
         assert_eq!(ir.model.bodies[0].name, None);
     });
@@ -308,12 +308,12 @@ fn apply_body_presentation_names_skips_ambiguous_bindings_in_same_stream() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = None;
         ir.model.bodies[0].visible = Some(true);
 
-        let binding1 = make_body_binding(stream, 100, entity, body_id.as_str());
-        let binding2 = make_body_binding(stream, 200, entity, body_id.as_str());
+        let binding1 = make_body_binding(stream, 100, entity, "f3d:asm:body-native-key#1");
+        let binding2 = make_body_binding(stream, 200, entity, "f3d:asm:body-native-key#1");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2]).unwrap();
         assert_eq!(
             ir.model.bodies[0].name, None,
@@ -331,11 +331,11 @@ fn apply_body_presentation_names_ignores_default_body_names() {
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let mut ir = model();
-            let body_id = ir.model.bodies[0].id.clone();
+            ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
             ir.model.bodies[0].name = None;
             ir.model.bodies[0].visible = Some(true);
 
-            let binding = make_body_binding(stream, 100, entity, body_id.as_str());
+            let binding = make_body_binding(stream, 100, entity, "f3d:asm:body-native-key#1");
             super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
             assert_eq!(ir.model.bodies[0].name, None);
         });
@@ -350,11 +350,11 @@ fn apply_body_presentation_names_renames_body_with_none_visibility() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = None;
         ir.model.bodies[0].visible = None;
 
-        let binding = make_body_binding(stream, 100, entity, body_id.as_str());
+        let binding = make_body_binding(stream, 100, entity, "f3d:asm:body-native-key#1");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
         assert_eq!(ir.model.bodies[0].name.as_deref(), Some("Bottom"));
     });
@@ -368,11 +368,11 @@ fn apply_body_presentation_names_preserves_existing_body_name() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = Some("CustomExisting".to_string());
         ir.model.bodies[0].visible = Some(true);
 
-        let binding = make_body_binding(stream, 100, entity, body_id.as_str());
+        let binding = make_body_binding(stream, 100, entity, "f3d:asm:body-native-key#1");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
         assert_eq!(ir.model.bodies[0].name.as_deref(), Some("CustomExisting"));
     });
@@ -389,19 +389,19 @@ fn apply_body_presentation_names_does_not_alias_across_streams() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body1_id = ir.model.bodies[0].id.clone();
+        ir.model.bodies[0].native_ref = Some("f3d:asm:body-native-key#1".to_owned());
         ir.model.bodies[0].name = None;
         ir.model.bodies[0].visible = Some(true);
 
         let mut body2 = ir.model.bodies[0].clone();
-        let body2_id = cadmpeg_ir::ids::BodyId::mint("test:model:body#2").unwrap();
-        body2.id = body2_id.clone();
+        body2.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#2").unwrap();
         body2.name = None;
         body2.visible = Some(true);
+        body2.native_ref = Some("f3d:asm:body-native-key#2".to_owned());
         ir.model.bodies.push(body2);
 
-        let binding1 = make_body_binding(stream1, 100, entity, body1_id.as_str());
-        let binding2 = make_body_binding(stream2, 200, entity, body2_id.as_str());
+        let binding1 = make_body_binding(stream1, 100, entity, "f3d:asm:body-native-key#1");
+        let binding2 = make_body_binding(stream2, 200, entity, "f3d:asm:body-native-key#2");
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2]).unwrap();
         assert_eq!(ir.model.bodies[0].name.as_deref(), Some("PlateOne"));
         assert_eq!(ir.model.bodies[1].name.as_deref(), Some("PlateTwo"));

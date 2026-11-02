@@ -509,7 +509,7 @@ impl<'a> RseInventory<'a> {
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
-        let mut source_parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
+        let mut source_parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx);
         let mut source_meta_type_count = 0;
         let mut pairs = Vec::new();
         for (token, metadata_id) in &metadata {

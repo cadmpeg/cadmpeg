@@ -154,12 +154,11 @@ pub(crate) fn fixture() -> Fixture {
     let keys = [(7, "target"), (8, "other")]
         .into_iter()
         .zip(0_u32..)
-        .map(|((asm_body_key, name), record_index)| BodyNativeKey {
+        .map(|((asm_body_key, _name), record_index)| BodyNativeKey {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 cadmpeg_asm::asm_format!("inventor"),
             ),
             record_index,
-            body: body(name),
             body_ordinal: 0,
             source_brep: Some("Bseg:record:0".into()),
             asm_body_key: Some(asm_body_key),
@@ -205,8 +204,27 @@ impl Fixture {
             &operands,
             &joins,
             |_, ordinal| ordinal == STORED_CARRIER,
+            &self.neutral_bodies(),
             |candidate| self.bodies.contains(candidate),
         )
+    }
+
+    /// Neutral bodies linked to the key rows through `native_ref`.
+    pub(crate) fn neutral_bodies(&self) -> Vec<cadmpeg_ir::topology::Body> {
+        self.keys
+            .iter()
+            .zip(&self.bodies)
+            .map(|(key, id)| cadmpeg_ir::topology::Body {
+                native_ref: Some(key.id()),
+                id: id.clone(),
+                kind: cadmpeg_ir::topology::BodyKind::default(),
+                regions: vec![],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            })
+            .collect()
     }
 
     pub(crate) fn inventory(&self) -> FeatureInventory {
@@ -234,17 +252,8 @@ impl Fixture {
     /// A model that holds the two current bodies and the native feature.
     pub(crate) fn model(&self, ctx: &DecodeContext<'_>) -> cadmpeg_ir::document::Model {
         let mut model = cadmpeg_ir::document::Model::default();
-        for id in &self.bodies {
-            model.bodies.push(cadmpeg_ir::topology::Body {
-                native_ref: None,
-                id: id.clone(),
-                kind: cadmpeg_ir::topology::BodyKind::default(),
-                regions: vec![],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
+        for body in self.neutral_bodies() {
+            model.bodies.push(body);
         }
         model.features.push(
             crate::feature::native_feature(

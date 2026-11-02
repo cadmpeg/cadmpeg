@@ -2606,8 +2606,12 @@ impl<'a> F3dDecodeSession<'a> {
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
         )?;
-        let geometry_materials =
-            materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
+        let geometry_materials = materials::decode_with_body_bindings(
+            ctx,
+            scan,
+            &design_body_bindings,
+            &brep.asm.bodies,
+        )?;
         let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         geometry_admission::admit(
@@ -2888,6 +2892,9 @@ impl<'a> F3dDecodeSession<'a> {
                 regions: &model.regions,
                 shells: &model.shells,
                 faces: &model.faces,
+                edges: &model.edges,
+                vertices: &model.vertices,
+                coedges: &model.coedges,
                 surfaces: &model.surfaces,
                 subds: &model.subds,
                 assets: &model.assets,
@@ -3073,6 +3080,20 @@ impl<'a> F3dDecodeSession<'a> {
             .filter(|body| body.visible == Some(false))
             .map(|body| body.id.clone())
             .collect::<std::collections::BTreeSet<_>>();
+        let body_key_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter_map(|body| {
+                body.native_ref.as_ref().map(|native_ref| {
+                    (
+                        native_ref.clone(),
+                        body.id.clone(),
+                    )
+                })
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
@@ -3081,6 +3102,7 @@ impl<'a> F3dDecodeSession<'a> {
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
+            body_key_bodies: Some(&body_key_bodies),
             root_ordinal_start: prereqs
                 .xref_table()
                 .map_or(0, |table| table.references.len()),
@@ -3171,9 +3193,12 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(std::mem::take(&mut prereqs.parameter_state_parts.losses));
-        let parameter_state_fidelity = std::mem::take(&mut prereqs.parameter_state_parts.fidelity);
-        let scan = self.scan;
         let ctx = self.ctx;
+        let parameter_state_fidelity = std::mem::replace(
+            &mut prereqs.parameter_state_parts.fidelity,
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+        );
+        let scan = self.scan;
         let geometry = match path {
             FinalizePath::Geometry(index) => {
                 if let DesignState::Projected(design) = &design {
@@ -3302,7 +3327,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir,
                     self.report,
                     RetainedArtifacts {
-                        native_fidelity: self.native.retained_fidelity()?,
+                        native_fidelity: self.native.retained_fidelity(ctx)?,
                         annotations,
                         parameter_state_fidelity,
                         native_layout: Some(self.native),
@@ -3343,7 +3368,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir,
             self.report,
             RetainedArtifacts {
-                native_fidelity: self.native.retained_fidelity()?,
+                native_fidelity: self.native.retained_fidelity(ctx)?,
                 annotations,
                 parameter_state_fidelity,
                 native_layout: Some(self.native),
@@ -3409,17 +3434,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             )?;
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
-            let hash = cadmpeg_ir::hash::document_local_sha256(
-                ctx,
-                &decoded.ir,
-                Some(&decoded.source),
-                "f3d",
-                crate::ids::FILE_SOURCE_IMAGE_ID,
-            )?;
-            decoded.source_fidelity.decode_digest = Some(
-                cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
-                    .map_err(CodecError::malformed)?,
-            );
+            // The decode wrapper stamps the source digest from its root view.
             Ok(decoded.into_decoded())
         }
     }
@@ -3515,8 +3530,14 @@ fn decode_scanned_document<'a>(
             report,
             RetainedArtifacts {
                 annotations,
-                native_fidelity: cadmpeg_ir::SourceFidelity::default(),
-                parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
+                native_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                parameter_state_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
                 native_layout: None,
                 primary_model_brep_name: container::select_fallback_brep(scan)
                     .map(|brep| brep.name.clone()),
@@ -3640,10 +3661,17 @@ fn decode_scanned_document<'a>(
                         body_selector,
                     );
 
+                    let Some(key) = part.asm.body_native_keys.iter().find(|key| {
+                        key.owns_native_ref(body.native_ref.as_deref())
+                    }) else {
+                        continue;
+                    };
                     let visibility = crate::records::bodies::BodyVisibility::try_from(
                         crate::records::bodies::BodyVisibilityWire {
                             id,
-                            body: body.id.clone(),
+                            body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                                key.id(),
+                            ),
                             stream: visibility.stream.clone(),
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
@@ -4521,7 +4549,7 @@ fn decode_result(
         "admit F3D entities",
     )?;
     report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
@@ -4594,20 +4622,8 @@ fn decode_result(
         crate::ids::FILE_SOURCE_IMAGE_ID,
         untyped,
     )?;
-    // Stamped on the finalized, classified document, so the write path
-    // compares against the exact document the sealed wrapper returns.
+    // The decode wrapper stamps the source digest from its root view.
     ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        &ir,
-        Some(&source),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    source_fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
-            .map_err(CodecError::malformed)?,
-    );
     Ok(AuthoredDecoded {
         native_layout: retained.native_layout,
         primary_model_brep_name: retained.primary_model_brep_name,
@@ -5113,7 +5129,8 @@ fn source_attributes_and_tolerances(
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
-    let mut tolerances = Tolerances::default();    if let Some(h) = primary_model_brep
+    let mut tolerances = Tolerances::default();
+    if let Some(h) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::model_metadata)
@@ -5765,11 +5782,13 @@ pub(crate) fn apply_body_presentation_names(
             let (Some(binding), None) = (matching.next(), matching.next()) else {
                 continue;
             };
-            if let Some(body_id) = &binding.body {
-                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
-                    if body.name.is_none() {
-                        body.name = Some(name.to_string());
-                    }
+            if let Some(body) = binding.body.as_ref().and_then(|row| {
+                ir.model.bodies.iter_mut().find(|body| {
+                    body.native_ref.as_deref() == Some(row.as_str())
+                })
+            }) {
+                if body.name.is_none() {
+                    body.name = Some(name.to_string());
                 }
             }
         }

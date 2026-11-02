@@ -47,6 +47,7 @@
     "model": {
       "bodies": [
         {
+          "native_ref": "f3d:asm:body-native-key#1",
           "id": "f3d:brep:entity#1",
           "kind": "sheet",
           "regions": [
@@ -179,6 +180,7 @@
       ],
       "edges": [
         {
+          "native_ref": "f3d:asm:edge-ownership#16",
           "id": "f3d:brep:entity#16",
           "carrier": {
             "param_range": [
@@ -190,6 +192,7 @@
           "end": "f3d:brep:entity#22"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#17",
           "id": "f3d:brep:entity#17",
           "carrier": {
             "param_range": [
@@ -201,6 +204,7 @@
           "end": "f3d:brep:entity#23"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#18",
           "id": "f3d:brep:entity#18",
           "carrier": {
             "param_range": [
@@ -212,6 +216,7 @@
           "end": "f3d:brep:entity#21"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#19",
           "id": "f3d:brep:entity#19",
           "carrier": {
             "param_range": [
@@ -223,6 +228,7 @@
           "end": "f3d:brep:entity#24"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#20",
           "id": "f3d:brep:entity#20",
           "carrier": {
             "param_range": [
@@ -236,18 +242,22 @@
       ],
       "vertices": [
         {
+          "native_ref": "f3d:asm:vertex-ownership#21",
           "id": "f3d:brep:entity#21",
           "point": "f3d:brep:entity#25"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#22",
           "id": "f3d:brep:entity#22",
           "point": "f3d:brep:entity#26"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#23",
           "id": "f3d:brep:entity#23",
           "point": "f3d:brep:entity#27"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#24",
           "id": "f3d:brep:entity#24",
           "point": "f3d:brep:entity#28"
         }
@@ -792,7 +802,6 @@
         "body_native_keys": [
           {
             "id": "f3d:asm:body-native-key#1",
-            "body": "f3d:brep:entity#1",
             "body_ordinal": 0,
             "record_index": 1,
             "source_brep": "Body1.smbh"
@@ -852,35 +861,35 @@
           {
             "id": "f3d:asm:edge-continuity#16",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#16",
+            "owner": "f3d:asm:edge-ownership#16",
             "record_index": 16,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#17",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#17",
+            "owner": "f3d:asm:edge-ownership#17",
             "record_index": 17,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#18",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#18",
+            "owner": "f3d:asm:edge-ownership#18",
             "record_index": 18,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#19",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#19",
+            "owner": "f3d:asm:edge-ownership#19",
             "record_index": 19,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#20",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#20",
+            "owner": "f3d:asm:edge-ownership#20",
             "record_index": 20,
             "sense": "forward"
           }
@@ -888,27 +897,22 @@
         "edge_ownerships": [
           {
             "id": "f3d:asm:edge-ownership#16",
-            "edge": "f3d:brep:entity#16",
             "record_index": 16
           },
           {
             "id": "f3d:asm:edge-ownership#17",
-            "edge": "f3d:brep:entity#17",
             "record_index": 17
           },
           {
             "id": "f3d:asm:edge-ownership#18",
-            "edge": "f3d:brep:entity#18",
             "record_index": 18
           },
           {
             "id": "f3d:asm:edge-ownership#19",
-            "edge": "f3d:brep:entity#19",
             "record_index": 19
           },
           {
             "id": "f3d:asm:edge-ownership#20",
-            "edge": "f3d:brep:entity#20",
             "record_index": 20
           }
         ],
@@ -957,30 +961,26 @@
           {
             "id": "f3d:asm:vertex-ownership#21",
             "endpoint_index": 0,
-            "owning_edge": "f3d:brep:entity#16",
-            "record_index": 21,
-            "vertex": "f3d:brep:entity#21"
+            "owner": "f3d:asm:edge-ownership#16",
+            "record_index": 21
           },
           {
             "id": "f3d:asm:vertex-ownership#22",
             "endpoint_index": 1,
-            "owning_edge": "f3d:brep:entity#16",
-            "record_index": 22,
-            "vertex": "f3d:brep:entity#22"
+            "owner": "f3d:asm:edge-ownership#16",
+            "record_index": 22
           },
           {
             "id": "f3d:asm:vertex-ownership#23",
             "endpoint_index": 1,
-            "owning_edge": "f3d:brep:entity#17",
-            "record_index": 23,
-            "vertex": "f3d:brep:entity#23"
+            "owner": "f3d:asm:edge-ownership#17",
+            "record_index": 23
           },
           {
             "id": "f3d:asm:vertex-ownership#24",
             "endpoint_index": 1,
-            "owning_edge": "f3d:brep:entity#19",
-            "record_index": 24,
-            "vertex": "f3d:brep:entity#24"
+            "owner": "f3d:asm:edge-ownership#19",
+            "record_index": 24
           }
         ],
         "wire_topologies": [],
@@ -1239,7 +1239,7 @@
         }
       }
     },
-    "decode_digest": "86244ae9079091a0af17032fc17ba89ccdd317db1ddcdd681290d218c748f48b",
+    "decode_digest": "6fc81714e3e45c31230c292c8a44a812a87747cd49da756e6b28bde099552e81",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

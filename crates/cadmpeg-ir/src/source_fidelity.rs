@@ -361,18 +361,28 @@ impl RetainedSourceRecord {
 /// Retained identities are admitted only through checked insertion.
 ///
 /// ```compile_fail
-/// let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+/// use cadmpeg_ir::{Annotations, SourceFidelity};
+/// use cadmpeg_ir::hash::digest::Sha256Digest;
+/// let mut fidelity = SourceFidelity::with_annotations(
+///     Annotations::default(),
+///     Sha256Digest::digest(b"fixture"),
+/// );
 /// fidelity.retained_records().clear();
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SourceFidelityWire"))]
 #[serde(try_from = "SourceFidelityWire")]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     pub annotations: Annotations,
-    /// Decode-time document digest baseline for byte reuse, when recorded.
-    pub decode_digest: Option<Sha256Digest>,
+    /// SHA-256 of the whole source the decode read.
+    ///
+    /// The decode wrapper stamps the digest of its root view, so every codec
+    /// carries the digest of the bytes it actually read without computing
+    /// one per format; an F3Z merge carries the digest of the archive it was
+    /// decoded from.
+    pub decode_digest: Sha256Digest,
     /// Native records retained for recovery or replay, keyed by record id.
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
@@ -387,9 +397,8 @@ struct SourceFidelityWire {
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     annotations: Annotations,
-    /// Decode-time document digest baseline for byte reuse, when recorded.
-    #[serde(default, deserialize_with = "deserialize_decode_digest")]
-    decode_digest: Option<Sha256Digest>,
+    /// Decode-time source digest: the whole admitted source, required.
+    decode_digest: Sha256Digest,
     /// Native records retained for recovery or replay.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
@@ -421,8 +430,7 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
 struct SourceFidelityWriteWire<'a> {
     unrepresented: crate::document::ArenaClasses,
     annotations: &'a Annotations,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    decode_digest: &'a Option<Sha256Digest>,
+    decode_digest: &'a Sha256Digest,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
 }
@@ -440,23 +448,38 @@ impl Serialize for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Fidelity carrying only the given annotations.
-    pub fn with_annotations(annotations: Annotations) -> Self {
+    /// Starts fidelity for a decode admitted by `ctx`, carrying its source digest.
+    ///
+    /// Decoders read this precomputed fact; no decoder hashes input itself.
+    /// The decode wrapper then stamps the same bytes from its own root view,
+    /// and merge scopes drop member digests in favor of the archive digest.
+    pub fn for_decode(ctx: &DecodeContext<'_>, annotations: Annotations) -> Self {
+        Self::with_annotations(
+            annotations,
+            Sha256Digest::from_bytes(ctx.source_digest().expect(
+                "decode fidelity requires an admitted source: build the context through DecodeContext::read_root or from_root_bytes",
+            )),
+        )
+    }
+
+    /// Fidelity carrying the given annotations and source digest.
+    pub fn with_annotations(annotations: Annotations, decode_digest: Sha256Digest) -> Self {
         Self {
             annotations,
-            decode_digest: None,
+            decode_digest,
             retained_records: BTreeMap::new(),
         }
     }
 
-    /// Consume the annotations and retained records without copying their bytes.
+    /// Consume the annotations, retained records, and source digest.
     pub fn into_parts(
         self,
     ) -> (
         Annotations,
         BTreeMap<UnknownId, RetainedSourceRecord>,
+        Sha256Digest,
     ) {
-        (self.annotations, self.retained_records)
+        (self.annotations, self.retained_records, self.decode_digest)
     }
 
     /// Classes whose source content survives in no typed document record:
@@ -491,16 +514,10 @@ impl SourceFidelity {
                 )));
             }
         }
-        if let Some(other_digest) = other.decode_digest {
-            match &self.decode_digest {
-                None => self.decode_digest = Some(other_digest),
-                Some(digest) if *digest == other_digest => {}
-                Some(_) => {
-                    return Err(CodecError::malformed(format_args!(
-                        "conflicting source fidelity decode digests"
-                    )));
-                }
-            }
+        if self.decode_digest != other.decode_digest {
+            return Err(CodecError::malformed(format_args!(
+                "conflicting source fidelity decode digests"
+            )));
         }
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
@@ -667,8 +684,6 @@ fn duplicate_record(id: &UnknownId) -> NativeConvertError {
     ))
 }
 
-cadmpeg_core::named_optional_field!(deserialize_decode_digest, Sha256Digest, "decode_digest");
-
 #[cfg(test)]
 mod tests {
     mod admission;
@@ -689,7 +704,7 @@ mod tests {
     #[test]
     fn unrepresented_classes_derive_from_retained_records_and_survive_sidecars() {
         use crate::document::{ArenaClass, ArenaClasses};
-        let mut fidelity = SourceFidelity::default();
+        let mut fidelity = test_fidelity();
         fidelity
             .insert_retained_record(
                 id("design"),
@@ -712,7 +727,7 @@ mod tests {
         let error = serde_json::from_value::<DecodeSidecar>(tampered)
             .expect_err("a sidecar cannot hide untyped source classes");
         assert!(error.to_string().contains("untyped union"));
-        let mut other = SourceFidelity::default();
+        let mut other = test_fidelity();
         other
             .insert_retained_record(
                 id("model"),
@@ -736,36 +751,56 @@ mod tests {
     #[test]
     fn decode_digest_round_trips_and_merges_without_collision() {
         let digest = Sha256Digest::digest(b"decode baseline");
-        let mut fidelity = SourceFidelity::default();
-        assert_eq!(fidelity.decode_digest, None);
-        fidelity.decode_digest = Some(digest.clone());
+        let mut fidelity =
+            SourceFidelity::with_annotations(crate::Annotations::default(), digest.clone());
         let wire = serde_json::to_value(&fidelity).expect("serializes");
         assert_eq!(wire["decode_digest"], serde_json::json!(digest.as_str()));
         assert_eq!(
             serde_json::from_value::<SourceFidelity>(wire).expect("round trip"),
             fidelity
         );
-        let mut empty = SourceFidelity::default();
-        assert!(empty.append(fidelity.clone()).is_ok());
-        assert_eq!(empty.decode_digest, Some(digest.clone()));
-        let mut conflict = SourceFidelity::default();
-        conflict.decode_digest = Some(Sha256Digest::digest(b"other baseline"));
+        let mut same =
+            SourceFidelity::with_annotations(crate::Annotations::default(), digest.clone());
+        assert!(same.append(fidelity.clone()).is_ok());
+        assert_eq!(same.decode_digest, digest);
+        let conflict = SourceFidelity::with_annotations(
+            crate::Annotations::default(),
+            Sha256Digest::digest(b"other baseline"),
+        );
         assert!(fidelity.append(conflict).is_err());
-        assert_eq!(fidelity.decode_digest, Some(digest));
+        assert_eq!(fidelity.decode_digest, digest);
+    }
+
+    #[test]
+    fn decode_digest_is_required_on_the_wire() {
+        let error = serde_json::from_str::<SourceFidelity>(r#"{"annotations":{}}"#)
+            .expect_err("a fidelity without its source digest is refused");
+        assert!(error.to_string().contains("decode_digest"), "{error}");
     }
 
     #[test]
     fn conflicting_decode_digests_leave_both_record_tables_unchanged() {
-        let mut left = SourceFidelity::default();
-        left.decode_digest = Some(Sha256Digest::digest(b"left baseline"));
+        let mut left = SourceFidelity::with_annotations(
+            crate::Annotations::default(),
+            Sha256Digest::digest(b"left baseline"),
+        );
         let original = left.clone();
-        let mut right = SourceFidelity::default();
-        right.decode_digest = Some(Sha256Digest::digest(b"right baseline"));
+        let mut right = SourceFidelity::with_annotations(
+            crate::Annotations::default(),
+            Sha256Digest::digest(b"right baseline"),
+        );
         right
             .insert_retained_record(id("right"), record(b"right"))
             .unwrap();
         assert!(left.append(right).is_err());
         assert_eq!(left, original);
+    }
+
+    fn test_fidelity() -> SourceFidelity {
+        SourceFidelity::with_annotations(
+            crate::Annotations::default(),
+            Sha256Digest::digest(b"test source"),
+        )
     }
 
     fn record(data: &[u8]) -> RetainedSourceRecord {
@@ -791,7 +826,7 @@ mod tests {
 
     #[test]
     fn retained_records_are_keyed_by_their_id() {
-        let mut sidecar = SourceFidelity::default();
+        let mut sidecar = test_fidelity();
         sidecar
             .insert_retained_record(id("b"), record(&[2]))
             .unwrap();
@@ -811,7 +846,8 @@ mod tests {
         // under one id. `serde_json` hands both to the visitor, so the reader
         // refuses the second by name rather than keeping the last.
         let error = serde_json::from_str::<SourceFidelity>(
-            r#"{"retained_records":{
+            r#"{"decode_digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                "retained_records":{
                  "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"AQ=="}},
                  "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
@@ -825,7 +861,8 @@ mod tests {
         );
 
         let single = serde_json::from_str::<SourceFidelity>(
-            r#"{"retained_records":{
+            r#"{"decode_digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                "retained_records":{
                  "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
@@ -875,7 +912,7 @@ mod tests {
                 "retention": {"retention": "inline", "data": "AQID"}
             }))
             .unwrap();
-            let mut fidelity = SourceFidelity::default();
+            let mut fidelity = test_fidelity();
             if attach {
                 fidelity
                     .attach_native_unknown_records(
@@ -917,13 +954,14 @@ mod tests {
             })
         };
         let one: SourceFidelity = serde_json::from_value(serde_json::json!({
+            "decode_digest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
             "retained_records": {"synthetic:source:record#a": record("s")}
         }))
         .expect("one record reads");
         assert_eq!(one.retained_records.len(), 1);
 
         let text = format!(
-            r#"{{"retained_records":{{"synthetic:source:record#a":{},"synthetic:source:record#a":{}}}}}"#,
+            r#"{{"decode_digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","retained_records":{{"synthetic:source:record#a":{},"synthetic:source:record#a":{}}}}}"#,
             record("s"),
             record("t")
         );
@@ -954,7 +992,7 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
             report(),
-            SourceFidelity::default(),
+            test_fidelity(),
         );
         assert_eq!(
             sidecar.to_canonical_json().expect("the sidecar writes"),
@@ -978,7 +1016,7 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
             report(),
-            SourceFidelity::default(),
+            test_fidelity(),
         );
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
@@ -1006,7 +1044,10 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
             report(),
-            SourceFidelity::with_annotations(builder.build()),
+            SourceFidelity::with_annotations(
+                builder.build(),
+                Sha256Digest::digest(b"test sidecar source"),
+            ),
         );
 
         let sidecar_json = sidecar.to_canonical_json().expect("serialize sidecar");
@@ -1023,7 +1064,7 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
             report(),
-            SourceFidelity::default(),
+            test_fidelity(),
         );
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
@@ -1046,7 +1087,7 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
             report(),
-            SourceFidelity::default(),
+            test_fidelity(),
         );
         let mut value = serde_json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
@@ -1061,7 +1102,7 @@ mod tests {
 
     #[test]
     fn a_sidecar_record_cannot_restate_the_length_of_its_inline_bytes() {
-        let mut fidelity = SourceFidelity::default();
+        let mut fidelity = test_fidelity();
         fidelity
             .insert_retained_record(id("record"), record(b"payload"))
             .unwrap();

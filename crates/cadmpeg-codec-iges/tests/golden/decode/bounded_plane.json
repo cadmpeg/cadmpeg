@@ -565,7 +565,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "start",
                 "position": [
                   0.0,
@@ -574,7 +573,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D9",
                 "endpoint": "end",
                 "position": [
                   0.0,
@@ -584,8 +582,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#13",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D13:0:0"
+            "tolerance": 0.001
           },
           {
             "id": "iges:topology:boundary-vertex#D13_0_1",
@@ -597,7 +594,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D3",
                 "endpoint": "end",
                 "position": [
                   1.0,
@@ -606,7 +602,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D5",
                 "endpoint": "end",
                 "position": [
                   1.0,
@@ -616,8 +611,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#13",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D13:0:1"
+            "tolerance": 0.001
           },
           {
             "id": "iges:topology:boundary-vertex#D13_0_2",
@@ -629,7 +623,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D5",
                 "endpoint": "start",
                 "position": [
                   1.0,
@@ -638,7 +631,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D7",
                 "endpoint": "start",
                 "position": [
                   1.0,
@@ -648,8 +640,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#13",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D13:0:2"
+            "tolerance": 0.001
           },
           {
             "id": "iges:topology:boundary-vertex#D13_0_3",
@@ -661,7 +652,6 @@
             "sewn": false,
             "source_endpoints": [
               {
-                "edge": "iges:model:edge#D7",
                 "endpoint": "end",
                 "position": [
                   0.0,
@@ -670,7 +660,6 @@
                 ]
               },
               {
-                "edge": "iges:model:edge#D9",
                 "endpoint": "start",
                 "position": [
                   0.0,
@@ -680,8 +669,7 @@
               }
             ],
             "source_entity": "iges:entity:directory#13",
-            "tolerance": 0.001,
-            "vertex": "iges:model:vertex#D13:0:3"
+            "tolerance": 0.001
           }
         ],
         "cards": [
@@ -1593,7 +1581,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "dd426b4bc00802b9732178afa7936aef22d5019e27d37c36296783bc38556a7e",
+    "decode_digest": "67e4b66e234f2c8d03f7991aab2219b2289aad8073703bc19d2dd72058a772ef",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

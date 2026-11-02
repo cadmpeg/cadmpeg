@@ -119,10 +119,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:curve#record-000000-offset-177"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],
@@ -248,6 +245,7 @@
         }
       }
     },
+    "decode_digest": "c6e66927cb5e105015a56c9506341e745a94f5d572cb44a4b1a471fa4c4649da",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

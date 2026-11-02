@@ -181,7 +181,7 @@ fn late_rendering_parse_failure_and_native_budget_refusal_discard_actual_source_
     policy.limits.max_entities = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("the record fits the zero entity policy");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let parsed =
         presentation::parse_rendering_style(&ctx, root, 18).expect("the rendering style parses");
     let record = presentation::native::rendering_style(&Located::new(
@@ -244,7 +244,7 @@ fn late_source_body_failure_keeps_exact_bytes_and_an_independent_rendering_peer(
     );
     let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0])
         .expect("the first record frame holds a body");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let inventory = presentation::inventory(&ctx, &container.rse, &mut output)
         .expect("the presentation inventory decodes");
     assert_eq!(inventory.rendering_styles.len(), 1);

@@ -54,6 +54,7 @@ pub(super) fn evaluate<'a>(
                     && record.type_id == carrier_type
             })
         },
+        &ir.model.bodies,
         |body| {
             ir.model
                 .bodies

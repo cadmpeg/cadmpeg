@@ -1,0 +1,1411 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#16",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#16"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#18",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#21"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "step:data:point#5",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#8"
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "unknowns": [
+          {
+            "id": "step:data:axis2_placement_3d#27",
+            "links": [
+              "step:data:cartesian_point#3",
+              "step:data:direction#9",
+              "step:data:direction#10"
+            ]
+          },
+          {
+            "id": "step:data:cartesian_point#3"
+          },
+          {
+            "id": "step:data:cartesian_point#51"
+          },
+          {
+            "id": "step:data:colour_rgb#40"
+          },
+          {
+            "id": "step:data:colour_rgb#60"
+          },
+          {
+            "id": "step:data:definitional_representation#55",
+            "links": [
+              "step:data:geometric_representation_context_parametric_representation_context_representation_context#50",
+              "step:data:line#54"
+            ]
+          },
+          {
+            "id": "step:data:direction#10"
+          },
+          {
+            "id": "step:data:direction#52"
+          },
+          {
+            "id": "step:data:direction#9"
+          },
+          {
+            "id": "step:data:edge_curve#21",
+            "links": [
+              "step:data:vertex_point#6",
+              "step:data:vertex_point#8"
+            ]
+          },
+          {
+            "id": "step:data:fill_area_style#42",
+            "links": [
+              "step:data:fill_area_style_colour#41"
+            ]
+          },
+          {
+            "id": "step:data:fill_area_style#62",
+            "links": [
+              "step:data:fill_area_style_colour#61"
+            ]
+          },
+          {
+            "id": "step:data:fill_area_style_colour#41",
+            "links": [
+              "step:data:colour_rgb#40"
+            ]
+          },
+          {
+            "id": "step:data:fill_area_style_colour#61",
+            "links": [
+              "step:data:colour_rgb#60"
+            ]
+          },
+          {
+            "id": "step:data:geometric_representation_context_parametric_representation_context_representation_context#50"
+          },
+          {
+            "id": "step:data:line#54",
+            "links": [
+              "step:data:cartesian_point#51",
+              "step:data:vector#53"
+            ]
+          },
+          {
+            "id": "step:data:oriented_edge#24",
+            "links": [
+              "step:data:edge_curve#21"
+            ]
+          },
+          {
+            "id": "step:data:pcurve#56",
+            "links": [
+              "step:data:plane#28",
+              "step:data:definitional_representation#55"
+            ]
+          },
+          {
+            "id": "step:data:plane#28",
+            "links": [
+              "step:data:axis2_placement_3d#27"
+            ]
+          },
+          {
+            "id": "step:data:presentation_style_assignment#46",
+            "links": [
+              "step:data:surface_style_usage#45"
+            ]
+          },
+          {
+            "id": "step:data:presentation_style_assignment#66",
+            "links": [
+              "step:data:surface_style_usage#65"
+            ]
+          },
+          {
+            "id": "step:data:surface_side_style#44",
+            "links": [
+              "step:data:surface_style_fill_area#43"
+            ]
+          },
+          {
+            "id": "step:data:surface_side_style#64",
+            "links": [
+              "step:data:surface_style_fill_area#63"
+            ]
+          },
+          {
+            "id": "step:data:surface_style_fill_area#43",
+            "links": [
+              "step:data:fill_area_style#42"
+            ]
+          },
+          {
+            "id": "step:data:surface_style_fill_area#63",
+            "links": [
+              "step:data:fill_area_style#62"
+            ]
+          },
+          {
+            "id": "step:data:surface_style_usage#45",
+            "links": [
+              "step:data:surface_side_style#44"
+            ]
+          },
+          {
+            "id": "step:data:surface_style_usage#65",
+            "links": [
+              "step:data:surface_side_style#64"
+            ]
+          },
+          {
+            "id": "step:data:vector#53",
+            "links": [
+              "step:data:direction#52"
+            ]
+          },
+          {
+            "id": "step:data:vertex_point#6",
+            "links": [
+              "step:data:cartesian_point#3"
+            ]
+          },
+          {
+            "id": "step:data:vertex_point#8"
+          },
+          {
+            "id": "step:file:omitted#1035"
+          },
+          {
+            "id": "step:file:omitted#1068"
+          },
+          {
+            "id": "step:file:omitted#1159"
+          },
+          {
+            "id": "step:file:omitted#1196"
+          },
+          {
+            "id": "step:file:omitted#1222"
+          },
+          {
+            "id": "step:file:omitted#1263"
+          },
+          {
+            "id": "step:file:omitted#1319"
+          },
+          {
+            "id": "step:file:omitted#1616"
+          },
+          {
+            "id": "step:file:omitted#1663"
+          },
+          {
+            "id": "step:file:omitted#2327"
+          },
+          {
+            "id": "step:file:omitted#2358"
+          },
+          {
+            "id": "step:file:omitted#509"
+          },
+          {
+            "id": "step:file:omitted#786"
+          },
+          {
+            "id": "step:file:omitted#828"
+          },
+          {
+            "id": "step:file:omitted#862"
+          },
+          {
+            "id": "step:file:omitted#930"
+          },
+          {
+            "id": "step:file:omitted#965"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "schema": "AUTOMOTIVE_DESIGN"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap214"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap214"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #7 omitted: unresolved instance reference #4; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 509,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #17 omitted: unresolved instance reference #4; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 786,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #20 omitted: depends on omitted instance #17; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 862,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #23 omitted: depends on omitted instance #20; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 965,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #25 omitted: depends on omitted instance #23; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1035,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #26 omitted: depends on omitted instance #25; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1068,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #29 omitted: depends on omitted instance #26; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1159,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #30 omitted: depends on omitted instance #29; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1196,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #47 omitted: depends on omitted instance #29; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1616,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #48 omitted: depends on omitted instance #29; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1663,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #67 omitted: depends on omitted instance #29; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 2327,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #33 omitted: depends on omitted instance #30; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1319,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #31 omitted: depends on omitted instance #33; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1222,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #32 omitted: depends on omitted instance #31; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 1263,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #19 omitted: depends on omitted instance #7; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 828,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #22 omitted: depends on omitted instance #19; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 930,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parse.record-omitted",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "instance #68 omitted: depends on omitted instance #19; exact source retained",
+        "provenance": {
+          "format": "step",
+          "offset": 2358,
+          "tag": "data_record"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "unowned STEP carrier retention: opaque_pcurves=1, protected_pcurves=0, deleted pcurves=1, points=1, curves=0, surfaces=1, procedural_curves=0, procedural_surfaces=0",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 AXIS2_PLACEMENT_3D instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 CARTESIAN_POINT instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 COLOUR_RGB instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 DEFINITIONAL_REPRESENTATION instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 3 DIRECTION instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 EDGE_CURVE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 FILL_AREA_STYLE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 FILL_AREA_STYLE_COLOUR instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 GEOMETRIC_REPRESENTATION_CONTEXT+PARAMETRIC_REPRESENTATION_CONTEXT+REPRESENTATION_CONTEXT instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 LINE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 ORIENTED_EDGE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 PCURVE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 PLANE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 SURFACE_SIDE_STYLE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 SURFACE_STYLE_FILL_AREA instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 SURFACE_STYLE_USAGE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 VECTOR instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 2 VERTEX_POINT instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=413 length=35: malformed container: unexpected byte at byte 443 at byte 443; dropped=[]",
+        "provenance": {
+          "byte_len": 35,
+          "format": "step",
+          "offset": 413
+        },
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "byte accounting: 290 structural, 434 typed, 1691 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "eb37b9e86413664782c9024b8c0dcb2cf5aed382caff93dac93e175333abd71e",
+    "retained_records": {
+      "step:data:axis2_placement_3d#27": {
+        "bytes": {
+          "data": "IzI3PUFYSVMyX1BMQUNFTUVOVF8zRCgnJywjMywjOSwjMTApOw==",
+          "retention": "inline"
+        },
+        "offset": 1102,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:cartesian_point#3": {
+        "bytes": {
+          "data": "IzM9Q0FSVEVTSUFOX1BPSU5UKCcnLCgwLiwwLiwwLikpOw==",
+          "retention": "inline"
+        },
+        "offset": 378,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:cartesian_point#51": {
+        "bytes": {
+          "data": "IzUxPUNBUlRFU0lBTl9QT0lOVCgnJywoMC4sMC4pKTs=",
+          "retention": "inline"
+        },
+        "offset": 1850,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:colour_rgb#40": {
+        "bytes": {
+          "data": "IzQwPUNPTE9VUl9SR0IoJ292ZXJyaWRlIHJlZCcsMC45LDAuMSwwLjEpOw==",
+          "retention": "inline"
+        },
+        "offset": 1358,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:colour_rgb#60": {
+        "bytes": {
+          "data": "IzYwPUNPTE9VUl9SR0IoJ2JsdWUgZ3JlZW4nLDAuMiwwLjQsMC42KTs=",
+          "retention": "inline"
+        },
+        "offset": 2071,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:definitional_representation#55": {
+        "bytes": {
+          "data": "IzU1PURFRklOSVRJT05BTF9SRVBSRVNFTlRBVElPTignJywoIzU0KSwjNTApOw==",
+          "retention": "inline"
+        },
+        "offset": 1955,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:direction#10": {
+        "bytes": {
+          "data": "IzEwPURJUkVDVElPTignJywoMS4sMC4sMC4pKTs=",
+          "retention": "inline"
+        },
+        "offset": 586,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:direction#52": {
+        "bytes": {
+          "data": "IzUyPURJUkVDVElPTignJywoMS4sMC4pKTs=",
+          "retention": "inline"
+        },
+        "offset": 1883,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:direction#9": {
+        "bytes": {
+          "data": "Izk9RElSRUNUSU9OKCcnLCgwLiwwLiwxLikpOw==",
+          "retention": "inline"
+        },
+        "offset": 557,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:edge_curve#21": {
+        "bytes": {
+          "data": "IzIxPUVER0VfQ1VSVkUoJycsIzgsIzYsIzE4LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 896,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:fill_area_style#42": {
+        "bytes": {
+          "data": "IzQyPUZJTExfQVJFQV9TVFlMRSgnJywoIzQxKSk7",
+          "retention": "inline"
+        },
+        "offset": 1438,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:fill_area_style#62": {
+        "bytes": {
+          "data": "IzYyPUZJTExfQVJFQV9TVFlMRSgnJywoIzYxKSk7",
+          "retention": "inline"
+        },
+        "offset": 2149,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:fill_area_style_colour#41": {
+        "bytes": {
+          "data": "IzQxPUZJTExfQVJFQV9TVFlMRV9DT0xPVVIoJycsIzQwKTs=",
+          "retention": "inline"
+        },
+        "offset": 1402,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:fill_area_style_colour#61": {
+        "bytes": {
+          "data": "IzYxPUZJTExfQVJFQV9TVFlMRV9DT0xPVVIoJycsIzYwKTs=",
+          "retention": "inline"
+        },
+        "offset": 2113,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:geometric_representation_context_parametric_representation_context_representation_context#50": {
+        "bytes": {
+          "data": "IzUwPShHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgyKSBQQVJBTUVUUklDX1JFUFJFU0VOVEFUSU9OX0NPTlRFWFQoKSBSRVBSRVNFTlRBVElPTl9DT05URVhUKCd1dicsJzJEJykpOw==",
+          "retention": "inline"
+        },
+        "offset": 1737,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:line#54": {
+        "bytes": {
+          "data": "IzU0PUxJTkUoJycsIzUxLCM1Myk7",
+          "retention": "inline"
+        },
+        "offset": 1933,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:oriented_edge#24": {
+        "bytes": {
+          "data": "IzI0PU9SSUVOVEVEX0VER0UoJycsKiwqLCMyMSwuVC4pOw==",
+          "retention": "inline"
+        },
+        "offset": 1000,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:pcurve#56": {
+        "bytes": {
+          "data": "IzU2PVBDVVJWRSgnJywjMjgsIzU1KTs=",
+          "retention": "inline"
+        },
+        "offset": 2002,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:plane#28": {
+        "bytes": {
+          "data": "IzI4PVBMQU5FKCcnLCMyNyk7",
+          "retention": "inline"
+        },
+        "offset": 1140,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:presentation_style_assignment#46": {
+        "bytes": {
+          "data": "IzQ2PVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKCgjNDUpKTs=",
+          "retention": "inline"
+        },
+        "offset": 1574,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:presentation_style_assignment#66": {
+        "bytes": {
+          "data": "IzY2PVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKCgjNjUpKTs=",
+          "retention": "inline"
+        },
+        "offset": 2285,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_side_style#44": {
+        "bytes": {
+          "data": "IzQ0PVNVUkZBQ0VfU0lERV9TVFlMRSgnJywoIzQzKSk7",
+          "retention": "inline"
+        },
+        "offset": 1503,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_side_style#64": {
+        "bytes": {
+          "data": "IzY0PVNVUkZBQ0VfU0lERV9TVFlMRSgnJywoIzYzKSk7",
+          "retention": "inline"
+        },
+        "offset": 2214,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_style_fill_area#43": {
+        "bytes": {
+          "data": "IzQzPVNVUkZBQ0VfU1RZTEVfRklMTF9BUkVBKCM0Mik7",
+          "retention": "inline"
+        },
+        "offset": 1469,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_style_fill_area#63": {
+        "bytes": {
+          "data": "IzYzPVNVUkZBQ0VfU1RZTEVfRklMTF9BUkVBKCM2Mik7",
+          "retention": "inline"
+        },
+        "offset": 2180,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_style_usage#45": {
+        "bytes": {
+          "data": "IzQ1PVNVUkZBQ0VfU1RZTEVfVVNBR0UoLkJPVEguLCM0NCk7",
+          "retention": "inline"
+        },
+        "offset": 1537,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_style_usage#65": {
+        "bytes": {
+          "data": "IzY1PVNVUkZBQ0VfU1RZTEVfVVNBR0UoLkJPVEguLCM2NCk7",
+          "retention": "inline"
+        },
+        "offset": 2248,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:vector#53": {
+        "bytes": {
+          "data": "IzUzPVZFQ1RPUignJywjNTIsMS4pOw==",
+          "retention": "inline"
+        },
+        "offset": 1910,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:vertex_point#6": {
+        "bytes": {
+          "data": "IzY9VkVSVEVYX1BPSU5UKCcnLCMzKTs=",
+          "retention": "inline"
+        },
+        "offset": 485,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:vertex_point#8": {
+        "bytes": {
+          "data": "Izg9VkVSVEVYX1BPSU5UKCcnLCM1KTs=",
+          "retention": "inline"
+        },
+        "offset": 533,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1035": {
+        "bytes": {
+          "data": "IzI1PUVER0VfTE9PUCgnJywoIzIyLCMyMywjMjQpKTs=",
+          "retention": "inline"
+        },
+        "offset": 1035,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1068": {
+        "bytes": {
+          "data": "IzI2PUZBQ0VfT1VURVJfQk9VTkQoJycsIzI1LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 1068,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1159": {
+        "bytes": {
+          "data": "IzI5PUFEVkFOQ0VEX0ZBQ0UoJycsKCMyNiksIzI4LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 1159,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1196": {
+        "bytes": {
+          "data": "IzMwPU9QRU5fU0hFTEwoJycsKCMyOSkpOw==",
+          "retention": "inline"
+        },
+        "offset": 1196,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1222": {
+        "bytes": {
+          "data": "IzMxPVNIRUxMX0JBU0VEX1NVUkZBQ0VfTU9ERUwoJycsKCMzMykpOw==",
+          "retention": "inline"
+        },
+        "offset": 1222,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1263": {
+        "bytes": {
+          "data": "IzMyPU1BTklGT0xEX1NVUkZBQ0VfU0hBUEVfUkVQUkVTRU5UQVRJT04oJycsKCMzMSksIzIpOw==",
+          "retention": "inline"
+        },
+        "offset": 1263,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1319": {
+        "bytes": {
+          "data": "IzMzPU9SSUVOVEVEX09QRU5fU0hFTEwoJycsKiwjMzAsLkYuKTs=",
+          "retention": "inline"
+        },
+        "offset": 1319,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1616": {
+        "bytes": {
+          "data": "IzQ3PU9WRVJfUklESU5HX1NUWUxFRF9JVEVNKCcnLCgjNDYpLCMyOSwjNjcpOw==",
+          "retention": "inline"
+        },
+        "offset": 1616,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#1663": {
+        "bytes": {
+          "data": "IzQ4PVBSRVNFTlRBVElPTl9MQVlFUl9BU1NJR05NRU5UKCdtYWNoaW5lZCBmYWNlcycsJ3ByaW1hcnkgZmFjZScsKCMyOSkpOw==",
+          "retention": "inline"
+        },
+        "offset": 1663,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#2327": {
+        "bytes": {
+          "data": "IzY3PVNUWUxFRF9JVEVNKCcnLCgjNjYpLCMyOSk7",
+          "retention": "inline"
+        },
+        "offset": 2327,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#2358": {
+        "bytes": {
+          "data": "IzY4PVNUWUxFRF9JVEVNKCcnLCgjNjYpLCMxOSk7",
+          "retention": "inline"
+        },
+        "offset": 2358,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#509": {
+        "bytes": {
+          "data": "Izc9VkVSVEVYX1BPSU5UKCcnLCM0KTs=",
+          "retention": "inline"
+        },
+        "offset": 509,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#786": {
+        "bytes": {
+          "data": "IzE3PUxJTkUoJycsIzQsIzE0KTs=",
+          "retention": "inline"
+        },
+        "offset": 786,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#828": {
+        "bytes": {
+          "data": "IzE5PUVER0VfQ1VSVkUoJycsIzYsIzcsIzU3LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 828,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#862": {
+        "bytes": {
+          "data": "IzIwPUVER0VfQ1VSVkUoJycsIzcsIzgsIzE3LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 862,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#930": {
+        "bytes": {
+          "data": "IzIyPU9SSUVOVEVEX0VER0UoJycsKiwqLCMxOSwuVC4pOw==",
+          "retention": "inline"
+        },
+        "offset": 930,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:file:omitted#965": {
+        "bytes": {
+          "data": "IzIzPU9SSUVOVEVEX0VER0UoJycsKiwqLCMyMCwuVC4pOw==",
+          "retention": "inline"
+        },
+        "offset": 965,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#6fae274c0de3e82ab97ef5277accf77ad5d932d9553fc320056a3eee8d5824c7": {
+        "bytes": {
+          "data": "IzQ9Q0FSVEVTSUFOX1BPSU5UKCcnLCgxMC4sMC4sPy4pKTs=",
+          "retention": "inline"
+        },
+        "offset": 413,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}

@@ -44,6 +44,7 @@ fn fixture() -> Value {
             "notes": []
         },
         "fidelity": {
+            "decode_digest": DIGEST,
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
                 "exactness": {

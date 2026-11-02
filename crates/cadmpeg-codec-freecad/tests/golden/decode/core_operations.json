@@ -189,148 +189,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#ChamferBase:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#ChamferBase:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ChamferBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ChamferBase:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#ChamferBase:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ChamferBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ChamferBase"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ChamferBase:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#ChamferBase:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ChamferBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Core Part and PartDesign operation-family semantics"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#DatumAxis:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DatumAxis:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -344,8 +211,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DatumAxis:Label2",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -359,8 +229,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#DatumAxis:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -374,8 +247,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#DatumAxis:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -389,8 +265,11 @@
           "name": "ResizeMode",
           "native_ref": "fcstd:native:property#DatumAxis:ResizeMode",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -404,8 +283,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DatumAxis:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DatumAxis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumAxis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -419,8 +301,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DatumCoordinateSystem:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#DatumCoordinateSystem",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumCoordinateSystem"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -434,8 +319,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DatumCoordinateSystem:Label2",
           "target": {
-            "id": "fcstd:design:feature#DatumCoordinateSystem",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumCoordinateSystem"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -449,8 +337,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#DatumCoordinateSystem:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#DatumCoordinateSystem",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumCoordinateSystem"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -464,8 +355,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#DatumCoordinateSystem:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#DatumCoordinateSystem",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumCoordinateSystem"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -479,8 +373,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DatumCoordinateSystem:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DatumCoordinateSystem",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumCoordinateSystem"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -494,8 +391,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DatumPlane:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -509,8 +409,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DatumPlane:Label2",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -524,8 +427,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#DatumPlane:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -539,8 +445,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#DatumPlane:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -554,8 +463,11 @@
           "name": "ResizeMode",
           "native_ref": "fcstd:native:property#DatumPlane:ResizeMode",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -569,8 +481,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DatumPlane:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DatumPlane",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -584,8 +499,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DatumPoint:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#DatumPoint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPoint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -599,8 +517,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DatumPoint:Label2",
           "target": {
-            "id": "fcstd:design:feature#DatumPoint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPoint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -614,8 +535,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#DatumPoint:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#DatumPoint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPoint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -629,8 +553,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#DatumPoint:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#DatumPoint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPoint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -644,8 +571,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DatumPoint:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DatumPoint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPoint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -659,8 +589,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Draft:Label2",
           "target": {
-            "id": "fcstd:design:feature#Draft",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Draft"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -674,8 +607,11 @@
           "name": "SupportTransform",
           "native_ref": "fcstd:native:property#Draft:SupportTransform",
           "target": {
-            "id": "fcstd:design:feature#Draft",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Draft"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -689,8 +625,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Draft:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Draft",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Draft"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -704,8 +643,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DraftBase:Label2",
           "target": {
-            "id": "fcstd:design:feature#DraftBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -719,8 +661,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DraftBase:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DraftBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -734,8 +679,11 @@
           "name": "AllowCompound",
           "native_ref": "fcstd:native:property#DraftBody:AllowCompound",
           "target": {
-            "id": "fcstd:design:feature#DraftBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -749,8 +697,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DraftBody:Label2",
           "target": {
-            "id": "fcstd:design:feature#DraftBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -764,8 +715,11 @@
           "name": "Origin",
           "native_ref": "fcstd:native:property#DraftBody:Origin",
           "target": {
-            "id": "fcstd:design:feature#DraftBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -779,110 +733,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DraftBody:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DraftBody",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#DressupBase:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#DressupBase:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#DressupBase"
+              "arena": "features",
+              "id": "fcstd:design:feature#DraftBody"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#DressupBase:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#DressupBase:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DressupBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "DressupBase"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#DressupBase:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#DressupBase:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DressupBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtrusionProfile:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#ExtrusionProfile:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtrusionProfile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtrusionProfile:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#ExtrusionProfile:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtrusionProfile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ExtrusionProfile"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtrusionProfile:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#ExtrusionProfile:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtrusionProfile"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -896,8 +751,11 @@
           "name": "HoleCutCustomValues",
           "native_ref": "fcstd:native:property#Hole:HoleCutCustomValues",
           "target": {
-            "id": "fcstd:design:feature#Hole",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Hole"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -911,8 +769,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Hole:Label2",
           "target": {
-            "id": "fcstd:design:feature#Hole",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Hole"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -926,8 +787,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Hole:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Hole",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Hole"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -941,8 +805,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#HoleBase:Label2",
           "target": {
-            "id": "fcstd:design:feature#HoleBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -956,8 +823,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#HoleBase:Visibility",
           "target": {
-            "id": "fcstd:design:feature#HoleBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -971,8 +841,11 @@
           "name": "AllowCompound",
           "native_ref": "fcstd:native:property#HoleBody:AllowCompound",
           "target": {
-            "id": "fcstd:design:feature#HoleBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -986,8 +859,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#HoleBody:Label2",
           "target": {
-            "id": "fcstd:design:feature#HoleBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1001,8 +877,11 @@
           "name": "Origin",
           "native_ref": "fcstd:native:property#HoleBody:Origin",
           "target": {
-            "id": "fcstd:design:feature#HoleBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1016,8 +895,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#HoleBody:Visibility",
           "target": {
-            "id": "fcstd:design:feature#HoleBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1031,8 +913,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#HoleProfile:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1046,8 +931,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#HoleProfile:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1061,8 +949,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#HoleProfile:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1076,8 +967,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#HoleProfile:Label2",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1091,8 +985,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#HoleProfile:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1106,8 +1003,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#HoleProfile:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1121,8 +1021,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#HoleProfile:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1136,8 +1039,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#HoleProfile:Visibility",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1151,8 +1057,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#HoleProfile:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#HoleProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#HoleProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1166,8 +1075,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#LinearPattern:Label2",
           "target": {
-            "id": "fcstd:design:feature#LinearPattern",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#LinearPattern"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1181,8 +1093,11 @@
           "name": "Reversed2",
           "native_ref": "fcstd:native:property#LinearPattern:Reversed2",
           "target": {
-            "id": "fcstd:design:feature#LinearPattern",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#LinearPattern"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1196,8 +1111,11 @@
           "name": "TransformMode",
           "native_ref": "fcstd:native:property#LinearPattern:TransformMode",
           "target": {
-            "id": "fcstd:design:feature#LinearPattern",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#LinearPattern"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1211,8 +1129,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#LinearPattern:Visibility",
           "target": {
-            "id": "fcstd:design:feature#LinearPattern",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#LinearPattern"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1226,8 +1147,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Loft:Label2",
           "target": {
-            "id": "fcstd:design:feature#Loft",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Loft"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1241,110 +1165,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Loft:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Loft",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionA:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#LoftSectionA:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#LoftSectionA"
+              "arena": "features",
+              "id": "fcstd:design:feature#Loft"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionA:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#LoftSectionA:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#LoftSectionA"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LoftSectionA"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionA:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#LoftSectionA:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#LoftSectionA"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionB:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#LoftSectionB:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#LoftSectionB"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionB:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#LoftSectionB:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#LoftSectionB"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LoftSectionB"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#LoftSectionB:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#LoftSectionB:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#LoftSectionB"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -1358,8 +1183,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Mirror:Label2",
           "target": {
-            "id": "fcstd:design:feature#Mirror",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Mirror"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1373,539 +1201,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Mirror:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Mirror",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#MirrorBase:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#MirrorBase:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#MirrorBase"
+              "arena": "features",
+              "id": "fcstd:design:feature#Mirror"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#MirrorBase:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#MirrorBase:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#MirrorBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "MirrorBase"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#MirrorBase:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#MirrorBase:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#MirrorBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Origin001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin004"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin002:OriginFeatures:property",
-          "name": "OriginFeatures",
-          "native_ref": "fcstd:native:property#Origin002:OriginFeatures",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#X_Axis001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Y_Axis001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Z_Axis001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XY_Plane001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XZ_Plane001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#YZ_Plane001"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Origin003"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin003:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin003:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin003"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin003:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin003:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin003"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin003"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin003:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Origin003:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin003"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin003:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin003:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin003"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin004:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin004:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin004"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin004:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin004:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin004"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin007"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin004:OriginFeatures:property",
-          "name": "OriginFeatures",
-          "native_ref": "fcstd:native:property#Origin004:OriginFeatures",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin004"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#X_Axis002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Y_Axis002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Z_Axis002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XY_Plane002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XZ_Plane002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#YZ_Plane002"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Origin005"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin004:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin004:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin004"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin005:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin005:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin005"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin005:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin005:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin005"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin006"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin005:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Origin005:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin005"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin005:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin005:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin005"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:OriginFeatures:property",
-          "name": "OriginFeatures",
-          "native_ref": "fcstd:native:property#Origin:OriginFeatures",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#X_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Y_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Z_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XY_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XZ_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#YZ_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Origin001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -1919,8 +1219,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PartChamfer:Label2",
           "target": {
-            "id": "fcstd:design:feature#PartChamfer",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PartChamfer"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1934,8 +1237,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PartChamfer:Visibility",
           "target": {
-            "id": "fcstd:design:feature#PartChamfer",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PartChamfer"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1949,8 +1255,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PartFillet:Label2",
           "target": {
-            "id": "fcstd:design:feature#PartFillet",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PartFillet"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1964,8 +1273,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PartFillet:Visibility",
           "target": {
-            "id": "fcstd:design:feature#PartFillet",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PartFillet"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1979,8 +1291,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#PatternBase:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#PatternBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1994,8 +1309,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PatternBase:Label2",
           "target": {
-            "id": "fcstd:design:feature#PatternBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2009,8 +1327,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#PatternBase:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#PatternBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2024,8 +1345,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#PatternBase:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#PatternBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2039,8 +1363,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PatternBase:Visibility",
           "target": {
-            "id": "fcstd:design:feature#PatternBase",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBase"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2054,8 +1381,11 @@
           "name": "AllowCompound",
           "native_ref": "fcstd:native:property#PatternBody:AllowCompound",
           "target": {
-            "id": "fcstd:design:feature#PatternBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2069,8 +1399,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PatternBody:Label2",
           "target": {
-            "id": "fcstd:design:feature#PatternBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2084,8 +1417,11 @@
           "name": "Origin",
           "native_ref": "fcstd:native:property#PatternBody:Origin",
           "target": {
-            "id": "fcstd:design:feature#PatternBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2099,8 +1435,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PatternBody:Visibility",
           "target": {
-            "id": "fcstd:design:feature#PatternBody",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PatternBody"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2114,8 +1453,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Revolution:Label2",
           "target": {
-            "id": "fcstd:design:feature#Revolution",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Revolution"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2129,8 +1471,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Revolution:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Revolution",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Revolution"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2144,8 +1489,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#RevolutionProfile:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2159,8 +1507,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#RevolutionProfile:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2174,8 +1525,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#RevolutionProfile:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2189,8 +1543,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#RevolutionProfile:Label2",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2204,8 +1561,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#RevolutionProfile:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2219,8 +1579,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#RevolutionProfile:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2234,8 +1597,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#RevolutionProfile:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2249,8 +1615,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#RevolutionProfile:Visibility",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2264,8 +1633,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#RevolutionProfile:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#RevolutionProfile",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#RevolutionProfile"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2279,8 +1651,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Sweep:Label2",
           "target": {
-            "id": "fcstd:design:feature#Sweep",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sweep"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2294,110 +1669,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Sweep:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Sweep",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSection:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#SweepSection:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#SweepSection"
+              "arena": "features",
+              "id": "fcstd:design:feature#Sweep"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSection:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#SweepSection:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#SweepSection"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SweepSection"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSection:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#SweepSection:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#SweepSection"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSpine:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#SweepSpine:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#SweepSpine"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSpine:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#SweepSpine:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#SweepSpine"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SweepSpine"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SweepSpine:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#SweepSpine:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#SweepSpine"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -2411,8 +1687,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#SymmetricExtrusion:Label2",
           "target": {
-            "id": "fcstd:design:feature#SymmetricExtrusion",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetricExtrusion"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2426,8 +1705,11 @@
           "name": "LengthFwd",
           "native_ref": "fcstd:native:property#SymmetricExtrusion:LengthFwd",
           "target": {
-            "id": "fcstd:design:feature#SymmetricExtrusion",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetricExtrusion"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2441,8 +1723,11 @@
           "name": "LengthRev",
           "native_ref": "fcstd:native:property#SymmetricExtrusion:LengthRev",
           "target": {
-            "id": "fcstd:design:feature#SymmetricExtrusion",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetricExtrusion"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2456,8 +1741,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#SymmetricExtrusion:Visibility",
           "target": {
-            "id": "fcstd:design:feature#SymmetricExtrusion",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetricExtrusion"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2471,8 +1759,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Thickness:Label2",
           "target": {
-            "id": "fcstd:design:feature#Thickness",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Thickness"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2486,1283 +1777,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Thickness:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Thickness",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ThicknessBase:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#ThicknessBase:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#ThicknessBase"
+              "arena": "features",
+              "id": "fcstd:design:feature#Thickness"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ThicknessBase:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#ThicknessBase:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ThicknessBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ThicknessBase"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ThicknessBase:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#ThicknessBase:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ThicknessBase"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XY_Plane001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XY_Plane001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY-plane001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XY_Plane001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XY_Plane001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XY_Plane002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XY_Plane002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY-plane002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XY_Plane002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XY_Plane002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XY_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XY_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XY_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XY_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XZ_Plane001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XZ_Plane001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ-plane001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XZ_Plane001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XZ_Plane001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XZ_Plane002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XZ_Plane002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ-plane002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XZ_Plane002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XZ_Plane002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XZ_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XZ_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XZ_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XZ_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#X_Axis001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#X_Axis001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X-axis001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#X_Axis001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#X_Axis001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#X_Axis002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#X_Axis002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X-axis002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#X_Axis002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#X_Axis002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#X_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#X_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#X_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#X_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#YZ_Plane001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#YZ_Plane001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ-plane001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#YZ_Plane001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#YZ_Plane001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#YZ_Plane002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#YZ_Plane002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ-plane002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#YZ_Plane002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#YZ_Plane002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#YZ_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#YZ_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#YZ_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#YZ_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Y_Axis001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Y_Axis001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y-axis001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Y_Axis001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Y_Axis001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Y_Axis002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Y_Axis002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y-axis002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Y_Axis002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Y_Axis002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Y_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Y_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Y_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Y_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Z_Axis001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Z_Axis001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z-axis001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Z_Axis001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Z_Axis001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis002:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Z_Axis002:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis002:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Z_Axis002:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z-axis002"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis002:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Z_Axis002:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis002:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Z_Axis002:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis002"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Z_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Z_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Z_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Z_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -52223,7 +50242,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "84bad50a010d41cfb6c27c104b8b19d37841c0ca589af5cca62cc90a1768a8bf",
+    "decode_digest": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
     "retained_records": {
       "fcstd:native:entry#Edges": {
         "bytes": {

@@ -1755,8 +1755,10 @@ impl F3dNative {
     /// The retained bytes are the sole home of undecoded history payloads.
     pub(crate) fn retained_fidelity(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<cadmpeg_ir::SourceFidelity, cadmpeg_core::CodecError> {
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity =
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
         for frame in &self.design_dimension_presentation_frames {
             frame.retain_source(&mut fidelity)?;
         }

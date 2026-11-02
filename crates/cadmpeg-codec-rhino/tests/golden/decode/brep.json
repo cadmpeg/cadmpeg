@@ -514,14 +514,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:body#record-000000-offset-177",
-              "rhino:object:curve#record-000000-offset-177.c3-0",
-              "rhino:object:curve#record-000000-offset-177.c3-1",
-              "rhino:object:curve#record-000000-offset-177.c3-2",
-              "rhino:object:surface#record-000000-offset-177.slot-0"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],
@@ -813,6 +806,7 @@
         }
       }
     },
+    "decode_digest": "02d6543f65f7229cd31ba39b5df0f9591c78c1027d9f2d670ecf09a52c66f649",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

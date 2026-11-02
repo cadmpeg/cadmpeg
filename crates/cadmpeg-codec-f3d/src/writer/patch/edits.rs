@@ -226,40 +226,42 @@ pub(super) fn validate_edge_ownership_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[&id];
         let mut normalized = after.clone();
-        normalized.owner_coedge.clone_from(&before.owner_coedge);
+        normalized.owner_coedge_index = before.owner_coedge_index;
         if &normalized != before {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D edge-ownership edit changes structural fields: {id}"
             )));
         }
-        if after.owner_coedge == before.owner_coedge {
+        if after.owner_coedge_index == before.owner_coedge_index {
             continue;
         }
-        let owner = if let Some(owner) = &after.owner_coedge {
-            let coedge = target
+        let owner = if let Some(index) = after.owner_coedge_index {
+            let edge = target
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.native_ref.as_deref() == Some(id.as_str()))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D edge ownership {id} resolves to no neutral edge"
+                    ))
+                })?;
+            target
                 .model
                 .coedges
                 .iter()
-                .find(|coedge| coedge.id == *owner)
+                .find(|coedge| {
+                    coedge.edge == edge.id
+                        && cadmpeg_asm::brep::records::neutral_record_index(
+                            coedge.id.as_str(),
+                        ) == Some(index)
+                })
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
-                        "F3D edge ownership {id} references missing coedge {owner}"
+                        "F3D edge ownership {id} references missing coedge index {index}"
                     ))
                 })?;
-            if coedge.edge != after.edge {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D edge ownership {id} selects a coedge of another edge"
-                )));
-            }
-            owner
-                .as_str()
-                .rsplit_once('#')
-                .and_then(|(_, index)| index.parse::<i64>().ok())
-                .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
-                        "F3D owning coedge {owner} has no native record index"
-                    ))
-                })?
+            i64::from(index)
         } else {
             -1
         };
@@ -295,52 +297,87 @@ pub(super) fn validate_vertex_ownership_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[&id];
         let mut normalized = after.clone();
-        normalized.owning_edge.clone_from(&before.owning_edge);
+        normalized.owner.clone_from(&before.owner);
         normalized.endpoint_index = before.endpoint_index;
         if &normalized != before {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D vertex-ownership edit changes structural fields: {id}"
             )));
         }
-        if after.owning_edge == before.owning_edge && after.endpoint_index == before.endpoint_index
-        {
+        if after.owner == before.owner && after.endpoint_index == before.endpoint_index {
             continue;
         }
-        let edge = target
+        let vertex = target
             .model
-            .edges
+            .vertices
             .iter()
-            .find(|edge| edge.id == after.owning_edge)
+            .find(|vertex| vertex.native_ref.as_deref() == Some(id.as_str()))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "F3D vertex ownership {id} references missing edge {}",
-                    after.owning_edge
+                    "F3D vertex ownership {id} resolves to no neutral vertex"
                 ))
             })?;
-        let valid = match after.endpoint_index {
-            EndpointSlot::Start => edge.start == after.vertex,
-            EndpointSlot::End => edge.end == after.vertex,
+        let (edge_record, endpoint) = match &after.owner {
+            Some(owner) => {
+                let edge = target
+                    .model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D vertex ownership {id} references missing edge row {}",
+                            owner.as_str()
+                        ))
+                    })?;
+                let endpoint = match after.endpoint_index {
+                    Some(EndpointSlot::Start) => {
+                        if edge.start != vertex.id {
+                            return Err(CodecError::malformed(format_args!(
+                                "F3D vertex ownership {id} has an inconsistent endpoint slot"
+                            )));
+                        }
+                        EndpointSlot::Start
+                    }
+                    Some(EndpointSlot::End) => {
+                        if edge.end != vertex.id {
+                            return Err(CodecError::malformed(format_args!(
+                                "F3D vertex ownership {id} has an inconsistent endpoint slot"
+                            )));
+                        }
+                        EndpointSlot::End
+                    }
+                    None => {
+                        if edge.start == vertex.id {
+                            EndpointSlot::Start
+                        } else if edge.end == vertex.id {
+                            EndpointSlot::End
+                        } else {
+                            return Err(CodecError::malformed(format_args!(
+                                "F3D vertex ownership {id} matches neither endpoint of its edge"
+                            )));
+                        }
+                    }
+                };
+                let edge_record = owner
+                    .as_str()
+                    .rsplit_once('#')
+                    .and_then(|(_, index)| index.parse::<i64>().ok())
+                    .ok_or_else(|| {
+                        CodecError::UnsupportedContent(format!(
+                            "F3D owning edge row {} has no native record index",
+                            owner.as_str()
+                        ))
+                    })?;
+                (edge_record, endpoint)
+            }
+            None => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "F3D vertex ownership {id} drops its owning edge"
+                )));
+            }
         };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "F3D vertex ownership {id} has an inconsistent endpoint slot"
-            )));
-        }
-        let edge_record = after
-            .owning_edge
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, index)| index.parse::<i64>().ok())
-            .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "F3D owning edge {} has no native record index",
-                    after.owning_edge
-                ))
-            })?;
-        edits.insert(
-            index_from_u32(after.record_index),
-            (edge_record, after.endpoint_index),
-        );
+        edits.insert(index_from_u32(after.record_index), (edge_record, endpoint));
     }
     Ok(edits)
 }
@@ -422,10 +459,30 @@ pub(super) fn validate_tolerant_vertex_edits(
     let target_tails = native
         .target
         .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
+    let mut baseline_owners = std::collections::HashMap::new();
+    for vertex in &baseline.model.vertices {
+        if let Some(native_ref) = vertex.native_ref.as_deref() {
+            baseline_owners
+                .entry(native_ref.to_owned())
+                .or_insert(vertex.id.as_str());
+        }
+    }
+    let mut target_owners = std::collections::HashMap::new();
+    for vertex in &target.model.vertices {
+        if let Some(native_ref) = vertex.native_ref.as_deref() {
+            target_owners
+                .entry(native_ref.to_owned())
+                .or_insert(vertex.id.as_str());
+        }
+    }
     let tolerant_vertices: std::collections::BTreeSet<&str> = baseline_tails
         .iter()
-        .chain(target_tails)
-        .map(|tail| tail.vertex.as_str())
+        .filter_map(|tail| baseline_owners.get(tail.owner.as_str()).copied())
+        .chain(
+            target_tails
+                .iter()
+                .filter_map(|tail| target_owners.get(tail.owner.as_str()).copied()),
+        )
         .collect();
     for (id, before) in &baseline_vertices {
         let after = target_vertices[id];
@@ -479,7 +536,12 @@ pub(super) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes record width: {id}"
             )));
         }
-        let target_vertex = target_vertices.get(after.vertex.as_str()).ok_or_else(|| {
+        let Some(vertex_id) = target_owners.get(after.owner.as_str()) else {
+            return Err(CodecError::malformed(format_args!(
+                "tolerant vertex {id} tail has no target vertex"
+            )));
+        };
+        let target_vertex = target_vertices.get(*vertex_id).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "tolerant vertex {id} tail has no target vertex"
             ))
@@ -496,8 +558,13 @@ pub(super) fn validate_tolerant_vertex_edits(
                 )));
             }
         };
+        let Some(baseline_id) = baseline_owners.get(before.owner.as_str()) else {
+            return Err(CodecError::malformed(format_args!(
+                "tolerant vertex {id} tail has no baseline vertex"
+            )));
+        };
         let baseline_vertex = baseline_vertices
-            .get(after.vertex.as_str())
+            .get(*baseline_id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "tolerant vertex {id} tail has no baseline vertex"
@@ -595,10 +662,31 @@ pub(super) fn validate_tolerant_edge_edits(
                 "F3D tolerant-edge tail edit changes retained fields: {id}"
             )));
         }
-        let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
-            CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
-        })?;
-        if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
+        let edge_id = target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.native_ref.as_deref() == Some(after.owner.as_str()))
+            .map(|edge| edge.id.as_str())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "tolerant edge tail {id} resolves to no target edge"
+                ))
+            })?;
+        let tolerance = target_edges
+            .get(edge_id)
+            .and_then(|edge| edge.tolerance)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
+            })?;
+        if baseline
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.native_ref.as_deref() == Some(before.owner.as_str()))
+            .and_then(|edge| edge.tolerance)
+            != Some(tolerance)
+        {
             edits.insert(
                 index_from_u32(after.record_index),
                 tolerance.get() / LEN_TO_MM,
@@ -1877,13 +1965,7 @@ pub(super) fn validate_body_visibility_edits(
     }
     let metadata = native
         .baseline
-        .map(|native| {
-            native
-                .body_visibilities
-                .iter()
-                .map(|item| (item.body.clone(), item))
-                .collect::<BTreeMap<_, _>>()
-        })
+        .map(|native| native.body_visibilities.as_slice())
         .unwrap_or_default();
     let mut edits = BTreeMap::<String, Vec<(u64, bool)>>::new();
     for (id, before) in baseline_bodies {
@@ -1894,11 +1976,19 @@ pub(super) fn validate_body_visibility_edits(
         let visible = after.visible.ok_or_else(|| {
             CodecError::UnsupportedContent(format!("cannot remove F3D body visibility: {id}"))
         })?;
-        let record = metadata.get(id).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "F3D body visibility {id} has no joined Design browser node"
-            ))
-        })?;
+        let record = metadata
+            .iter()
+            .find(|item| {
+                after
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native_ref| native_ref == item.body.as_str())
+            })
+            .ok_or_else(|| {
+                CodecError::UnsupportedContent(format!(
+                    "F3D body visibility {id} has no joined Design browser node"
+                ))
+            })?;
         edits.entry(record.stream().to_owned()).or_default().push((
             source_position(
                 record.byte_offset,
@@ -1997,7 +2087,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
             edits.asm.insert(index_from_u32(after.record_index), key);
             let mut joined = Vec::new();
             for visibility in baseline_body_visibilities.iter().filter(|visibility| {
-                visibility.body == before.body
+                visibility.body.as_str() == before.id().as_str()
                     && before.asm_body_key == Some(visibility.asm_body_key())
             }) {
                 joined.push((

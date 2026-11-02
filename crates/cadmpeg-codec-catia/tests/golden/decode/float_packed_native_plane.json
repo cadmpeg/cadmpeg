@@ -668,13 +668,7 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#freeform",
-            "links": [
-              "catia:b5:surface#100",
-              "catia:b5:curve#300",
-              "catia:b5:curve#301",
-              "catia:b5:curve#302"
-            ]
+            "id": "catia:payload:unknown#freeform"
           }
         ],
         "value_blocks": [],
@@ -1316,9 +1310,6 @@
         },
         "catia:payload:unknown#freeform": {
           "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          },
           "scope": "entity"
         }
       },
@@ -1465,6 +1456,7 @@
         }
       }
     },
+    "decode_digest": "7da9717daa1a5977976537d42fc112561b087617ad02ec756a728b83c34ffeb1",
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {

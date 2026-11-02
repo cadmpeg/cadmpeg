@@ -188,7 +188,7 @@ fn structured_numeric_property_uses_linked_current_values_without_overwriting_so
 }
 
 #[test]
-fn attribute_table_defaults_and_rows_use_current_inward_links_independently() {
+fn attribute_table_defaults_and_rows_emit_standalone_without_neutral_owners() {
     use cadmpeg_ir::{Codec, DecodeOptions};
     let bytes = crate::test_support::test_owned::owned_test_file_with_structures(
         &[
@@ -206,33 +206,31 @@ fn attribute_table_defaults_and_rows_use_current_inward_links_independently() {
     let namespace = ir.native.namespace("iges").expect("native namespace");
     let definition = &namespace.arenas()["attribute_table_definitions"][0];
     let instance = &namespace.arenas()["attribute_table_instances"][0];
-    for (name, value, native_ref, source) in [
+    // Table defaults and rows project no neutral entity. Attribute tables
+    // emit standalone, so the suite links them at dangling record targets
+    // and pins the standalone bytes.
+    let dangling = || AttributeTarget::Record {
+        arena: cadmpeg_ir::document::ArenaName::parse("points")
+            .expect("registered points arena"),
+        id: "test:model:point#absent".into(),
+    };
+    for (name, value, native_ref) in [
         (
             "iges.attribute_table.default.attributes.0.values.0",
             "EDIT",
             definition.id(),
-            match definition.field("source_entity") {
-                Some(serde_json::Value::String(source)) => source,
-                _ => panic!("definition source entity"),
-            },
         ),
         (
             "iges.attribute_table.value.rows.0.0",
             "ROW",
             instance.id(),
-            match instance.field("source_entity") {
-                Some(serde_json::Value::String(source)) => source,
-                _ => panic!("instance source entity"),
-            },
         ),
     ] {
         ir.model.attributes.push(SourceAttribute {
             id: AttributeId::mint(format!("test:model:attribute#{name}"))
                 .expect("attribute identity"),
             native_ref: Some(native_ref.to_owned()),
-            target: AttributeTarget::Source {
-                source_id: source,
-            },
+            target: dangling(),
             name: name.into(),
             values: vec![Some(AttributeValue::String(value.into()))],
         });

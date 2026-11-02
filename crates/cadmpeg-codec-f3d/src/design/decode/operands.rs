@@ -588,12 +588,19 @@ pub(crate) fn bind_work_plane_constructions(
 pub(crate) fn bind_vertex_recipe_candidates(
     scopes: &mut [DesignParameterScope],
     tags: &[PersistentSubentityTag],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
     for scope in scopes {
         let scope_id = scope.id.clone();
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
-                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates(
+                    reference, tags, Some(&scope_id), bodies, faces, edges, vertices, coedges,
+                );
             }
         }
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -601,7 +608,9 @@ pub(crate) fn bind_vertex_recipe_candidates(
         };
         for recipe in construction.rule.vertex_recipes_mut() {
             for reference in &mut recipe.recipe_references {
-                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates(
+                    reference, tags, Some(&scope_id), bodies, faces, edges, vertices, coedges,
+                );
             }
         }
     }
@@ -611,10 +620,24 @@ pub(crate) fn bind_vertex_recipe_candidates(
 pub(crate) fn bind_edge_treatment_vertex_candidates(
     operands: &mut [DesignEdgeTreatmentVertexOperand],
     tags: &[PersistentSubentityTag],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
     for operand in operands {
         for reference in &mut operand.recipe.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(
+                reference,
+                tags,
+                Some(&operand.id),
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+            );
         }
     }
 }
@@ -1466,14 +1489,27 @@ pub(crate) fn bind_face_operand_candidates(
     operands: &mut [DesignFaceOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
-    use cadmpeg_ir::attributes::AttributeTarget;
 
     let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(
+                reference,
+                tags,
+                Some(&operand.id),
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+            );
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -1488,8 +1524,12 @@ pub(crate) fn bind_face_operand_candidates(
             tag.design_references.contains(&design_reference)
                 && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
-            if let AttributeTarget::Face(face) = &tag.target {
-                operand.candidate_faces.push(face.clone());
+            if let Some(face) = crate::brep::link_neutral_id(
+                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+            )
+            .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
+            {
+                operand.candidate_faces.push(face.id.clone());
             }
         }
         operand
@@ -1525,12 +1565,26 @@ pub(crate) fn bind_edge_operand_candidates(
     operands: &mut [DesignEdgeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
     let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(
+                reference,
+                tags,
+                Some(&operand.id),
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+            );
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -1544,8 +1598,12 @@ pub(crate) fn bind_edge_operand_candidates(
             tag.design_references.contains(&design_reference)
                 && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
-            if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
-                operand.candidate_faces.push(face.clone());
+            if let Some(face) = crate::brep::link_neutral_id(
+                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+            )
+            .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
+            {
+                operand.candidate_faces.push(face.id.clone());
             }
         }
         operand
@@ -1559,8 +1617,12 @@ pub(crate) fn edge_operand_candidate_faces(
     design_reference: i64,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
         .iter()
@@ -1569,9 +1631,16 @@ pub(crate) fn edge_operand_candidate_faces(
                 && owner_id
                     .is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
         })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(id) => Some(id.clone()),
-            _ => None,
+        .filter_map(|tag| {
+            crate::brep::link_neutral_id(
+                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+            )
+            .and_then(|id| {
+                faces
+                    .iter()
+                    .find(|face| face.id.as_str() == id)
+                    .map(|face| face.id.clone())
+            })
         })
         .collect::<Vec<_>>();
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
@@ -4656,8 +4725,12 @@ pub(crate) fn bind_body_recipe_operand_candidates(
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
     scopes: &[DesignParameterScope],
+    bodies: &[cadmpeg_ir::topology::Body],
+    faces: &[cadmpeg_ir::topology::Face],
+    edges: &[cadmpeg_ir::topology::Edge],
+    vertices: &[cadmpeg_ir::topology::Vertex],
+    coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
-    use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
     for recipe in recipes {
@@ -4700,8 +4773,12 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                         || !form_three_uses_recipe_selector
                         || tag_selector == Some(tag.selector))
             }) {
-                if let AttributeTarget::Face(face) = &tag.target {
-                    reference.candidate_faces.push(face.clone());
+                if let Some(face) = crate::brep::link_neutral_id(
+                    bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+                )
+                .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
+                {
+                    reference.candidate_faces.push(face.id.clone());
                 }
             }
             reference

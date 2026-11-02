@@ -39,7 +39,10 @@ fn model_admission_gives_up_a_malformed_curve_surface_reference_cycle() {
     .expect("admit the model")
     .is_ok());
     let mut losses = Vec::new();
-    let mut fidelity = crate::SourceFidelity::default();
+    let mut fidelity = crate::SourceFidelity::for_decode(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::Annotations::default(),
+    );
     give_up(&mut ir, &mut losses, &mut fidelity).expect("a cycle gives up its carrier");
     assert!(ir.model.curves.iter().all(|carrier| carrier.id != curve));
     assert!(ir
@@ -130,7 +133,10 @@ fn cycle_give_up_drops_required_dependents_and_prunes_lists() {
         );
     }
     let mut losses = Vec::new();
-    let mut fidelity = crate::SourceFidelity::default();
+    let mut fidelity = crate::SourceFidelity::for_decode(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::Annotations::default(),
+    );
     give_up(&mut ir, &mut losses, &mut fidelity).expect("a cycle gives up its carrier");
     assert!(ir.model.faces.iter().all(|record| record.id != face));
     assert!(ir.model.faces.iter().any(|record| record.id == face_kept));
@@ -163,7 +169,7 @@ fn cycle_admission_preserves_zero_depth_session_refusal() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut losses = Vec::new();
-    let mut fidelity = crate::SourceFidelity::default();
+    let mut fidelity = crate::SourceFidelity::for_decode(&ctx, crate::Annotations::default());
     let Err(CodecError::ResourceLimit(limit)) =
         give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
     else {
@@ -205,7 +211,7 @@ fn cycle_admission_admits_solved_carriers_among_many_points() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
     let mut losses = Vec::new();
-    let mut fidelity = crate::SourceFidelity::default();
+    let mut fidelity = crate::SourceFidelity::for_decode(&ctx, crate::Annotations::default());
     give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
         .expect("solved carriers have no cycle index slots");
     assert!(losses.is_empty());
@@ -224,7 +230,7 @@ fn cycle_admission_gives_up_cycles_among_many_unrelated_points() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
     let mut losses = Vec::new();
-    let mut fidelity = crate::SourceFidelity::default();
+    let mut fidelity = crate::SourceFidelity::for_decode(&ctx, crate::Annotations::default());
     give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
         .expect("a cycle gives up its carrier");
     assert_eq!(losses.len(), 1);

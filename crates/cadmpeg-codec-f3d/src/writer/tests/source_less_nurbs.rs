@@ -755,14 +755,18 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 #[test]
 fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let tolerant_coedge = source_less.model.coedges[7].id.clone();
+    crate::test_support::native_test::pair_cube_coedge_with_native_record(
+        &mut source_less,
+        &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        7,
+        7,
+    );
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
                 crate::ids::ID_FORMAT,
             ),
-            coedge: tolerant_coedge,
-            record_index: 0,
+            record_index: 7,
             parameter_range: cadmpeg_ir::units::FiniteVector::new([-1.5, 2.25])
                 .expect("finite interval"),
             extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},

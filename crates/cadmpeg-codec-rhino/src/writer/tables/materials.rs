@@ -193,7 +193,6 @@ fn bound_appearance<'a>(ir: &'a CadIr, identity: &str) -> Option<&'a Appearance>
                 id.as_str()
             }
             AppearanceTarget::Record { .. } => return false,
-            AppearanceTarget::Source { source_id } => source_id.as_str(),
         };
         target == identity
     })?;

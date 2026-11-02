@@ -48,11 +48,7 @@ pub(crate) fn decoded(
             cadmpeg_ir::ArenaClasses::new(),
         )?;
     }
-    let digest = crate::writer::target::document_local_sha256(ctx, &ir)?;
-    fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(digest)
-            .map_err(CodecError::malformed)?,
-    );
+    // The decode wrapper stamps the source digest from its root view.
     Ok(Decoded {
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer {

@@ -2449,7 +2449,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "e44899df5f99d34637efc82e4964f6e440145d6356a5a4ec7049b19114496dbe",
+    "decode_digest": "2f0a2fba6d203624977f20ccc64a75708d12d838a1af34d075bd88ff058f409b",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

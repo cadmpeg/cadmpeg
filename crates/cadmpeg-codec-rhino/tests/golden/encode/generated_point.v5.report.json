@@ -2,13 +2,15 @@
   "census": {
     "basis": "ir_arenas",
     "counts": {
-      "appearance_bindings": 0,
-      "appearances": 0,
+      "appearance_bindings": 1,
+      "appearances": 1,
+      "articulations": 0,
       "assembly_joints": 0,
       "assets": 0,
       "attributes": 0,
       "bodies": 1,
       "coedges": 0,
+      "colliders": 0,
       "configurations": 0,
       "curves": 0,
       "drawings": 0,
@@ -18,6 +20,7 @@
       "feature_result_topologies": 0,
       "features": 0,
       "loops": 0,
+      "mass_properties": 0,
       "native.rhino.document_settings": 1,
       "native.rhino.layers": 1,
       "native.rhino.object_presentation": 1,
@@ -25,6 +28,8 @@
       "occurrences": 0,
       "parameters": 0,
       "pcurves": 0,
+      "physical_materials": 0,
+      "physics_scenes": 0,
       "pmi": 0,
       "points": 1,
       "presentation_documents": 0,
@@ -33,11 +38,13 @@
       "procedural_surfaces": 0,
       "product_definitions": 0,
       "regions": 1,
+      "rigid_bodies": 0,
       "semantic_annotations": 0,
       "shells": 1,
       "sketch_constraints": 0,
       "sketch_entities": 0,
       "sketches": 0,
+      "solver_settings": 0,
       "spatial_sketch_constraints": 0,
       "spatial_sketch_entities": 0,
       "spatial_sketches": 0,
@@ -47,18 +54,20 @@
       "surfaces_unknown_geometry": 0,
       "tessellations": 0,
       "vertices": 1,
-      "view_presentations": 0
+      "view_presentations": 1
     }
   },
   "coverage": {
     "arenas": {
       "appearance_bindings": "reported",
       "appearances": "reported",
+      "articulations": "omitted",
       "assembly_joints": "omitted",
       "assets": "omitted",
       "attributes": "dropped",
-      "bodies": "written",
+      "bodies": "reported",
       "coedges": "reported",
+      "colliders": "omitted",
       "configurations": "dropped",
       "curves": "reported",
       "drawings": "omitted",
@@ -68,9 +77,12 @@
       "feature_result_topologies": "omitted",
       "features": "dropped",
       "loops": "reported",
+      "mass_properties": "omitted",
       "occurrences": "omitted",
       "parameters": "dropped",
       "pcurves": "reported",
+      "physical_materials": "omitted",
+      "physics_scenes": "omitted",
       "pmi": "omitted",
       "points": "written",
       "presentation_documents": "omitted",
@@ -79,11 +91,13 @@
       "procedural_surfaces": "dropped",
       "product_definitions": "omitted",
       "regions": "written",
+      "rigid_bodies": "omitted",
       "semantic_annotations": "omitted",
       "shells": "written",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
       "sketches": "dropped",
+      "solver_settings": "omitted",
       "spatial_sketch_constraints": "omitted",
       "spatial_sketch_entities": "omitted",
       "spatial_sketches": "omitted",
@@ -103,6 +117,46 @@
   "losses": [
     {
       "code": {
+        "code": "writer.attributes-omitted",
+        "kind": "attributes_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "appearance rhino:model:display-color#layer-0 /asset_guid None -> Some(\"0e2eec82-fc4f-e4f1-0acc-b6d111a5e241\"); distinct Rhino material components require unique physical UUIDs",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "writer.attributes-omitted",
+        "kind": "attributes_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "rhino:model:object-view#0-0: view controls without exact Rhino saved-view fields are omitted",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "writer.materials-omitted",
+        "kind": "appearance_reduced",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "model arena appearances: 1 record(s) reduced or omitted",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "writer.materials-omitted",
+        "kind": "appearance_reduced",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "model arena appearance_bindings: 1 record(s) reduced or omitted",
+      "severity": "warning"
+    },
+    {
+      "code": {
         "code": "target.source-dialect-displaced",
         "kind": "source_dialect_displaced",
         "namespace": "rhino",
@@ -110,6 +164,16 @@
         "strict_floor": "warning"
       },
       "message": "source dialect rhino:archive-80 was displaced by target dialect rhino:archive-50; the source dialect identity is not preserved",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "arena.omitted",
+        "kind": "metadata_not_transferred",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
+      "message": "the rhino write does not represent model arena `view_presentations`: 1 record(s) omitted: rhino:model:object-view#0-0",
       "severity": "warning"
     },
     {

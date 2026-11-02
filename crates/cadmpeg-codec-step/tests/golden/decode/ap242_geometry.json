@@ -56,17 +56,6 @@
             "id": "step:data:curve#48",
             "kind": "curve"
           }
-        },
-        {
-          "appearance": "step:presentation:appearance#30",
-          "id": "step:presentation:binding#50:0-0",
-          "source_entity_id": "#50",
-          "target": {
-            "id": {
-              "source_id": "#6"
-            },
-            "kind": "source"
-          }
         }
       ],
       "appearances": [
@@ -772,7 +761,6 @@
           {
             "id": "step:data:styled_item#43",
             "links": [
-              "step:data:curve#7",
               "step:data:presentation_style_assignment#42"
             ]
           }
@@ -826,6 +814,16 @@
       }
     },
     "losses": [
+      {
+        "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "STYLED_ITEM #50 targets unsupported item #6",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "decode.warning",
@@ -891,6 +889,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "d00e6c96b2f9b1819d8cd432746ac3b96bdebbc3f19d491e2604aa4439ffbc0a",
     "retained_records": {
       "step:data:presentation_style_assignment#42": {
         "bytes": {

@@ -1,6 +1,5 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "10",
     "model": {
       "appearance_bindings": [
@@ -152,7 +151,6 @@
         {
           "id": "usd:stage:occurrence#/Plant",
           "name": "Plant",
-          "native_ref": "/Plant",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -161,11 +159,6 @@
             "definition": "usd:stage:definition#/Plant",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -190,7 +183,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Frame",
           "name": "Frame",
-          "native_ref": "/Plant/Frame",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -200,11 +192,6 @@
             "definition": "usd:stage:definition#/Plant/Frame",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               0.8660254037844387,
@@ -229,7 +216,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Frame/Rail",
           "name": "Rail",
-          "native_ref": "/Plant/Frame/Rail",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -239,11 +225,6 @@
             "definition": "usd:stage:definition#/Plant/Frame/Rail",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -268,7 +249,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Frame/Tube",
           "name": "Tube",
-          "native_ref": "/Plant/Frame/Tube",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -278,11 +258,6 @@
             "definition": "usd:stage:definition#/Plant/Frame/Tube",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -307,7 +282,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Leg0",
           "name": "Leg0",
-          "native_ref": "/Plant/Leg0",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -317,11 +291,6 @@
             "definition": "usd:stage:definition#prototype0",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -346,7 +315,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Leg1",
           "name": "Leg1",
-          "native_ref": "/Plant/Leg1",
           "ordinal": 3,
           "parent": {
             "kind": "occurrence",
@@ -356,11 +324,6 @@
             "definition": "usd:stage:definition#prototype0",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -385,7 +348,6 @@
         {
           "id": "usd:stage:occurrence#/Plant/Roof",
           "name": "Roof",
-          "native_ref": "/Plant/Roof",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -395,11 +357,6 @@
             "definition": "usd:stage:definition#/Plant/Roof",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -451,13 +408,11 @@
         {
           "id": "usd:stage:definition#/Plant",
           "kind": "part",
-          "native_ref": "/Plant",
           "source_name": "Plant"
         },
         {
           "id": "usd:stage:definition#/Plant/Frame",
           "kind": "group",
-          "native_ref": "/Plant/Frame",
           "source_name": "Frame"
         },
         {
@@ -466,7 +421,6 @@
           ],
           "id": "usd:stage:definition#/Plant/Frame/Rail",
           "kind": "object",
-          "native_ref": "/Plant/Frame/Rail",
           "source_name": "Rail"
         },
         {
@@ -475,7 +429,6 @@
           ],
           "id": "usd:stage:definition#/Plant/Frame/Tube",
           "kind": "object",
-          "native_ref": "/Plant/Frame/Tube",
           "source_name": "Tube"
         },
         {
@@ -484,7 +437,6 @@
           ],
           "id": "usd:stage:definition#/Plant/Roof",
           "kind": "object",
-          "native_ref": "/Plant/Roof",
           "source_name": "Roof"
         },
         {
@@ -493,7 +445,6 @@
           ],
           "id": "usd:stage:definition#prototype0",
           "kind": "object",
-          "native_ref": "/Plant/Leg0",
           "source_name": "Leg"
         }
       ],
@@ -787,6 +738,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Plant",
@@ -854,10 +809,15 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "8adf1f271e308a0dd6a03599de7aab5ff418b041037d70f3a07c13c8580c6756",
+    "unrepresented": []
   }
 }

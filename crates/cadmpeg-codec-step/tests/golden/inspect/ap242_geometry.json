@@ -45,6 +45,16 @@
         "namespace": "step",
         "scope": "namespaced"
       },
+      "message": "STYLED_ITEM #50 targets unsupported item #6",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
       "message": "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; set dropped",
       "severity": "warning"
     },

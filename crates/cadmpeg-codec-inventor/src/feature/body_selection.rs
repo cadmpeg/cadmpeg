@@ -204,8 +204,6 @@ pub(crate) fn body_map(
     let link_ids = cadmpeg_core::decode::unique_index(links.iter().map(|link| (link.id(), link)));
     let join_ids =
         cadmpeg_core::decode::unique_index(joins.iter().map(|join| (join.wrapper.as_str(), join)));
-    let model_bodies =
-        cadmpeg_core::decode::unique_index(model.bodies.iter().map(|body| (&body.id, body)));
     for join in joins {
         let Some(wrapper) = properties.get(&join.wrapper).and_then(Option::as_ref) else {
             continue;
@@ -231,8 +229,12 @@ pub(crate) fn body_map(
         else {
             continue;
         };
-        if model_bodies.get(&key.body).is_some_and(Option::is_some) {
-            bodies.insert(join.wrapper.clone(), key.body.clone());
+        if let Some(body) = model
+            .bodies
+            .iter()
+            .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
+        {
+            bodies.insert(join.wrapper.clone(), body.id.clone());
         }
     }
     bodies

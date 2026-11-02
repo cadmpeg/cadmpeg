@@ -1,0 +1,562 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "entity_count": "41",
+        "unknown_entities": "AXIS2_PLACEMENT_3D:1,CARTESIAN_POINT:2,COLOUR_RGB:2,DEFINITIONAL_REPRESENTATION:1,DIRECTION:3,EDGE_CURVE:1,FILL_AREA_STYLE:2,FILL_AREA_STYLE_COLOUR:2,GEOMETRIC_REPRESENTATION_CONTEXT:1,LINE:1,ORIENTED_EDGE:1,PARAMETRIC_REPRESENTATION_CONTEXT:1,PCURVE:1,PLANE:1,PRESENTATION_STYLE_ASSIGNMENT:2,REPRESENTATION_CONTEXT:1,SURFACE_SIDE_STYLE:2,SURFACE_STYLE_FILL_AREA:2,SURFACE_STYLE_USAGE:2,VECTOR:1,VERTEX_POINT:2"
+      },
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap214"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "bounded DATA record omitted: unexpected byte at byte 443 at byte 443; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 413,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #7 omitted: unresolved instance reference #4; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 509,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #17 omitted: unresolved instance reference #4; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 786,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #20 omitted: depends on omitted instance #17; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 862,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #23 omitted: depends on omitted instance #20; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 965,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #25 omitted: depends on omitted instance #23; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1035,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #26 omitted: depends on omitted instance #25; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1068,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #29 omitted: depends on omitted instance #26; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1159,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #30 omitted: depends on omitted instance #29; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1196,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #47 omitted: depends on omitted instance #29; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1616,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #48 omitted: depends on omitted instance #29; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1663,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #67 omitted: depends on omitted instance #29; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 2327,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #33 omitted: depends on omitted instance #30; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1319,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #31 omitted: depends on omitted instance #33; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1222,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #32 omitted: depends on omitted instance #31; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 1263,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #19 omitted: depends on omitted instance #7; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 828,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #22 omitted: depends on omitted instance #19; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 930,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.record-omitted",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "instance #68 omitted: depends on omitted instance #19; exact source retained",
+      "provenance": {
+        "format": "step",
+        "offset": 2358,
+        "tag": "data_record"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "unowned STEP carrier retention: opaque_pcurves=1, protected_pcurves=0, deleted pcurves=1, points=1, curves=0, surfaces=1, procedural_curves=0, procedural_surfaces=0",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 AXIS2_PLACEMENT_3D instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 CARTESIAN_POINT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 COLOUR_RGB instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 DEFINITIONAL_REPRESENTATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 3 DIRECTION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 EDGE_CURVE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 FILL_AREA_STYLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 FILL_AREA_STYLE_COLOUR instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 GEOMETRIC_REPRESENTATION_CONTEXT+PARAMETRIC_REPRESENTATION_CONTEXT+REPRESENTATION_CONTEXT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 LINE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 ORIENTED_EDGE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 PCURVE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 PLANE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_SIDE_STYLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_STYLE_FILL_AREA instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_STYLE_USAGE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 VECTOR instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 VERTEX_POINT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "schema AUTOMOTIVE_DESIGN; dialect step:ap214",
+    "bounded DATA record omitted: unexpected byte at byte 443 at byte 443; exact source retained",
+    "instance #7 omitted: unresolved instance reference #4; exact source retained",
+    "instance #17 omitted: unresolved instance reference #4; exact source retained",
+    "instance #20 omitted: depends on omitted instance #17; exact source retained",
+    "instance #23 omitted: depends on omitted instance #20; exact source retained",
+    "instance #25 omitted: depends on omitted instance #23; exact source retained",
+    "instance #26 omitted: depends on omitted instance #25; exact source retained",
+    "instance #29 omitted: depends on omitted instance #26; exact source retained",
+    "instance #30 omitted: depends on omitted instance #29; exact source retained",
+    "instance #47 omitted: depends on omitted instance #29; exact source retained",
+    "instance #48 omitted: depends on omitted instance #29; exact source retained",
+    "instance #67 omitted: depends on omitted instance #29; exact source retained",
+    "instance #33 omitted: depends on omitted instance #30; exact source retained",
+    "instance #31 omitted: depends on omitted instance #33; exact source retained",
+    "instance #32 omitted: depends on omitted instance #31; exact source retained",
+    "instance #19 omitted: depends on omitted instance #7; exact source retained",
+    "instance #22 omitted: depends on omitted instance #19; exact source retained",
+    "instance #68 omitted: depends on omitted instance #19; exact source retained"
+  ]
+}

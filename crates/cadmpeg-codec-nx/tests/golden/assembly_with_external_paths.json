@@ -177,6 +177,7 @@
           }
         }
       },
+      "decode_digest": "0ee8ed5344a48753547ed09d8e8ddfb8711ce27e1c402e29cf3b1a90b327e9db",
       "retained_records": {
         "nx:source:image#whole": {
           "bytes": {

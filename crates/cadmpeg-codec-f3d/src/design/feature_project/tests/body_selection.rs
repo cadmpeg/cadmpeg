@@ -24,16 +24,28 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
         entity_suffix_offset: 18,
         blob_name: "BREP.body".to_owned(),
         blob_name_offset: 30,
-        body: Some(cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#1").unwrap()),
+        body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#1".to_owned(),
+        )),
     })
     .unwrap();
     (scope, binding)
+}
+
+fn keyed() -> std::collections::BTreeMap<String, cadmpeg_ir::ids::BodyId> {
+    [(
+        "f3d:asm:body-native-key#1".to_owned(),
+        cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#1").unwrap(),
+    )]
+    .into_iter()
+    .collect()
 }
 
 fn project_copied_body(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     binding: &DesignBodyBinding,
+    keyed: &std::collections::BTreeMap<String, cadmpeg_ir::ids::BodyId>,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, CodecError> {
     let timeline = crate::records::entity_header::DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
@@ -56,6 +68,7 @@ fn project_copied_body(
             scopes: std::slice::from_ref(scope),
             timelines: std::slice::from_ref(&timeline),
             body_bindings: std::slice::from_ref(binding),
+            body_key_bodies: Some(keyed),
             ..Default::default()
         },
     )
@@ -116,31 +129,42 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
 #[test]
 fn copied_body_output_preserves_resolved_body() {
     let (scope, binding) = copied_body_fixture();
+    let keyed = keyed();
+    let expected = keyed
+        .get("f3d:asm:body-native-key#1")
+        .expect("test body")
+        .clone();
     let features = crate::test_support::with_decode_context(|decode_ctx| {
-        project_copied_body(decode_ctx, &scope, &binding)
+        project_copied_body(decode_ctx, &scope, &binding, &keyed)
     })
     .unwrap();
     assert_eq!(features.len(), 1);
-    assert_eq!(
-        features[0].evaluation.outputs().as_slice(),
-        [binding.body.as_ref().unwrap().clone()]
-    );
+    assert_eq!(features[0].evaluation.outputs().as_slice(), [expected]);
 }
 
 #[test]
 fn stored_body_map_requires_complete_unique_membership() {
     use cadmpeg_ir::features::BodySelection;
     let (scope, binding) = fixture();
+    let keyed = keyed();
+    let expected = keyed
+        .get("f3d:asm:body-native-key#1")
+        .expect("test body")
+        .clone();
     let selected = super::super::design_body_selection(
         &scope,
         [20].into_iter(),
         std::slice::from_ref(&binding),
+        Some(&keyed),
     );
-    assert!(matches!(selected, BodySelection::Resolved { bodies, .. }
-        if bodies.as_slice() == [binding.body.clone().unwrap()]));
+    assert!(matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.as_slice() == [expected]));
     for body in [
         None,
-        Some(cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#2").unwrap()),
+        Some(
+            cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "f3d:asm:body-native-key#2".to_owned(),
+            ),
+        ),
     ] {
         let mut other = binding.clone();
         other.body = body;
@@ -148,6 +172,7 @@ fn stored_body_map_requires_complete_unique_membership() {
             &scope,
             [20].into_iter(),
             &[binding.clone(), other],
+            Some(&keyed),
         );
         assert!(matches!(selected, BodySelection::Native(_)));
     }
@@ -155,8 +180,9 @@ fn stored_body_map_requires_complete_unique_membership() {
         &scope,
         [21].into_iter(),
         std::slice::from_ref(&binding),
+        Some(&keyed),
     );
     assert!(matches!(selected, BodySelection::Native(_)));
-    let selected = super::super::design_body_selection(&scope, [].into_iter(), &[]);
+    let selected = super::super::design_body_selection(&scope, [].into_iter(), &[], None);
     assert!(matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.is_empty()));
 }

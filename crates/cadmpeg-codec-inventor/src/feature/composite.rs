@@ -240,6 +240,7 @@ pub(crate) fn resolve(
     operands: &Operands<'_>,
     joins: &Joins<'_>,
     stored_carrier: impl Fn(&IdentityKey, u32) -> bool,
+    bodies: &[cadmpeg_ir::topology::Body],
     has_body: impl Fn(&BodyId) -> bool,
 ) -> Result<Vec<(String, BodyId)>, &'static str> {
     let ActiveCarrierRecord::Selected {
@@ -301,11 +302,17 @@ pub(crate) fn resolve(
         let Some(key) = current_body(link, segment_token, *record_ordinal, joins.keys) else {
             return Err("slot 1 member requires one state-3 current body key");
         };
-        if !has_body(&key.body) {
+        let Some(body) = bodies
+            .iter()
+            .find(|candidate| key.owns_native_ref(candidate.native_ref.as_deref()))
+        else {
+            return Err("slot 1 member requires a current model body");
+        };
+        if !has_body(&body.id) {
             return Err("slot 1 member requires a current model body");
         }
         result_keys.push(link.selection_source);
-        resolved.push((link.id(), key.body.clone()));
+        resolved.push((link.id(), body.id.clone()));
     }
     let distinct = |values: &[u32]| values.iter().collect::<HashSet<_>>().len() == values.len();
     if !distinct(&source_keys) || !distinct(&result_keys) || source_keys != result_keys {
@@ -534,6 +541,7 @@ pub(crate) fn project(
                             .and_then(Option::as_deref)
                             == Some(carrier_type.as_str())
                     },
+                    &model.bodies,
                     |body| model_bodies.contains(body),
                 )
                 .map(|bodies| (operands, bodies))

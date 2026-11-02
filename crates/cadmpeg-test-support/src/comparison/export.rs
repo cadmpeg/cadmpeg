@@ -147,10 +147,10 @@ fn dropped_report_records(before: &Value, export_report: &Value) -> BTreeSet<Str
     dropped
 }
 
-/// References a record needs: a string equal to a record identity outside an
+/// Records a record needs: a string equal to a record identity outside an
 /// array element. Array elements list their referents; the comparison prunes
 /// only the affected entry, retaining the holder.
-fn required_references(
+pub(super) fn required_references(
     value: &Value,
     identities: &BTreeMap<String, usize>,
     required: &mut BTreeSet<String>,
