@@ -224,14 +224,7 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
 
 #[test]
 fn class_287_frame_outside_the_compact_form_reads_as_a_wide_owned_parameter() {
-    let mut frame = parameter_record(
-        Some(0x106),
-        "360 deg",
-        "AlongAngle",
-        Some("deg"),
-        "d1",
-        6.0,
-    );
+    let mut frame = parameter_record(Some(0x106), "360 deg", "AlongAngle", Some("deg"), "d1", 6.0);
     frame[4..7].copy_from_slice(b"287");
     frame[22..30].copy_from_slice(&6u64.to_le_bytes());
     frame[31..35].copy_from_slice(&1u32.to_le_bytes());
