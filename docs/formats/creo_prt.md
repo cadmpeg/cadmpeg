@@ -751,6 +751,10 @@ zero middle triple. Three origin scalars follow each image.
 A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
 triple, and three origin coordinates. It has the same `a² + b² = 1`,
 `|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.
+A prefixed or trailing-rank body that is also a complete angular-stream plane
+rotation (§3.4) is that rotation. Its rank triple is the rotation's signed unit
+row `18 0f 18` or `18 10 18`, and `e4` repeats `b` in the row below
+`a, 0, b`. The rotation's matrix columns define the plane chart.
 A reflected-component form stores `(a, 0, b)`, a zero-rank triple,
 `(b, 0, a)`, and three origin coordinates. The final stored `a` is reflected
 across zero, so the second support direction is `(b, 0, -a)`.
