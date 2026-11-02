@@ -369,7 +369,9 @@ pub(super) fn project(
                 ),
                 native_ref: Some(format!("iges:solid:primitive#D{}", entry.sequence)),
             });
-            ordinal = ordinal.saturating_add(1);
+            ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("IGES primitive feature ordinal overflows")
+            })?;
         } else {
             losses.push(crate::loss::IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "iges:entity:directory#{}: analytic primitive type {} has no admitted neutral construction with this placement", entry.sequence, entry.entity_type
