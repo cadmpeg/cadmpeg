@@ -39,7 +39,7 @@ Parsed by:
 
 Spec §1 · layout: byte offsets · size: 11 B
 
-Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. A unique valid record supplies the header model filename; a repeated or malformed record does not establish identity. Binary model-data may provide the named `model_name` identity field described in the specification.
+Fixed prefix only; `hhh` bytes of ASCII common name follow at +11, then trailing ASCII space padding. A unique valid record supplies the common name; the binary `model_name` field supplies the model name.
 
 Parsed by:
 - `crates/cadmpeg-codec-creo/src/container.rs`
@@ -47,7 +47,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `prefix` | `bytes[8]` | — | derived | Width derived from the length of the stated literal `#- CMNM ` including its trailing space. · value `"#- CMNM "` |
-| 8 | 3 | `name_length_hex` | `bytes[3]` | — | spec | The three ASCII hexadecimal digits give the filename byte length. |
+| 8 | 3 | `name_length_hex` | `bytes[3]` | — | spec | The three ASCII hexadecimal digits give the name byte length. |
 
 ## `type24_first_coordinate_bounded_round`
 
