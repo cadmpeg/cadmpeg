@@ -13,7 +13,7 @@ use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 8 * 8;
-const POINT_TOLERANCE_MM: f64 = 1.0e-7;
+const POINT_TOLERANCE_MM: f64 = 1.0e-8 * LEN_TO_MM;
 /// The departure admitted between a bounded `SP_CURVE`'s stored end points
 /// and the support evaluated through its pcurve (spec §7.6).
 pub(super) const SURFACE_POINT_TOLERANCE_MM: f64 = 1.0e-5;
@@ -491,6 +491,26 @@ mod tests {
                     .parameter_range
                     .map(cadmpeg_ir::units::FiniteVector::get),
                 Some([0.0, 0.005])
+            );
+        }
+    }
+
+    #[test]
+    fn bounded_endpoints_use_the_native_linear_resolution_in_millimetres() {
+        for (departure_m, expected) in [(0.5e-8, 1), (1.0e-8, 1), (2.0e-8, 0)] {
+            let bytes = crate::test_support::parasolid::wide::bounded_curve(
+                20,
+                10,
+                &[departure_m, 0.0, 0.0, departure_m, 0.005, 0.0, 0.0, 0.005],
+            );
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+            assert_eq!(
+                scan(&ctx, &bytes, &carriers(), super::Pass::Exact)
+                    .unwrap()
+                    .len(),
+                expected
             );
         }
     }
