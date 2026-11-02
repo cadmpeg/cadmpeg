@@ -931,7 +931,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
-            extended: None,
+            extended: Some(crate::records::feature::thread::DesignThreadExtended {
+                class: "6g".into(),
+                external: true,
+                modeled: true,
+                full_length: Some(true),
+            }),
         });
     }
     thread
@@ -1112,7 +1117,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(diameter, cadmpeg_ir::scalar::PositiveLength::new(3.5));
     let pitch = pitch.expect("pitch").get();
     assert!((pitch - 0.6).abs() < EPS_THREAD_PITCH, "pitch {pitch} mm");
-    assert_eq!(modeled, None);
+    assert_eq!(modeled, Some(true));
     assert_eq!(
         extent,
         Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})

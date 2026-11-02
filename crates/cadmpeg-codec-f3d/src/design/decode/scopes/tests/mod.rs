@@ -13,6 +13,7 @@ mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
 mod draft_flags;
+mod extended_thread;
 mod fixed_extrude_lanes;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
