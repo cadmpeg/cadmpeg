@@ -1039,6 +1039,14 @@ admitting the face.
 
 **Need.** We must know the semantics to resolve persistent geometry identities.
 
+### PP-21. ND header intervening token
+
+**Question.** What does the first intervening decimal token of the `#UGC:2` header line, `800` or `802`, declare?
+
+**Known.** `creo_prt.md` §1.1 "These ND header forms use the same section-directory grammar." lists both values; `12.4.1.0` and `12.4.5.0` headers of one release store different values.
+
+**Need.** We must know the declaration to classify a header that stores another value.
+
 ### PP-05. Other `DEPDB_DATA` bodies
 
 **Question.** What grammar does each `DEPDB_DATA` body outside the defined surface rows, section definitions, and feature recipes use?

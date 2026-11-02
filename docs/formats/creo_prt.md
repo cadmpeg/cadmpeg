@@ -288,21 +288,27 @@ a dotted value or an integer. The final dotted numeric token is the build
 declaration. Banner length is variable; the first TOC does not have a fixed
 file offset.
 
-These ND header forms use the same section-directory grammar. The two fields
-in the third column are the first two decimal tokens after `PART` on the
-`#UGC:2` line. They are producer declarations, separate from the banner's
-release and build tokens. The four intervening decimal tokens before the
-declarations in the last column are `800 1 1 15`.
+These ND header forms use the same section-directory grammar. The token after
+`#UGC:2` is the model kind: `PART`, `PART/SHEETMETAL`, or `ASSEMBLY`. The two
+fields in the third column are the first two decimal tokens after the model
+kind. They are producer declarations, separate from the banner's release and
+build tokens. The first declaration increases with the build within a release,
+and the second is constant within a release. The four decimal tokens in the
+fourth column follow them. The last column holds the next two declarations:
+the first is constant within a release, and the second increases with the
+build.
 
-| Release token | Build token | First two `PART` tokens | Following two decimal declarations |
-| --- | --- | --- | --- |
-| `7.0` | `7.0.12.0` | `1986 1560` | `3800 2023154` |
-| `8.0` | `8.0.12.0` | `2014 1660` | `3900 2024325` |
-| `9.0` | `9.0.12.0` | `2083 1760` | `4000 2025304` |
-| `10.0` | `10.0.11.0` | `2239 1860` | `4100 2026024` |
-| `11.0` | `11.0.9.0` | `2420 1960` | `4200 2026123` |
-| `12` | `12.4.5.0` | `2602 2120` | `4300 2026183` |
-| `13` | `13.4.2.0` | `2794 2280` | `4400 2026283` |
+| Release token | Build token | First two kind tokens | Intervening tokens | Following two decimal declarations |
+| --- | --- | --- | --- | --- |
+| `7.0` | `7.0.12.0` | `1986 1560` | `800 1 1 15` | `3800 2023154` |
+| `8.0` | `8.0.12.0` | `2014 1660` | `800 1 1 15` | `3900 2024325` |
+| `9.0` | `9.0.12.0` | `2083 1760` | `800 1 1 15` | `4000 2025304` |
+| `10.0` | `10.0.2.0` | `2149 1860` | `800 1 1 15` | `4100 2023294` |
+| `10.0` | `10.0.11.0` | `2239 1860` | `800 1 1 15` | `4100 2026024` |
+| `11.0` | `11.0.9.0` | `2420 1960` | `800 1 1 15` | `4200 2026123` |
+| `12` | `12.4.1.0` | `2562 2120` | `802 1 1 15` | `4300 2025183` |
+| `12` | `12.4.5.0` | `2602 2120` | `800 1 1 15` | `4300 2026183` |
+| `13` | `13.4.2.0` | `2794 2280` | `800 1 1 15` | `4400 2026283` |
 
 The banner and producer declarations do not replace the layout discriminators.
 An ND directory can decorate the outer model, unit-system, and
