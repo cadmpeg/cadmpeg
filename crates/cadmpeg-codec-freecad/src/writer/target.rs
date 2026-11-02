@@ -81,7 +81,7 @@ pub(crate) fn plan(
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity())
+            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity(), input.limits)
                 .and_then(|()| finish(&resolution));
             match patch {
                 Ok(body) => return Ok(body),
@@ -151,6 +151,7 @@ fn admit_unedited(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -170,12 +171,43 @@ fn admit_unedited(
         }
     }
 
-    // The digest is the source baseline, so the fingerprint comparison
-    // below declines retained-layout optimization until a document
-    // baseline is re-established.
-    let expected = &fidelity.decode_digest;
+    // The gate admits the retained layout only when the retained image still
+    // digests to the source baseline and decodes to the current fingerprint.
+    // A missing image declines to synthesis; it never fails the write.
+    let Some(image) = fidelity
+        .retained_record(crate::fidelity::SOURCE_IMAGE)
+        .and_then(|record| record.data())
+    else {
+        return Err(CodecError::UnsupportedContent(
+            "the retained FCStd source image is unavailable".into(),
+        ));
+    };
     let current = document_local_sha256(ctx, ir)?;
-    if current.as_str() != expected.as_str() {
+    let replays = cadmpeg_ir::hash::retained_image_replays(
+        image,
+        &fidelity.decode_digest,
+        current.as_str(),
+        ir.scope,
+        limits,
+        |decode_ctx, root| {
+            let fresh =
+                cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, decode_ctx, root)
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        _ => CodecError::UnsupportedContent(
+                            "the retained FCStd source image refused to decode".into(),
+                        ),
+                    })?;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::default();
+            let (hash_ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let fresh_hash = document_local_sha256(&hash_ctx, fresh.ir())?;
+            hash_ctx.finish_session()?;
+            Ok(fresh_hash)
+        },
+    );
+    if !replays {
         return Err(CodecError::UnsupportedContent(
             "current uncarried typed records require FCStd graph regeneration".into(),
         ));
