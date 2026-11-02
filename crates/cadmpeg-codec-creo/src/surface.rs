@@ -3660,6 +3660,9 @@ fn parsed_named_surface_value(
                 sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?
             };
             arrays::DimensionedScalars::from_values(extent, values)?
+        } else if name == "envlp" {
+            let values = envelope_scalar_slots(remaining, slot_count, refusal)?;
+            arrays::DimensionedScalars::from_values(extent, values)?
         } else {
             let values = scalar_slots(remaining, slot_count, cache, refusal)?;
             arrays::DimensionedScalars::from_values(extent, values)?
@@ -6978,6 +6981,83 @@ fn scalar_slots(
         return None;
     }
     Some(slots)
+}
+
+/// The declared slots of a prototype `envlp` body, read in the member-frame
+/// slot lane with the envelope's angular literals.
+///
+/// The same refusals as [`scalar_slots`] apply: a byte no form defines, a body
+/// that ends before its declared count, and bytes after the last slot.
+fn envelope_scalar_slots(
+    body: &[u8],
+    count: usize,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    let mut view = cadmpeg_core::decode::View::over_retained(body);
+    let mut slots: Vec<Option<f64>> = Vec::new();
+    while slots.len() < count {
+        let cursor = view.position();
+        let refuse = |refusal: &mut ScalarBodyRefusal, filled: usize| {
+            refusal.state(scalar_body_refusal(body, count, filled, cursor));
+        };
+        let Some(head) = view.u8() else {
+            refuse(refusal, slots.len());
+            return None;
+        };
+        if let 0xe4..=0xe6 = head {
+            let Some(&previous) = slots.last() else {
+                refuse(refusal, slots.len());
+                return None;
+            };
+            let end = slots.len() + usize::from(head - 0xe3);
+            if end > count {
+                refuse(refusal, slots.len());
+                return None;
+            }
+            slots.resize(end, previous);
+            continue;
+        }
+        let Some(value) = envelope_scalar(head, &mut view) else {
+            refuse(refusal, slots.len());
+            return None;
+        };
+        slots.push(Some(value));
+    }
+    if !view.is_empty() {
+        refusal.state(trailing_scalar_body_refusal(body, count, view.position()));
+        return None;
+    }
+    Some(slots)
+}
+
+/// The angular literal an envelope token selects.
+fn envelope_angle(token: u8) -> Option<f64> {
+    match token {
+        0x11 => Some(std::f64::consts::PI),
+        0x12 => Some(std::f64::consts::FRAC_PI_2),
+        0x13 => Some(std::f64::consts::TAU),
+        _ => None,
+    }
+}
+
+/// Decode one envelope scalar whose first byte `head` was already read.
+fn envelope_scalar(head: u8, view: &mut cadmpeg_core::decode::View<'_>) -> Option<f64> {
+    if let Some(angle) = envelope_angle(head) {
+        return Some(angle);
+    }
+    let replaced_angle = (head <= 0x02)
+        .then(|| view.unread().first().copied().and_then(envelope_angle))
+        .flatten();
+    let Some(angle) = replaced_angle else {
+        return crate::assembly::frame_scalar(head, view);
+    };
+    view.skip(1)?;
+    let mut raw = angle.to_be_bytes();
+    let low = usize::from(head) + 1;
+    raw.get_mut(8 - low..)?.copy_from_slice(view.take(low)?);
+    // endian-exception: reconstructed-scalar
+    let value = f64::from_be_bytes(raw);
+    value.is_finite().then_some(value)
 }
 
 /// The reason a bounded scalar body states no slot at `cursor`: the byte no
