@@ -2,6 +2,7 @@
 //! Exact hole constructions and hole face selections.
 
 use super::parameter_scope::payload_prologue;
+use super::point_data::{exact_point_data_construction, POINT_DATA_TYPE_GUID};
 use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
@@ -11,6 +12,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
+use crate::records::feature::hole::DesignHoleLocation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
@@ -104,10 +106,44 @@ pub(in crate::design::decode) fn exact_hole_construction(
         }
         candidate.map(|mut candidate| {
             candidate.face_selection = face_selection;
+            if *required_scope_kind == scope::DesignFeatureKind::Hole {
+                candidate.locations = hole_locations(bytes, records, scope, stream_types);
+            }
             Ok(candidate)
         })
     })()
     .transpose()
+}
+
+/// Read every point-data record that `scope` references, in reference order.
+/// A record that does not read leaves no location, so a partial run cannot
+/// stand for the Hole's placements.
+fn hole_locations(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Vec<DesignHoleLocation> {
+    scope
+        .reference_members()
+        .values()
+        .filter(|record_index| {
+            stream_types
+                .get(&u64::from(**record_index))
+                .is_some_and(|(type_guid, _)| *type_guid == POINT_DATA_TYPE_GUID)
+        })
+        .map(|record_index| {
+            let point =
+                exact_point_data_construction(bytes, records, [record_index], stream_types)?;
+            Some(DesignHoleLocation {
+                record_index: point.point_record_index,
+                position: point.position,
+                position_offset: point.position_offset,
+                reference_type: point.rule.reference_type(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 /// Read the Hole extent controls of `scope`. `type_version` is the Hole type
@@ -171,6 +207,14 @@ fn hole_extent_payload(
     } else {
         None
     };
+    let direction_control = layout.leading_word.then_some(cursor).and_then(|controls| {
+        let at = controls.checked_add(crate::layout::design_hole_direction_control::CONTROL)?;
+        let value = *bytes.get(at)?;
+        hole::valid_hole_direction_control(value).then_some(crate::records::identity::Located {
+            value,
+            offset: u64::try_from(at).ok()?,
+        })
+    });
     let extent_control = if layout.control {
         let [1, 1, control, 0, ..] = bytes.get(cursor..)? else {
             return None;
@@ -192,6 +236,7 @@ fn hole_extent_payload(
         leading_word,
         extent_control,
         saved_non_distance_depth: prologue.saved_hole_depth,
+        direction_control,
     })
 }
 
@@ -331,9 +376,7 @@ fn hole_construction_frame_at(
                 offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
             });
         }
-        if (version == 4 && cursor != paired_at)
-            || (version == 1 && next_indexed_record_offset(bytes, cursor)? != paired_at)
-        {
+        if cursor != paired_at && next_indexed_record_offset(bytes, cursor)? != paired_at {
             return None;
         }
         Some(Ok(DesignHoleConstruction {
@@ -353,6 +396,7 @@ fn hole_construction_frame_at(
             tangent_point_data,
             input_records,
             face_selection: None,
+            locations: Vec::new(),
         }))
     })()
     .transpose()

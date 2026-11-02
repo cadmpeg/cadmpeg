@@ -751,7 +751,21 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
+const HOLE_CANDIDATE_HISTORY: &str =
+    "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2";
+
 fn hole_face_case() -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    cadmpeg_ir::features::FeatureId,
+) {
+    hole_face_case_in("f3d:history", vec![1])
+}
+
+fn hole_face_case_in(
+    operation_history: &str,
+    candidate_states: Vec<i64>,
+) -> (
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureInputTopology>,
     cadmpeg_ir::features::FeatureId,
@@ -822,18 +836,18 @@ fn hole_face_case() -> (
                 primary_identity_offset: 0,
                 secondary: None,
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-                    history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
-                        .into(),
+                    history_id: HOLE_CANDIDATE_HISTORY.into(),
                     historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Pcurve,
                         entity_ref: 18044,
-                        state_ids: vec![1],
+                        state_ids: candidate_states,
                     },
                     face_slot: 30,
                 }],
                 next_record_index: 104,
                 next_byte_offset: 0,
             }),
+            locations: Vec::new(),
         });
     }
     let mut feature = Feature {
@@ -912,7 +926,7 @@ fn hole_face_case() -> (
         )
     };
     let history = crate::test_support::history::history(
-        "f3d:history".into(),
+        operation_history.into(),
         0,
         None,
         false,
@@ -933,6 +947,28 @@ fn hole_face_case() -> (
     );
 
     (feature, input_topologies, feature_id)
+}
+
+#[test]
+fn hole_face_candidate_of_the_operation_history_binds_only_in_the_input_state() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let face_of = |feature: &cadmpeg_ir::features::Feature| match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            face: Some(face), ..
+        }) => face.clone(),
+        _ => panic!("Hole definition"),
+    };
+
+    let (feature, topologies, _) = hole_face_case_in(HOLE_CANDIDATE_HISTORY, vec![1, 5]);
+    assert!(matches!(
+        face_of(&feature),
+        FaceSelection::Historical { .. }
+    ));
+    assert_eq!(topologies[0].faces.as_slice().len(), 1);
+
+    let (feature, topologies, _) = hole_face_case_in(HOLE_CANDIDATE_HISTORY, vec![5]);
+    assert!(matches!(face_of(&feature), FaceSelection::Native(_)));
+    assert!(topologies[0].faces.as_slice().is_empty());
 }
 
 #[test]
