@@ -2037,7 +2037,10 @@ extent. Explicit scalars use the signed first-coordinate lane, including
 positive `2d`, negative `46`, and the positive DICT exponent lattice at every
 slot. The leading-compact and structural-prefix terminal nine-slot frames retain the
 surface-row literal grammar and its compact positive-half literal. Their
-structural prefixes are not scalar values.
+structural prefixes are not scalar values. In the two corner triples of the
+structural-prefix terminal frame, the eight-byte world-coordinate forms take
+their signed first-coordinate lane values: `2d <tail7>` is `40 <tail7>` and
+`46 <tail7>` is `c0 <tail7>`.
 
 Across 53 local files, 347 complete standard envelopes agree with the stateful
 reading, and zero disagree; 89 retained envelopes remain unresolved. The
