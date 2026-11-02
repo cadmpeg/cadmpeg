@@ -21,7 +21,12 @@ XMT index encoding:
 | Form        | Encoding                                                                                         |
 | ----------- | ------------------------------------------------------------------------------------------------ |
 | Small index | `uint16` BE, 2 bytes                                                                             |
-| Large index | negative `int16` remainder + `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
+| Large index | negative `int16` remainder + nonzero `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
+
+A small index holds `0` through `0x7fff`. A large index has remainder
+magnitude `1` through `32767`; a multiple of 32767 takes the preceding quotient
+and remainder magnitude 32767. The node indices of one stream are `2` through
+the node count plus one.
 
 An encoded index is one greater than the logical node index; encoded `0001`
 denotes the null reference. An extended pointer occupies four bytes instead of
@@ -50,14 +55,14 @@ count, followed by an edit program:
 | `A` | Read an appended field after the base fields are exhausted. |
 | `Z` | End the edit program. |
 
-The result contains exactly the declared number of effective fields. When the
-current field list ends before the base list, the remaining base fields need
-no explicit `D` operations. The letters name edits, not instance field types.
+The result contains exactly the declared number of effective fields. `Z` ends
+the program once it has produced that count, and the base fields after the base
+cursor are deleted. The letters name edit operations.
 
 A type absent from the base schema declares its field count as a byte, then
 its name and description as short strings, followed by its fields. A short
-string is a byte count and that many bytes. Each field declares its name as a
-short string, pointer class as a big-endian u16, and extent as a positive
+string is a byte count and that many printable ASCII bytes. Each field
+declares its name as a short string, pointer class as a big-endian u16, and extent as a positive
 integer using the biased index encoding. Extent zero is scalar, one is
 variable, and a greater extent is a fixed array. A zero pointer class adds the
 field type as a short string; a nonzero class identifies a pointer. Variable
@@ -68,26 +73,25 @@ Field presence follows the established list. LIMIT's base fields are `type`
 and `hvec`; inserting `term_use` adds the second character before the Hvec
 array. INTERSECTION's base construction fields are two `surface` references,
 `chart`, `start`, and `end`. Appending `intersection_data` adds a sixth
-construction reference. Neither the counted transmit description nor a
-following type tag selects these field edits.
+construction reference. The first-use declaration selects these field edits.
 
 The node-sequence cursor begins after the transmit header. Each declared node
 consumes its type, first-use information when required, variable count when
 required, index, and transmitted fields. Its endpoint is the next cursor. The
 terminator is type `0001` followed by encoded null index `0001`. It closes the
-node sequence. Deltas sections continue with the enclosing grammar in `siemens_nx.md` §4.2.
+node sequence. Deltas sections continue with the enclosing grammar in
+`siemens_nx.md` §4.2.
 
-A type-looking run inside an already consumed field is payload. Graph
-completion, typed-reference joins, type-map membership, a following boundary,
-and node-ID magnitude do not establish a record start. The complete u32
-`node_id` domain participates in framing. A BODY's `highest_node_id` can check
-an already framed node's semantic consistency; it does not select its frame.
-An unavailable preceding cursor or schema state leaves ownership unknown.
+A node starts at the cursor that the preceding node's endpoint gives. A
+type-looking run inside a consumed field is payload. The complete u32
+`node_id` domain participates in framing. A BODY's `highest_node_id` checks the
+semantic consistency of a framed node. Node ownership requires the preceding
+cursor and schema state.
 
-Encoded widths accumulate per field. An extended node index and an extended
-owner pointer each add two bytes relative to their short forms. The node
-index does not set the width of any pointer field. A first-use schema-match
-byte adds its own byte independently of both extensions. Geometric doubles
-start only after every preceding declared field has consumed its full width.
+Encoded widths accumulate per field, and each field takes its width from its
+own encoding. An extended node index and an extended owner pointer each add two
+bytes relative to their short forms. A first-use schema-match byte adds one
+byte. Geometric doubles start after every preceding declared field has consumed
+its full width.
 
 The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).

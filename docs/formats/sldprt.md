@@ -2303,9 +2303,9 @@ ends at `Z`. Pointer-type words and field names inside that extent are field
 descriptors, not topology or data records. `C` consumes one base
 field and produces one current field; `D` consumes one base field; `I` produces
 one current field before the base fields are exhausted; `A` produces one
-current field after the base fields are exhausted. `Z` ends a complete edit
-program when all base fields are consumed and the stated current field count
-is produced.
+current field after the base fields are exhausted. `Z` ends the edit program
+once it has produced the stated current field count; base fields that remain
+after `Z` are deleted (`parasolid.md` §2).
 
 An inserted or appended field contains a byte-length-prefixed field name,
 u16 BE pointer class, and XT positive-integer element count. A zero pointer

@@ -2,7 +2,7 @@
 //! Primary WORLD edit programs and status-framed instances.
 
 fn pointer(bytes: &mut Vec<u8>, op: u8, name: &str, class: u16) {
-    bytes.extend_from_slice(&[op, u8::try_from(name.len()).unwrap()]);
+    bytes.extend_from_slice(&[op, u8::try_from(name.len()).unwrap_or(u8::MAX)]);
     bytes.extend_from_slice(name.as_bytes());
     bytes.extend_from_slice(&class.to_be_bytes());
     bytes.extend_from_slice(&[0, 1]);

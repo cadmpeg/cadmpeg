@@ -122,9 +122,9 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-ir`             | `CadIr` version 8, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
 | `cadmpeg-tessellate`     | Display meshes and parameter-space boundary traces of B-rep faces, for writers that need a proxy mesh or a pcurve.                     |
-| `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, checked text, serialization helpers, and I/O helpers.                      |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
-| `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar, embedded-layer identity, base and embedded schema field lists, and node-sequence and Deltas reading. |
+| `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar, embedded-layer identity, native pointers, schema field lists, and node-sequence and Deltas reading. |
 | `cadmpeg-protein`        | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
 | `cadmpeg-codec-freecad`  | FreeCAD `.FCStd` inspection, decode, retained-document patching, and repacking.                                                         |
 | `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, selected native edits, and semantic generation.           |

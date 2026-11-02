@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 mod base;
 pub mod deltas;
 pub mod group;
-pub(crate) mod primary;
+pub mod primary;
 
 pub use deltas::DeltasRecords;
 pub use primary::PrimaryRecords;
@@ -435,7 +435,7 @@ fn own_definition(kind: u16, fields: &[BorrowedField<'_>]) -> Result<SchemaPlan,
     for field in fields {
         let name = (field.name).to_owned();
         let name = PrintableString::new(name)
-            .map_err(|_| CodecError::Malformed("invalid NX schema field name".into()))?;
+            .map_err(|_| CodecError::Malformed("invalid Parasolid schema field name".into()))?;
         owned.push(SchemaField {
             name,
             data_type: field.data_type,

@@ -7,11 +7,7 @@ use super::xmt::push_xmt;
 pub fn header() -> Vec<u8> {
     let mut bytes = b"PS".to_vec();
     for text in [b"Transmit (deltas)".as_slice(), b"SCH_3501171_35102_13006"] {
-        bytes.extend_from_slice(
-            &u32::try_from(text.len())
-                .expect("fixture length")
-                .to_be_bytes(),
-        );
+        bytes.extend_from_slice(&u32::try_from(text.len()).unwrap_or(u32::MAX).to_be_bytes());
         bytes.extend_from_slice(text);
     }
     bytes.extend_from_slice(&239_u16.to_be_bytes());

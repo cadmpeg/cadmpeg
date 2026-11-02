@@ -89,7 +89,6 @@ macro_rules! propagate_resource {
 mod canonical_uuid;
 mod container;
 mod decode;
-
 mod dialect;
 mod evaluation;
 mod framing;
@@ -108,7 +107,6 @@ mod om;
 mod om_tokens;
 mod parasolid;
 mod payload_text;
-
 mod scan_notes;
 mod topology;
 mod vec3_at;

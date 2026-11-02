@@ -404,7 +404,7 @@ impl OpenSection {
             .or_else(|| existing.as_ref().map(|definition| &definition.plan));
         let Some(plan) = plan else {
             return Err(CodecError::Malformed(
-                "missing established NX Deltas schema".into(),
+                "missing established Parasolid Deltas schema".into(),
             ));
         };
         let Some(data) = read_status_instance(view, plan) else {
@@ -413,7 +413,11 @@ impl OpenSection {
         let definition = match (existing, new) {
             (Some(definition), _) => definition,
             (_, Some(definition)) => self.first_use(definition),
-            _ => return Err(CodecError::Malformed("missing NX Deltas definition".into())),
+            _ => {
+                return Err(CodecError::Malformed(
+                    "missing Parasolid Deltas definition".into(),
+                ))
+            }
         };
         self.push(Event {
             range: start..view.position(),

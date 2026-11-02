@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+//! The node sequence of a partition or plain stream.
 
 use super::{base, own_definition, positive, read_definition, BaseVersion, DataType, SchemaPlan};
 use crate::xmt::NonNullXmt;
@@ -30,6 +31,7 @@ pub(crate) enum StopReason {
     UnsupportedScalar,
 }
 
+/// One framed node: its effective field list, identity, and field byte ranges.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimaryRecord {
     definition: Rc<SchemaPlan>,
@@ -300,4 +302,5 @@ fn consume_field(view: &mut View<'_>, data_type: DataType, count: u32) -> Result
 mod tests;
 
 mod group;
+pub use group::PrimaryGroup;
 mod membership;

@@ -9,7 +9,10 @@ pub mod world;
 pub mod xmt;
 
 /// Run `f` with a decode context over an empty root.
-pub fn with_decode_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+#[cfg(test)]
+pub(crate) fn with_decode_context<T>(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)

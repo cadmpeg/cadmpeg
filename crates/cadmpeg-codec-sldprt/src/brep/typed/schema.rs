@@ -14,7 +14,7 @@ pub(super) enum Class {
 }
 
 /// The base-schema edit program at `at` and the offset just past its `Z`.
-/// A count of `ff` declares the base field list without a program.
+/// The program needs an explicit effective-field count; `ff` yields `None`.
 fn edit_program(bytes: &[u8], at: usize, kind: u16) -> Option<(EditProgram, usize)> {
     let start = at.checked_add(header::FIELD_COUNT)?;
     let mut view = View::over_retained(bytes.get(start..)?);
@@ -40,9 +40,9 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
     program.consumes_base().then_some((class, end))
 }
 
-/// An edited type header of any class (spec §4.1): its node type and the
-/// offset just past its closing `Z`, where the class's first record follows
-/// without a tag of its own.
+/// An edited type header (spec §4.1): its node type and the offset just past
+/// its declaration, where the class's first record follows without a tag of
+/// its own.
 pub(super) fn edited_header(bytes: &[u8], at: usize) -> Option<(u16, usize)> {
     let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
     let (_, end) = edit_program(bytes, at, kind)?;
