@@ -456,6 +456,14 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
         })();
         out.extend(parsed);
     }
+    if out.len() > 1 {
+        out.retain(|point| {
+            point
+                .xyz_offset
+                .checked_add(std::mem::size_of::<[f64; 3]>())
+                .is_some_and(|end| complete_end(buf, end))
+        });
+    }
     (out.len() == 1).then(|| out.remove(0))
 }
 
@@ -2356,6 +2364,8 @@ mod scope_tests;
 
 #[cfg(test)]
 mod tests {
+    mod point_frames;
+
     mod wide_scopes;
 
     mod carrier_scopes;
