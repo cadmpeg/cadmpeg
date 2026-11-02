@@ -3182,7 +3182,7 @@ fn selected_origin_plane_normal(
         .map(|plane| plane.normal)
 }
 
-pub(super) fn project_draft(
+fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
