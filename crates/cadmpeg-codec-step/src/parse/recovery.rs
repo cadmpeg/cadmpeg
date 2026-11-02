@@ -5,6 +5,8 @@ use super::{
     AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
     ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range, RawRecord, Value,
 };
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
 
 impl Parser<'_, '_, '_> {
     pub(super) fn diagnostic(
@@ -198,7 +200,12 @@ impl Parser<'_, '_, '_> {
         external_values: &BTreeSet<u64>,
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
+        // On the parts path each dangling dependent is given up as its own
+        // part; the shared helper owns its bytes and sole unreadable loss.
+        // The legacy path keeps the omission diagnostics below.
+        let through_parts = self.parts.is_some() && self.source.is_some();
         let mut pending = Vec::new();
+        let mut reasons = BTreeMap::new();
         for (&id, record) in records.iter() {
             let mut missing = None;
             for partial in &record.partials {
@@ -217,7 +224,14 @@ impl Parser<'_, '_, '_> {
             }
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
-                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
+                if through_parts {
+                    reasons.insert(
+                        id,
+                        format!("unresolved instance reference {prefix}{target}"),
+                    );
+                } else {
+                    self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
+                }
                 pending.push(id);
             }
         }
@@ -246,19 +260,69 @@ impl Parser<'_, '_, '_> {
             .collect::<std::collections::BTreeSet<_>>();
         while let Some(id) = pending.pop() {
             if let Some(record) = records.remove(&id) {
+                if through_parts {
+                    let reason = reasons
+                        .remove(&id)
+                        .unwrap_or_else(|| "unresolved instance reference".to_owned());
+                    self.give_up_dependent(&record, reason)?;
+                }
                 omitted.push(record.span);
             }
             if let Some(users) = reverse.get(&id) {
                 for &user in users {
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
-                            self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                            if through_parts {
+                                reasons.insert(user, format!("depends on given-up instance #{id}"));
+                            } else {
+                                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                            }
                             pending.push(user);
                         }
                     }
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Give up one dangling dependent as its own part. The dependent parsed,
+    /// but its reference does not resolve, so its statement is the part the
+    /// decoder cannot read. Nothing is staged, so the part drops nothing.
+    fn give_up_dependent(&mut self, record: &RawRecord, reason: String) -> Result<(), ParseError> {
+        let (Some(source), Some(parts)) = (self.source, self.parts.as_deref_mut()) else {
+            return Self::err_at(
+                record.span.start,
+                "dependent part has no source view or part output",
+            );
+        };
+        let Some(extent) = source.child(record.span.start, record.span.end) else {
+            return Self::err_at(
+                record.span.start,
+                "dependent part extent escapes its source input",
+            );
+        };
+        let label = if record.partials.len() == 1 {
+            "step.simple_entity_instance"
+        } else {
+            "step.complex_entity_instance"
+        };
+        let mut spec = PartSpec::new(label).holding([cadmpeg_ir::ArenaClass::Model]);
+        if let Some(stream) = self.part_stream.clone() {
+            spec = spec.in_stream(stream);
+        }
+        self.budget
+            .decode_part(parts, extent, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(reason.clone()))
+            })
+            .map_err(ParseError::from)?;
+        // The helper owns the part bytes and sole unreadable loss. This span
+        // remains only in the parser's byte accounting.
+        self.budget.retain_bytes(
+            super::u64_from_index(size_of::<usize>()),
+            "STEP shared-home accounting index",
+        )?;
+        self.shared_omitted.insert(record.span.start);
         Ok(())
     }
 }

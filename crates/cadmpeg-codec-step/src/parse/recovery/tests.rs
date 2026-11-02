@@ -20,7 +20,6 @@ fn exchange(data: &str) -> String {
 fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
     for defective in [
         "#2=ITEM(#0);",
-        "#0=ITEM();",
         "#2=ITEM(1.E999);",
         "#2=ITEM(%,3);",
         "#2=ITEM('literal;semicolon', /* ; */ ,3);",
@@ -79,6 +78,42 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
             .attributes
             .contains_key("bytes_unclassified"));
     }
+}
+
+#[test]
+fn zero_instance_is_rejected_before_the_instance_part() {
+    // The lexer admits no instance zero, so the statement is rejected
+    // before part framing and still charges parse.record-omitted.
+    let defective = "#0=ITEM();";
+    let source = exchange(&format!(
+        "#1=CARTESIAN_POINT('',(1.,2.,3.));{defective}#3=CARTESIAN_POINT('',(4.,5.,6.));"
+    ));
+    let (parsed, diagnostics) = with_service_context(source.as_bytes(), parse_inner)
+        .expect("explicit statement boundaries permit recovery");
+    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [1, 3]);
+    assert_eq!(parsed.omitted_spans().len(), 1);
+    assert_eq!(&source[parsed.omitted_spans()[0].clone()], defective);
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+    let decoded_source = source.replace(
+        "ENDSEC;END-ISO",
+        "#4=GEOMETRIC_SET('',(#1,#3));ENDSEC;END-ISO",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&decoded_source), &DecodeOptions::default())
+        .expect("independent points decode");
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind()));
 }
 
 #[test]
@@ -262,16 +297,16 @@ fn recovery_never_turns_a_resource_refusal_into_an_omission() {
 }
 
 #[test]
-fn strict_decode_rejects_the_reported_record_omission() {
-    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM(#0);#2=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
+fn strict_decode_rejects_the_reported_part_give_up() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('strict give-up'),'2;1');FILE_NAME('strict','2026-10-22T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM(#0);#2=CARTESIAN_POINT('peer',(4.,5.,6.));#3=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3,#4)) REPRESENTATION_CONTEXT('peer','3D'));#6=SHAPE_REPRESENTATION('point',(#2),#5);ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("strict mode rejects a completed decode with a required omission");
+        .expect_err("strict mode rejects a completed decode with a given-up part");
     assert!(
         matches!(error, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }
-        if rejection.loss().code == StepLossCode::ParseRecordOmitted.kind())
+        if rejection.loss().code.local_code() == "record.unreadable")
     );
 }
 
@@ -326,25 +361,35 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
 }
 
 #[test]
-fn bounded_draft_preamble_is_retained_with_an_explicit_loss() {
+fn bounded_draft_preamble_runs_as_a_part_with_an_explicit_loss() {
     let source =
         "EXTRA!*synthetic*!STEP;HEADER;IMP_LEVEL('1.0');ENDSEC;DATA;@1=ITEM();ENDSEC;ENDSTEP;";
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded draft preamble");
-    assert!(decoded
+    let preamble = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::ParsePreambleOmitted.kind()));
-    let (ir, _, fidelity) = decoded.into_parts();
-    assert_eq!(
-        fidelity
-            .retained_record("step:file:omitted#0")
-            .expect("exact prefix")
-            .data(),
-        Some(b"EXTRA".as_slice())
+        .find(|loss| loss.code == StepLossCode::ParsePreambleOmitted.kind())
+        .expect("draft preamble loss");
+    assert!(
+        preamble.message.contains("stream=\"\""),
+        "{}",
+        preamble.message
     );
+    assert!(
+        preamble.message.contains("offset=0"),
+        "{}",
+        preamble.message
+    );
+    assert!(
+        preamble.message.contains("length=5"),
+        "{}",
+        preamble.message
+    );
+    let (ir, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:file:omitted#0").is_none());
     assert!(!ir
         .source
         .as_ref()
