@@ -102,7 +102,7 @@ fn loci(first: u32, second: u32) -> serde_json::Value {
         "kind": "distance_loci",
         "first": {"kind": "entity", "entity": entity_id(first)},
         "second": {"kind": "entity", "entity": entity_id(second)},
-        "parameter": "inventor:design:parameter#generated-4"
+        "parameter": {"kind": "parameter", "value": "inventor:design:parameter#generated-4"}
     })
 }
 
