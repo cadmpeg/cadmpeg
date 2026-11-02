@@ -173,7 +173,7 @@ pub(super) fn decode(
                     target: target.clone(),
                     quantity,
                     label: description.clone(),
-                    native_ref: Some(format!("#{item_id}")),
+                    native_ref: None,
                 },
             );
         }
