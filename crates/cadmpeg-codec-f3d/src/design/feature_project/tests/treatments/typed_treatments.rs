@@ -464,7 +464,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: -0.0, y: -0.0, z: -1.0 }).unwrap(),
-            }]) && actual_diameter.literal().expect("literal").get() == 4.0 && actual_length.literal().expect("literal").get() == 10.0)));
+            }]) && ir.dimension_value(actual_diameter).unwrap().get() == 4.0 && ir.dimension_value(actual_length).unwrap().get() == 10.0)));
 
     hole_parameters[2]
         .try_set_evaluated_value(118.0_f64.to_radians())
