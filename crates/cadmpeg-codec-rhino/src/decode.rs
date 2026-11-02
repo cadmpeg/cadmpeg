@@ -28,7 +28,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 /// Transient interpretation of one native object's identity and display facts.
@@ -455,6 +455,62 @@ impl<'a> DecodeContext<'a> {
         None
     }
 
+    /// Whether `source_order` names an object claimed by an instance
+    /// definition, whatever that definition's admission state.
+    fn is_definition_member(&self, source_order: usize) -> bool {
+        self.scan.objects[source_order]
+            .identity()
+            .is_some_and(|identity| self.scan.definitions.contains_member(identity.object_id))
+    }
+
+    /// Whether `source_order` names a member with no decodable free geometry.
+    ///
+    /// A definition member decodes free geometry only when its definition is
+    /// both admitted and placed (named by a parsed instance reference): its
+    /// only neutral home is through its definition's product records (§7.8),
+    /// and a definition that is not admitted, or that no reference places,
+    /// projects no occurrence that could own the geometry (#223).
+    /// `placed_members` is the union of the members of the admitted and
+    /// placed definitions.
+    fn is_suppressed_member(
+        &self,
+        placed_members: &HashSet<crate::wire::Uuid>,
+        source_order: usize,
+    ) -> bool {
+        self.scan.objects[source_order]
+            .identity()
+            .is_some_and(|identity| {
+                self.scan.definitions.contains_member(identity.object_id)
+                    && !placed_members.contains(&identity.object_id)
+            })
+    }
+
+    /// The union of the members of the admitted definitions that a parsed
+    /// instance reference names. Only these members decode free geometry.
+    fn placed_members(&self) -> HashSet<crate::wire::Uuid> {
+        let mut placed = HashSet::new();
+        for object in &self.scan.objects {
+            let Some(object) = object.framed() else {
+                continue;
+            };
+            if crate::instances::is_reference_class(object.class_uuid) {
+                if let Ok(reference) = crate::instances::parse_reference(
+                    self.scan.data,
+                    object.class_data_range.clone(),
+                ) {
+                    placed.insert(reference.definition_id());
+                }
+            }
+        }
+        let mut members = HashSet::new();
+        for definition in self.scan.definitions.definitions() {
+            if placed.contains(&definition.id()) {
+                members.extend(definition.members.iter().copied());
+            }
+        }
+        members
+    }
+
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         if !self.archive().is_chunked() {
@@ -462,6 +518,9 @@ impl<'a> DecodeContext<'a> {
         }
         // Definitions and top-level objects each supply one local carrier.
         // Placed uses are represented by the product occurrence tree.
+        // Members decode free geometry only for admitted and placed
+        // definitions; collect that member union before the ordered walk.
+        let placed_members = self.placed_members();
         for source_order in 0..self.scan.objects.len() {
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
@@ -474,6 +533,16 @@ impl<'a> DecodeContext<'a> {
                     Ok(_) => self.mark_decoded(source_order),
                     Err(_) => self.mark_failed(source_order),
                 };
+                continue;
+            }
+            if self.is_suppressed_member(&placed_members, source_order) {
+                self.scan_warning(
+                    source_order,
+                    format_args!(
+                        "definition member has no admitted and placed definition; no free geometry decoded"
+                    ),
+                );
+                self.mark_failed(source_order);
                 continue;
             }
             if crate::subd::supported_class(object.class_uuid) {
@@ -637,7 +706,7 @@ impl<'a> DecodeContext<'a> {
                             source_order,
                             format_args!("procedural surface candidate rejected by IR validation"),
                         );
-                        self.commit_unknown_surface(source_order)?;
+                        self.commit_unknown_surface_unless_member(source_order)?;
                     } else {
                         self.mark_failed(source_order);
                     }
@@ -662,7 +731,7 @@ impl<'a> DecodeContext<'a> {
                         ),
                     );
                     if procedural_surface {
-                        self.commit_unknown_surface(source_order)?;
+                        self.commit_unknown_surface_unless_member(source_order)?;
                     } else if !future {
                         self.mark_failed(source_order);
                     }
@@ -1853,7 +1922,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "extrusion");
-            self.commit_unknown_surface(source_order)?;
+            self.commit_unknown_surface_unless_member(source_order)?;
             return Ok(());
         };
         let decoded = crate::extrusion::decode(
@@ -1880,7 +1949,7 @@ impl<'a> DecodeContext<'a> {
                         source_order,
                         format_args!("extrusion candidate rejected atomically"),
                     );
-                    self.commit_unknown_surface(source_order)?;
+                    self.commit_unknown_surface_unless_member(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -1889,10 +1958,27 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     format_args!("extrusion degraded and retained: {error}"),
                 );
-                self.commit_unknown_surface(source_order)?;
+                self.commit_unknown_surface_unless_member(source_order)?;
             }
         }
         Ok(())
+    }
+
+    /// Commit the Unknown-surface placeholder for a free object only.
+    ///
+    /// A definition member's unreadable payload fails without free geometry:
+    /// its only neutral home is through its definition's product records, so
+    /// a placeholder surface would invent model content no occurrence owns
+    /// (#223).
+    fn commit_unknown_surface_unless_member(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if self.is_definition_member(source_order) {
+            self.mark_failed(source_order);
+            return Ok(());
+        }
+        self.commit_unknown_surface(source_order)
     }
 
     /// Mints the stable unknown-record ID for source order.
