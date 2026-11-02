@@ -2,7 +2,7 @@
 //! Witnesses of declared-orientation faces: tangent edges in a capsule and
 //! the shell sign of a hemisphere solid, with expectations from geometry.
 
-use std::f64::consts::PI;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
@@ -11,12 +11,151 @@ use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{BodyMeasures, FaceMeasures, MeasureReport, WitnessKind};
 use crate::select::Selection;
 use crate::test_support::builders::{
-    assert_measured, measure, Builder, Frame, TEST_ABSOLUTE_FLOOR,
+    assert_measured, measure, Builder, Circle, Frame, TEST_ABSOLUTE_FLOOR,
 };
 use crate::value::{Quantity, Reading};
 
 const RADIUS: f64 = 5.0;
 const LENGTH: f64 = 10.0;
+
+/// Two quarter-sphere lunes on separate surface records closed by a disk in
+/// the plane `y = 0`. `flip` swaps the loop direction of both lunes, which
+/// makes each lune's declared reading the rest of the sphere.
+fn split_half_ball(flip: bool) -> CadIr {
+    let mut builder = Builder::new();
+    let south = builder.vertex([0.0, 0.0, -RADIUS]);
+    let north = builder.vertex([0.0, 0.0, RADIUS]);
+    let meridians: Vec<_> = [PI, 1.5 * PI, 0.0]
+        .into_iter()
+        .map(|longitude| {
+            let (sine, cosine) = longitude.sin_cos();
+            builder.arc(
+                Circle {
+                    frame: Frame {
+                        origin: [0.0; 3],
+                        axis: [sine, -cosine, 0.0],
+                        reference: [cosine, sine, 0.0],
+                    },
+                    radius: RADIUS,
+                },
+                [-FRAC_PI_2, FRAC_PI_2],
+                &south,
+                &north,
+            )
+        })
+        .collect();
+    let (ahead, behind) = if flip {
+        (Sense::Reversed, Sense::Forward)
+    } else {
+        (Sense::Forward, Sense::Reversed)
+    };
+    for pair in meridians.windows(2) {
+        let sphere = builder.sphere(Frame::z_up([0.0; 3]), RADIUS);
+        builder.face(
+            &sphere,
+            Sense::Forward,
+            &[vec![(pair[1].clone(), ahead), (pair[0].clone(), behind)]],
+            false,
+        );
+    }
+    let disk = builder.plane([0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    builder.face(
+        &disk,
+        Sense::Forward,
+        &[vec![
+            (meridians[0].clone(), Sense::Forward),
+            (meridians[2].clone(), Sense::Reversed),
+        ]],
+        false,
+    );
+    builder.finish(BodyKind::Solid)
+}
+
+#[test]
+fn linked_lunes_of_one_sphere_confirm_their_declared_readings() {
+    let ir = split_half_ball(false);
+    let report = measure(&ir, &Selection::default());
+    let body = only_body(&report);
+    let volume = 2.0 * PI * RADIUS.powi(3) / 3.0;
+    assert_measured(body.volume().as_ref().expect("volume"), volume, volume);
+    assert_measured(
+        body.area().as_ref().expect("area"),
+        3.0 * PI * RADIUS.powi(2),
+        100.0,
+    );
+    let report = measure(&ir, &everything());
+    let domes = sphere_faces(&report);
+    assert_eq!(domes.len(), 2);
+    for dome in domes {
+        assert_eq!(*dome.orientation().consistent(), Some(true));
+        let witness = dome.orientation().witness().as_ref().expect("witness");
+        assert_eq!(*witness.kind(), WitnessKind::SharedSphere);
+        assert!(*witness.agrees());
+        assert_measured(dome.measures().area(), PI * RADIUS * RADIUS, 100.0);
+        let area = dome.measures().area().measured().expect("area");
+        assert_eq!(area.reading(), None);
+        assert!(area.candidates().is_empty());
+    }
+}
+
+#[test]
+fn linked_lunes_with_too_much_area_contradict_their_declared_readings() {
+    let ir = split_half_ball(true);
+    let report = measure(&ir, &everything());
+    let domes = sphere_faces(&report);
+    assert_eq!(domes.len(), 2);
+    for dome in domes {
+        assert_eq!(*dome.orientation().consistent(), Some(false));
+        let witness = dome.orientation().witness().as_ref().expect("witness");
+        assert_eq!(*witness.kind(), WitnessKind::SharedSphere);
+        assert!(!*witness.agrees());
+    }
+}
+
+#[test]
+fn linked_lunes_covering_the_sphere_stay_unconfirmed() {
+    let mut builder = Builder::new();
+    let south = builder.vertex([0.0, 0.0, -RADIUS]);
+    let north = builder.vertex([0.0, 0.0, RADIUS]);
+    let meridians: Vec<_> = [0.0, PI]
+        .into_iter()
+        .map(|longitude| {
+            let (sine, cosine) = longitude.sin_cos();
+            builder.arc(
+                Circle {
+                    frame: Frame {
+                        origin: [0.0; 3],
+                        axis: [sine, -cosine, 0.0],
+                        reference: [cosine, sine, 0.0],
+                    },
+                    radius: RADIUS,
+                },
+                [-FRAC_PI_2, FRAC_PI_2],
+                &south,
+                &north,
+            )
+        })
+        .collect();
+    for (ahead, behind) in [(1, 0), (0, 1)] {
+        let sphere = builder.sphere(Frame::z_up([0.0; 3]), RADIUS);
+        builder.face(
+            &sphere,
+            Sense::Forward,
+            &[vec![
+                (meridians[ahead].clone(), Sense::Forward),
+                (meridians[behind].clone(), Sense::Reversed),
+            ]],
+            false,
+        );
+    }
+    let ir = builder.finish(BodyKind::Solid);
+    let report = measure(&ir, &everything());
+    let domes = sphere_faces(&report);
+    assert_eq!(domes.len(), 2);
+    for dome in domes {
+        assert!(dome.orientation().witness().is_none());
+    }
+}
 
 fn only_body(report: &MeasureReport) -> &BodyMeasures {
     let [body] = report.bodies().as_slice() else {

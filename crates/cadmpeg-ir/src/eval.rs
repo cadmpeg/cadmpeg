@@ -594,6 +594,18 @@ fn split_rational_surface_patch(
     if !budget.charge() {
         return None;
     }
+    let domain = if split_u {
+        patch.u_domain
+    } else {
+        patch.v_domain
+    };
+    let (first_domain, second_domain) = domain.split_at_midpoint()?;
+    let [lower, upper] = domain.finite_endpoints();
+    let SegmentPosition::Within(fraction) =
+        first_domain.finite_endpoints()[1].segment_position(lower, upper)
+    else {
+        return None;
+    };
     let mut first_lines = Vec::new();
     let mut second_lines = Vec::new();
     for line in 0..line_count {
@@ -604,7 +616,7 @@ fn split_rational_surface_patch(
         } else {
             patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
         };
-        let split = bezier::split_homogeneous_bezier_midpoint(&controls)?;
+        let split = bezier::split_homogeneous_bezier(&controls, fraction.get())?;
         let [first, second] = split.into_polygons();
 
         first_lines.push(first);
@@ -620,11 +632,9 @@ fn split_rational_surface_patch(
         }
     };
     let (first_u, second_u, first_v, second_v) = if split_u {
-        let (first_u, second_u) = patch.u_domain.split_at_midpoint()?;
-        (first_u, second_u, patch.v_domain, patch.v_domain)
+        (first_domain, second_domain, patch.v_domain, patch.v_domain)
     } else {
-        let (first_v, second_v) = patch.v_domain.split_at_midpoint()?;
-        (patch.u_domain, patch.u_domain, first_v, second_v)
+        (patch.u_domain, patch.u_domain, first_domain, second_domain)
     };
     Some([
         RationalBezierSurfacePatch {
@@ -883,7 +893,7 @@ fn complete_nurbs_surface_starts(
     }
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
-    if fit_tolerance.is_some() && best_distance <= distance_tolerance {
+    if fit_tolerance.is_some_and(|tolerance| best_distance <= tolerance) {
         return Ok((!best_upper_parameters.is_empty()).then_some(best_upper_parameters));
     }
     let mut queue = BinaryHeap::new();
@@ -922,7 +932,9 @@ fn complete_nurbs_surface_starts(
                 .abs()
                 .max(best_distance.abs())
                 .max(distance_tolerance);
-        if lower_bound > best_distance + comparison_tolerance {
+        if fit_tolerance.is_some_and(|tolerance| lower_bound > tolerance + comparison_tolerance)
+            || lower_bound > best_distance + comparison_tolerance
+        {
             break;
         }
         let parameters = center(&patch);
@@ -931,7 +943,7 @@ fn complete_nurbs_surface_starts(
         else {
             return Ok(None);
         };
-        if fit_tolerance.is_some() && center_distance <= distance_tolerance {
+        if fit_tolerance.is_some_and(|tolerance| center_distance <= tolerance) {
             return Ok(Some(vec![upper_parameters]));
         }
         let upper_tolerance = 128.0
@@ -947,13 +959,21 @@ fn complete_nurbs_surface_starts(
         if (center_distance - best_distance).abs() <= upper_tolerance {
             best_upper_parameters.push(upper_parameters);
         }
-        let indivisible = parameters.u == patch.u_domain.lower()
-            || parameters.u == patch.u_domain.upper()
-            || parameters.v == patch.v_domain.lower()
-            || parameters.v == patch.v_domain.upper();
-        if diameter <= distance_tolerance
-            || center_distance - lower_bound <= distance_tolerance
-            || indivisible
+        let u_divisible =
+            parameters.u != patch.u_domain.lower() && parameters.u != patch.u_domain.upper();
+        let v_divisible =
+            parameters.v != patch.v_domain.lower() && parameters.v != patch.v_domain.upper();
+        if !u_divisible && !v_divisible {
+            for u in patch.u_domain.finite_endpoints() {
+                for v in patch.v_domain.finite_endpoints() {
+                    terminal.push((FinitePoint2::from_coordinates(u, v), lower_bound));
+                }
+            }
+            continue;
+        }
+        if fit_tolerance.is_none()
+            && (diameter <= distance_tolerance
+                || center_distance - lower_bound <= distance_tolerance)
         {
             terminal.push((upper_parameters, lower_bound));
             continue;
@@ -988,9 +1008,8 @@ fn complete_nurbs_surface_starts(
                 v_variation = v_variation.max(variation);
             }
         }
-        let Some(children) =
-            split_rational_surface_patch(&patch, u_variation >= v_variation, budget)
-        else {
+        let split_u = u_divisible && (!v_divisible || u_variation >= v_variation);
+        let Some(children) = split_rational_surface_patch(&patch, split_u, budget) else {
             return Ok(None);
         };
         for patch in children {
@@ -1108,6 +1127,7 @@ fn solve_nurbs_surface_parameter(
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
+    let mut best_fits = false;
     for &start in &starts {
         let Some(parameters) = refine_nurbs_surface_parameters(
             ctx, surface, point, start, u_domain, v_domain, budget,
@@ -1148,13 +1168,17 @@ fn solve_nurbs_surface_parameter(
         );
         let same_point = (distance - best_distance).abs()
             <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
+        let fits = fit_tolerance.is_some_and(|tolerance| distance <= tolerance);
         if best.is_none()
-            || distance < best_distance && !same_point
-            || same_point && seed_distance < best_seed_distance
+            || fits && !best_fits
+            || fits == best_fits
+                && (distance < best_distance && !same_point
+                    || same_point && seed_distance < best_seed_distance)
         {
             best = Some(parameters);
             best_distance = distance;
             best_seed_distance = seed_distance;
+            best_fits = fits;
         }
     }
     Ok(best.map(|parameters| (parameters, best_distance)))

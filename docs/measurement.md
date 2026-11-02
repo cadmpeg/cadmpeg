@@ -359,6 +359,15 @@ reads the whole shell.
   unconfirmed face, the shell volume is positive for an outer shell and
   negative for a void. When exactly one reading of that face gives the
   required sign beyond the volume error, that reading is the face's.
+- Shared sphere (`shared_sphere`). Unconfirmed faces whose spheres match within
+  their allowances are linked by a non-seam edge used by exactly two coedges
+  with opposite senses, when that edge's vote is `agree`. Linked faces lie on
+  opposite sides of the edge, so their readings flip together, and regions of
+  one sphere have disjoint interiors. Let `k` faces of total declared area `A`
+  be linked on a sphere of area `S`. The declared readings need `A ≤ S`; the
+  complements need `A ≥ (k − 1)S`. When exactly one holds beyond the area
+  errors, every linked face takes that reading: it is confirmed under the
+  declared reading and in conflict under the complement.
 
 Confirmed values have no reading and no candidate. A face in conflict by a
 witness has `consistent: false`; its values that depend on the reading are
