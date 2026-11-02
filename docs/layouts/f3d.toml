@@ -774,6 +774,42 @@ source = "spec"
 anchor = "a six-byte zero trailer"
 
 [[record]]
+name = "shell_wall_slot_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `Shell` scope can store its walls in optional slots"
+size = 23
+note = "Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "offset 21 is the tangent-chain Boolean"
+
+[[record.field]]
+name = "rounded_corners"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "offset 22 is the corner Boolean"
+
+[[record]]
 name = "shell_class_369_261_scope_frame"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
@@ -5660,6 +5696,156 @@ offset = 44
 type = "bytes[2]"
 source = "spec"
 anchor = "a two-byte zero trailing field"
+
+[[record]]
+name = "combine_operand_list_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "It stores ten zero bytes at offsets 11 through 20, the zero-based operation u32 at offset 21"
+size = 58
+note = "Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20, the zero-based operation"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the zero-based operation u32 at offset 21"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 25
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 25 through 28"
+
+[[record.field]]
+name = "keep_tools"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "the keep-tools Boolean at offset 29"
+
+[[record.field]]
+name = "zero_flag"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "zero at byte 30"
+
+[[record.field]]
+name = "constant_one"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "u32 one at offset 31, a marked nonzero"
+
+[[record.field]]
+name = "reference_marker"
+offset = 35
+type = "u8"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64"
+
+[[record.field]]
+name = "reference_value"
+offset = 36
+type = "u64"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64"
+
+[[record.field]]
+name = "reference_tail"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "a two-byte zero trailing field, a u64"
+
+[[record.field]]
+name = "stamp"
+offset = 46
+type = "u64"
+source = "spec"
+anchor = "a u64 operation-identity value at offset 46"
+
+[[record.field]]
+name = "tool_count"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "the tool list at offset 54"
+
+[[record]]
+name = "combine_body_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A body-selection record of the operand-list form stores ten zero bytes after its indexed header"
+size = 25
+note = "Offsets are relative to the body-selection record header. The clauses start at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A body-selection record of the operand-list form stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "clause_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the u32 clause count at offset 21"
+
+[[record]]
+name = "combine_body_node_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A browser node stores ten zero bytes after its indexed header"
+size = 25
+note = "Offsets are relative to the browser-node record header. The GUID code units start at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A browser node stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the counted GUID at offset 21"
 
 [[record]]
 name = "combine_external_selector_prefix"
@@ -18720,6 +18906,35 @@ offset = 21
 type = "u32"
 source = "spec"
 anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
+
+[[record]]
+name = "body_consumer_browser_node_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A browser node named this way stores ten zero bytes after its indexed header"
+size = 25
+note = "Offsets are relative to the browser-node record header. The GUID code units start at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A browser node named this way stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the counted GUID at offset 21, hidden flag `1`"
 
 [[record]]
 name = "body_reference_persistent_pair"

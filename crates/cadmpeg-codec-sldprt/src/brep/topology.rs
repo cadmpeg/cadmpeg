@@ -43,13 +43,11 @@ use crate::layout::world_point_tripled as world_pt_delta;
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-/// The least nonzero tolerance, metres, on which a plain stream frames a
-/// record (spec §3.3).
-const PLAIN_TOLERANCE_MIN_M: f64 = 1.0e-12;
+/// The least stored tolerance, metres, that frames a native record.
+const STORED_TOLERANCE_MIN_M: f64 = 1.0e-12;
 
-/// The greatest tolerance, metres, on which a plain stream frames a record
-/// (spec §3.3).
-const PLAIN_TOLERANCE_MAX_M: f64 = 1.0e-2;
+/// The greatest stored tolerance, metres, that frames a native record.
+const STORED_TOLERANCE_MAX_M: f64 = 1.0e-2;
 
 /// Whether the tolerance slot at `at` frames a record: the null-real
 /// sentinel, and with `stored` also `0.0` or a stored tolerance (spec §3.3).
@@ -59,7 +57,7 @@ fn frames_on_tolerance(buf: &[u8], at: usize, stored: bool) -> bool {
     }
     stored
         && View::f64_be_at(buf, at).is_some_and(|value| {
-            value == 0.0 || (PLAIN_TOLERANCE_MIN_M..=PLAIN_TOLERANCE_MAX_M).contains(&value)
+            value == 0.0 || (STORED_TOLERANCE_MIN_M..=STORED_TOLERANCE_MAX_M).contains(&value)
         })
 }
 
@@ -227,12 +225,12 @@ fn native_prefix(buf: &[u8], p: usize, node_id: bool) -> Option<(u32, usize)> {
     Some((attr, at))
 }
 
-fn native_bridge_prefix(buf: &[u8], off: usize, p: usize, plain: bool) -> Option<(Bridge, usize)> {
+fn native_bridge_prefix(buf: &[u8], off: usize, p: usize) -> Option<(Bridge, usize)> {
     let (attr, mut at) = native_prefix(buf, p, false)?;
     let sequence = View::u32_be_at(buf, at)?;
     at += 4;
     let head = cadmpeg_parasolid::pointer::read_at(buf, &mut at)?;
-    frames_on_tolerance(buf, at, plain).then_some(())?;
+    frames_on_tolerance(buf, at, true).then_some(())?;
     at += 8;
     let refs = super::native_refs::<5>(buf, &mut at)?;
     let sense = parse_sense(*buf.get(at)?)?;
@@ -250,15 +248,15 @@ fn native_bridge_prefix(buf: &[u8], off: usize, p: usize, plain: bool) -> Option
     ))
 }
 
-fn native_bridge(buf: &[u8], off: usize, p: usize, plain: bool) -> Option<(Bridge, usize)> {
-    let (record, mut at) = native_bridge_prefix(buf, off, p, plain)?;
+fn native_bridge(buf: &[u8], off: usize, p: usize) -> Option<(Bridge, usize)> {
+    let (record, mut at) = native_bridge_prefix(buf, off, p)?;
     super::native_refs::<5>(buf, &mut at)?;
     Some((record, at))
 }
 
 fn parse_bridge(buf: &[u8], off: usize, plain: bool) -> Option<Bridge> {
     let mut candidates = super::record_starts(buf, off, 0x0e)
-        .filter_map(|p| native_bridge(buf, off, p, plain).map(|(record, _)| record))
+        .filter_map(|p| native_bridge(buf, off, p).map(|(record, _)| record))
         .collect::<Vec<_>>();
     if let Some(record) = parse_bridge_short(buf, off, plain).filter(|record| {
         record.attr <= MAX_SHORT_POINTER_INDEX
@@ -897,7 +895,7 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
     }
     let native = match tag {
         0x0e => super::record_starts(buf, off, tag)
-            .filter_map(|p| native_bridge_prefix(buf, off, p, true).map(|(_, end)| end))
+            .filter_map(|p| native_bridge_prefix(buf, off, p).map(|(_, end)| end))
             .min(),
         0x10 => super::record_starts(buf, off, tag)
             .filter_map(|p| native_edge(buf, off, p, true).map(|(_, end)| end))
@@ -1947,7 +1945,7 @@ fn framed_spans<T: Candidate>(
 fn bridge_end(buf: &[u8], off: usize, plain: bool) -> Option<usize> {
     let record = parse_bridge(buf, off, plain)?;
     for p in super::record_starts(buf, off, 0x0e) {
-        if let Some((candidate, end)) = native_bridge(buf, off, p, plain) {
+        if let Some((candidate, end)) = native_bridge(buf, off, p) {
             if candidate == record {
                 return Some(end);
             }
@@ -3984,7 +3982,7 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_stream_frames_a_face_on_its_stored_tolerance() {
+    fn face_tolerance_framing_is_shared_by_partition_and_plain_streams() {
         let face = |slot: f64| {
             let mut bytes = crate::test_support::parasolid::bridge(82, 20, 100);
             bytes[10..18].copy_from_slice(&slot.to_be_bytes());
@@ -3992,10 +3990,11 @@ mod tests {
         };
         for tolerance in [0.0, 1.0e-8, 1.0e-12, 1.0e-2] {
             assert_eq!(parse_bridge(&face(tolerance), 0, true).unwrap().attr, 82);
-            assert!(parse_bridge(&face(tolerance), 0, false).is_none());
+            assert_eq!(parse_bridge(&face(tolerance), 0, false).unwrap().attr, 82);
         }
         for tolerance in [1.0e-302, 2.0e-2, -1.0e-8, f64::NAN] {
             assert!(parse_bridge(&face(tolerance), 0, true).is_none());
+            assert!(parse_bridge(&face(tolerance), 0, false).is_none());
         }
         assert_eq!(
             parse_bridge(

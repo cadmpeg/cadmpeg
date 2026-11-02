@@ -7,6 +7,7 @@ mod body_recipe_selections;
 mod body_selection;
 mod budgets;
 mod component_spaces;
+mod delete_face;
 mod draft;
 mod edge_operands;
 mod face_boundaries;

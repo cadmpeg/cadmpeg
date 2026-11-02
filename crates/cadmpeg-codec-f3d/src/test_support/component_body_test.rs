@@ -97,7 +97,40 @@ pub(crate) fn history_only_pairs_with_cluster(
     container: HistoryOnlyContainer<'_>,
     bound_cluster: bool,
 ) -> (Vec<u8>, Vec<u8>) {
+    history_only_pairs_with_consumer(blob, pairs, container, bound_cluster, None)
+}
+
+pub(crate) const BODY_CONSUMER_SCOPE: u32 = 710;
+
+/// A scope that owns one whole-body selection of one browser node.
+#[derive(Clone, Copy)]
+pub(crate) struct BodyConsumer<'a> {
+    pub(crate) scope_type_guid: &'a str,
+    pub(crate) entity: u64,
+    pub(crate) hidden: u8,
+    pub(crate) flag: u8,
+    /// Record that the selection's closing reference names.
+    pub(crate) selection_owner: Option<u32>,
+    /// The selected record is registered as a browser node.
+    pub(crate) registered_node: bool,
+}
+
+pub(crate) fn history_only_pairs_with_consumer(
+    blob: &str,
+    pairs: &[(u64, u64, Option<bool>)],
+    container: HistoryOnlyContainer<'_>,
+    bound_cluster: bool,
+    consumer: Option<BodyConsumer<'_>>,
+) -> (Vec<u8>, Vec<u8>) {
     const COMPONENT: u64 = 40;
+    const NODE: u32 = 700;
+    const SCOPE: u32 = BODY_CONSUMER_SCOPE;
+    const SELECTION: u32 = 720;
+    fn local(bulk: &mut Vec<u8>, target: u64) {
+        bulk.push(1);
+        bulk.extend_from_slice(&target.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+    }
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     records.push((900, u64_from_index(bulk.len())));
@@ -125,6 +158,23 @@ pub(crate) fn history_only_pairs_with_cluster(
         bulk.push(u8::from(*hidden));
         bulk.extend_from_slice(&[1, 1]);
         bulk.extend_from_slice(&entity.to_le_bytes());
+    }
+    let mut component_entities = vec![COMPONENT];
+    if let Some(consumer) = consumer {
+        let class_tag = if consumer.registered_node {
+            nodes.push(u64::from(NODE));
+            *b"257"
+        } else {
+            component_entities.push(u64::from(NODE));
+            *b"259"
+        };
+        records.push((u64::from(NODE), u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, class_tag, NODE);
+        bulk.extend_from_slice(&[0; 10]);
+        super::lp_utf16(&mut bulk, "11111111-2222-8333-A444-000000000700");
+        bulk.extend_from_slice(&[consumer.hidden, consumer.flag]);
+        local(&mut bulk, consumer.entity);
+        local(&mut bulk, u64::from(SCOPE));
     }
     let entities = pairs
         .iter()
@@ -207,7 +257,7 @@ pub(crate) fn history_only_pairs_with_cluster(
             crate::records::body_ownership::CONTAINER_BASE_GUID,
             1,
             "Body",
-            &[COMPONENT][..],
+            &component_entities,
         ),
         container_type(&containers),
     ];
@@ -239,6 +289,51 @@ pub(crate) fn history_only_pairs_with_cluster(
                 &[301][..],
             ),
         ]);
+    }
+    let scope_registration = [u64::from(SCOPE)];
+    let selection_registration = [u64::from(SELECTION)];
+    if let Some(consumer) = consumer {
+        let class_tag = |ordinal: usize| -> [u8; 3] {
+            (256 + u32::try_from(ordinal).unwrap())
+                .to_string()
+                .into_bytes()
+                .try_into()
+                .unwrap()
+        };
+        records.push((u64::from(SCOPE), u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, class_tag(types.len()), SCOPE);
+        bulk.extend_from_slice(&[0; 9]);
+        types.push((
+            consumer.scope_type_guid,
+            "2EDC2536-D95B-4469-8ACA-DC07124D9C43",
+            1,
+            "Fusion",
+            &scope_registration,
+        ));
+        let class = class_tag(types.len());
+        types.push((
+            "9716F783-676D-42E0-93F9-EBF273E7C035",
+            "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+            1,
+            "Fusion",
+            &selection_registration,
+        ));
+        records.push((u64::from(SELECTION), u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, class, SELECTION);
+        bulk.extend_from_slice(&[0; 10]);
+        bulk.extend_from_slice(&0_u32.to_le_bytes());
+        local(&mut bulk, u64::from(SELECTION) + 3);
+        bulk.extend_from_slice(&1_u32.to_le_bytes());
+        super::lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+        super::lp_utf16(&mut bulk, "66666666-7777-8888-9999-AAAAAAAAAAAA");
+        for word in [2_u32, 0, 0, 1] {
+            bulk.extend_from_slice(&word.to_le_bytes());
+        }
+        local(&mut bulk, u64::from(NODE));
+        bulk.extend_from_slice(&9_u32.to_le_bytes());
+        if let Some(owner) = consumer.selection_owner {
+            local(&mut bulk, u64::from(owner));
+        }
     }
     let meta = super::streams_test::design_metastream_with_records(&types, &records);
     (bulk, meta)

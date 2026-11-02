@@ -1614,20 +1614,20 @@ fn surface_curve_ends(carrier: &super::sp_curve::SurfaceCurveCarrier) -> [Point3
 /// emitted support surface with a fitted cache; the fitted B-curve alone on a
 /// sweep or on an offset no face emits; else opaque.
 fn attach_surface_curve(
-    ctx: &DecodeContext<'_>,
-    out: &mut Brep,
+    sink: &mut BrepSink<'_, '_, '_>,
     annotations: &mut AnnotationBuilder,
     carrier: &super::sp_curve::SurfaceCurveCarrier,
+    carriers: &CarrierIndex,
     emitted_face_surface_by_carrier: &HashMap<u32, u32>,
     attr: u32,
     source_stream: &StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curve_id = id_curve(attr);
-    let surface = emitted_face_surface_by_carrier
+    let mut surface = emitted_face_surface_by_carrier
         .get(&carrier.surface)
         .map(|bridge| id_surf(*bridge))
         .filter(|id| {
-            out.surfaces.iter().any(|surface| {
+            sink.out.surfaces.iter().any(|surface| {
                 surface.id == *id
                     && !matches!(
                         surface.geometry,
@@ -1635,6 +1635,23 @@ fn attach_surface_curve(
                     )
             })
         });
+    if surface.is_none()
+        && carrier.sweep.is_none()
+        && carrier.offset_support.is_none()
+        && carriers.surface(carrier.surface).is_some()
+    {
+        surface = ensure_surface_support(
+            sink,
+            carrier.surface,
+            carriers,
+            emitted_face_surface_by_carrier,
+            annotations,
+            source_stream,
+            &mut HashSet::new(),
+        )?;
+    }
+    let ctx = sink.ctx;
+    let out = &mut *sink.out;
     let breaks: &[f64] = match &carrier.pcurve {
         PcurveGeometry::Nurbs { nurbs } => nurbs.knots(),
         _ => &[],
@@ -3914,10 +3931,10 @@ fn decode_graph(
     for attr in surface_curve_attrs {
         if let Some(carrier) = surface_curve(attr) {
             attach_surface_curve(
-                ctx,
-                &mut out,
+                &mut BrepSink { ctx, out: &mut out },
                 &mut annotations,
                 carrier,
+                carriers,
                 &emitted_face_surface_by_carrier,
                 attr,
                 &source_stream,

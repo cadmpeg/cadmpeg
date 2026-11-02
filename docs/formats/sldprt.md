@@ -2171,18 +2171,11 @@ own site, never a partition with its deltas. A partition that carries geometry
 is the result of the features that follow the import, and its LocalBodies are then that
 import's input, not the part.
 
-**Tolerance slots.** A plain stream can store real values in the FACE, EDGE and vertex-use
-tolerance slots (§4): faces `1e-8` or `0.0`, edges and vertices `2e-8` to `2.8e-4` m. It can
-instead store the null-real sentinel, as every partition does.
-
-A plain stream frames its records on the null-real sentinel, on `0.0`, or on a value in
+**Tolerance slots.** FACE, EDGE and vertex-use tolerance slots (§4) hold the null-real
+sentinel or a real value. FACE permits `0.0` and valued tolerances in partition and plain
+streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 `[1e-12, 1e-2]` m. A two-byte big-endian integer pair read as one f64 is a NORMAL value near
 1e-302, below that range.
-
-Partition and deltas streams frame records only on the sentinel.
-
-In every stream, a FACE or EDGE header frames only on a tolerance slot that holds the sentinel,
-`0.0`, or a value in that range.
 
 ---
 
@@ -2769,7 +2762,7 @@ For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store 
 
 Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
-An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
+An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m (`1e-5` mm), and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
 A bounded wrapper whose endpoint evaluations match its vertices has its two source parameters as the edge's parameter range. A line source stores signed distance parameters in metres along its unit direction. The neutral line uses millimetres and multiplies these parameters by 1000. Other analytic parameters and NURBS parameters retain their stored values, except that a circle or ellipse interval may be stored on any equivalent angular branch, such as `[-1.47, 0]` for an arc ending at the seam from below; the neutral interval moves by whole turns to start within `[0, 2π)`. The wrapper interval follows source-curve orientation. The neutral interval is ascending. An end matches a vertex when it lies within that vertex's bound: the linear resolution, or the vertex's stored tolerance when it is a tolerant vertex (§7.6) and stores more. When the endpoint evaluations match the edge's ordered vertices in the opposite order, the neutral edge reverses its canonical vertices and every incident coedge sense; an edge shorter than its vertices' bounds matches both ways and takes the order whose worse end is nearer, and a closed edge, whose one vertex matches both ways equally, keeps its stored order. If neither order matches, the neutral edge has no parameter range.
 
@@ -2907,7 +2900,7 @@ The bounded curve's stored start and end points are the support evaluated throug
 
 A tolerant edge's neutral curve is the parametric curve on the support of its canonical fin's bounded SP_CURVE, else its partner fin's, over the bounded interval; a fin curve on a swept or spun construction is taken after one on any other support, and the edge runs from that interval's low end. A tolerant ring edge, with no vertex, seams at the low end; its bounded SP_CURVE's two stored end points lie within 1e-5 mm of each other. The curve is lifted from a fin to the edge, so it is derived rather than stored, and the edge carries its stored tolerance. A vertex whose bare vertex-use stores a value greater than zero in its tolerance slot is a tolerant vertex and carries that value, converted to millimetres, as its tolerance; the tripled vertex-use form is read with none.
 
-An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. An SP_CURVE whose support no emitted face carries stays opaque, though such an edge still runs from the domain's low end.
+An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. The support surface is an independent referenced node; a FACE can use another surface.
 
 An SP_CURVE is not admitted, and its edges keep an opaque curve, when an edge that names it has no vertex pair, has an end further than 1e-5 mm from its vertex, or has ends that fit in both orders (one vertex on a closed curve, which leaves the direction undetermined), or when a tolerant edge reaches it through a fin, whose vertices are promised only to the edge's tolerance. 
 

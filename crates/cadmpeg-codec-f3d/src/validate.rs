@@ -3220,6 +3220,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     },
                                 )
                         }
+                        records::feature::combine::DesignCombineForm::OperandLists => {
+                            !compact_scope
+                                && !extended_reference_scope
+                                && scope.byte_offset().checked_add(21).is_some_and(
+                                    |expected_offset| operation.operation_offset == expected_offset,
+                                )
+                                && scope.byte_offset().checked_add(29).is_some_and(
+                                    |expected_offset| {
+                                        operation.keep_tools_offset == expected_offset
+                                    },
+                                )
+                        }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
                                 && scope.byte_offset().checked_add(31).is_some_and(

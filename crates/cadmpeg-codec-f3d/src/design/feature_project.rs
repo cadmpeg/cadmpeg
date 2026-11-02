@@ -3689,19 +3689,30 @@ pub(super) fn project_shell(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let (crate::records::feature::scope::DesignScopePayload::Shell(Some(
-        crate::records::feature::direct_face::DesignShellOperation {
-            thickness, outward, ..
-        },
-    ))
-    | crate::records::feature::scope::DesignScopePayload::Schale(Some(
-        crate::records::feature::direct_face::DesignShellOperation {
-            thickness, outward, ..
-        },
-    ))) = &scope.payload()
+    let (crate::records::feature::scope::DesignScopePayload::Shell(Some(operation))
+    | crate::records::feature::scope::DesignScopePayload::Schale(Some(operation))) =
+        &scope.payload()
     else {
         return Ok(None);
     };
+    let inside = operation.thickness.get();
+    let slots = operation.wall_slots.as_ref();
+    let (wall, outward, mode) = match slots.and_then(|slots| slots.outside.as_ref()) {
+        None => (inside, Some(operation.outward), None),
+        Some(outside) if outside.thickness.get().to_bits() == inside.to_bits() => (
+            inside + outside.thickness.get(),
+            None,
+            Some(cadmpeg_ir::features::ShellMode::BothSides),
+        ),
+        Some(_) => return Ok(None),
+    };
+    let join = slots.map(|slots| {
+        if slots.rounded_corners {
+            cadmpeg_ir::features::ShellJoin::Arc
+        } else {
+            cadmpeg_ir::features::ShellJoin::Intersection
+        }
+    });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
     let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
@@ -3718,11 +3729,11 @@ pub(super) fn project_shell(
             bodies,
             removed_faces,
             thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                thickness.get() * 10.0,
+                wall * 10.0,
             ))),
-            outward: Some(*outward),
-            mode: None,
-            join: None,
+            outward,
+            mode,
+            join,
             resolve_intersections: None,
             allow_self_intersections: None,
         },
@@ -8146,7 +8157,13 @@ fn project_delete_face(
         face_operands,
     )
     .map_or_else(
-        || resolved_face_group(group, face_operands),
+        || {
+            if heal {
+                Ok(None)
+            } else {
+                resolved_face_group(group, face_operands)
+            }
+        },
         |face| Ok(Some(face)),
     )?;
     let faces = match faces {

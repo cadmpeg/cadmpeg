@@ -621,25 +621,13 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
-### DR-163. Body-map entity with no membership and no browser node
-
-**Question.** Is a body-map pair outside the current model when complete Body-container memberships omit its entity and the entity has no browser node?
-
-**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" removes such a pair from the current model only when its browser node stores hidden flag `1`. A Combine tool hidden before the Combine has no list entry and no browser node, and it is consumed. No live body with this form is known.
-
-**Need.** Designs where a live body has no browser node, and designs that hide, show, and consume one body in each order.
-
-**Conflict.** None.
-
-**Note.** The decoder keeps this pair in `model.bodies` until this item is settled.
-
 ### DR-119. Entity-cluster component-ownership fallback
 
 **Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
 
 **Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding in the current model without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
 
-**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component. A consumed body that retains a bound component cluster needs a positive consumer or history-state join that separates it from a current hidden body.
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component.
 
 **Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
 
@@ -991,15 +979,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
-**Question.** Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
+**Question.** When the transition deletes more faces than the group has members, which deleted faces does the group select? Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
 
-**Known.** Seven of sixteen DeleteFace groups in one public local file retain native selections. Two groups contain five operands with ten opener-framed nodes whose second prelude scalar is `1`; the two-clause structure parser retains their raw programs. Two groups contain three unresolved operands whose referenced prefix ordinal has an empty face lane in the preceding topology. Two groups contain five operands with multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching; repeated fan patterns leave two edge matches for a node. One group contains one operand whose prefix lanes repeat a face fragment while its boundary endpoint fans require another face. Two members of a partially resolved group have complete face proofs; its third member has the empty prefix lane. The complete-boundary admission rule is defined in `f3d.md` §3.1.
+**Known.** `f3d.md` §3.1 "The transition that removes the faces" settles a group whose member count equals the deleted-face count. Healing can delete a further face, so a larger deleted set does not separate selected faces from healed faces. Such a group resolves only through the complete-boundary rule in `f3d.md` §3.1. Some of its operands have ten opener-framed nodes whose second prelude scalar is `1`, and the two-clause structure parser retains their raw programs. Some have a referenced prefix ordinal with an empty face lane in the preceding topology. Some have multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching. Some have prefix lanes that repeat a face fragment while the boundary endpoint fans require another face.
 
 **Need.** The complete single-clause grammar and its relation to closed-edge endpoints; the binding of an empty prefix lane to a preceding face; the directional or topology-entry rule that distinguishes repeated edge matches; and the ordinal and fragment rule for the mismatched prefix fan. Independent selections that vary these controls must distinguish the possible bindings.
 
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
-**Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
+**Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
 ### DR-171. Sketch support identity
 
@@ -1013,6 +1001,42 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** DR-12 tracks placement construction types. Sketch support identity remains in the native placement construction record.
 
+### DR-200. Fields of the class-387 and class-329 Combine prologues
+
+**Question.** Do the class-387 and class-329 `Combine` prologues store the fields of the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 reads the operation at offset 21 with values one through three and keep-tools at offset 25 in the class-387 form, and reads keep-tools at offset 30 and the operation at offset 31 in the class-329 form. The operand-list form stores a zero-based operation at offset 21, keep-tools at offset 29, and u32 one at offset 31.
+
+**Need.** Controlled class-387 and class-329 frames, or a type-table rule that separates them from the operand-list form, with stored operations proved by result volumes.
+
+**Conflict.** A class-387 frame with zero at offset 25 and bytes `01 00` at offsets 29 and 30 also satisfies the operand-list fixed fields. The two readings give different operation and keep-tools values. The rule that resolves a stored `Join` with kept tools to `Cut` applies only to the older forms and can follow from this difference.
+
+**Note.** Class tags are local to a stream, so a class value does not identify a frame layout.
+
+### DR-201. Byte after the hidden flag of a Combine browser node
+
+**Question.** What does the byte after the hidden flag of a browser node named by an operand-list `Combine` state?
+
+**Known.** The byte is zero or one. It is zero when the tool body was hidden before the `Combine` and the feature consumes the tool. It is one in the other observed frames, including a consumed tool that was visible before the `Combine` and a kept tool that was hidden before it.
+
+**Need.** Controlled bodies that vary visibility before and after the `Combine`, with keep-tools varied independently.
+
+**Conflict.** None.
+
+**Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
+
+### DR-202. Fields of the older Shell frames
+
+**Question.** Do the fixed-length `Shell` frames with a Boolean at offset 21 store the fields of the wall-slot form?
+
+**Known.** `f3d.md` §3.1 reads offset 21 as the outward convention in the class-369/261 frame, and the decoder reads the same offset that way in the other fixed-length frames. The wall-slot form stores the tangent-chain Boolean at offset 21 and states the wall direction by which slot is present.
+
+**Need.** Controlled frames of the fixed-length forms that vary the wall direction and the tangent chain independently, with result volumes.
+
+**Conflict.** One byte offset has two meanings across the forms. The two meanings give different wall directions for a tangent-chain selection if the older frames store the newer field.
+
+**Note.** No authored file has a fixed-length frame.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
@@ -1024,6 +1048,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The public FHCS frame selects points with persistent identities `117` and `119`.
+
+### DR-240. Presentation frame whose label states another value
+
+**Question.** Which dimension does a direct presentation frame govern when its label states a value that differs from the first following dimension owner's parameter?
+
+**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. The decoder retains the native dimensional constraint when the owner has two frames, and when the operand measurement differs from the parameter.
+
+**Need.** Files with the direct two-operand frame form that create a dimension, delete or replace it, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
 
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 

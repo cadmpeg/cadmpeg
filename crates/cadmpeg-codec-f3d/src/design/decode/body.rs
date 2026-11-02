@@ -1133,6 +1133,10 @@ pub(crate) fn decode_design_body_bindings(
         };
         let memberships = super::component_bodies::owners(ctx, bytes, &metadata)?;
         let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let consumed = match scan.entry_view(&entry.name) {
+            Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
+            None => std::collections::HashSet::new(),
+        };
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
@@ -1152,12 +1156,13 @@ pub(crate) fn decode_design_body_bindings(
                 let cluster_owner = components
                     .get(&crate::ids::native_scope(&entry.name))
                     .and_then(|components| components.cluster_owner(binding.entity_suffix));
-                let history_only = cluster_owner.is_none()
-                    && memberships.complete
+                let hidden = hidden_by_entity
+                    .get(&binding.entity_suffix)
+                    .is_some_and(|node| node.hidden);
+                let history_only = memberships.complete
                     && owner.is_none()
-                    && hidden_by_entity
-                        .get(&binding.entity_suffix)
-                        .is_some_and(|node| node.hidden);
+                    && (consumed.contains(&binding.entity_suffix)
+                        || (hidden && cluster_owner.is_none()));
                 let body = if history_only {
                     None
                 } else {
@@ -2128,6 +2133,234 @@ mod tests {
             .unwrap();
             assert_eq!(bindings.len(), 1);
         });
+    }
+
+    fn bindings_with_consumer(
+        pairs: &[(u64, u64, Option<bool>)],
+        container: crate::test_support::component_body_test::HistoryOnlyContainer<'_>,
+        bound_cluster: bool,
+        consumer: Option<crate::test_support::component_body_test::BodyConsumer<'_>>,
+    ) -> Vec<(u64, bool)> {
+        const PREFIX: &str = "FusionAssetName[Active]/Design1/";
+        const BLOB: &str = "BREP.synthetic.smbh";
+        let (bulk, metadata) =
+            crate::test_support::component_body_test::history_only_pairs_with_consumer(
+                BLOB,
+                pairs,
+                container,
+                bound_cluster,
+                consumer,
+            );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(format!("{PREFIX}BulkStream.dat"), stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file(format!("{PREFIX}MetaStream.dat"), stored)
+            .unwrap();
+        zip.write_all(&metadata).unwrap();
+        zip.start_file(
+            format!("FusionAssetName[Active]/Breps.BlobParts/{BLOB}"),
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&[0]).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let mut out = Vec::new();
+        with_scan(&archive, |scan| {
+            out = super::decode_design_body_bindings(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                None,
+                &[],
+            )
+            .unwrap()
+            .iter()
+            .map(|binding| (binding.entity_suffix, binding.history_only))
+            .collect();
+        });
+        out.sort_unstable();
+        out
+    }
+
+    #[test]
+    fn a_consuming_scope_removes_a_hidden_uncontained_pair_from_a_bound_cluster() {
+        use crate::design::decode::body_consumers::{COMBINE_TYPE_GUID, REMOVE_BODY_TYPE_GUID};
+        use crate::test_support::component_body_test::{
+            BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
+        };
+        const MOVE_TYPE_GUID: &str = "64E40C8E-E564-469C-8690-5C4E77C1B02C";
+        let consumer = |scope_type_guid| BodyConsumer {
+            scope_type_guid,
+            entity: 350,
+            hidden: 1,
+            flag: 1,
+            selection_owner: Some(BODY_CONSUMER_SCOPE),
+            registered_node: true,
+        };
+        for (cluster, container, row, selected, expected) in [
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(consumer(COMBINE_TYPE_GUID)),
+                true,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(consumer(REMOVE_BODY_TYPE_GUID)),
+                true,
+            ),
+            (
+                false,
+                Container::Lists(&[]),
+                None,
+                Some(consumer(COMBINE_TYPE_GUID)),
+                true,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    flag: 0,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                true,
+            ),
+            (
+                false,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    flag: 0,
+                    ..consumer(REMOVE_BODY_TYPE_GUID)
+                }),
+                true,
+            ),
+            (true, Container::Lists(&[]), Some(true), None, false),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(consumer(MOVE_TYPE_GUID)),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    hidden: 0,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    flag: 2,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    entity: 351,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    selection_owner: None,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    selection_owner: Some(BODY_CONSUMER_SCOPE + 1),
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[]),
+                None,
+                Some(BodyConsumer {
+                    registered_node: false,
+                    ..consumer(COMBINE_TYPE_GUID)
+                }),
+                false,
+            ),
+            (
+                true,
+                Container::Lists(&[350]),
+                None,
+                Some(consumer(COMBINE_TYPE_GUID)),
+                false,
+            ),
+            (
+                true,
+                Container::Malformed,
+                None,
+                Some(consumer(COMBINE_TYPE_GUID)),
+                false,
+            ),
+            (
+                true,
+                Container::Absent,
+                None,
+                Some(consumer(COMBINE_TYPE_GUID)),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                bindings_with_consumer(&[(0, 350, row)], container, cluster, selected),
+                [(350, expected)],
+                "cluster {cluster} row {row:?} expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_consumer_removes_only_the_pair_it_names() {
+        use crate::design::decode::body_consumers::COMBINE_TYPE_GUID;
+        use crate::test_support::component_body_test::{
+            BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
+        };
+        assert_eq!(
+            bindings_with_consumer(
+                &[(0, 350, None), (1, 351, Some(true))],
+                Container::Lists(&[]),
+                true,
+                Some(BodyConsumer {
+                    scope_type_guid: COMBINE_TYPE_GUID,
+                    entity: 350,
+                    hidden: 1,
+                    flag: 1,
+                    selection_owner: Some(BODY_CONSUMER_SCOPE),
+                    registered_node: true,
+                }),
+            ),
+            [(350, true), (351, false)]
+        );
     }
 
     #[test]

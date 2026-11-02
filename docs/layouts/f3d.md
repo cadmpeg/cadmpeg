@@ -264,6 +264,19 @@ Parsed by:
 | 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
 
+## `shell_wall_slot_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 23 B
+
+Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | offset 21 is the tangent-chain Boolean |
+| 22 | 1 | `rounded_corners` | `u8` | little | spec | offset 22 is the corner Boolean |
+
 ## `shell_class_369_261_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 271 B
@@ -1917,6 +1930,51 @@ Offsets are relative to the class-329 primary indexed scope header. The variable
 | 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
 | 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
 | 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field |
+
+## `combine_operand_list_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20, the zero-based operation |
+| 21 | 4 | `operation` | `u32` | little | spec | the zero-based operation u32 at offset 21 |
+| 25 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 25 through 28 |
+| 29 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 29 |
+| 30 | 1 | `zero_flag` | `u8` | little | spec | zero at byte 30 |
+| 31 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 31, a marked nonzero |
+| 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
+| 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
+| 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field, a u64 |
+| 46 | 8 | `stamp` | `u64` | little | spec | a u64 operation-identity value at offset 46 |
+| 54 | 4 | `tool_count` | `u32` | little | spec | the tool list at offset 54 |
+
+## `combine_body_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the body-selection record header. The clauses start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A body-selection record of the operand-list form stores ten zero bytes after its indexed header |
+| 21 | 4 | `clause_count` | `u32` | little | spec | the u32 clause count at offset 21 |
+
+## `combine_body_node_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A browser node stores ten zero bytes after its indexed header |
+| 21 | 4 | `guid_code_unit_count` | `u32` | little | spec | the counted GUID at offset 21 |
 
 ## `combine_external_selector_prefix`
 
@@ -5628,6 +5686,18 @@ Spec §3.1 · layout: byte offsets · size: 25 B
 | 0 | 11 | `header` | `bytes[11]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 | 21 | 4 | `reference_count` | `u32` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
+
+## `body_consumer_browser_node_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A browser node named this way stores ten zero bytes after its indexed header |
+| 21 | 4 | `guid_code_unit_count` | `u32` | little | spec | the counted GUID at offset 21, hidden flag `1` |
 
 ## `body_reference_persistent_pair`
 
