@@ -25,6 +25,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
 
+use crate::assembly;
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
     CurvePrototype, CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow,
@@ -337,6 +338,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) primitives: PrimitiveScan,
     /// Model-space reference entities decoded from `MdlRefInfo`.
     pub(crate) references: ReferenceScan,
+    /// The `NeuAsmSld` component table, when the file holds one.
+    pub(crate) assembly: Option<assembly::MemberTable>,
     /// Typed surface rows, parameter bodies, and prototypes across the model,
     /// non-visible, and cross-section namespaces.
     pub(crate) surfaces: SurfaceScan,
@@ -2619,6 +2622,16 @@ fn reference_scan(sections: &[ScannedSection<'_>]) -> Result<ReferenceScan, Code
     })
 }
 
+/// The unique component table across `NeuAsmSld` sections.
+fn assembly_scan(sections: &[ScannedSection<'_>]) -> Option<assembly::MemberTable> {
+    let mut tables = sections
+        .iter()
+        .filter(|section| section.section.name() == "NeuAsmSld")
+        .filter_map(|section| assembly::member_table(section.region)?.at(section.section.offset()));
+    let table = tables.next()?;
+    tables.next().is_none().then_some(table)
+}
+
 /// Copy outline planes and append positional planes without a matching outline.
 fn placement_outline_planes(
     outline_planes: &[surface::OutlinePlane],
@@ -2737,6 +2750,7 @@ pub(crate) fn scan_bytes<'a>(
     };
     let primitives = scan_primitives(&expanded_sections)?;
     let references = reference_scan(sections)?;
+    let assembly = assembly_scan(sections);
     let layout = identify_layout(&data, &all_sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(sections) {
@@ -3078,6 +3092,7 @@ pub(crate) fn scan_bytes<'a>(
         },
         primitives,
         references,
+        assembly,
         surfaces: SurfaceScan {
             rows: surface_rows,
             nonvisible_rows: nonvisible_surface_rows,

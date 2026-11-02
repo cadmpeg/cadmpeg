@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::Decoded;
 use crate::container;
 
 mod analytic;
+mod assembly;
 mod build;
 mod coverage;
 mod curve_expressions;

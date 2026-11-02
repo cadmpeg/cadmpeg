@@ -1121,3 +1121,57 @@ arrays outside the settled geometry records, the character-set selection for
 non-UTF-8 type-10 strings, type-10 continuation semantics, remaining geometry
 and design-history graph joins, and non-attribute section grammar to
 transfer the rest of legacy persistence.
+
+## 6. Assembly component table
+
+### AS-01. Other `ee` frame-slot fills
+
+**Question.** Which bytes fill an `ee` frame slot whose third explicit byte is
+not `ff`?
+
+**Known.** `creo_prt.md` §9.1 "All frame slots use one scalar lane." defines
+`ee b0 b1 ff`.
+
+**Need.** A row with another `ee` form ends the component table, and the rows
+after it do not transfer.
+
+### AS-02. Other frame-slot tokens
+
+**Question.** What do the tokens that `creo_prt.md` §9.1 does not list store
+in a frame slot? These include lattice form 3, the `03` constant form,
+constant selectors other than `04`, `0f`, and `10`, and the tokens `a4`, `e9`,
+`eb`, and `ef`.
+
+**Known.** `creo_prt.md` §9.1 lists the defined frame-slot tokens.
+
+**Need.** A row with one of these tokens ends the component table, and the
+rows after it do not transfer.
+
+### AS-03. Family-table instance rows
+
+**Question.** Which model file and instance does a component row reference
+when `family_name` differs from `name`?
+
+**Known.** `creo_prt.md` §9 defines the referenced file when `family_name`
+equals `name`.
+
+**Need.** Such a row transfers with an unresolved prototype.
+
+### AS-04. Non-null `tha_ref`
+
+**Question.** What grammar does a `tha_ref` value other than the null `e1`
+use, and what does it reference?
+
+**Known.** `creo_prt.md` §9 defines the null `tha_ref` value.
+
+**Need.** A row with another value ends the component table.
+
+### AS-05. Other component types
+
+**Question.** Which models do component `type` values other than `01` and
+`02` reference?
+
+**Known.** `creo_prt.md` §9 defines type `01` as an assembly and `02` as a
+part.
+
+**Need.** A row with another type transfers with an unresolved prototype.

@@ -632,28 +632,25 @@ pub(crate) fn decode_tabulated_cylinder_first_coordinate(
     if data.get(offset) == Some(&0x4a) {
         return ieee7(data, offset, 0xc0);
     }
-    if matches!(head, 0x4b..=0xa3) {
-        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
-    }
-    if matches!(head, 0xa5..=0xa6) {
-        return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
-    }
-    if matches!(head, 0xa7..=0xb1) {
-        return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
-    }
-    if matches!(head, 0xb2..=0xcf) {
-        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
-    }
-    if matches!(head, 0xd0..=0xdc) {
-        return ieee7_dict(data, offset, 0xbf2e + u16::from(head));
-    }
-    if head == 0xdd {
-        return ieee7_dict(data, offset, 0xbf2f + u16::from(head));
-    }
-    if matches!(head, 0xde..=0xdf) {
-        return ieee7_dict(data, offset, 0xbf32 + u16::from(head));
+    if let Some(dict) = dict_head(head) {
+        return ieee7_dict(data, offset, dict);
     }
     decode_in_surface_row_lane(data, offset, cache)
+}
+
+/// The first two IEEE bytes a signed DICT prefix selects.
+pub(crate) fn dict_head(prefix: u8) -> Option<u16> {
+    let base: u16 = match prefix {
+        0x4b..=0xa3 => 0x3f75,
+        0xa5..=0xa6 => 0xbf2b,
+        0xa7..=0xb1 => 0xbf2c,
+        0xb2..=0xcf => 0xbf2d,
+        0xd0..=0xdc => 0xbf2e,
+        0xdd => 0xbf2f,
+        0xde..=0xdf => 0xbf32,
+        _ => return None,
+    };
+    Some(base + u16::from(prefix))
 }
 
 /// Decode one scalar in a type-24 round-edge envelope.

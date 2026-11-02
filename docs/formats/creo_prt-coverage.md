@@ -1140,3 +1140,17 @@ feature's material result. Procedural circular extrusion, linear extrusion,
 and revolution bodies defer to that native result. Feature ownership follows
 the unique surface row through its admitted face, shell, region, and body.
 Synthetic checks distinguish the owning feature, another feature, and a sheet.
+
+## Assembly component tables
+
+`NeuAsmSld.members` rows transfer as placed child occurrences of the root
+occurrence. A row's prototype is the external `.asm` or `.prt` model file it
+names. A placement transfers only when its frame is a proper rigid transform.
+The first row that the row grammar does not admit ends the table and retains
+`assembly.member-table-incomplete`; the rows before it transfer. An
+`ASSEMBLY` header without a component table retains the same loss.
+`assembly.components-external` counts the external occurrences and files, and
+`assembly.constraints-not-transferred` records that placement constraints do
+not transfer. Synthetic checks cover each frame-slot form, repeat runs, row
+order, offsets, declared-count and row-grammar stops, rigid-placement
+refusal, and the external prototypes and placements of a decoded assembly.

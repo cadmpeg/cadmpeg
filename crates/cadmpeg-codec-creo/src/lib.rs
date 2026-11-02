@@ -60,6 +60,7 @@
 //! and feature evaluation remain incomplete. The decode report identifies
 //! these losses.
 
+mod assembly;
 mod axis;
 mod compress;
 mod container;

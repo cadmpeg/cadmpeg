@@ -5994,3 +5994,106 @@ endpoint with a nonzero major-axis projection. Equal coefficient radii have
 equivalent mappings and use the first frame direction. Records that satisfy
 neither proof, or admit two distinct unequal-radius mappings, do not define an
 ellipse carrier.
+
+## 9. Assembly component table
+
+The second token of the `#UGC:2` header line is the model kind: `PART`,
+`PART/SHEETMETAL`, or `ASSEMBLY`. An assembly file uses the container,
+section directory, and layout discriminators of a part file.
+
+The `NeuAsmSld` section of an assembly stores the component table in the named
+field `e0 00 members\0`. The table places each component of the assembly. One
+`NeuAsmSld` section holds at most one `members` field.
+
+```text
+e0 00 members\0 f1 f8 <count> f7 <element> fb e3
+<row 1> f1 f7 <element> <terminator>
+<row 2> <terminator>
+...
+<row count> f4
+```
+
+`count` and `element` are compact integers. `count` is the number of rows.
+The first row repeats `element` after its values. The terminator `e3` follows
+each row except the last. The terminator `f4` follows the last row.
+
+The first row stores its fields as named records in this order:
+
+| Field         | Header                | Value                                         |
+| ------------- | --------------------- | --------------------------------------------- |
+| `id`          | `e0 01 id\0`          | Compact integer. Component identifier.        |
+| `type`        | `e0 01 type\0`        | One byte. `01` is an assembly, `02` a part.   |
+| `name`        | `e0 0a name\0`        | NUL-terminated UTF-8 child model name.        |
+| `family_name` | `e0 0a family_name\0` | NUL-terminated UTF-8 family name.             |
+| `tha_ref`     | `e0 00 tha_ref\0`     | `e1`, the null value.                         |
+| `e1`          | `e0 02 e1\0`          | `f8 03`, then three frame slots.              |
+| `e2`          | `e0 02 e2\0`          | `f8 03`, then three frame slots.              |
+| `e3`          | `e0 02 e3\0`          | `f8 03`, then three frame slots.              |
+| `origin`      | `e0 02 origin\0`      | `f8 03`, then three frame slots.              |
+
+Each following row stores the same values in the same order without the
+named-record headers and without the `f8 03` array openers:
+
+```text
+<id> <type> <name>\0 <family_name>\0 e1 <twelve frame slots>
+```
+
+When `family_name` equals `name`, the row references the child model file
+`<name>.asm` for type `01` or `<name>.prt` for type `02`.
+
+`e1`, `e2`, and `e3` are the child x, y, and z axes in assembly coordinates.
+They form a right-handed orthonormal frame. `origin` is the child origin in
+assembly coordinates and uses the assembly length unit. The placement maps a
+child point `p` to `origin + p.x * e1 + p.y * e2 + p.z * e3`. This is the
+solved placement of the component; the table does not store the placement
+constraints.
+
+### 9.1 Frame slots
+
+All frame slots use one scalar lane. A value is an IEEE-754 double in
+big-endian byte order. Each token fills one slot, except a repeat token.
+
+| Bytes                       | Value                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `04`                        | `3fef ffff ffff ffff`, the largest double below one.                                          |
+| `0f`                        | `1.0`                                                                                         |
+| `10`                        | `-1.0`                                                                                        |
+| `18`                        | `0.0`                                                                                         |
+| `<n> <c> <b...>`, `n` `00..02` | The constant that `c` selects (`04`, `0f`, or `10`) with its last `n + 1` bytes replaced by the `n + 1` bytes `b...`. |
+| `e4`, `e5`, `e6`            | One, two, or three copies of the preceding slot of the same run.                              |
+| `19..4a`                    | Lattice form.                                                                                 |
+| `4b..df` except `a4`        | Signed DICT form.                                                                             |
+| `ea b0 b1 b2`               | `b0 b1 b2 00 00 00 00 00`                                                                     |
+| `ec b0 .. b6`               | `b0 .. b6 00`                                                                                 |
+| `ed b0 .. b7`               | `b0 .. b7`                                                                                    |
+| `ee b0 b1 ff`               | `b0 b1 ff ff ff ff ff ff`                                                                     |
+
+A run is the three slots of one named array in the first row, or the twelve
+slots of one following row. A repeat token has no value at the start of a run.
+
+The lattice `19..4a` has five forms for each leading byte. Prefixes `19..31`
+select the leading bytes `3c..40`, and `32..4a` select `bc..c0`. For a prefix
+`p` with base `b` (`19` or `32`) and first leading byte `L` (`3c` or `bc`), the
+leading byte is `L + (p - b) div 5` and the form is `(p - b) mod 5`:
+
+| Form | Bytes after the prefix | Double                      |
+| ---: | ---------------------- | --------------------------- |
+|    0 | `t1 .. t7`             | `lead t1 .. t7`             |
+|    1 | `x y`                  | `lead x y y y y y y`        |
+|    2 | `x y`                  | `lead x y 00 00 00 00 00`   |
+|    4 | `t1 .. t6`             | `lead t1 .. t6 00`          |
+
+A signed DICT prefix `p` selects the first two bytes `H` of the double. Six
+tail bytes follow the prefix.
+
+| Prefix   | `H`         |
+| -------- | ----------- |
+| `4b..a3` | `3f75 + p`  |
+| `a5..a6` | `bf2b + p`  |
+| `a7..b1` | `bf2c + p`  |
+| `b2..cf` | `bf2d + p`  |
+| `d0..dc` | `bf2e + p`  |
+| `dd`     | `bf2f + p`  |
+| `de..df` | `bf32 + p`  |
+
+Every frame slot is finite.

@@ -238,6 +238,16 @@ pub(crate) enum CreoLossCode {
     /// TOC headers past the input length in visited header and row bytes
     /// were not read.
     TocScanCapped,
+    /// Component occurrences reference model files the decode does not open.
+    AssemblyComponentsExternal,
+    /// The component table is missing or ends before its declared rows.
+    AssemblyMemberTableIncomplete,
+    /// A component frame is not a proper rigid placement.
+    AssemblyPlacementUnresolved,
+    /// A component row names no model file the row grammar resolves.
+    AssemblyMemberReferenceUnresolved,
+    /// Component placement constraints are not decoded.
+    AssemblyConstraintsNotTransferred,
 }
 }
 
@@ -364,6 +374,11 @@ impl CreoLossCode {
             Self::SectionSignBranchesCapped => "section.sign-branches-capped",
             Self::CurveExpressionTextCapped => "curve-expression.text-capped",
             Self::TocScanCapped => "container.toc-scan-capped",
+            Self::AssemblyComponentsExternal => "assembly.components-external",
+            Self::AssemblyMemberTableIncomplete => "assembly.member-table-incomplete",
+            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
+            Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
+            Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
         }
     }
 
@@ -395,7 +410,8 @@ impl CreoLossCode {
             | Self::CarrierExtrusionBoundaryCurves
             | Self::CarrierExtrusionSectionGenerators
             | Self::CarrierSharedExtrusionGenerators
-            | Self::CarrierTorusParameterRetention => Severity::Info,
+            | Self::CarrierTorusParameterRetention
+            | Self::AssemblyComponentsExternal => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
             | Self::BrepCompactFrameBoundaryUnresolved
@@ -474,7 +490,11 @@ impl CreoLossCode {
             | Self::PlaneSupportVariantsCapped
             | Self::SectionSignBranchesCapped
             | Self::CurveExpressionTextCapped
-            | Self::TocScanCapped => Severity::Warning,
+            | Self::TocScanCapped
+            | Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyMemberReferenceUnresolved
+            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
         }
     }
 
@@ -585,6 +605,14 @@ impl CreoLossCode {
             | Self::CurveExpressionKindProhibited
             | Self::SectionSignBranchesCapped
             | Self::CurveExpressionTextCapped => LossTaxonomy::FeatureHistoryRetained,
+            Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
+                LossTaxonomy::AssemblyComponentsExternal
+            }
+            Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyConstraintsNotTransferred => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
         }
     }
 
@@ -729,6 +757,11 @@ mod tests {
                 "section.sign-branches-capped",
                 "curve-expression.text-capped",
                 "container.toc-scan-capped",
+                "assembly.components-external",
+                "assembly.member-table-incomplete",
+                "assembly.placement-unresolved",
+                "assembly.member-reference-unresolved",
+                "assembly.constraints-not-transferred",
             ]
         );
     }
