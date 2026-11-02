@@ -51,7 +51,7 @@ fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() 
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace.set_arena(&ctx, "design_record_headers", &[
-        serde_json::json!({"id":"f3d:design:design-record-header#1", "byte_offset":1, "class_tag":"257", "record_index":1}),
+        serde_json::json!({"id":"f3d:design:design-record-header#1", "class_tag":"257", "record_index":1}),
         serde_json::json!({"id":"f3d:design:design-record-header#2"}),
     ]).unwrap();
     assert!(crate::native::F3dNative::load_inner(&ctx, &namespace).is_err());
@@ -61,3 +61,4 @@ fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() 
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].starts_with("design_record_headers:"));
 }
+
