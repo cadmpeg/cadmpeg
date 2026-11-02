@@ -23,6 +23,7 @@ mod delete_face;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
+mod hole_support;
 mod loop_index;
 mod move_face;
 mod output_chain;
@@ -74,10 +75,6 @@ const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// Relative tolerance for matching independently decoded millimetre point carriers.
 const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
-/// Relative tolerance for admitting an oriented planar Hole support face.
-const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
-/// Relative tolerance for the Hole point lying on its support plane.
-const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states().is_empty() {
@@ -3205,6 +3202,11 @@ pub(crate) fn bind_feature_face_selections(
                             scope,
                             input_topologies: &mut *input_topologies,
                         },
+                        transition,
+                        history
+                            .states()
+                            .get(selection_previous)
+                            .and_then(|state| history.topology(state)),
                     );
                 }
                 _ => {}
@@ -3510,6 +3512,8 @@ fn bind_entity_face_groups(
 fn bind_hole_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     input: FaceSelectionBinding<'_>,
+    transition: &crate::history_records::AsmHistoricalTransition,
+    preceding: Option<&crate::history_records::AsmHistoricalTopology>,
 ) {
     use cadmpeg_ir::features::FaceSelection;
     let FaceSelectionBinding {
@@ -3526,6 +3530,40 @@ fn bind_hole_face_selection(
     let Some(construction) = scope.hole_construction() else {
         return;
     };
+    if let Some(faces) = preceding
+        .and_then(|preceding| hole_support::hole_support_faces(construction, transition, preceding))
+    {
+        let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
+        let state_id = crate::ids::history_input_state_id(&prefix);
+        let mut topologies = input_topologies
+            .iter_mut()
+            .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
+        let Some(topology) = topologies.next() else {
+            return;
+        };
+        if topologies.next().is_some() {
+            return;
+        }
+        let selected: Vec<_> = faces
+            .into_iter()
+            .map(|slot| {
+                crate::ids::history_input_face_id(&prefix, cadmpeg_ir::ids::IdentityKey::from(slot))
+            })
+            .collect();
+        for face in &selected {
+            if !topology.faces.contains(face) {
+                topology.faces.insert(face.clone());
+            }
+        }
+        if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(
+            state_id,
+            selected,
+            native_id.to_owned(),
+        ) {
+            *selection = historical;
+        }
+        return;
+    }
     let Some(face_selection) = &construction.face_selection else {
         return;
     };
