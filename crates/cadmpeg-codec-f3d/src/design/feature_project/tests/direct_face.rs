@@ -428,4 +428,3 @@ fn vaciado_projects_like_shell() {
     assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
     assert_eq!(bodies, None);
 }
-

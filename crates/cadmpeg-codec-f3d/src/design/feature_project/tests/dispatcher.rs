@@ -250,7 +250,6 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     ));
 }
 
-
 #[test]
 fn dispatcher_projects_plano_de_obra_frame() {
     let mut referenced = DesignParameterScope::empty(
@@ -284,7 +283,6 @@ fn dispatcher_projects_plano_de_obra_frame() {
             && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
 }
-
 
 #[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {

@@ -79,7 +79,8 @@ fn loft_projects_native_sections() {
 
 #[test]
 fn solevacion_projects_like_loft() {
-    let (mut scope, groups) = loft_input([DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5]);
+    let (mut scope, groups) =
+        loft_input([DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5]);
     scope
         .try_edit(|draft| {
             draft.payload = DesignScopePayload::Solevacion(Some(DesignLoftConstruction {
@@ -97,4 +98,3 @@ fn solevacion_projects_like_loft() {
         FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) if sections.len() == 2
     ));
 }
-

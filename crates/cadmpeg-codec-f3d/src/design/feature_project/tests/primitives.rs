@@ -220,7 +220,9 @@ fn esfera_primitiva_projects_like_sphere() {
     else {
         panic!("expected sphere from EsferaPrimitiva");
     };
-    assert_eq!(center.get(), cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
+    assert_eq!(
+        center.get(),
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
     assert!((radius.get() - 10.0).abs() < f64::EPSILON);
 }
-
