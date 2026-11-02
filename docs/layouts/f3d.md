@@ -6094,13 +6094,38 @@ Parsed by:
 | 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
 | 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
 | 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag |
-| 35 | 4 | `structural_constant` | `u32` | little | spec | Offset 35 stores u32 one |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag |
+| 36 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 36 and 37 store zero Symmetric and Two Sides flags, and offset 38 stores the null opposite-angle reference marker |
 | 39 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 39 |
 
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
 - `40..50` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
+
+## `unmarked_referenced_angle_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 35 through 45.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Offsets 11 through 20 are zero, offset 21 stores the result operation |
+| 21 | 4 | `operation` | `u32` | little | spec | offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0` |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0` · value `2` |
+| 29 | 1 | `direction_kind` | `u8` | little | spec | offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0` · value `0` |
+| 30 | 1 | `project_axis` | `u8` | little | spec | Offset 30 stores the Project Axis flag and offset 31 stores the solid flag |
+| 31 | 1 | `solid` | `u8` | little | spec | Offset 30 stores the Project Axis flag and offset 31 stores the solid flag |
+| 32 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 32 and 33 store zero Symmetric and Two Sides flags, and offset 34 stores the null opposite-angle reference marker |
+| 35 | 11 | `angle_reference` | `bytes[11]` | little | spec | The marked angle-owner reference starts at offset 35 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
 ## `two_sided_revolve_prologue`
 
