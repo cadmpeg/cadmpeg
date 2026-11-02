@@ -838,6 +838,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             removed_faces,
             thickness,
             outward,
+            mode,
             ..
         }) => {
             let bodies_are_resolved = bodies.as_ref().is_none_or(body_selection_is_resolved);
@@ -849,7 +850,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !bodies_are_resolved
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
                 || thickness.is_none()
-                || outward.is_none()
+                || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
