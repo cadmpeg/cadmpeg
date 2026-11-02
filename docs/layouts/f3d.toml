@@ -774,6 +774,78 @@ source = "spec"
 anchor = "a six-byte zero trailer"
 
 [[record]]
+name = "draft_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `Draft` scope whose prologue names both angle lanes"
+size = 57
+note = "Offsets are relative to the primary indexed scope header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "stores ten zero bytes at offsets 11 through 20, u32 three at offset 21"
+
+[[record.field]]
+name = "form"
+offset = 21
+type = "u32"
+value = 3
+source = "spec"
+anchor = "u32 three at offset 21"
+
+[[record.field]]
+name = "constant_one"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "u32 one at offset 25"
+
+[[record.field]]
+name = "flipped"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "the flipped Boolean at offset 29"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "the tangent-chain Boolean at offset 30"
+
+[[record.field]]
+name = "mode"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "the mode u32 at offset 31"
+
+[[record.field]]
+name = "angle_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to the first angle lane at offset 35"
+
+[[record.field]]
+name = "opposite_angle_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to the second angle lane at offset 46"
+
+[[record]]
 name = "shell_wall_slot_scope_prefix"
 kind = "byte"
 section = "3.1"
