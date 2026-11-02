@@ -10,6 +10,8 @@ pub(super) struct TreatmentIndex {
     pub(super) preceding_boundaries: HashMap<i64, HashSet<i64>>,
     pub(super) supports: HashMap<i64, (i64, Vec<i64>)>,
     pub(super) radii: HashMap<i64, Option<f64>>,
+    pub(super) spines: HashMap<i64, super::blend_spine::BlendSpine>,
+    pub(super) preceding_edges: HashMap<i64, super::blend_spine::EdgeGeometry>,
 }
 impl TreatmentIndex {
     fn new(result: &AsmHistoricalTopology, preceding: &AsmHistoricalTopology) -> Self {
@@ -33,6 +35,8 @@ impl TreatmentIndex {
             preceding_boundaries,
             supports,
             radii,
+            spines: super::blend_spine::blend_spines(result),
+            preceding_edges: super::blend_spine::edge_geometry(preceding),
         }
     }
 }
