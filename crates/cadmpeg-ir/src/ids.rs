@@ -1230,6 +1230,10 @@ id_type!(
     PhysicalMaterialId, compose
 );
 id_type!(
+    /// Identifies a [`crate::point_cloud::PointCloud`].
+    PointCloudId, compose
+);
+id_type!(
     /// Identifies a [`crate::physics::MassProperties`] record.
     MassPropertiesId, compose
 );

@@ -109,6 +109,7 @@ const COVERAGE: ArenaDispositions = {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Reported,
+        point_clouds: Omitted,
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Omitted,

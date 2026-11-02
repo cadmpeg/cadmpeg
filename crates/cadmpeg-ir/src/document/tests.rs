@@ -152,6 +152,23 @@ impl EntityRewrite for TypedIdentity<'_> {
 }
 
 #[test]
+fn entity_kind_index_is_the_arena_registry_position() {
+    use super::*;
+
+    let mut kinds = Vec::new();
+    macro_rules! collect_kinds {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(kinds.push(<$ty as crate::schema::EntitySchema>::KIND);)*
+        };
+    }
+    super::arena_registry!(collect_kinds);
+    assert_eq!(kinds, crate::schema::EntityKind::ALL);
+    for (position, kind) in kinds.into_iter().enumerate() {
+        assert_eq!(kind.index(), position, "{kind:?}");
+    }
+}
+
+#[test]
 fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
     fn collect_ids(value: &serde_json::Value, ids: &mut std::collections::HashSet<String>) {
         match value {
