@@ -328,14 +328,23 @@ fn project_all_dimension_constraints(
         let parameter = *parameters.get(&(scope, record_index))?;
         Some((parameter, crate::ids::neutral_parameter_id(parameter)))
     };
-    let presentation_for_owner = |scope: &str, owner_record_index: u32| {
-        let mut matches = presentation_frames.iter().filter(|frame| {
-            native_stream(&frame.id) == Some(scope)
-                && frame.governing_owner_record_index == owner_record_index
-        });
-        let frame = matches.next()?;
-        matches.next().is_none().then_some(frame)
-    };
+    let owner_presentation_definition =
+        |scope: &str,
+         owner_record_index: u32,
+         parameter: &DesignParameter,
+         parameter_id: &cadmpeg_ir::features::ParameterId| {
+            governing_presentation_definition(
+                presentation_frames.iter().filter(|frame| {
+                    native_stream(&frame.id) == Some(scope)
+                        && frame.governing_owner_record_index == owner_record_index
+                }),
+                scope,
+                &projected,
+                parameter,
+                parameter_id,
+                linear_tolerance,
+            )
+        };
     let sketch_for_geometry =
         |scope: &str, indices: &[u32]| -> Option<cadmpeg_ir::sketches::SketchId> {
             let projected_sketch = indices
@@ -1143,7 +1152,11 @@ fn project_all_dimension_constraints(
             &parameter_id,
             linear_tolerance,
         );
-        let definition = if let Some(radial) = radial {
+        let presentation =
+            owner_presentation_definition(scope, owner.record_index(), parameter, &parameter_id);
+        let definition = if let Some(presentation) = presentation {
+            presentation
+        } else if let Some(radial) = radial {
             radial
         } else if linear_candidates.len() == 1 {
             let Some(definition) = linear_candidates.into_iter().next() else {
@@ -1348,17 +1361,12 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let presentation_definition = presentation_for_owner(scope, owner.record_index())
-                .and_then(|frame| {
-                    presentation_dimension_definition(
-                        scope,
-                        frame,
-                        &projected,
-                        parameter,
-                        &parameter_id,
-                        linear_tolerance,
-                    )
-                });
+            let presentation_definition = owner_presentation_definition(
+                scope,
+                owner.record_index(),
+                parameter,
+                &parameter_id,
+            );
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
                 .or(owner_scoped_definition);
@@ -1423,6 +1431,30 @@ fn project_all_dimension_constraints(
 /// measures the parameter value. Presentation operands are authoritative for
 /// selection, while the geometric check prevents a presentation record from
 /// assigning a nearby entity with the same source sketch.
+/// The definition of the one presentation frame among `frames` whose operand
+/// measurement equals the parameter.
+fn governing_presentation_definition<'a>(
+    frames: impl Iterator<Item = &'a crate::records::dimensions::DesignDimensionPresentationFrame>,
+    scope: &str,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    let mut definitions = frames.filter_map(|frame| {
+        presentation_dimension_definition(
+            scope,
+            frame,
+            projected,
+            parameter,
+            parameter_id,
+            linear_tolerance,
+        )
+    });
+    let definition = definitions.next()?;
+    definitions.next().is_none().then_some(definition)
+}
+
 fn presentation_dimension_definition(
     scope: &str,
     frame: &crate::records::dimensions::DesignDimensionPresentationFrame,
