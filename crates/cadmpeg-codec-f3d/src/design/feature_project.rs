@@ -3147,6 +3147,14 @@ const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
+fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
+    if flipped {
+        Vector3::new(0.0 - normal.x, 0.0 - normal.y, 0.0 - normal.z)
+    } else {
+        normal
+    }
+}
+
 /// Normal of the Design Geometry origin plane that a neutral-plane member names.
 ///
 /// An origin-plane identity shares its number with an ASM entity, so its
@@ -3186,7 +3194,6 @@ pub(super) fn project_draft(
 
     let construction = or_none!(scope.draft_operation());
     let flipped = construction.flags.is_some_and(|flags| flags.flipped);
-    let pull_sign = if flipped { -1.0 } else { 1.0 };
     let angle_outward = draft_outward(construction.angle.get());
     let faces = or_none!(single_operand_group(
         groups,
@@ -3231,12 +3238,12 @@ pub(super) fn project_draft(
                 selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
             {
                 let transform = or_none!(neutral_plane.work_plane_transform());
-                let pull_direction =
-                    or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-                        pull_sign * transform[0][2],
-                        pull_sign * transform[1][2],
-                        pull_sign * transform[2][2],
-                    )));
+                let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
+                    draft_pull_vector(
+                        Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                        flipped,
+                    )
+                ));
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
                         faces: project_draft_face_selection(
@@ -3266,11 +3273,9 @@ pub(super) fn project_draft(
             if let Some(normal) =
                 selected_origin_plane_normal(scope, neutral_plane, entity_selection_operands)
             {
-                let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-                    pull_sign * normal.x,
-                    pull_sign * normal.y,
-                    pull_sign * normal.z
-                )));
+                let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
+                    draft_pull_vector(normal, flipped)
+                ));
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
                         faces: project_draft_face_selection(
@@ -3350,12 +3355,12 @@ pub(super) fn project_draft(
                 _ => return Ok(None),
             };
             let transform = or_none!(pull_plane.work_plane_transform());
-            let pull_direction =
-                or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-                    pull_sign * transform[0][2],
-                    pull_sign * transform[1][2],
-                    pull_sign * transform[2][2],
-                )));
+            let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
+                draft_pull_vector(
+                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                    flipped,
+                )
+            ));
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {

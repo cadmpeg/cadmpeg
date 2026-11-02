@@ -80,7 +80,8 @@ pub(super) fn exact_draft_operation_with_owners(
         scope,
         angle_record_index,
         opposite_angle_record_index,
-    )?;
+    )
+    .ok()?;
     Some(DesignDraftOperation {
         angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
         angle_record_index,
@@ -98,31 +99,32 @@ fn draft_flags(
     scope: &DesignParameterScope,
     angle_record_index: u32,
     opposite_angle_record_index: u32,
-) -> Option<Option<DesignDraftFlags>> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let at = |offset: usize| start.checked_add(offset);
-    let names_lanes = bytes.get(at(prefix::ZERO_RUN_10)?..at(prefix::FORM)?) == Some(&[0; 10])
-        && View::u32_le_at(bytes, at(prefix::FORM)?) == Some(prefix::FORM_VALUE)
-        && View::u32_le_at(bytes, at(prefix::CONSTANT_ONE)?) == Some(1)
-        && marked_record_reference(bytes, at(prefix::ANGLE_REFERENCE)?) == Some(angle_record_index)
-        && marked_record_reference(bytes, at(prefix::OPPOSITE_ANGLE_REFERENCE)?)
+) -> Result<Option<DesignDraftFlags>, ()> {
+    let start = usize::try_from(scope.byte_offset()).map_err(|_| ())?;
+    let at = |offset: usize| start + offset;
+    let names_lanes = bytes.get(at(prefix::ZERO_RUN_10)..at(prefix::FORM)) == Some(&[0; 10])
+        && View::u32_le_at(bytes, at(prefix::FORM)) == Some(prefix::FORM_VALUE)
+        && View::u32_le_at(bytes, at(prefix::CONSTANT_ONE)) == Some(1)
+        && marked_record_reference(bytes, at(prefix::ANGLE_REFERENCE)) == Some(angle_record_index)
+        && marked_record_reference(bytes, at(prefix::OPPOSITE_ANGLE_REFERENCE))
             == Some(opposite_angle_record_index);
     if !names_lanes {
-        return Some(None);
+        return Ok(None);
     }
-    let flag = |offset| match bytes.get(start.checked_add(offset)?) {
-        Some(0) => Some(false),
-        Some(1) => Some(true),
-        _ => None,
+    let flag = |offset| match bytes.get(at(offset)) {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => Err(()),
     };
     let flipped = flag(prefix::FLIPPED)?;
     let tangent_chain = flag(prefix::TANGENT_CHAIN)?;
-    (View::u32_le_at(bytes, at(prefix::MODE)?)? == MODE_SINGLE_ANGLE).then_some(Some(
-        DesignDraftFlags {
-            flipped,
-            tangent_chain,
-        },
-    ))
+    if View::u32_le_at(bytes, at(prefix::MODE)) != Some(MODE_SINGLE_ANGLE) {
+        return Err(());
+    }
+    Ok(Some(DesignDraftFlags {
+        flipped,
+        tangent_chain,
+    }))
 }
 
 pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
