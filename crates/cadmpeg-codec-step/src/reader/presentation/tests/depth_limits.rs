@@ -135,20 +135,6 @@ fn presentation_invisible_body_walk_refuses_depth_limit() {
 }
 
 #[test]
-fn scalar_color_singletons_keep_one_color_per_target() {
-    let mut candidates = std::collections::BTreeMap::new();
-    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
-    for id in 0..1000 {
-        let body = cadmpeg_ir::ids::BodyId::mint(format!("step:model:body#{id}")).expect("body ID");
-        let target = cadmpeg_ir::appearance::AppearanceTarget::Body(body);
-        super::super::push_scalar_candidate(&mut candidates, &target, id, color)
-            .expect("target owns its first color inline");
-    }
-    assert_eq!(candidates.len(), 1000);
-    assert!(candidates.values().all(|group| group.iter().count() == 1));
-}
-
-#[test]
 fn presentation_color_walk_refuses_depth_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('red',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =

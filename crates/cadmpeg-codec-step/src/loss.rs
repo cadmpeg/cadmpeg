@@ -121,8 +121,6 @@ pub(crate) enum StepLossCode {
     PmiDatumSystemInvalid,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
-    /// Independent styled items assign conflicting scalar colors.
-    ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
     SurfaceSideInvalid,
     /// A surface rendering has multiple transparency properties.
@@ -434,7 +432,6 @@ impl StepLossCode {
         Self::PmiAngleUnitUnresolved,
         Self::PmiDatumSystemInvalid,
         Self::DimensionalLimitsOmitted,
-        Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
         Self::ContextDependentStyleUnresolved,
@@ -617,7 +614,6 @@ impl StepLossCode {
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
-            Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
             Self::ContextDependentStyleUnresolved => {
@@ -856,7 +852,6 @@ impl StepLossCode {
             | Self::PresentationAnnotationPlacementAmbiguous
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
-            | Self::ConflictingScalarColors
             | Self::SurfaceSideInvalid
             | Self::SurfaceTransparencyConflict
             | Self::ContextDependentStyleUnresolved
@@ -1293,7 +1288,6 @@ mod tests {
                 "pmi.angle-unit-unresolved",
                 "pmi.datum-system-invalid",
                 "pmi.dimensional-limits-omitted",
-                "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
                 "presentation.context-dependent-style-unresolved",
