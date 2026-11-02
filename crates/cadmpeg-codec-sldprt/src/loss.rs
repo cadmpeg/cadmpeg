@@ -1311,7 +1311,6 @@ mod tests {
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
-                "pmi.semantic-record-malformed",
                 "pmi.semantic-record-untyped",
                 "pmi.semantic-parse-capped",
                 "pmi.swift-annotation-unsupported",
