@@ -768,7 +768,7 @@ The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definitio
 
 ### 3.3 NX object-model framing
 
-An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `(04|05) 01 text_length:u8 "NX "`.
+An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. In a size-framed part section, the ID table is followed by `(04|05|06) 01 text_length:u8 "NX "`.
 
 An offset-only object-model store instead carries an absolute boundary array,
 then a record count. Boundary slot zero bounds the store root/control block;
@@ -781,11 +781,12 @@ separator or padding. Block ordinals include the root/control block when it is
 present: that block is ordinal zero and column blocks begin at one. A store
 without a distinct root/control block numbers its first column block zero.
 
-Each indexed store contains exactly one self-framed product/version header in
+An offset-only store contains exactly one self-framed product/version header in
 the combined control and first-data-block span:
 `(04|05) 01 text_length:u8 "NX " version_text 00`. `text_length` equals the
 printable text length plus two. Store metadata may precede the header inside
-either bounded block.
+either bounded block. An ID-bounded store in a size-framed part section uses the
+same header with first byte `04`, `05`, or `06`.
 
 Class and member declarations before the boundary array use
 `declared_length:u8 + name[declared_length-1] + first_registry_byte`, where
@@ -1720,11 +1721,16 @@ UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM section
 **Externalized record boundaries.** Every OM section with an id-table carries, immediately before its `object_id_table`, a `(count+1)`-entry monotone `u32 LE` **entity_index** with `index[0] == 0`. OM entity records have no inline length prefix; lengths live in the entity_index:
 
 ```text
-oid_end = object_id_table_off + 4 + count*4       # first entity record start
-base    = oid_end − entity_index[1]               # self-anchoring
-record i = bytes[base + index[i], base + index[i+1])
-object_id(i) = object_id_table[i]
+oid_end = object_id_table_off + 4 + count*4
+base = section_signature_offset + 14
+record 0 = bytes[oid_end, base + index[2])
+record i = bytes[base + index[i+1], base + index[i+2])  # 1 <= i < count-1
+object_id(i) = object_id_table[i+1]
 ```
+
+The product/version preamble begins at `oid_end`. The first indexed boundary
+follows that preamble within record zero. An index without an enclosing
+standard size-framed OM section uses `base = oid_end - index[1]`.
 
 Each bounded record retains the decoded object ID, exact source offset of its four-byte object-ID table word, exact payload boundary, and payload byte identity.
 
@@ -1737,7 +1743,7 @@ or record position, and retains persistent-handle bytes as serialized. Equal
 canonical graphs in the same directory entry remain position-dependent because
 no serialized owner distinguishes them.
 
-The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. The registry then has a reference-list region, a class region, and a member region. A reference-list declaration is `declared_len:u8, name[declared_len-1], code:u8`; `name` is printable ASCII beginning with `UGS::`, and the region ends with `01`. A class declaration is `declared_len:u8, name[declared_len-1], storage_code:token, base:token, schema_fingerprint[8], reference:token`; the class region normally ends with `02`. An alternate class/member boundary may place one opaque separator byte between the final class tail and the first member declaration; that byte is outside both declarations. A member declaration has the same length framing with a printable name, followed by `storage_code:token, owner:token`. Plain printable declarations after a complete `m_` head form independent fields when their exact frames consume the bounded lane and their owners join same-section classes. Class and field ordinals count declarations in their own regions. Incomplete declarations retain their bounded raw bytes without borrowing following bytes.
+The bytes at `oid_end` begin `(04|05|06) 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. The registry then has a reference-list region, a class region, and a member region. A reference-list declaration is `declared_len:u8, name[declared_len-1], code:u8`; `name` is printable ASCII beginning with `UGS::`, and the region ends with `01`. A class declaration is `declared_len:u8, name[declared_len-1], storage_code:token, base:token, schema_fingerprint[8], reference:token`; the class region normally ends with `02`. An alternate class/member boundary may place one opaque separator byte between the final class tail and the first member declaration; that byte is outside both declarations. A member declaration has the same length framing with a printable name, followed by `storage_code:token, owner:token`. Plain printable declarations after a complete `m_` head form independent fields when their exact frames consume the bounded lane and their owners join same-section classes. Class and field ordinals count declarations in their own regions. Incomplete declarations retain their bounded raw bytes without borrowing following bytes.
 
 The part member `m_objectStateCollection` has trailing code `78`. The code is
 not a section-local class ordinal: the UG_PART class registry declares
