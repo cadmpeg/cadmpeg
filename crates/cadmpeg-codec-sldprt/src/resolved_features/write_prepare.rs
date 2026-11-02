@@ -1400,6 +1400,354 @@ pub(crate) fn generated_native_lane(
     Ok(lanes.remove(0))
 }
 
+/// Refuse a native feature-input lane whose typed records disagree with the
+/// payload bytes they state.
+///
+/// The namespace load and the writer's patch path share this one agreement
+/// check, so a fabricated row is refused the same way on every boundary.
+/// A lane without payload bytes cannot be checked and passes.
+///
+/// `for_patch` selects the writer's strict comparison: every resolved field,
+/// including the entity-derived links and references, must agree, because a
+/// patch replays the lane bytes exactly. The load boundary compares only the
+/// payload-backed fields, leaving entity-derived resolution to the typed
+/// ownership checks.
+///
+/// Selection agreement lives separately in
+/// [`validate_lane_selections_against_payload`]: the namespace store, which
+/// persists a typed edit before its bytes are rewritten, checks only the
+/// selection vectors there.
+pub(crate) fn validate_lane_against_payload(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+    for_patch: bool,
+) -> Result<(), String> {
+    if lane.native_payload.is_empty() {
+        return Ok(());
+    }
+    let mut entities = lane.sketch_entities.clone();
+    entities.sort_by_key(|entity| entity.ordinal());
+    for (position, entity) in entities.iter().enumerate() {
+        if cadmpeg_core::decode::u64_from_index(position) != u64::from(entity.ordinal()) {
+            return Err(format!(
+                "SolidWorks feature-input lane expects entity ordinal {position}, found {}",
+                entity.ordinal()
+            ));
+        }
+        entity
+            .validate_against_payload(&lane.native_payload)
+            .map_err(|error| error.to_owned())?;
+    }
+    let entity_ids = entities
+        .iter()
+        .map(|entity| entity.id())
+        .collect::<std::collections::HashSet<_>>();
+    for scalar in &lane.scalars {
+        for operand in &scalar.operands {
+            if let Some(reference) = operand.entity_ref.as_deref() {
+                if !entity_ids.contains(reference) {
+                    return Err(format!(
+                        "feature-input lane {} omits marker {reference}",
+                        lane.id
+                    ));
+                }
+            }
+        }
+    }
+    for instance in &lane.relation_instances {
+        for operand in &instance.operands {
+            if let Some(reference) = operand.entity_ref.as_deref() {
+                if !entity_ids.contains(reference) {
+                    return Err(format!(
+                        "feature-input lane {} omits marker {reference}",
+                        lane.id
+                    ));
+                }
+            }
+        }
+    }
+    let expected = generated_native_lane(
+        histories,
+        &lane.id,
+        lane.configuration.clone(),
+        lane.native_payload.to_vec(),
+    )
+    .map_err(|error| error.to_string())?;
+    if for_patch {
+        if lane.classes != expected.classes {
+            return Err(format!(
+                "feature-input lane {} class index does not match its native payload",
+                lane.id
+            ));
+        }
+        if lane.names != expected.names {
+            let structure = lane.names.len() != expected.names.len() || lane
+                .names
+                .iter()
+                .zip(&expected.names)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.offset != expected.offset
+                        || actual.object_id != expected.object_id
+                });
+            if structure {
+                return Err(format!(
+                    "feature-input lane {} name structure does not match its native payload",
+                    lane.id
+                ));
+            }
+            if let Some((index, actual, expected)) = lane
+                .names
+                .iter()
+                .zip(&expected.names)
+                .enumerate()
+                .find_map(|(index, (actual, expected))| {
+                    (actual.value != expected.value).then_some((index, actual, expected))
+                })
+            {
+                return Err(format!(
+                    "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+                    lane.id, actual.value, expected.value
+                ));
+            }
+        }
+        if !super::scalars::scalar_indices_match(&lane.scalars, &expected.scalars) {
+            return Err(format!(
+                "feature-input lane {} scalar index does not match its native payload",
+                lane.id
+            ));
+        }
+        if lane.relation_bindings != expected.relation_bindings {
+            return Err(format!(
+                "feature-input lane {} relation bindings do not match the native payload",
+                lane.id
+            ));
+        }
+        if lane.relation_instances != expected.relation_instances {
+            return Err(format!(
+                "feature-input lane {} relation instances do not match the native payload",
+                lane.id
+            ));
+        }
+        if lane.references != expected.references {
+            return Err(format!(
+                "feature-input lane {} reference index does not match its native payload",
+                lane.id
+            ));
+        }
+    } else {
+        if lane.classes.len() != expected.classes.len()
+            || lane
+                .classes
+                .iter()
+                .zip(&expected.classes)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.offset != expected.offset
+                        || actual.name != expected.name
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} class index does not match its native payload",
+                lane.id
+            ));
+        }
+        if lane.names.len() != expected.names.len()
+            || lane
+                .names
+                .iter()
+                .zip(&expected.names)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.offset != expected.offset
+                        || actual.object_id != expected.object_id
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} name structure does not match its native payload",
+                lane.id
+            ));
+        }
+        if let Some((index, actual, expected)) = lane
+            .names
+            .iter()
+            .zip(&expected.names)
+            .enumerate()
+            .find_map(|(index, (actual, expected))| {
+                (actual.value != expected.value).then_some((index, actual, expected))
+            })
+        {
+            return Err(format!(
+                "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+                lane.id, actual.value, expected.value
+            ));
+        }
+        if lane.scalars.len() != expected.scalars.len()
+            || lane
+                .scalars
+                .iter()
+                .zip(&expected.scalars)
+                .any(|(actual, expected)| {
+                    !super::scalars::scalar_payload_fields_match(actual, expected)
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} scalar index does not match its native payload",
+                lane.id
+            ));
+        }
+        if lane.relation_bindings.len() != expected.relation_bindings.len()
+            || lane
+                .relation_bindings
+                .iter()
+                .zip(&expected.relation_bindings)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.class_ref != expected.class_ref
+                        || actual.scalar_ref != expected.scalar_ref
+                        || actual.family != expected.family
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} relation bindings do not match the native payload",
+                lane.id
+            ));
+        }
+        if lane.relation_instances.len() != expected.relation_instances.len()
+            || lane
+                .relation_instances
+                .iter()
+                .zip(&expected.relation_instances)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.scalar_refs() != expected.scalar_refs()
+                        || actual.parameter_scalar_ref() != expected.parameter_scalar_ref()
+                        || actual.display_scalar_ref() != expected.display_scalar_ref()
+                        || actual.family != expected.family
+                        || actual.class_ref != expected.class_ref
+                        || actual.operands.len() != expected.operands.len()
+                        || actual
+                            .operands
+                            .iter()
+                            .zip(&expected.operands)
+                            .any(|(actual, expected)| {
+                                actual.offset != expected.offset
+                                    || actual.reference_ref != expected.reference_ref
+                                    || actual.kind != expected.kind
+                                    || actual.entity_index != expected.entity_index
+                            })
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} relation instances do not match the native payload",
+                lane.id
+            ));
+        }
+        if lane.references.len() != expected.references.len()
+            || lane
+                .references
+                .iter()
+                .zip(&expected.references)
+                .any(|(actual, expected)| {
+                    actual.id != expected.id
+                        || actual.parent != expected.parent
+                        || actual.ordinal != expected.ordinal
+                        || actual.offset != expected.offset
+                        || actual.kind != expected.kind
+                        || actual.class_ref != expected.class_ref
+                        || actual.object_index != expected.object_index
+                })
+        {
+            return Err(format!(
+                "feature-input lane {} reference index does not match its native payload",
+                lane.id
+            ));
+        }
+    }
+    if lane.body_selections != expected.body_selections {
+        return Err(format!(
+            "feature-input lane {} has a body selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.edge_selections != expected.edge_selections {
+        return Err(format!(
+            "feature-input lane {} has an edge selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.surface_selections != expected.surface_selections {
+        return Err(format!(
+            "feature-input lane {} has a surface selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.generated_surface_identities != expected.generated_surface_identities {
+        return Err(format!(
+            "feature-input lane {} has a generated surface identity with inconsistent ownership",
+            lane.id
+        ));
+    }
+    Ok(())
+}
+
+/// Refuse a native feature-input lane whose selection vectors disagree with
+/// the payload bytes they state.
+///
+/// The namespace store checks only these vectors: it persists typed edits
+/// whose bytes the writer rewrites, so the remaining lane agreement belongs
+/// to the load and writer boundaries. A lane without payload bytes passes.
+pub(crate) fn validate_lane_selections_against_payload(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Result<(), String> {
+    if lane.native_payload.is_empty() {
+        return Ok(());
+    }
+    let expected = generated_native_lane(
+        histories,
+        &lane.id,
+        lane.configuration.clone(),
+        lane.native_payload.to_vec(),
+    )
+    .map_err(|error| error.to_string())?;
+    if lane.body_selections != expected.body_selections {
+        return Err(format!(
+            "feature-input lane {} has a body selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.edge_selections != expected.edge_selections {
+        return Err(format!(
+            "feature-input lane {} has an edge selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.surface_selections != expected.surface_selections {
+        return Err(format!(
+            "feature-input lane {} has a surface selection with inconsistent ownership",
+            lane.id
+        ));
+    }
+    if lane.generated_surface_identities != expected.generated_surface_identities {
+        return Err(format!(
+            "feature-input lane {} has a generated surface identity with inconsistent ownership",
+            lane.id
+        ));
+    }
+    Ok(())
+}
+
 fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {
     objects.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
     let mut lanes = Vec::new();
