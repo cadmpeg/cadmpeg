@@ -2004,6 +2004,7 @@ impl<'a> DecodeContext<'a> {
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
+        let late_give_ups = document_data.give_ups;
         let (presentation, materials) = crate::presentation::install(
             ctx,
             self.expand.root(),
@@ -2176,6 +2177,17 @@ impl<'a> DecodeContext<'a> {
             &mut losses,
             &mut unknowns,
         )?;
+        let late_marks = crate::container::materialize_give_ups(
+            ctx,
+            self.scan.data,
+            &late_give_ups,
+            &mut losses,
+            &mut unknowns,
+        )?;
+        let give_up_marks = give_up_marks
+            .into_iter()
+            .chain(late_marks)
+            .collect::<Vec<_>>();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
         losses.extend(crate::neutral_projection::project(

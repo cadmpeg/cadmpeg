@@ -108,7 +108,7 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
 }
 
 #[test]
-fn document_length_render_settings_are_retained_without_a_physical_binding() {
+fn document_length_render_settings_decode_typed_with_the_source_unit() {
     let archive = ArchiveVersion::V8;
     for unit in [Some(0), Some(255), None] {
         let render = render_settings_record(archive);
@@ -126,31 +126,21 @@ fn document_length_render_settings_are_retained_without_a_physical_binding() {
         );
         let result = decode(bytes);
         let namespace = result.ir().native.namespace("rhino").unwrap();
-        assert!(namespace.arenas()["render_settings"].is_empty());
-        let retained = result
-            .source_fidelity()
-            .retained_records()
-            .iter()
-            .find(|(id, record)| {
-                id.as_str()
-                    .starts_with("rhino:opaque:record#10000015-2000803d-")
-                    && record.data() == Some(render.as_slice())
-            });
+        assert_eq!(namespace.arenas()["render_settings"].len(), 1);
         assert!(
-            retained.is_some(),
-            "unit {unit:?} render source was not retained"
+            namespace.arenas()["setting_records"]
+                .iter()
+                .all(|record| !record.id().contains("unit-binding")),
+            "unit {unit:?}: no unit-binding failure rows remain"
         );
-        let label = if unit == Some(0) {
-            "native"
-        } else {
-            "unavailable"
-        };
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-                && loss
-                    .message
-                    .contains(&format!("no physical millimetre binding ({label})"))
-        }));
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("no physical millimetre binding")),
+            "unit {unit:?}: no unit-binding charge remains"
+        );
         assert_valid(&result);
     }
 }

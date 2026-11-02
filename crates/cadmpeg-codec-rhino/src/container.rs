@@ -176,6 +176,8 @@ pub(crate) struct NativeInstall {
     pub(crate) losses: Vec<LossNote>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
+    /// Settings records that failed to parse, given up as their parts.
+    pub(crate) give_ups: Vec<GivenUpPart>,
 }
 
 /// A table descriptor whose body is a strict sub-range of its chunk range.
@@ -252,7 +254,7 @@ impl Table {
 /// `error` is reported once in the part's `record.unreadable` loss, and
 /// `dropped` names the neutral records the part built. A part whose end
 /// cannot be found extends to the end of the source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GivenUpPart {
     /// The codec's part name (`rhino.table_chunk`, `rhino.table_record`).
     pub(crate) label: &'static str,
@@ -495,6 +497,30 @@ fn table_record_classes(table_typecode: u32) -> cadmpeg_ir::ArenaClasses {
     } else {
         model_classes()
     }
+}
+
+/// Give up one settings-table record that failed to parse as a
+/// `rhino.table_record` part (#215 rule 1, #223 item 9). `dropped` names the
+/// typed record the uncut document holds for it.
+pub(crate) fn settings_record_give_up(
+    give_ups: &mut Vec<GivenUpPart>,
+    data_len: usize,
+    table_typecode: u32,
+    record: &Record,
+    dropped: Vec<String>,
+    error: &FramingError,
+) {
+    give_up(
+        give_ups,
+        "rhino.table_record",
+        record.range.start,
+        record.range.end,
+        data_len,
+        table_record_classes(table_typecode),
+        Some(table_base(table_typecode)),
+        dropped,
+        error,
+    );
 }
 
 /// Mints the stable unknown-record ID for source order.
