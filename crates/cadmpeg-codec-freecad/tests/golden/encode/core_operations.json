@@ -258,6 +258,7 @@
         "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
+        "declared_measures": "omitted",
         "drawings": "dropped",
         "edges": "written",
         "faces": "written",
