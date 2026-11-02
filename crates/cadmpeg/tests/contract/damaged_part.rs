@@ -172,7 +172,10 @@ fn check_pair(format: &str, fixtures: &[Fixture], pair: &Pair) -> Vec<String> {
             }
             if let Some(span) = loss.provenance.as_ref() {
                 if span.stream_name().is_none() {
-                    if span.offset < first as u64 {
+                    let ends_at_or_before_damage = span
+                        .byte_len()
+                        .is_some_and(|length| span.offset + length <= first as u64);
+                    if ends_at_or_before_damage {
                         findings.push(format!(
                             "{format}: {}: a given-up part at offset {} predates the damage at byte {first}",
                             damaged.path.display(),
