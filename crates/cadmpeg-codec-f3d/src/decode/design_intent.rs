@@ -1394,7 +1394,7 @@ fn extend_related_design_records(
     crate::history::selection::bind_hole_selection_history(
         &mut design.design_parameter_scopes,
         &design.asm_histories,
-    )?;
+    );
     design.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
             scan,

@@ -215,7 +215,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         slot.point = Some(construction);
     }
 
-    { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();
+    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
 
     assert_eq!(
         scope

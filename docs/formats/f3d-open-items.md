@@ -56,6 +56,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Such a Hole retains its native placement and reports `feature.hole-placement-unproven`.
 
+### DR-221. Primary identity of a Hole carrier selection
+
+**Question.** What does the primary persistent identity of the direct selection on a Hole carrier name?
+
+**Known.** `f3d.md` §3.1 "The direct support-face selection has type GUID" gives the frame. On a carrier with `refType` `13` the identity can match a loop in a state after the Hole, so it does not name the support face there. The transition states the support face in `f3d.md` §3.1 "The transition that drills a Hole".
+
+**Need.** Paired Holes that vary the sketch point, the sketch, and the sketch plane while the support face stays fixed.
+
+**Conflict.** None.
+
+**Note.** The selection stays a native record. A candidate from this identity binds only when the transition states no support face.
+
 ### DR-09A. Sheet-metal settings compatibility and override encoding
 
 **Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?
