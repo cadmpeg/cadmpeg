@@ -383,7 +383,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn f3z_archive_without_merged_components_synthesizes_root() {
+fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -403,7 +403,7 @@ fn f3z_archive_without_merged_components_synthesizes_root() {
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("unmerged F3Z archive remains patchable");
+        .expect("unmerged F3Z archive remains replayable");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
         plan.report(),
         "identity/target",
@@ -411,20 +411,12 @@ fn f3z_archive_without_merged_components_synthesizes_root() {
     .as_ref()
     .expect("an F3D export names its target")
     .clone();
-    assert!(
-        matches!(
-            plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-        ),
-        "unexpected path {:?} cause {:?}",
-        plan.report().write_path(),
-        plan.report().synthesis_cause()
-    );
-    let mut synthesized = Vec::new();
-    plan.write_to(&mut synthesized).unwrap();
+    let mut replayed = Vec::new();
+    plan.write_to(&mut replayed).unwrap();
+    assert_eq!(replayed, archive);
 
     let redecode = crate::test_support::archive_session::decode(
-        &mut Cursor::new(synthesized),
+        &mut Cursor::new(replayed),
         &DecodeOptions::default(),
     )
     .unwrap();
@@ -434,10 +426,6 @@ fn f3z_archive_without_merged_components_synthesizes_root() {
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
     assert_eq!(primary.dialect(), &reported);
-    assert_eq!(
-        redecode.ir().model.bodies.len(),
-        decoded.ir().model.bodies.len()
-    );
 }
 
 #[test]

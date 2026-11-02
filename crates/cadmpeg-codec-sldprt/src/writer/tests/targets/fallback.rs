@@ -105,7 +105,7 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
 }
 
 #[test]
-fn an_intact_unchanged_source_still_patches_its_exact_container() {
+fn an_intact_unchanged_source_still_replays_its_exact_container() {
     let mut source = crate::test_support::history::sldprt_with_body_and_history(
         &crate::test_support::parasolid::triangle_body(),
     );
@@ -126,13 +126,98 @@ fn an_intact_unchanged_source_still_patches_its_exact_container() {
         .expect("the unchanged source retains replay eligibility");
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::Patched { .. }
+        WritePath::VerbatimReplay { .. }
     ));
     assert!(plan.report().synthesis_cause().is_none());
     let mut written = Vec::new();
-    let report = plan.write_to(&mut written).expect("write intact source");
-    let redecoded = SldprtCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .expect("patched output decodes");
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, redecoded.ir());
+    plan.write_to(&mut written).expect("write intact source");
+    assert_eq!(written, source);
+}
+
+#[test]
+fn an_edited_document_does_not_replay_its_source_image() {
+    let mut source = crate::test_support::history::sldprt_with_body_and_history(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("source native container reads");
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    let point = ir
+        .model
+        .points
+        .first_mut()
+        .expect("the triangle body decodes points");
+    point.set_position(point.position().negated());
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("an edited source still plans");
+    assert!(
+        !matches!(
+            plan.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ),
+        "an edited document must not replay its source image"
+    );
+}
+
+#[test]
+fn an_altered_source_image_does_not_replay() {
+    let mut source = crate::test_support::history::sldprt_with_body_and_history(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("source native container reads");
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let record = fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("the decode retains its source image");
+    let mut image = record
+        .data()
+        .expect("the retained image carries bytes")
+        .to_vec();
+    let middle = image.len() / 2;
+    image[middle] ^= 0x01;
+    let untyped = record.untyped().iter().copied().collect::<Vec<_>>();
+    fidelity
+        .insert_retained_record(
+            crate::source_image_id(),
+            cadmpeg_ir::RetainedSourceRecord::from_bytes(
+                record.stream(),
+                record.offset(),
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: image },
+            )
+            .expect("altered source image extent"),
+        )
+        .expect("source image identity is unique");
+    fidelity
+        .mark_untyped(crate::SOURCE_IMAGE_ID, untyped)
+        .expect("the altered image keeps its untyped classes");
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("an altered image still plans");
+    assert!(
+        !matches!(
+            plan.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ),
+        "an altered source image must not replay"
+    );
 }
