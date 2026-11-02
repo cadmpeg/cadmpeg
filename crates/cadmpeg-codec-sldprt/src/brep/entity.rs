@@ -324,12 +324,7 @@ mod tests {
     use super::{attribute_slot_count, refs, scan_entities, scan_metadata, FACE_COLOR_FAMILY};
 
     fn pointer(out: &mut Vec<u8>, value: u16) {
-        if value <= 0x7ffe {
-            out.extend(value.to_be_bytes());
-        } else {
-            out.extend((value | 0x8000).to_be_bytes());
-            out.extend((value >> 15).to_be_bytes());
-        }
+        cadmpeg_parasolid::pointer::write(out, u32::from(value)).unwrap();
     }
 
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: &[u16]) -> Vec<u8> {
