@@ -704,6 +704,7 @@ fn parameter_document(
                 record_index: u32::try_from(ordinal).unwrap(),
                 source_ordinal: u32::try_from(ordinal).unwrap(),
                 source: DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: None,
                 },
                 expression: expression.into(),
