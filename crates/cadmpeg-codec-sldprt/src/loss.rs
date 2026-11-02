@@ -857,6 +857,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Model,
     ),
     (
+        SldprtLossCode::GeometryCurveMarkerConflict,
+        Representation::Model,
+    ),
+    (
         SldprtLossCode::GeometryPcurveAmbiguous,
         Representation::Model,
     ),
@@ -902,6 +906,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
     (
+        SldprtLossCode::TopologyFaceWithheld,
+        Representation::Model,
+    ),
+    (
         SldprtLossCode::TopologyFinRecordAmbiguous,
         Representation::Model,
     ),
@@ -931,6 +939,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::GeometryParasolidNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryImportedBodiesNotTransferred,
         Representation::Model,
     ),
     (
@@ -1027,6 +1039,44 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::SourcePropertyKeyBlank,
+        Representation::Model,
+    ),
+    // Assembly product structure, occurrences, placements and mates are
+    // model arenas, so untransferred assembly content is model content.
+    (
+        SldprtLossCode::AssemblyStructureNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyMatesNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyComponentsExternal,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyVirtualComponentsNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblySuppressedComponentsOmitted,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyPlacementUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyConfigurationsNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyEmbeddedDocumentsNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AssemblyBomExclusionNotTransferred,
         Representation::Model,
     ),
 ];
