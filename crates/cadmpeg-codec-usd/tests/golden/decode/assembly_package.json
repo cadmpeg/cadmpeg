@@ -1,6 +1,5 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "10",
     "model": {
       "appearance_bindings": [],
@@ -33,7 +32,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly",
           "name": "Assembly",
-          "native_ref": "/Assembly",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -42,11 +40,6 @@
             "definition": "usd:stage:definition#/Assembly",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -71,7 +64,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/BoltA",
           "name": "BoltA",
-          "native_ref": "/Assembly/BoltA",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -81,11 +73,6 @@
             "definition": "usd:stage:definition#prototype0",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -110,7 +97,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/BoltA/Shank",
           "name": "Shank",
-          "native_ref": "/Assembly/BoltA/Shank",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -120,11 +106,6 @@
             "definition": "usd:stage:definition#prototype0/Shank",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -149,7 +130,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/BoltB",
           "name": "BoltB",
-          "native_ref": "/Assembly/BoltB",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -159,11 +139,6 @@
             "definition": "usd:stage:definition#prototype0",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               2.220446049250313e-16,
@@ -188,7 +163,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/BoltB/Shank",
           "name": "Shank",
-          "native_ref": "/Assembly/BoltB/Shank",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -198,11 +172,6 @@
             "definition": "usd:stage:definition#prototype0/Shank",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -227,7 +196,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/Plate",
           "name": "Plate",
-          "native_ref": "/Assembly/Plate",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
@@ -237,11 +205,6 @@
             "definition": "usd:stage:definition#/Assembly/Plate",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -266,7 +229,6 @@
         {
           "id": "usd:stage:occurrence#/Assembly/Plate/Large",
           "name": "Large",
-          "native_ref": "/Assembly/Plate/Large",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -276,11 +238,6 @@
             "definition": "usd:stage:definition#/Assembly/Plate/Large",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -315,13 +272,11 @@
         {
           "id": "usd:stage:definition#/Assembly",
           "kind": "part",
-          "native_ref": "/Assembly",
           "source_name": "Assembly"
         },
         {
           "id": "usd:stage:definition#/Assembly/Plate",
           "kind": "group",
-          "native_ref": "/Assembly/Plate",
           "source_name": "Plate"
         },
         {
@@ -330,13 +285,11 @@
           ],
           "id": "usd:stage:definition#/Assembly/Plate/Large",
           "kind": "object",
-          "native_ref": "/Assembly/Plate/Large",
           "source_name": "Large"
         },
         {
           "id": "usd:stage:definition#prototype0",
           "kind": "group",
-          "native_ref": "/Assembly/BoltA",
           "source_name": "Bolt"
         },
         {
@@ -345,7 +298,6 @@
           ],
           "id": "usd:stage:definition#prototype0/Shank",
           "kind": "object",
-          "native_ref": "/Assembly/BoltA/Shank",
           "source_name": "Shank"
         }
       ],
@@ -450,6 +402,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Assembly",
@@ -525,10 +481,15 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "fdced49b0fb2e5b9bee334f68f3f2b0e0b182858973297b79a753875fd135ff7",
+    "unrepresented": []
   }
 }

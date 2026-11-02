@@ -21,6 +21,7 @@ use crate::native::Native;
 use crate::provenance::{CodecFormat, SourceOwner, SourceProvenance, StreamName};
 use crate::report::loss::LossNote;
 use crate::source_fidelity::{RetainedBytes, RetainedSourceRecord, SourceFidelity};
+use crate::Annotations;
 use crate::NativeUnknownRecord;
 
 /// The label, stream and content classes of one part.
@@ -89,13 +90,13 @@ pub struct PartOutput {
 }
 
 impl PartOutput {
-    /// Start one codec's part output.
-    pub fn new(codec: CodecFormat) -> Self {
+    /// Start one codec's part output under the admitting context.
+    pub fn new(codec: CodecFormat, ctx: &DecodeContext<'_>) -> Self {
         Self {
             codec,
             model: Model::default(),
             native: Native::default(),
-            fidelity: SourceFidelity::default(),
+            fidelity: SourceFidelity::for_decode(ctx, Annotations::default()),
             losses: Vec::new(),
         }
     }
@@ -253,13 +254,13 @@ impl DecodeParts for DecodeContext<'_> {
         let codec = output.codec;
         // The stage outlives the part runner so a failed part can still name
         // the records it built.
-        let mut stage = PartOutput::new(codec);
+        let mut stage = PartOutput::new(codec, self);
         let result = self.run_part(|| {
             let value = decode(&mut stage)?;
             if let Some(limit) = self.resource_refusal() {
                 return Err(limit.into());
             }
-            let staged = std::mem::replace(&mut stage, PartOutput::new(codec));
+            let staged = std::mem::replace(&mut stage, PartOutput::new(codec, self));
             output.append(self, staged)?;
             Ok(value)
         })?;

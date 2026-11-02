@@ -53,6 +53,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 geometry_transferred: transferred,
             })
         },
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
     })
 }

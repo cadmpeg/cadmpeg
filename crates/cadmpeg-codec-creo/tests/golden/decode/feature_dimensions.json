@@ -974,6 +974,7 @@
         }
       }
     },
+    "decode_digest": "7c795c17e8927fb2f83b7ed6bac3bdb3754956f53274c382c57fa255091b14cc",
     "retained_records": {
       "creo:source:image#whole": {
         "bytes": {

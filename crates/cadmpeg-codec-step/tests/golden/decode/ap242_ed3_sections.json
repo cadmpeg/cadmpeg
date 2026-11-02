@@ -62,10 +62,7 @@
       "step": {
         "unknowns": [
           {
-            "id": "step:data:example_record#2",
-            "links": [
-              "step:product:product#1"
-            ]
+            "id": "step:data:example_record#2"
           },
           {
             "id": "step:file:signature#0"
@@ -196,6 +193,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {

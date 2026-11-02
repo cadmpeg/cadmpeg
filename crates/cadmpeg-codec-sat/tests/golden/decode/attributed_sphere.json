@@ -113,6 +113,7 @@
           },
           "id": "sat:brep:entity#1",
           "kind": "solid",
+          "native_ref": "sat:asm:body-native-key#1",
           "regions": [
             "sat:brep:entity#2"
           ]
@@ -209,7 +210,6 @@
       "sat": {
         "body_native_keys": [
           {
-            "body": "sat:brep:entity#1",
             "body_ordinal": 0,
             "id": "sat:asm:body-native-key#1",
             "record_index": 1,
@@ -375,6 +375,7 @@
         }
       }
     },
+    "decode_digest": "4799f6c3becc9e1d5634dcad4d3809bd5458865cc48b1d878a8dd3ae37b6dfeb",
     "unrepresented": []
   }
 }

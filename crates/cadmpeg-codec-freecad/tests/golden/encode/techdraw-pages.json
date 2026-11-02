@@ -20,7 +20,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 37,
+        "attributes": 13,
         "bodies": 0,
         "coedges": 0,
         "colliders": 0,
@@ -78,11 +78,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
+        "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -92,9 +94,12 @@
         "feature_result_topologies": "dropped",
         "features": "written",
         "loops": "written",
+        "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
@@ -103,11 +108,13 @@
         "procedural_surfaces": "written",
         "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
@@ -125,246 +132,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#First:KeepUpdated:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#First:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#First:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#First:NextBalloonIndex:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#First:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Height:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Orientation:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Template:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#FirstTemplate:Width:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Second:KeepUpdated:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Second:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Second:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Second:NextBalloonIndex:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Second:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Height:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Orientation:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Template:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SecondTemplate:Width:property target has no emitted object",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "arena.not-transferred",

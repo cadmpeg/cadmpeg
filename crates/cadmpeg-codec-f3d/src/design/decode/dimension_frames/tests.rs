@@ -14,12 +14,39 @@ use super::{
 };
 use crate::design::test_support::{push_genesis_block, push_reference};
 use crate::records::sketch_links::PersistentSubentityTag;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 
 use std::collections::{HashMap, HashSet};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
+/// Neutral faces and edges carrying native row links for tag resolution.
+fn tagged_topology(
+    faces: &[(&str, &str)],
+    edges: &[(&str, &str)],
+) -> (
+    Vec<cadmpeg_ir::topology::Face>,
+    Vec<cadmpeg_ir::topology::Edge>,
+) {
+    let model = cadmpeg_ir::examples::unit_cube()
+        .expect("synthetic cube")
+        .model;
+    let mut out_faces = Vec::new();
+    for (index, (id, native_ref)) in faces.iter().enumerate() {
+        let mut face = model.faces[index % model.faces.len()].clone();
+        face.id = (*id).try_into().expect("face id");
+        face.native_ref = Some((*native_ref).to_owned());
+        out_faces.push(face);
+    }
+    let mut out_edges = Vec::new();
+    for (index, (id, native_ref)) in edges.iter().enumerate() {
+        let mut edge = model.edges[index % model.edges.len()].clone();
+        edge.id = (*id).try_into().expect("edge id");
+        edge.native_ref = Some((*native_ref).to_owned());
+        out_edges.push(edge);
+    }
+    (out_faces, out_edges)
+}
 
 #[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
@@ -209,9 +236,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-b-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
@@ -219,9 +245,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-a-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![999],
@@ -229,9 +254,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#face-c").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-c-row".to_owned()),
+            target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
@@ -239,9 +263,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: AttributeTarget::Edge(
-                EdgeId::mint("test:model:edge#edge-b").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:edge#edge-b-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
@@ -249,19 +272,31 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: AttributeTarget::Edge(
-                EdgeId::mint("test:model:edge#edge-c").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:edge#edge-c-row".to_owned()),
+            target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
             ordinal: 0,
         },
     ];
+    let (faces, edges) = tagged_topology(
+        &[
+            ("test:model:face#face-b", "test:model:face#face-b-row"),
+            ("test:model:face#face-c", "test:model:face#face-c-row"),
+        ],
+        &[
+            ("test:model:edge#edge-b", "test:model:edge#edge-b-row"),
+            ("test:model:edge#edge-c", "test:model:edge#edge-c-row"),
+        ],
+    );
+    let bodies: Vec<cadmpeg_ir::topology::Body> = Vec::new();
+    let vertices: Vec<cadmpeg_ir::topology::Vertex> = Vec::new();
+    let coedges: Vec<cadmpeg_ir::topology::Coedge> = Vec::new();
     let mut bound = references[0].clone();
     {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
-            &mut bound, &tags, None,
+            &mut bound, &tags, None, &bodies, &faces, &edges, &vertices, &coedges,
         );
     };
     assert_eq!(
@@ -283,9 +318,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-a-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
@@ -293,20 +327,31 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#face-b-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
             design_references: vec![331],
             ordinal: 0,
         },
     ];
+    let (stream_faces, _) = tagged_topology(
+        &[
+            ("test:model:face#face-a", "test:model:face#face-a-row"),
+            ("test:model:face#face-b", "test:model:face#face-b-row"),
+        ],
+        &[],
+    );
     {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
             &mut bound,
             &stream_tags,
             Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
+            &bodies,
+            &stream_faces,
+            &edges,
+            &vertices,
+            &coedges,
         );
     };
     assert_eq!(
@@ -895,16 +940,36 @@ fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].design_reference, -73);
     let face = FaceId::mint("test:model:face#signed").unwrap();
+    let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "test:asm:face-native-key#0".to_owned(),
+    );
     let tag = PersistentSubentityTag {
         id: "signed-key".into(),
-        target: AttributeTarget::Face(face.clone()),
+        target: row.clone(),
+        target_coedge: None,
         selector: 2,
         token: cadmpeg_core::text::NonBlankString::new("37").unwrap(),
         design_references: vec![-73],
         ordinal: 0,
     };
+    let mut model_face = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .model
+        .faces
+        .remove(0);
+    model_face.id = face.clone();
+    model_face.native_ref = Some(row.as_str().to_owned());
     let mut bound = references[0].clone();
-    super::bind_recipe_reference_candidates(&mut bound, &[tag], None);
+    super::bind_recipe_reference_candidates(
+        &mut bound,
+        &[tag],
+        None,
+        &[],
+        &[model_face],
+        &[],
+        &[],
+        &[],
+    );
     assert_eq!(bound.candidate_faces, [face]);
     for end in 0..prefix.len() {
         assert!(super::decode_recipe_references(&prefix[..end], 0).is_empty());

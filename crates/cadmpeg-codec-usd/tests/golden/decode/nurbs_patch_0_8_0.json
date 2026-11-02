@@ -1,6 +1,5 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "10",
     "model": {
       "appearance_bindings": [],
@@ -64,7 +63,6 @@
         {
           "id": "usd:stage:occurrence#/Surfaces",
           "name": "Surfaces",
-          "native_ref": "/Surfaces",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -73,11 +71,6 @@
             "definition": "usd:stage:definition#/Surfaces",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -102,7 +95,6 @@
         {
           "id": "usd:stage:occurrence#/Surfaces/Bilinear",
           "name": "Bilinear",
-          "native_ref": "/Surfaces/Bilinear",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -112,11 +104,6 @@
             "definition": "usd:stage:definition#/Surfaces/Bilinear",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -141,7 +128,6 @@
         {
           "id": "usd:stage:occurrence#/Surfaces/Trimmed",
           "name": "Trimmed",
-          "native_ref": "/Surfaces/Trimmed",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
@@ -151,11 +137,6 @@
             "definition": "usd:stage:definition#/Surfaces/Trimmed",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -190,7 +171,6 @@
         {
           "id": "usd:stage:definition#/Surfaces",
           "kind": "group",
-          "native_ref": "/Surfaces",
           "source_name": "Surfaces"
         },
         {
@@ -199,7 +179,6 @@
           ],
           "id": "usd:stage:definition#/Surfaces/Bilinear",
           "kind": "object",
-          "native_ref": "/Surfaces/Bilinear",
           "source_name": "Bilinear"
         },
         {
@@ -208,7 +187,6 @@
           ],
           "id": "usd:stage:definition#/Surfaces/Trimmed",
           "kind": "object",
-          "native_ref": "/Surfaces/Trimmed",
           "source_name": "Trimmed"
         }
       ],
@@ -397,6 +375,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Surfaces",
@@ -464,10 +446,15 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "ce9cac2678daa54716885214e3e7909ed3bb11cad1dd6587b6f82c0829992089",
+    "unrepresented": []
   }
 }

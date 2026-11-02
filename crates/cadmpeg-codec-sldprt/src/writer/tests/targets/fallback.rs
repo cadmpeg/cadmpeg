@@ -50,7 +50,10 @@ fn off_catalog_inherit_synthesizes_and_reads_the_reported_catalog_default() {
 #[test]
 fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_content() {
     let ir = sourced_ir("sldprt:unknown");
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"\x42"),
+    );
     let image = cadmpeg_ir::RetainedSourceRecord::from_bytes(
         "file",
         0,
@@ -102,7 +105,7 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
 }
 
 #[test]
-fn an_intact_unchanged_source_still_replays_its_exact_container() {
+fn an_intact_unchanged_source_still_patches_its_exact_container() {
     let mut source = crate::test_support::history::sldprt_with_body_and_history(
         &crate::test_support::parasolid::triangle_body(),
     );
@@ -123,10 +126,13 @@ fn an_intact_unchanged_source_still_replays_its_exact_container() {
         .expect("the unchanged source retains replay eligibility");
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::VerbatimReplay { .. }
+        WritePath::Patched { .. }
     ));
     assert!(plan.report().synthesis_cause().is_none());
     let mut written = Vec::new();
-    plan.write_to(&mut written).expect("write intact source");
-    assert_eq!(written, source);
+    let report = plan.write_to(&mut written).expect("write intact source");
+    let redecoded = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("patched output decodes");
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, redecoded.ir());
 }

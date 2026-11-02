@@ -527,35 +527,9 @@ pub(super) fn check_references(
                     ref_error(findings, &owner, "record in named neutral arena", id);
                 }
             }
-            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }
-    let source_objects: std::collections::HashSet<&str> = ir
-        .model
-        .curves
-        .iter()
-        .filter_map(|record| record.source_object.as_ref())
-        .chain(
-            ir.model
-                .surfaces
-                .iter()
-                .filter_map(|record| record.source_object.as_ref()),
-        )
-        .chain(
-            ir.model
-                .points
-                .iter()
-                .filter_map(|record| record.source_object.as_ref()),
-        )
-        .chain(
-            ir.model
-                .tessellations
-                .iter()
-                .filter_map(|record| record.source_object.as_ref()),
-        )
-        .map(|association| association.object_id.as_str())
-        .collect();
     for attribute in &ir.model.attributes {
         use crate::attributes::AttributeTarget;
         let missing = match &attribute.target {
@@ -688,9 +662,6 @@ pub(super) fn check_references(
             .then_some(("tessellation", id.as_str())),
             AttributeTarget::Record { arena, id } => (!ir.model.contains_record(*arena, id))
                 .then_some(("record in named neutral arena", id.as_str())),
-            AttributeTarget::Source { source_id } => (!ids.native_record_owns(source_id)
-                && !source_objects.contains(source_id.as_str()))
-            .then_some(("source object", source_id.as_str())),
         };
         if let Some((kind, id)) = missing {
             ref_error(findings, attribute.id.as_str(), kind, id);

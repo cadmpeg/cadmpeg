@@ -122,6 +122,7 @@ pub(super) fn regenerate(
                     legacy_loft_body_carriers: &[],
                     placements: &[],
                     body_bindings: &[],
+                    body_key_bodies: None,
                     component_naming_spaces: &[],
                     histories: &[],
                     face_boundaries: &[],

@@ -17,7 +17,7 @@ use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, L
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree, Branch, Harness};
-use cadmpeg_test_support::roundtrip::{semantic_roundtrip, verbatim_replay_holds, SemanticOutcome};
+use cadmpeg_test_support::roundtrip::{patched_round_trip_holds, semantic_roundtrip, SemanticOutcome};
 
 use super::SldprtCodec;
 
@@ -147,7 +147,7 @@ fn fixtures_replay_verbatim() {
         )
         .unwrap();
         if decoded.source_fidelity().unrepresented().is_empty() {
-            verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+            patched_round_trip_holds(&SldprtCodec, &name, &bytes);
         } else {
             use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
             let plan = SldprtCodec
@@ -648,7 +648,7 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     );
     // An unrepresented source class makes replay and patch ineligible (#209 §1.4).
     if result.source_fidelity().unrepresented().is_empty() {
-        verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+        patched_round_trip_holds(&SldprtCodec, "body_history", bytes);
     } else {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         let plan = SldprtCodec

@@ -189,97 +189,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "TechDraw page, view, dimension, note, symbol, and template"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Model:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#Model:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#Model",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Model"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -293,8 +211,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Model:Label2",
           "target": {
-            "id": "fcstd:design:feature#Model",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Model"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -308,8 +229,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#Model:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#Model",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Model"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -323,8 +247,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#Model:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#Model",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Model"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -338,437 +265,16 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Model:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Model",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Model"
+            },
+            "kind": "record"
           },
           "values": [
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Page:KeepUpdated:property",
-          "name": "KeepUpdated",
-          "native_ref": "fcstd:native:property#Page:KeepUpdated",
-          "target": {
-            "id": "fcstd:model:drawing#Page:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Page:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Page:Label2",
-          "target": {
-            "id": "fcstd:model:drawing#Page:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Page:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Page:Label",
-          "target": {
-            "id": "fcstd:model:drawing#Page:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Page"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Page:NextBalloonIndex:property",
-          "name": "NextBalloonIndex",
-          "native_ref": "fcstd:native:property#Page:NextBalloonIndex",
-          "target": {
-            "id": "fcstd:model:drawing#Page:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Page:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Page:Visibility",
-          "target": {
-            "id": "fcstd:model:drawing#Page:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Height:property",
-          "name": "Height",
-          "native_ref": "fcstd:native:property#Template:Height",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 297.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Template:Label2",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Template:Label",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Template"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Orientation:property",
-          "name": "Orientation",
-          "native_ref": "fcstd:native:property#Template:Orientation",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Template:property",
-          "name": "Template",
-          "native_ref": "fcstd:native:property#Template:Template",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "__elided_authoring_path_sha256:a5fccab6942217b6880d94e60e8a3d0a8721c21259dc7e6d06a506947c836292"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Template:Visibility",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Template:Width:property",
-          "name": "Width",
-          "native_ref": "fcstd:native:property#Template:Width",
-          "target": {
-            "id": "fcstd:model:drawing#Template:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 210.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:CoarseView:property",
-          "name": "CoarseView",
-          "native_ref": "fcstd:native:property#View:CoarseView",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:Focus:property",
-          "name": "Focus",
-          "native_ref": "fcstd:native:property#View:Focus",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 100.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:HardHidden:property",
-          "name": "HardHidden",
-          "native_ref": "fcstd:native:property#View:HardHidden",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:IsoCount:property",
-          "name": "IsoCount",
-          "native_ref": "fcstd:native:property#View:IsoCount",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:IsoHidden:property",
-          "name": "IsoHidden",
-          "native_ref": "fcstd:native:property#View:IsoHidden",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:IsoVisible:property",
-          "name": "IsoVisible",
-          "native_ref": "fcstd:native:property#View:IsoVisible",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#View:Label2",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#View:Label",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "View"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:Perspective:property",
-          "name": "Perspective",
-          "native_ref": "fcstd:native:property#View:Perspective",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:ScrubCount:property",
-          "name": "ScrubCount",
-          "native_ref": "fcstd:native:property#View:ScrubCount",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:SeamHidden:property",
-          "name": "SeamHidden",
-          "native_ref": "fcstd:native:property#View:SeamHidden",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:SeamVisible:property",
-          "name": "SeamVisible",
-          "native_ref": "fcstd:native:property#View:SeamVisible",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:SmoothHidden:property",
-          "name": "SmoothHidden",
-          "native_ref": "fcstd:native:property#View:SmoothHidden",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:SmoothVisible:property",
-          "name": "SmoothVisible",
-          "native_ref": "fcstd:native:property#View:SmoothVisible",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#View:Visibility",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#View:XDirection:property",
-          "name": "XDirection",
-          "native_ref": "fcstd:native:property#View:XDirection",
-          "target": {
-            "id": "fcstd:model:drawing#View:entity",
-            "kind": "drawing"
-          },
-          "values": [
-            {
-              "kind": "vector",
-              "value": [
-                1.0,
-                0.0,
-                0.0
-              ]
             }
           ]
         }
@@ -3748,7 +3254,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "4008c1adf5c88ff32c2404a05a6a55d89cc81524859aad3f1580a847ba2f14fd",
+    "decode_digest": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
     "retained_records": {
       "fcstd:native:entry#BoxCorners": {
         "bytes": {

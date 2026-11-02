@@ -15,8 +15,23 @@ use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::FaceId;
+
+/// Neutral faces carrying native row links for tag resolution.
+fn tagged_faces(ids: &[&str]) -> Vec<cadmpeg_ir::topology::Face> {
+    let model = cadmpeg_ir::examples::unit_cube()
+        .expect("synthetic cube")
+        .model;
+    ids.iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let mut face = model.faces[index % model.faces.len()].clone();
+            face.id = (*id).try_into().expect("face id");
+            face.native_ref = Some(format!("{id}-row"));
+            face
+        })
+        .collect()
+}
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -164,9 +179,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let candidate_tags = [
         PersistentSubentityTag {
             id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#same-stream-row".to_owned()),
+            target_coedge: None,
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
             design_references: vec![2265],
@@ -174,9 +188,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
         PersistentSubentityTag {
             id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-selector-row".to_owned()),
+            target_coedge: None,
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
             design_references: vec![2265, 2266],
@@ -184,20 +197,33 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(
-                FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
-            ),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-stream-row".to_owned()),
+            target_coedge: None,
             selector: 0,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
             design_references: vec![2265],
             ordinal: 0,
         },
     ];
+    let faces = tagged_faces(&[
+        "test:model:face#same-stream",
+        "test:model:face#other-selector",
+        "test:model:face#other-stream",
+    ]);
+    let bodies: Vec<cadmpeg_ir::topology::Body> = Vec::new();
+    let edges: Vec<cadmpeg_ir::topology::Edge> = Vec::new();
+    let vertices: Vec<cadmpeg_ir::topology::Vertex> = Vec::new();
+    let coedges: Vec<cadmpeg_ir::topology::Coedge> = Vec::new();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&recipe),
         &candidate_tags,
         std::slice::from_ref(&scope),
+        &bodies,
+        &faces,
+        &edges,
+        &vertices,
+        &coedges,
     );
     assert_eq!(
         operand.references()[0].candidate_faces,
@@ -266,9 +292,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#same-stream-row".to_owned()),
+                target_coedge: None,
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
                 design_references: vec![2265],
@@ -276,9 +301,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
-                ),
+                target: cadmpeg_asm::brep::records::identity::NativeRowId::from("test:model:face#other-selector-row".to_owned()),
+                target_coedge: None,
                 selector: 2,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
                 design_references: vec![2265, 2266],
@@ -286,6 +310,11 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
         ],
         std::slice::from_ref(&combine_scope),
+        &bodies,
+        &faces,
+        &edges,
+        &vertices,
+        &coedges,
     );
     assert_eq!(
         combine_operand.references()[0].candidate_faces,

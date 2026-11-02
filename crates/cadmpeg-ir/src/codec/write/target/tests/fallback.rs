@@ -143,7 +143,10 @@ impl<const PATH: u8, const DEFAULT: bool> EncoderBackend for PathProbe<PATH, DEF
 #[test]
 fn sealed_report_names_the_actual_preserved_or_synthesized_target() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     let input = EncodeInput::new(&ir, Some(&fidelity));
     let replay = PathProbe::<0, true>
         .plan(input, TargetRequest::Inherit)
@@ -167,7 +170,10 @@ fn sealed_report_names_the_actual_preserved_or_synthesized_target() {
 #[test]
 fn exact_replay_without_a_default_remains_eligible_and_synthesis_refuses_only_no_default() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     let input = EncodeInput::new(&ir, Some(&fidelity));
     let replay = PathProbe::<0, false>
         .plan(input, TargetRequest::Inherit)

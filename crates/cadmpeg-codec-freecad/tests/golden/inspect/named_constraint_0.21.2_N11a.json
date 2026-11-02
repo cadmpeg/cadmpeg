@@ -88,7 +88,6 @@
     "document root=Document",
     "document kind=part-design",
     "object count=11",
-    "physical ledger spans=36 coverage=exact",
     "ProgramVersion=0.21R33771 (Git)"
   ]
 }

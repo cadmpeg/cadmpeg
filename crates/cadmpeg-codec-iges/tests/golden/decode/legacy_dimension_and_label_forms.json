@@ -1860,7 +1860,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9e0c987550f001fe913b1ed2e7ebb92fc61302cd26658cbeb4d52ec2f45b420f",
+    "decode_digest": "a6ecb93815d010b89c3b0103a97b38b55409912ccf046c86dad915bc9560bed7",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

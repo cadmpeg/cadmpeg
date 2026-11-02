@@ -1627,7 +1627,8 @@ pub(crate) fn container_only_result(
     let mut ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
     let scope = cadmpeg_ir::ContentScope::container();
     ir.scope = scope;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
     let mut untyped = cadmpeg_ir::ArenaClasses::new();
     if !scan.objects.is_empty() || !scan.opaque_records.is_empty() {
         untyped.insert(cadmpeg_ir::ArenaClass::Model);

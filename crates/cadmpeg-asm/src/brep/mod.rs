@@ -716,6 +716,7 @@ fn decode_with_table(
         },
     )?;
     let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
+    link_native_refs(ctx, &mut out, purpose)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
@@ -730,8 +731,79 @@ fn decode_with_table(
     Ok(out)
 }
 
-fn inherited_attribute_target(
-    mut owner: i64,
+/// Link neutral bodies, edges and vertices to their canonical native rows.
+///
+/// Each body, edge and vertex decodes from the same SAB record as its key or
+/// ownership row. The neutral record's `native_ref` names that row, so native
+/// rows hold no neutral back-link and writers resolve through the neutral
+/// record instead. First row wins when an index repeats.
+fn link_native_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut AsmBrep,
+    purpose: DecodePurpose,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use std::collections::BTreeMap;
+    let mut key_positions = BTreeMap::new();
+    for (position, row) in out.body_native_keys.iter().enumerate() {
+        key_positions.entry(row.record_index).or_insert(position);
+    }
+    let mut edge_positions = BTreeMap::new();
+    for (position, row) in out.edge_ownerships.iter().enumerate() {
+        edge_positions.entry(row.record_index).or_insert(position);
+    }
+    let mut vertex_positions = BTreeMap::new();
+    for (position, row) in out.vertex_ownerships.iter().enumerate() {
+        vertex_positions.entry(row.record_index).or_insert(position);
+    }
+    for body in &mut out.bodies {
+        if body.native_ref.is_some() {
+            continue;
+        }
+        let position = crate::brep::records::neutral_record_index(body.id.as_str())
+            .and_then(|index| key_positions.get(&index).copied());
+        let Some(position) = position else {
+            continue;
+        };
+        let row = &out.body_native_keys[position];
+        body.native_ref = Some(match purpose {
+            DecodePurpose::Model => row.retain_native_ref(ctx)?,
+            DecodePurpose::History => row.working_native_ref(ctx)?,
+        });
+    }
+    for edge in &mut out.edges {
+        if edge.native_ref.is_some() {
+            continue;
+        }
+        let position = crate::brep::records::neutral_record_index(edge.id.as_str())
+            .and_then(|index| edge_positions.get(&index).copied());
+        let Some(position) = position else {
+            continue;
+        };
+        let row = &out.edge_ownerships[position];
+        edge.native_ref = Some(match purpose {
+            DecodePurpose::Model => row.retain_native_ref(ctx)?,
+            DecodePurpose::History => row.working_native_ref(ctx)?,
+        });
+    }
+    for vertex in &mut out.vertices {
+        if vertex.native_ref.is_some() {
+            continue;
+        }
+        let position = crate::brep::records::neutral_record_index(vertex.id.as_str())
+            .and_then(|index| vertex_positions.get(&index).copied());
+        let Some(position) = position else {
+            continue;
+        };
+        let row = &out.vertex_ownerships[position];
+        vertex.native_ref = Some(match purpose {
+            DecodePurpose::Model => row.retain_native_ref(ctx)?,
+            DecodePurpose::History => row.working_native_ref(ctx)?,
+        });
+    }
+    Ok(())
+}
+
+fn inherited_attribute_target(    mut owner: i64,
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
 ) -> Option<AttributeTarget> {

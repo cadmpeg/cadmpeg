@@ -1,6 +1,5 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "10",
     "model": {
       "appearance_bindings": [],
@@ -33,7 +32,6 @@
         {
           "id": "usd:stage:occurrence#/Cube",
           "name": "Cube",
-          "native_ref": "/Cube",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -42,11 +40,6 @@
             "definition": "usd:stage:definition#/Cube",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.2246467991473532e-16,
@@ -71,7 +64,6 @@
         {
           "id": "usd:stage:occurrence#/Cube/Box",
           "name": "Box",
-          "native_ref": "/Cube/Box",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -81,11 +73,6 @@
             "definition": "usd:stage:definition#/Cube/Box",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -120,7 +107,6 @@
         {
           "id": "usd:stage:definition#/Cube",
           "kind": "part",
-          "native_ref": "/Cube",
           "source_name": "Cube"
         },
         {
@@ -129,7 +115,6 @@
           ],
           "id": "usd:stage:definition#/Cube/Box",
           "kind": "object",
-          "native_ref": "/Cube/Box",
           "source_name": "Box"
         }
       ],
@@ -642,6 +627,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Cube",
@@ -688,10 +677,15 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "9ff87c1e5944ca34e74fd2ea1f025e460303b4d1c0d21b37418411c95667132e",
+    "unrepresented": []
   }
 }

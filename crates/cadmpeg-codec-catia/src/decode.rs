@@ -3823,7 +3823,7 @@ fn decode_result(
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);
     }
-    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = SourceFidelity::for_decode(ctx, annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
     if ctx.container_only()
         && (scan.main_data_stream().is_some() || !scan.outer_container_declarations.is_empty())

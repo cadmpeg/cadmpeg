@@ -60,13 +60,15 @@
       },
       "coverage": {
         "arenas": {
-          "appearance_bindings": "reported",
-          "appearances": "reported",
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "articulations": "omitted",
           "assembly_joints": "dropped",
           "assets": "dropped",
           "attributes": "dropped",
           "bodies": "written",
           "coedges": "written",
+          "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "drawings": "dropped",
@@ -76,9 +78,12 @@
           "feature_result_topologies": "dropped",
           "features": "dropped",
           "loops": "written",
+          "mass_properties": "omitted",
           "occurrences": "written",
           "parameters": "dropped",
           "pcurves": "written",
+          "physical_materials": "omitted",
+          "physics_scenes": "omitted",
           "pmi": "written",
           "points": "written",
           "presentation_documents": "dropped",
@@ -87,11 +92,13 @@
           "procedural_surfaces": "written",
           "product_definitions": "written",
           "regions": "written",
+          "rigid_bodies": "omitted",
           "semantic_annotations": "dropped",
           "shells": "written",
           "sketch_constraints": "dropped",
           "sketch_entities": "dropped",
           "sketches": "dropped",
+          "solver_settings": "omitted",
           "spatial_sketch_constraints": "dropped",
           "spatial_sketch_entities": "dropped",
           "spatial_sketches": "dropped",
@@ -109,16 +116,6 @@
         "target": "step:ap242-e3"
       },
       "losses": [
-        {
-          "code": {
-            "code": "appearance.reduced-to-base-color",
-            "kind": "appearance_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
-          },
-          "message": "1 appearance asset(s) were not fully encoded by STEP presentation; display overrides take precedence, and unsupported schemas, textures, and shader properties were not written",
-          "severity": "info"
-        },
         {
           "code": {
             "code": "attribute.source-record-not-written",
@@ -225,13 +222,15 @@
       },
       "coverage": {
         "arenas": {
-          "appearance_bindings": "reported",
-          "appearances": "reported",
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "articulations": "omitted",
           "assembly_joints": "dropped",
           "assets": "dropped",
           "attributes": "dropped",
           "bodies": "written",
           "coedges": "written",
+          "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "drawings": "dropped",
@@ -241,9 +240,12 @@
           "feature_result_topologies": "dropped",
           "features": "dropped",
           "loops": "written",
+          "mass_properties": "omitted",
           "occurrences": "written",
           "parameters": "dropped",
           "pcurves": "written",
+          "physical_materials": "omitted",
+          "physics_scenes": "omitted",
           "pmi": "reported",
           "points": "written",
           "presentation_documents": "dropped",
@@ -252,11 +254,13 @@
           "procedural_surfaces": "written",
           "product_definitions": "written",
           "regions": "written",
+          "rigid_bodies": "omitted",
           "semantic_annotations": "dropped",
           "shells": "written",
           "sketch_constraints": "dropped",
           "sketch_entities": "dropped",
           "sketches": "dropped",
+          "solver_settings": "omitted",
           "spatial_sketch_constraints": "dropped",
           "spatial_sketch_entities": "dropped",
           "spatial_sketches": "dropped",
@@ -274,16 +278,6 @@
         "target": "step:ap214"
       },
       "losses": [
-        {
-          "code": {
-            "code": "appearance.reduced-to-base-color",
-            "kind": "appearance_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
-          },
-          "message": "1 appearance asset(s) were not fully encoded by STEP presentation; display overrides take precedence, and unsupported schemas, textures, and shader properties were not written",
-          "severity": "info"
-        },
         {
           "code": {
             "code": "attribute.source-record-not-written",
@@ -390,13 +384,15 @@
       },
       "coverage": {
         "arenas": {
-          "appearance_bindings": "reported",
-          "appearances": "reported",
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "articulations": "omitted",
           "assembly_joints": "dropped",
           "assets": "dropped",
           "attributes": "dropped",
           "bodies": "written",
           "coedges": "written",
+          "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "drawings": "dropped",
@@ -406,9 +402,12 @@
           "feature_result_topologies": "dropped",
           "features": "dropped",
           "loops": "written",
+          "mass_properties": "omitted",
           "occurrences": "written",
           "parameters": "dropped",
           "pcurves": "written",
+          "physical_materials": "omitted",
+          "physics_scenes": "omitted",
           "pmi": "reported",
           "points": "written",
           "presentation_documents": "dropped",
@@ -417,11 +416,13 @@
           "procedural_surfaces": "written",
           "product_definitions": "written",
           "regions": "written",
+          "rigid_bodies": "omitted",
           "semantic_annotations": "dropped",
           "shells": "written",
           "sketch_constraints": "dropped",
           "sketch_entities": "dropped",
           "sketches": "dropped",
+          "solver_settings": "omitted",
           "spatial_sketch_constraints": "dropped",
           "spatial_sketch_entities": "dropped",
           "spatial_sketches": "dropped",
@@ -439,16 +440,6 @@
         "target": "step:ap214"
       },
       "losses": [
-        {
-          "code": {
-            "code": "appearance.reduced-to-base-color",
-            "kind": "appearance_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
-          },
-          "message": "1 appearance asset(s) were not fully encoded by STEP presentation; display overrides take precedence, and unsupported schemas, textures, and shader properties were not written",
-          "severity": "info"
-        },
         {
           "code": {
             "code": "attribute.source-record-not-written",

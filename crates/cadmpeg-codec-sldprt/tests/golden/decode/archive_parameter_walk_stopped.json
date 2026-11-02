@@ -305,7 +305,7 @@
         }
       }
     },
-    "decode_digest": "c038a96398a20425e17be3174a03990b7ec77831d0ef993130061d015df4a49d",
+    "decode_digest": "3b93fe83c6d9883ea07f1b13bab788c0c8b5db537c7d3e2dc2463043bd386165",
     "retained_records": {
       "sldprt:file:source-image#0": {
         "bytes": {

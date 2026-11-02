@@ -54,6 +54,59 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "reported",
+        "appearances": "reported",
+        "articulations": "written",
+        "assembly_joints": "reported",
+        "assets": "written",
+        "attributes": "omitted",
+        "bodies": "reported",
+        "coedges": "reported",
+        "colliders": "written",
+        "configurations": "omitted",
+        "curves": "reported",
+        "drawings": "omitted",
+        "edges": "reported",
+        "faces": "reported",
+        "feature_input_topologies": "omitted",
+        "feature_result_topologies": "omitted",
+        "features": "omitted",
+        "loops": "reported",
+        "mass_properties": "written",
+        "occurrences": "written",
+        "parameters": "omitted",
+        "pcurves": "reported",
+        "physical_materials": "written",
+        "physics_scenes": "written",
+        "pmi": "omitted",
+        "points": "reported",
+        "presentation_documents": "omitted",
+        "presentation_layers": "omitted",
+        "procedural_curves": "omitted",
+        "procedural_surfaces": "omitted",
+        "product_definitions": "written",
+        "regions": "reported",
+        "rigid_bodies": "written",
+        "semantic_annotations": "omitted",
+        "shells": "reported",
+        "sketch_constraints": "omitted",
+        "sketch_entities": "omitted",
+        "sketches": "omitted",
+        "solver_settings": "written",
+        "spatial_sketch_constraints": "omitted",
+        "spatial_sketch_entities": "omitted",
+        "spatial_sketches": "omitted",
+        "spreadsheets": "omitted",
+        "subds": "omitted",
+        "surfaces": "reported",
+        "tessellations": "reported",
+        "vertices": "reported",
+        "view_presentations": "omitted"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "usd:usdz"
@@ -70,6 +123,9 @@
         "severity": "info"
       }
     ],
+    "native_dispositions": {
+      "namespaces": {}
+    },
     "notes": [
       "USDA 1.0 text layer, metre units",
       "USDZ package, root layer root.usda"

@@ -342,7 +342,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
 }
 
 #[test]
-fn retained_source_image_round_trips_byte_exactly() {
+fn retained_source_image_patches_preserving_model() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source.clone());
     let result = EditableDecodeResult::from(
@@ -359,9 +359,10 @@ fn retained_source_image_round_trips_byte_exactly() {
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));
     }
-    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::patched_write_preserves_model(
         &SldprtCodec,
-        "retained_source_image_round_trips_byte_exactly",
-        &source,
+        "retained_source_image_patches_preserving_model",
+        result.ir(),
+        result.source_fidelity(),
     );
 }

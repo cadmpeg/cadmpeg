@@ -28,8 +28,9 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.source_fidelity_mut().decode_digest = None;
+    // The required digest is the source baseline, so the unchanged document
+    // takes the semantic path; its payload still round-trips byte for byte.
+    let decoded = EditableDecodeResult::from(decoded);
 
     let mut encoded = Vec::new();
     let path = crate::test_support::plan_fixture_write_with_native_envelope(

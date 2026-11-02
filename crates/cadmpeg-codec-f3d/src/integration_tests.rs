@@ -490,18 +490,18 @@ fn assert_default_synthesis_output(
 /// catalog row keeps the archive it was handed, and says so.
 ///
 /// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
+/// resolved dialect is then the source's by construction, so the patch path
 /// admits preservation. Before resolution the report named no dialect at all,
 /// so the bytes went out with the claim unstated.
 #[test]
-fn inherit_replays_an_off_catalog_dialect_and_names_it() {
+fn inherit_patches_an_off_catalog_dialect_and_names_it() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
     let result = decode(source.clone());
     let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
 
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     assert_eq!(named_target(&plan), "f3d:unknown");
     let mut written = Vec::new();
@@ -585,9 +585,9 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     assert_ne!(written, source, "the source archive must not be replayed");
 }
 
-/// All same-dialect spellings replay fully typed content with the same target.
+/// All same-dialect spellings patch fully typed content with the same target.
 #[test]
-fn a_same_dialect_request_replays_under_both_spellings() {
+fn a_same_dialect_request_patches_under_both_spellings() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let result = decode(source.clone());
     assert!(result.source_fidelity().unrepresented().is_empty());
@@ -599,7 +599,7 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
         ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
         assert!(plan.report().synthesis_cause().is_none(), "{request:?}");
@@ -736,7 +736,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         if label == "inherited" {
             assert!(matches!(
                 plan.report().write_path(),
-                cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                cadmpeg_ir::report::export::WritePath::Patched { .. }
             ));
         } else {
             assert!(matches!(

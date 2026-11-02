@@ -140,7 +140,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     FiniteVector3::new(Vector3::new(x.to_radians(), y.to_radians(), z.to_radians()))
                 }),
                 starts_asleep: data.starts_asleep,
-                native_ref: Some(prim.path.clone()),
+                native_ref: None,
             });
             self.admit("usd_rigid_body")?;
         }
@@ -148,7 +148,7 @@ impl super::Builder<'_, '_, '_, '_> {
             self.ir.model.articulations.push(Articulation {
                 id: crate::ids::articulation(&prim.path),
                 root: occurrence.clone(),
-                native_ref: Some(prim.path.clone()),
+                native_ref: None,
             });
             self.admit("usd_articulation")?;
         }
@@ -186,7 +186,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 }),
                 inertia,
                 material: None,
-                native_ref: Some(prim.path.clone()),
+                native_ref: None,
             });
             self.admit("usd_mass")?;
         }
@@ -273,7 +273,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 shape,
                 enabled: data.enabled,
                 material,
-                native_ref: Some(prim.path.clone()),
+                native_ref: None,
             });
             self.admit("usd_collider")?;
             self.physx(
@@ -345,7 +345,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 static_friction: data.static_friction.and_then(NonNegativeReal::new),
                 dynamic_friction: data.dynamic_friction.and_then(NonNegativeReal::new),
                 restitution: data.restitution.and_then(NonNegativeReal::new),
-                native_ref: Some(material.path.clone()),
+                native_ref: None,
             });
             self.admit("usd_physical_material")?;
             self.physx(
@@ -556,7 +556,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 }
             };
             joint.suppressed = !data.enabled;
-            joint.native_ref = Some(path.clone());
+            joint.native_ref = None;
             for drive in &data.drives {
                 match self.drive(data.kind, drive) {
                     Some(drive) => joint.drives.push(drive),

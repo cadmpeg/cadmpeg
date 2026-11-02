@@ -2,28 +2,28 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 30285,
-      "payload_sha256": "05301fe2376ae320b9fd81223be69ac0d086ad0f54d89c532496cd515973d682"
+      "payload_len": 22431,
+      "payload_sha256": "8bd743ac4b13d13b7bf55410c1f62f009301432d2a6d4b6fe623744be5e3fa14"
     },
     {
-      "name": "PartShape.brp",
-      "payload_len": 7070,
-      "payload_sha256": "466cf3b915f469f3bd1587c18e63f2acbf92760248017d6405fb9592e6b87d81"
+      "name": "Body.brp",
+      "payload_len": 2001,
+      "payload_sha256": "42808712b1ead7f37712ddf72437b55786b47831c502d846e3702ee7c5027ca0"
     },
     {
-      "name": "PartShape1.brp",
-      "payload_len": 1655,
-      "payload_sha256": "ae4b0dc7d32167e2f21e4cef79da665bd37b0877200e7c65afb78813b57babc5"
+      "name": "GuiDocument.xml",
+      "payload_len": 445,
+      "payload_sha256": "f56d45606f8883044e03bd913c301229f6823ae7d3ddc580c686089ef6ae0237"
     },
     {
-      "name": "PartShape2.brp",
-      "payload_len": 4964,
-      "payload_sha256": "d05ce7b078f45aebe0d5668744410c6873e194350bc72163e0aee63a384ba360"
+      "name": "Pad.brp",
+      "payload_len": 3670,
+      "payload_sha256": "d3b2b5ed76f8411e1ea80d6776608a8b6b3e89674cf97204271f3f05d871ed75"
     },
     {
-      "name": "PartShape3.brp",
-      "payload_len": 5187,
-      "payload_sha256": "fb585e1af4c400a34407ca471534c2a5d7135a72ba852e78da4b879407518bad"
+      "name": "Sketch.brp",
+      "payload_len": 664,
+      "payload_sha256": "c86294188032189b4e51757f0ecd7ea42053e2bdefac42daefd5c0dc27393223"
     }
   ],
   "report": {
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 23,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -51,19 +51,17 @@
         "mass_properties": 0,
         "native.fcstd.applications": 10,
         "native.fcstd.attachments": 9,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 4,
         "native.fcstd.design_census": 3,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 5,
         "native.fcstd.extensions": 3,
-        "native.fcstd.logical_ledger": 231,
         "native.fcstd.objects": 10,
-        "native.fcstd.physical_ledger": 36,
         "native.fcstd.properties": 113,
         "native.fcstd.shape_payloads": 4,
+        "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 4,
+        "parameters": 7,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -94,20 +92,456 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "articulations": "omitted",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "written",
+        "bodies": "written",
+        "coedges": "written",
+        "colliders": "omitted",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "mass_properties": "omitted",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "reported",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "rigid_bodies": "omitted",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "solver_settings": "omitted",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "reported"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "presentation.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 4 native record(s) from `fcstd.entries`: fcstd:native:entry#PartShape.brp, fcstd:native:entry#PartShape1.brp, fcstd:native:entry#PartShape2.brp, fcstd:native:entry#PartShape3.brp",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 20 native record(s) from `fcstd.properties`: fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Placement, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Pad:AddSubShape, fcstd:native:property#Pad:BaseFeature, fcstd:native:property#Pad:Direction, fcstd:native:property#Pad:Placement, fcstd:native:property#Pad:ReferenceAxis, fcstd:native:property#Pad:Reversed, fcstd:native:property#Pad:UpToFace, fcstd:native:property#Sketch:ExpressionEngine, fcstd:native:property#Sketch:ExternalGeometry, fcstd:native:property#Sketch:Support, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#Body": "regenerated",
+                "fcstd:native:application#Origin": "regenerated",
+                "fcstd:native:application#Pad": "regenerated",
+                "fcstd:native:application#Sketch": "regenerated",
+                "fcstd:native:application#XY_Plane": "regenerated",
+                "fcstd:native:application#XZ_Plane": "regenerated",
+                "fcstd:native:application#X_Axis": "regenerated",
+                "fcstd:native:application#YZ_Plane": "regenerated",
+                "fcstd:native:application#Y_Axis": "regenerated",
+                "fcstd:native:application#Z_Axis": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#Body": "written",
+                "fcstd:native:attachment#Pad": "written",
+                "fcstd:native:attachment#Sketch": "written",
+                "fcstd:native:attachment#XY_Plane": "written",
+                "fcstd:native:attachment#XZ_Plane": "written",
+                "fcstd:native:attachment#X_Axis": "written",
+                "fcstd:native:attachment#YZ_Plane": "written",
+                "fcstd:native:attachment#Y_Axis": "written",
+                "fcstd:native:attachment#Z_Axis": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#Body:Shape:PartShape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Pad:AddSubShape:PartShape2.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Pad:Shape:PartShape3.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Sketch:Shape:PartShape1.brp:families": "regenerated"
+              }
+            },
+            "design_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#Body:projection": "regenerated",
+                "fcstd:native:design-census#Pad:projection": "regenerated",
+                "fcstd:native:design-census#Sketch:projection": "regenerated"
+              }
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped"
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:extension#Body:0%3AOriginGroupExtension": "written",
+                "fcstd:native:extension#Origin:0%3AGeoFeatureGroupExtension": "written",
+                "fcstd:native:extension#Sketch:0%3AAttachExtension": "written"
+              }
+            },
+            "gui_documents": {
+              "disposition": "dropped"
+            },
+            "gui_properties": {
+              "disposition": "dropped"
+            },
+            "gui_view_providers": {
+              "disposition": "dropped"
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#Body": "regenerated",
+                "fcstd:native:object#Origin": "written",
+                "fcstd:native:object#Pad": "regenerated",
+                "fcstd:native:object#Sketch": "regenerated",
+                "fcstd:native:object#XY_Plane": "written",
+                "fcstd:native:object#XZ_Plane": "written",
+                "fcstd:native:object#X_Axis": "written",
+                "fcstd:native:object#YZ_Plane": "written",
+                "fcstd:native:object#Y_Axis": "written",
+                "fcstd:native:object#Z_Axis": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#Body:Group": "regenerated",
+                "fcstd:native:property#Body:Label": "regenerated",
+                "fcstd:native:property#Body:Label2": "regenerated",
+                "fcstd:native:property#Body:Origin": "regenerated",
+                "fcstd:native:property#Body:Shape": "regenerated",
+                "fcstd:native:property#Body:Tip": "regenerated",
+                "fcstd:native:property#Body:Visibility": "regenerated",
+                "fcstd:native:property#Body:_GroupTouched": "written",
+                "fcstd:native:property#Origin:Group": "written",
+                "fcstd:native:property#Origin:Label": "written",
+                "fcstd:native:property#Origin:Label2": "written",
+                "fcstd:native:property#Origin:OriginFeatures": "written",
+                "fcstd:native:property#Origin:Visibility": "written",
+                "fcstd:native:property#Origin:_GroupTouched": "written",
+                "fcstd:native:property#Pad:AllowMultiFace": "regenerated",
+                "fcstd:native:property#Pad:AlongSketchNormal": "regenerated",
+                "fcstd:native:property#Pad:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Pad:Label": "regenerated",
+                "fcstd:native:property#Pad:Label2": "regenerated",
+                "fcstd:native:property#Pad:Length": "regenerated",
+                "fcstd:native:property#Pad:Length2": "regenerated",
+                "fcstd:native:property#Pad:Midplane": "regenerated",
+                "fcstd:native:property#Pad:Offset": "regenerated",
+                "fcstd:native:property#Pad:Profile": "regenerated",
+                "fcstd:native:property#Pad:Refine": "regenerated",
+                "fcstd:native:property#Pad:Shape": "regenerated",
+                "fcstd:native:property#Pad:TaperAngle": "regenerated",
+                "fcstd:native:property#Pad:TaperAngle2": "regenerated",
+                "fcstd:native:property#Pad:Type": "regenerated",
+                "fcstd:native:property#Pad:UseCustomVector": "regenerated",
+                "fcstd:native:property#Pad:Visibility": "regenerated",
+                "fcstd:native:property#Pad:_Body": "written",
+                "fcstd:native:property#Sketch:AttacherType": "regenerated",
+                "fcstd:native:property#Sketch:AttachmentOffset": "regenerated",
+                "fcstd:native:property#Sketch:Constraints": "regenerated",
+                "fcstd:native:property#Sketch:FullyConstrained": "regenerated",
+                "fcstd:native:property#Sketch:Geometry": "regenerated",
+                "fcstd:native:property#Sketch:Label": "regenerated",
+                "fcstd:native:property#Sketch:Label2": "regenerated",
+                "fcstd:native:property#Sketch:MapMode": "regenerated",
+                "fcstd:native:property#Sketch:MapPathParameter": "regenerated",
+                "fcstd:native:property#Sketch:MapReversed": "regenerated",
+                "fcstd:native:property#Sketch:Placement": "regenerated",
+                "fcstd:native:property#Sketch:Shape": "regenerated",
+                "fcstd:native:property#Sketch:Visibility": "regenerated",
+                "fcstd:native:property#XY_Plane:Label": "written",
+                "fcstd:native:property#XY_Plane:Label2": "written",
+                "fcstd:native:property#XY_Plane:Placement": "regenerated",
+                "fcstd:native:property#XY_Plane:Role": "written",
+                "fcstd:native:property#XY_Plane:Visibility": "written",
+                "fcstd:native:property#XZ_Plane:Label": "written",
+                "fcstd:native:property#XZ_Plane:Label2": "written",
+                "fcstd:native:property#XZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#XZ_Plane:Role": "written",
+                "fcstd:native:property#XZ_Plane:Visibility": "written",
+                "fcstd:native:property#X_Axis:Label": "written",
+                "fcstd:native:property#X_Axis:Label2": "written",
+                "fcstd:native:property#X_Axis:Placement": "regenerated",
+                "fcstd:native:property#X_Axis:Role": "written",
+                "fcstd:native:property#X_Axis:Visibility": "written",
+                "fcstd:native:property#YZ_Plane:Label": "written",
+                "fcstd:native:property#YZ_Plane:Label2": "written",
+                "fcstd:native:property#YZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#YZ_Plane:Role": "written",
+                "fcstd:native:property#YZ_Plane:Visibility": "written",
+                "fcstd:native:property#Y_Axis:Label": "written",
+                "fcstd:native:property#Y_Axis:Label2": "written",
+                "fcstd:native:property#Y_Axis:Placement": "regenerated",
+                "fcstd:native:property#Y_Axis:Role": "written",
+                "fcstd:native:property#Y_Axis:Visibility": "written",
+                "fcstd:native:property#Z_Axis:Label": "written",
+                "fcstd:native:property#Z_Axis:Label2": "written",
+                "fcstd:native:property#Z_Axis:Placement": "regenerated",
+                "fcstd:native:property#Z_Axis:Role": "written",
+                "fcstd:native:property#Z_Axis:Visibility": "written"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp": "regenerated"
+              }
+            },
+            "string_tables": {
+              "disposition": "dropped"
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:PartShape2.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:9": "regenerated"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: current uncarried typed records require FCStd graph regeneration"
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

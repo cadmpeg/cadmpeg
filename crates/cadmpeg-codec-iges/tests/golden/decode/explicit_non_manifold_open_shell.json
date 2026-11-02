@@ -3239,7 +3239,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "b99dba478674520a531fdf748e188734b76ca23ba844d88c8a86a4a5e3335684",
+    "decode_digest": "17bc10c0819c0351a973cca5eca4fff0e9f0c843415c6d6c8ff64e444e7d159c",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

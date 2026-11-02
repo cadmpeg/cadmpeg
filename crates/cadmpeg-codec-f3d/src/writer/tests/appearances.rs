@@ -156,7 +156,10 @@ fn generated_source_less_reports_unsupported_material_assignment() {
 fn generated_source_less_regenerates_duplicate_visibility_layout_hints() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].visible = Some(false);
-    let body = source_less.model.bodies[0].id.clone();
+    let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(
+        "f3d:asm:body-native-key#1".to_string(),
+    );
+    source_less.model.bodies[0].native_ref = Some(row.to_string());
     f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()
@@ -164,7 +167,7 @@ fn generated_source_less_regenerates_duplicate_visibility_layout_hints() {
             crate::records::bodies::BodyVisibility::try_from(
                 crate::records::bodies::BodyVisibilityWire {
                     id: format!("f3d:generated-{ordinal}:body-visibility#42"),
-                    body: body.clone(),
+                    body: row.clone(),
                     stream: "generated/Design1/BulkStream.dat".into(),
                     byte_offset: 0,
                     asm_body_key_offset: 0,

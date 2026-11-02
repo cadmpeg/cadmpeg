@@ -16,7 +16,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
 
     fn visit_identity_references(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         match self {
@@ -30,7 +30,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
             Self::Point(id) => visitor(id.as_str()),
             Self::Tessellation(id) | Self::Record { id, .. } => visitor(id),
             Self::TriangleGroup { .. } => Ok(()),
-            Self::Source { source_id } => source_id.visit_identity_references(ctx, visitor),
         }
     }
 
@@ -52,9 +51,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
             Self::TriangleGroup { tessellation, group } => Self::TriangleGroup {
                 tessellation: tessellation.rewrite_identities(ctx, map)?,
                 group: group.rewrite_identities(ctx, map)?,
-            },
-            Self::Source { source_id } => Self::Source {
-                source_id: source_id.rewrite_identities(ctx, map)?,
             },
             Self::Record { arena, id } => Self::Record {
                 arena,

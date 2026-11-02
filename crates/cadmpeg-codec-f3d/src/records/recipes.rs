@@ -3,7 +3,6 @@
 
 use super::identity::RecordedValue;
 use super::mesh::DesignRelaxedGuidText;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +14,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_record_index, i32, "record_index");
 cadmpeg_core::named_optional_field!(deserialize_component_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_target_coedge, u32, "target_coedge");
 /// Component-local Design naming space bound to a context UUID.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,8 +50,18 @@ pub(crate) struct DesignComponentNamingSpace {
 pub(crate) struct CreationTimestamp {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
-    /// Solved B-rep entity carrying the timestamp attribute.
-    pub(crate) target: AttributeTarget,
+    /// Canonical native row carrying the timestamped entity. The neutral
+    /// entity resolves through its `native_ref`, which names the same row. A
+    /// coedge target names its owning edge's row; see `target_coedge`.
+    pub(crate) target: cadmpeg_asm::brep::records::identity::NativeRowId,
+    /// Source coedge record index when the target names an edge row for a
+    /// coedge-owned link. Absent for direct entity targets.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_coedge"
+    )]
+    pub(crate) target_coedge: Option<u32>,
     /// Source SAB record index of the timestamp attribute.
     pub(crate) record_index: u32,
     /// Creation time as microseconds since the Unix epoch.

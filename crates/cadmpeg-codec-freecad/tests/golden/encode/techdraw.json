@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6710,
-      "payload_sha256": "a5e66b20b9cedb34583750cbe2888dbda9cacc78b9045f663998e5eaa6d45028"
+      "payload_len": 6444,
+      "payload_sha256": "2a6486f565bdf9231fa377fc7551a8db5e35736a909621dd03c9a4bed4ee8185"
     },
     {
       "name": "Box.brp",
@@ -25,7 +25,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 62,
+        "attributes": 18,
         "bodies": 1,
         "coedges": 24,
         "colliders": 0,
@@ -89,11 +89,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
+        "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -103,9 +105,12 @@
         "feature_result_topologies": "dropped",
         "features": "written",
         "loops": "written",
+        "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
@@ -114,11 +119,13 @@
         "procedural_surfaces": "written",
         "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
@@ -136,446 +143,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:CoarseView:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:Focus:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:HardHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:IsoCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:IsoHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:IsoVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:Perspective:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:ScrubCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:SeamHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:SeamVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:SmoothHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:SmoothVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Front:XDirection:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:KeepUpdated:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:NextBalloonIndex:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Height:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Orientation:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Template:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:Width:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:CoarseView:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:Focus:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:HardHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:IsoCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:IsoHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:IsoVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:Label:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:Perspective:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:ScrubCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:SeamHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:SeamVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:SmoothHidden:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:SmoothVisible:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Top:XDirection:property target has no emitted object",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "metadata.native-property-not-transferred",
@@ -683,7 +250,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 133 native record(s) from `fcstd.properties`: fcstd:native:property#Front:Caption, fcstd:native:property#Front:CenterLines, fcstd:native:property#Front:CoarseView, fcstd:native:property#Front:CosmeticEdges, fcstd:native:property#Front:CosmeticVertexes, fcstd:native:property#Front:Direction, fcstd:native:property#Front:ExpressionEngine, fcstd:native:property#Front:Focus, fcstd:native:property#Front:GeomFormats, fcstd:native:property#Front:HardHidden, fcstd:native:property#Front:IsoCount, fcstd:native:property#Front:IsoHidden, fcstd:native:property#Front:IsoVisible, fcstd:native:property#Front:Label, fcstd:native:property#Front:Label2, fcstd:native:property#Front:LockPosition, fcstd:native:property#Front:Perspective, fcstd:native:property#Front:Rotation, fcstd:native:property#Front:Scale, fcstd:native:property#Front:ScaleType, fcstd:native:property#Front:ScrubCount, fcstd:native:property#Front:SeamHidden, fcstd:native:property#Front:SeamVisible, fcstd:native:property#Front:SmoothHidden, fcstd:native:property#Front:SmoothVisible, fcstd:native:property#Front:Source, fcstd:native:property#Front:Visibility, fcstd:native:property#Front:X, fcstd:native:property#Front:XDirection, fcstd:native:property#Front:XSource, fcstd:native:property#Front:Y, fcstd:native:property#Length:AngleOverride, fcstd:native:property#Length:Arbitrary, fcstd:native:property#Length:ArbitraryTolerances, fcstd:native:property#Length:BoxCorners, fcstd:native:property#Length:Caption, fcstd:native:property#Length:EqualTolerance, fcstd:native:property#Length:ExpressionEngine, fcstd:native:property#Length:ExtensionAngle, fcstd:native:property#Length:FormatSpec, fcstd:native:property#Length:FormatSpecOverTolerance, fcstd:native:property#Length:FormatSpecUnderTolerance, fcstd:native:property#Length:Inverted, fcstd:native:property#Length:Label, fcstd:native:property#Length:Label2, fcstd:native:property#Length:LineAngle, fcstd:native:property#Length:LockPosition, fcstd:native:property#Length:MeasureType, fcstd:native:property#Length:OverTolerance, fcstd:native:property#Length:References2D, fcstd:native:property#Length:References3D, fcstd:native:property#Length:Rotation, fcstd:native:property#Length:SavedGeometry, fcstd:native:property#Length:Scale, fcstd:native:property#Length:ScaleType, fcstd:native:property#Length:ShowUnits, fcstd:native:property#Length:TheoreticalExact, fcstd:native:property#Length:Type, fcstd:native:property#Length:UnderTolerance, fcstd:native:property#Length:UseActualArea, fcstd:native:property#Length:Visibility, fcstd:native:property#Length:X, fcstd:native:property#Length:Y, fcstd:native:property#Note:Caption, fcstd:native:property#Note:ExpressionEngine, fcstd:native:property#Note:Font, fcstd:native:property#Note:Label, fcstd:native:property#Note:Label2, fcstd:native:property#Note:LineSpace, fcstd:native:property#Note:LockPosition, fcstd:native:property#Note:MaxWidth, fcstd:native:property#Note:Owner, fcstd:native:property#Note:Rotation, fcstd:native:property#Note:Scale, fcstd:native:property#Note:ScaleType, fcstd:native:property#Note:Text, fcstd:native:property#Note:TextColor, fcstd:native:property#Note:TextSize, fcstd:native:property#Note:TextStyle, fcstd:native:property#Note:Visibility, fcstd:native:property#Note:X, fcstd:native:property#Note:Y, fcstd:native:property#Page:ExpressionEngine, fcstd:native:property#Page:KeepUpdated, fcstd:native:property#Page:Label, fcstd:native:property#Page:Label2, fcstd:native:property#Page:NextBalloonIndex, fcstd:native:property#Page:ProjectionType, fcstd:native:property#Page:Scale, fcstd:native:property#Page:Template, fcstd:native:property#Page:Views, fcstd:native:property#Page:Visibility, fcstd:native:property#Template:EditableTexts, fcstd:native:property#Template:ExpressionEngine, fcstd:native:property#Template:Height, fcstd:native:property#Template:Label, fcstd:native:property#Template:Label2, fcstd:native:property#Template:Orientation, fcstd:native:property#Template:PageResult, fcstd:native:property#Template:Template, fcstd:native:property#Template:Visibility, fcstd:native:property#Template:Width, fcstd:native:property#Top:Caption, fcstd:native:property#Top:CenterLines, fcstd:native:property#Top:CoarseView, fcstd:native:property#Top:CosmeticEdges, fcstd:native:property#Top:CosmeticVertexes, fcstd:native:property#Top:Direction, fcstd:native:property#Top:ExpressionEngine, fcstd:native:property#Top:Focus, fcstd:native:property#Top:GeomFormats, fcstd:native:property#Top:HardHidden, fcstd:native:property#Top:IsoCount, fcstd:native:property#Top:IsoHidden, fcstd:native:property#Top:IsoVisible, fcstd:native:property#Top:Label, fcstd:native:property#Top:Label2, fcstd:native:property#Top:LockPosition, fcstd:native:property#Top:Perspective, fcstd:native:property#Top:Rotation, fcstd:native:property#Top:Scale, fcstd:native:property#Top:ScaleType, fcstd:native:property#Top:ScrubCount, fcstd:native:property#Top:SeamHidden, fcstd:native:property#Top:SeamVisible, fcstd:native:property#Top:SmoothHidden, fcstd:native:property#Top:SmoothVisible, fcstd:native:property#Top:Source, fcstd:native:property#Top:Visibility, fcstd:native:property#Top:X, fcstd:native:property#Top:XDirection, fcstd:native:property#Top:XSource, fcstd:native:property#Top:Y",
+        "message": "the fcstd write omits 134 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Front:Caption, fcstd:native:property#Front:CenterLines, fcstd:native:property#Front:CoarseView, fcstd:native:property#Front:CosmeticEdges, fcstd:native:property#Front:CosmeticVertexes, fcstd:native:property#Front:Direction, fcstd:native:property#Front:ExpressionEngine, fcstd:native:property#Front:Focus, fcstd:native:property#Front:GeomFormats, fcstd:native:property#Front:HardHidden, fcstd:native:property#Front:IsoCount, fcstd:native:property#Front:IsoHidden, fcstd:native:property#Front:IsoVisible, fcstd:native:property#Front:Label, fcstd:native:property#Front:Label2, fcstd:native:property#Front:LockPosition, fcstd:native:property#Front:Perspective, fcstd:native:property#Front:Rotation, fcstd:native:property#Front:Scale, fcstd:native:property#Front:ScaleType, fcstd:native:property#Front:ScrubCount, fcstd:native:property#Front:SeamHidden, fcstd:native:property#Front:SeamVisible, fcstd:native:property#Front:SmoothHidden, fcstd:native:property#Front:SmoothVisible, fcstd:native:property#Front:Source, fcstd:native:property#Front:Visibility, fcstd:native:property#Front:X, fcstd:native:property#Front:XDirection, fcstd:native:property#Front:XSource, fcstd:native:property#Front:Y, fcstd:native:property#Length:AngleOverride, fcstd:native:property#Length:Arbitrary, fcstd:native:property#Length:ArbitraryTolerances, fcstd:native:property#Length:BoxCorners, fcstd:native:property#Length:Caption, fcstd:native:property#Length:EqualTolerance, fcstd:native:property#Length:ExpressionEngine, fcstd:native:property#Length:ExtensionAngle, fcstd:native:property#Length:FormatSpec, fcstd:native:property#Length:FormatSpecOverTolerance, fcstd:native:property#Length:FormatSpecUnderTolerance, fcstd:native:property#Length:Inverted, fcstd:native:property#Length:Label, fcstd:native:property#Length:Label2, fcstd:native:property#Length:LineAngle, fcstd:native:property#Length:LockPosition, fcstd:native:property#Length:MeasureType, fcstd:native:property#Length:OverTolerance, fcstd:native:property#Length:References2D, fcstd:native:property#Length:References3D, fcstd:native:property#Length:Rotation, fcstd:native:property#Length:SavedGeometry, fcstd:native:property#Length:Scale, fcstd:native:property#Length:ScaleType, fcstd:native:property#Length:ShowUnits, fcstd:native:property#Length:TheoreticalExact, fcstd:native:property#Length:Type, fcstd:native:property#Length:UnderTolerance, fcstd:native:property#Length:UseActualArea, fcstd:native:property#Length:Visibility, fcstd:native:property#Length:X, fcstd:native:property#Length:Y, fcstd:native:property#Note:Caption, fcstd:native:property#Note:ExpressionEngine, fcstd:native:property#Note:Font, fcstd:native:property#Note:Label, fcstd:native:property#Note:Label2, fcstd:native:property#Note:LineSpace, fcstd:native:property#Note:LockPosition, fcstd:native:property#Note:MaxWidth, fcstd:native:property#Note:Owner, fcstd:native:property#Note:Rotation, fcstd:native:property#Note:Scale, fcstd:native:property#Note:ScaleType, fcstd:native:property#Note:Text, fcstd:native:property#Note:TextColor, fcstd:native:property#Note:TextSize, fcstd:native:property#Note:TextStyle, fcstd:native:property#Note:Visibility, fcstd:native:property#Note:X, fcstd:native:property#Note:Y, fcstd:native:property#Page:ExpressionEngine, fcstd:native:property#Page:KeepUpdated, fcstd:native:property#Page:Label, fcstd:native:property#Page:Label2, fcstd:native:property#Page:NextBalloonIndex, fcstd:native:property#Page:ProjectionType, fcstd:native:property#Page:Scale, fcstd:native:property#Page:Template, fcstd:native:property#Page:Views, fcstd:native:property#Page:Visibility, fcstd:native:property#Template:EditableTexts, fcstd:native:property#Template:ExpressionEngine, fcstd:native:property#Template:Height, fcstd:native:property#Template:Label, fcstd:native:property#Template:Label2, fcstd:native:property#Template:Orientation, fcstd:native:property#Template:PageResult, fcstd:native:property#Template:Template, fcstd:native:property#Template:Visibility, fcstd:native:property#Template:Width, fcstd:native:property#Top:Caption, fcstd:native:property#Top:CenterLines, fcstd:native:property#Top:CoarseView, fcstd:native:property#Top:CosmeticEdges, fcstd:native:property#Top:CosmeticVertexes, fcstd:native:property#Top:Direction, fcstd:native:property#Top:ExpressionEngine, fcstd:native:property#Top:Focus, fcstd:native:property#Top:GeomFormats, fcstd:native:property#Top:HardHidden, fcstd:native:property#Top:IsoCount, fcstd:native:property#Top:IsoHidden, fcstd:native:property#Top:IsoVisible, fcstd:native:property#Top:Label, fcstd:native:property#Top:Label2, fcstd:native:property#Top:LockPosition, fcstd:native:property#Top:Perspective, fcstd:native:property#Top:Rotation, fcstd:native:property#Top:Scale, fcstd:native:property#Top:ScaleType, fcstd:native:property#Top:ScrubCount, fcstd:native:property#Top:SeamHidden, fcstd:native:property#Top:SeamVisible, fcstd:native:property#Top:SmoothHidden, fcstd:native:property#Top:SmoothVisible, fcstd:native:property#Top:Source, fcstd:native:property#Top:Visibility, fcstd:native:property#Top:X, fcstd:native:property#Top:XDirection, fcstd:native:property#Top:XSource, fcstd:native:property#Top:Y",
         "severity": "info"
       }
     ],
@@ -790,7 +357,6 @@
                 "fcstd:native:property#Box:AttacherType": "regenerated",
                 "fcstd:native:property#Box:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Box:AttachmentSupport": "written",
-                "fcstd:native:property#Box:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Box:Height": "regenerated",
                 "fcstd:native:property#Box:Label": "regenerated",
                 "fcstd:native:property#Box:Label2": "regenerated",

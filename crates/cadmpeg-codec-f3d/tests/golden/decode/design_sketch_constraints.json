@@ -47,11 +47,18 @@
     "model": {
       "bodies": [
         {
+          "native_ref": "f3d:asm:body-native-key#1",
           "id": "f3d:brep:entity#1",
           "kind": "sheet",
           "regions": [
             "f3d:brep:entity#2"
           ],
+          "color": {
+            "r": 0.1,
+            "g": 0.2,
+            "b": 0.3,
+            "a": 1.0
+          },
           "visible": true
         }
       ],
@@ -130,6 +137,7 @@
       ],
       "edges": [
         {
+          "native_ref": "f3d:asm:edge-ownership#10",
           "id": "f3d:brep:entity#10",
           "carrier": {
             "param_range": [
@@ -141,6 +149,7 @@
           "end": "f3d:brep:entity#14"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#11",
           "id": "f3d:brep:entity#11",
           "carrier": {
             "param_range": [
@@ -152,6 +161,7 @@
           "end": "f3d:brep:entity#15"
         },
         {
+          "native_ref": "f3d:asm:edge-ownership#12",
           "id": "f3d:brep:entity#12",
           "carrier": {
             "param_range": [
@@ -165,14 +175,17 @@
       ],
       "vertices": [
         {
+          "native_ref": "f3d:asm:vertex-ownership#13",
           "id": "f3d:brep:entity#13",
           "point": "f3d:brep:entity#16"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#14",
           "id": "f3d:brep:entity#14",
           "point": "f3d:brep:entity#17"
         },
         {
+          "native_ref": "f3d:asm:vertex-ownership#15",
           "id": "f3d:brep:entity#15",
           "point": "f3d:brep:entity#18"
         }
@@ -889,7 +902,6 @@
           {
             "id": "f3d:asm:body-native-key#1",
             "asm_body_key": 42,
-            "body": "f3d:brep:entity#1",
             "body_ordinal": 0,
             "record_index": 1,
             "source_brep": "BREP.synthetic.smbh"
@@ -900,7 +912,7 @@
             "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42",
             "asm_body_key": 42,
             "asm_body_key_offset": 25,
-            "body": "f3d:brep:entity#1",
+            "body": "f3d:asm:body-native-key#1",
             "byte_offset": 719,
             "entity_suffix": 985,
             "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
@@ -939,7 +951,7 @@
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-binding#25",
             "asm_body_key": 42,
             "blob_name": "BREP.synthetic.smbh",
-            "body": "f3d:brep:entity#1",
+            "body": "f3d:asm:body-native-key#1",
             "entity_suffix": 985,
             "map_ordinal": 0,
             "pair_count": 1,
@@ -1623,21 +1635,21 @@
           {
             "id": "f3d:asm:edge-continuity#10",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#10",
+            "owner": "f3d:asm:edge-ownership#10",
             "record_index": 10,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#11",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#11",
+            "owner": "f3d:asm:edge-ownership#11",
             "record_index": 11,
             "sense": "forward"
           },
           {
             "id": "f3d:asm:edge-continuity#12",
             "continuity": "unknown",
-            "edge": "f3d:brep:entity#12",
+            "owner": "f3d:asm:edge-ownership#12",
             "record_index": 12,
             "sense": "forward"
           }
@@ -1645,17 +1657,14 @@
         "edge_ownerships": [
           {
             "id": "f3d:asm:edge-ownership#10",
-            "edge": "f3d:brep:entity#10",
             "record_index": 10
           },
           {
             "id": "f3d:asm:edge-ownership#11",
-            "edge": "f3d:brep:entity#11",
             "record_index": 11
           },
           {
             "id": "f3d:asm:edge-ownership#12",
-            "edge": "f3d:brep:entity#12",
             "record_index": 12
           }
         ],
@@ -2180,23 +2189,20 @@
           {
             "id": "f3d:asm:vertex-ownership#13",
             "endpoint_index": 0,
-            "owning_edge": "f3d:brep:entity#10",
-            "record_index": 13,
-            "vertex": "f3d:brep:entity#13"
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 13
           },
           {
             "id": "f3d:asm:vertex-ownership#14",
             "endpoint_index": 1,
-            "owning_edge": "f3d:brep:entity#10",
-            "record_index": 14,
-            "vertex": "f3d:brep:entity#14"
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 14
           },
           {
             "id": "f3d:asm:vertex-ownership#15",
             "endpoint_index": 0,
-            "owning_edge": "f3d:brep:entity#12",
-            "record_index": 15,
-            "vertex": "f3d:brep:entity#15"
+            "owner": "f3d:asm:edge-ownership#12",
+            "record_index": 15
           }
         ],
         "wire_topologies": [],
@@ -2247,6 +2253,16 @@
         },
         "severity": "warning",
         "message": "1 ACT source records have no typed semantic payload"
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.curve-unprofiled",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
       },
       {
         "code": {
@@ -2863,7 +2879,7 @@
         }
       }
     },
-    "decode_digest": "7d57eeebeebdbe612531d09ebf3fa1298449f63f023828ab19abdeb5c2d71f74",
+    "decode_digest": "9a37e0d3423b38c5af498252068e5221f5be8f238ad8b556977f7900a88f74dd",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243:prefix": {
         "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",

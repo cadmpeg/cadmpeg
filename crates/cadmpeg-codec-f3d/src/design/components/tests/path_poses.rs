@@ -112,6 +112,7 @@ fn project(
         components,
         body_bindings: &[],
         bodies: Some(&empty),
+        body_key_bodies: None,
         root_ordinal_start: 0,
         limits: cadmpeg_core::decode::ResourceLimits::default(),
     })

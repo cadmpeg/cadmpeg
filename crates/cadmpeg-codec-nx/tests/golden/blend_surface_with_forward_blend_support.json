@@ -41,7 +41,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:crv#0"
+            "id": "nx:s0:crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:curve-record#9"
+            }
           }
         ],
         "drawings": [],
@@ -219,7 +223,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#6"
+            }
           }
         ],
         "tessellations": [],
@@ -276,13 +284,7 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:blend-surf#0",
-                "nx:s0:blend-surf#1",
-                "nx:s0:crv#0"
-              ]
+              "id": "nx:container:parasolid#0"
             }
           ]
         }
@@ -387,9 +389,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:s0:blend#0": {
@@ -542,6 +541,7 @@
           }
         }
       },
+      "decode_digest": "1a182d0c5d5900e174a1b493fd9bda3339408dbec7d68212366f75ec2fc87fb5",
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {

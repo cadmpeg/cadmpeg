@@ -10,6 +10,7 @@
         {
           "id": "rhino:object:body#record-000000-offset-177",
           "kind": "general",
+          "native_ref": "rhino:object:record#000000",
           "regions": [
             "rhino:object:region#record-000000-offset-177"
           ],
@@ -18,6 +19,7 @@
         {
           "id": "rhino:object:body#record-000001-offset-314",
           "kind": "general",
+          "native_ref": "rhino:object:record#000001",
           "regions": [
             "rhino:object:region#record-000001-offset-314"
           ],
@@ -441,40 +443,22 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:body#record-000000-offset-177"
-            ]
+            "id": "rhino:object:record#000000"
           },
           {
-            "id": "rhino:object:record#000001",
-            "links": [
-              "rhino:object:body#record-000001-offset-314"
-            ]
+            "id": "rhino:object:record#000001"
           },
           {
-            "id": "rhino:object:record#000002",
-            "links": [
-              "rhino:object:curve#record-000002-offset-659"
-            ]
+            "id": "rhino:object:record#000002"
           },
           {
-            "id": "rhino:object:record#000003",
-            "links": [
-              "rhino:object:curve#record-000003-offset-840"
-            ]
+            "id": "rhino:object:record#000003"
           },
           {
-            "id": "rhino:object:record#000004",
-            "links": [
-              "rhino:object:curve#record-000004-offset-1197"
-            ]
+            "id": "rhino:object:record#000004"
           },
           {
-            "id": "rhino:object:record#000005",
-            "links": [
-              "rhino:object:curve#record-000005-offset-1418"
-            ]
+            "id": "rhino:object:record#000005"
           }
         ],
         "views": [],
@@ -795,6 +779,7 @@
         }
       }
     },
+    "decode_digest": "831240da3b89abeee4e3cc2a2a501643bf4779c4385c2fec835c61b708aa442d",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

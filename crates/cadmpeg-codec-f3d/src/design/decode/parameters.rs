@@ -236,11 +236,36 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let tail_targets = parameter_tail_targets(scan, &entry.name)?;
+        // A primary index with no live headers carries no gating
+        // information; the header scan below applies instead.
+        let primary = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            .map(|meta| crate::metastream::primary_record_frames(&meta, bytes.len()))
+            .transpose()?
+            .filter(|frames| !frames.is_empty());
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
-            let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+            // An `f3d.bulk_record` ends at the next primary-index offset. The
+            // primary index covers every sibling record, so an
+            // indexed-record-shaped run at another offset is payload.
+            let (end, entity_id) = match &primary {
+                Some(frames) => match frames
+                    .binary_search_by_key(&at, |frame| frame.start)
+                    .ok()
+                    .and_then(|index| frames.get(index))
+                {
+                    Some(frame) => (frame.end, Some(frame.entity_id)),
+                    None => {
+                        position = at + 1;
+                        continue;
+                    }
+                },
+                None => (
+                    next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len()),
+                    None,
+                ),
+            };
             let frame = &bytes[at..end];
             let registered_tail = frame
                 .get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
@@ -255,6 +280,17 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
             if parsed.is_none() && registered_tail {
                 parsed = parse_design_parameter_with_tail(frame, false)?;
             }
+            // A frame whose record index is not the primary index's live
+            // entity is a stale copy inside another record's extent.
+            let parsed = match parsed {
+                Some(parsed)
+                    if entity_id
+                        .is_some_and(|entity_id| entity_id != u64::from(parsed.record_index)) =>
+                {
+                    None
+                }
+                parsed => parsed,
+            };
             if let Some(parsed) = parsed {
                 // The Design primary index exposes one live header for each
                 // logical record index. Keep the first serialized parameter
@@ -285,6 +321,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                         )
                     })?;
                 }
+                position = at + 1;
             }
         }
         if unparsed_count != 0 {

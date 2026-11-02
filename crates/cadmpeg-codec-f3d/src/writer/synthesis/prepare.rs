@@ -247,10 +247,15 @@ pub(super) fn solved_carriers(
                 }
             )
         })
-        .map(|record| record.coedge)
+        .filter_map(|record| {
+            cadmpeg_asm::brep::records::native_entity_id(
+                &record.source_namespace,
+                record.record_index,
+            )
+        })
         .collect::<std::collections::BTreeSet<_>>();
     for coedge in &mut target.model.coedges {
-        if local_curves.contains(&coedge.id)
+        if local_curves.contains(coedge.id.as_str())
             && coedge.use_curve.as_ref().is_some_and(|use_| {
                 target
                     .model

@@ -275,7 +275,7 @@ fn decode_result(
     mut unknowns: Vec<UnknownRecord>,
     mut retention: retention::Retention,
 ) -> Result<Decoded, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations);
     let source_image = unknowns
         .iter()
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
@@ -383,7 +383,7 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
-    stamp_local_digests(ctx, &mut ir, &mut source_fidelity)?;
+    stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
         body,
@@ -2781,12 +2781,15 @@ fn retain_unresolved_appearance(
     {
         return;
     }
+    let Some(target) =
+        cadmpeg_ir::appearance::AppearanceTarget::record_for(&ir.model, &unresolved.identity)
+    else {
+        return;
+    };
     ir.model.appearance_bindings.push(AppearanceBinding {
         native_ref: None,
         id: binding_id,
-        target: AppearanceTarget::Source {
-            source_id: unresolved.identity.clone(),
-        },
+        target,
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
@@ -3037,11 +3040,7 @@ fn build_geometry_ir(
     }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let (display_sections, _) = collect_display_sections(ctx, scan)?;
-    let mut ir = CadIr::decoded(source_meta(
-        scan,
-        classification,
-        metadata_header.as_ref(),
-    )?);
+    let mut ir = CadIr::decoded(source_meta(scan, classification, metadata_header.as_ref())?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     previews::project(ctx, scan, &mut ir, &mut annotations)?;
     let mut pmi_losses = Vec::new();
@@ -4784,8 +4783,7 @@ fn mark_active_configuration(ir: &mut CadIr, active_block: Option<&str>) {
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"))
         .map(String::as_str);
-    let active_index = active_block
-        .and_then(crate::container::configuration_index);
+    let active_index = active_block.and_then(crate::container::configuration_index);
     let by_name = active_name.and_then(|name| {
         let mut matches = ir
             .model
@@ -4950,7 +4948,10 @@ fn assign_configuration_bodies(
 
 /// Bind the active configuration's partition identity from the two native
 /// selectors, without inferring body membership.
-fn bind_active_configuration_partition(ir: &mut CadIr, active_block: Option<&str>) -> Option<(u32, usize)> {
+fn bind_active_configuration_partition(
+    ir: &mut CadIr,
+    active_block: Option<&str>,
+) -> Option<(u32, usize)> {
     let active_name = ir
         .source
         .as_ref()
@@ -4990,11 +4991,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr, active_block: Option<&str
 }
 
 /// Fingerprint current document state for byte-layout eligibility only.
-fn stamp_local_digests(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    fidelity: &mut cadmpeg_ir::SourceFidelity,
-) -> Result<(), CodecError> {
+fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
     if let Some(source) = ir.source.as_mut() {
         for key in ["block_count", "compound_stream_count"] {
@@ -5009,11 +5006,7 @@ fn stamp_local_digests(
             crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?,
         ))
     })() {
-        Ok((objects, material, identities)) => (
-            Some(objects),
-            Some(material),
-            Some(identities),
-        ),
+        Ok((objects, material, identities)) => (Some(objects), Some(material), Some(identities)),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         // A source-layout optimization is optional when a current attribute
         // cannot be serialized by the source's metadata grammar.
@@ -5030,10 +5023,7 @@ fn stamp_local_digests(
             swobjects_metadata_identity: identities,
         }],
     )?;
-    fidelity.decode_digest = Some(
-        cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_local_sha256(ir)?)
-            .map_err(CodecError::malformed)?,
-    );
+    // The decode wrapper stamps the source digest from its root view.
     Ok(())
 }
 

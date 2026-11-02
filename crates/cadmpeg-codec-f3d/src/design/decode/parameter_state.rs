@@ -31,7 +31,7 @@ const COMPANION_GUID: &str = "E276745D-D84E-40D5-88BC-8C94DD4ACCDF";
 const ROOT_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 
 /// Staged typed records and the exact failed-part homes.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct DecodedStateParts {
     pub(crate) states: Vec<DesignParameterState>,
     pub(crate) companions: Vec<DesignParameterStateCompanion>,
@@ -45,7 +45,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<DecodedStateParts, CodecError> {
-    let mut output = PartOutput::new(CodecFormat::F3d);
+    let mut output = PartOutput::new(CodecFormat::F3d, ctx);
     for entry in scan.entries.iter().filter(|entry| {
         scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
     }) {

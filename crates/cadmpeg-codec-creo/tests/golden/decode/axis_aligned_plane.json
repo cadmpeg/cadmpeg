@@ -973,6 +973,7 @@
         }
       }
     },
+    "decode_digest": "2dae58f9616f370531a629fa12f509129d217ba143686ed098fdfc9bae327106",
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {

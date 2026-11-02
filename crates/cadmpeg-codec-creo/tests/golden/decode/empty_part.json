@@ -531,6 +531,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "a36323c3c9bf564036b51ec4634ddcc726ce97fc93fd8b4494fcabe7cbebee6b",
     "retained_records": {
       "creo:source:image#whole": {
         "bytes": {

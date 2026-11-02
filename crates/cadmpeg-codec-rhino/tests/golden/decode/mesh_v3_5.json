@@ -192,10 +192,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:tessellation#record-000000-offset-177"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],
@@ -341,6 +338,7 @@
         }
       }
     },
+    "decode_digest": "3c6391f7b00b26aa833dc244608169e86fa143832d3a376eb15642439def3169",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

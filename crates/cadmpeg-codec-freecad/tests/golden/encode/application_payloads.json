@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 14275,
-      "payload_sha256": "c577cd6054abb3cd852436da92148042b1d73c6c746dd796116a198810f7b361"
+      "payload_len": 14877,
+      "payload_sha256": "9f3f969b925404c479c511ee26b26a45dc8796a962bedb431f51d37d08fce107"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -25,7 +25,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 42,
+        "attributes": 26,
         "bodies": 0,
         "coedges": 0,
         "colliders": 0,
@@ -84,11 +84,13 @@
       "arenas": {
         "appearance_bindings": "written",
         "appearances": "written",
-        "assembly_joints": "reported",
+        "articulations": "omitted",
+        "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
+        "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
         "drawings": "dropped",
@@ -96,28 +98,33 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "reported",
+        "features": "written",
         "loops": "written",
-        "occurrences": "reported",
-        "parameters": "reported",
+        "mass_properties": "omitted",
+        "occurrences": "written",
+        "parameters": "written",
         "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "written",
         "presentation_documents": "written",
         "presentation_layers": "dropped",
         "procedural_curves": "written",
         "procedural_surfaces": "written",
-        "product_definitions": "reported",
+        "product_definitions": "written",
         "regions": "written",
+        "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
         "shells": "written",
-        "sketch_constraints": "reported",
-        "sketch_entities": "reported",
-        "sketches": "reported",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "solver_settings": "omitted",
         "spatial_sketch_constraints": "dropped",
         "spatial_sketch_entities": "dropped",
         "spatial_sketches": "dropped",
-        "spreadsheets": "reported",
+        "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
         "tessellations": "dropped",
@@ -193,66 +200,6 @@
       },
       {
         "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExtensionPayload:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Mesh:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PointCloud:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "feature.not-transferred",
-          "kind": "parametric_record_omitted",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "object ExtensionPayload property Members refers to an omitted record and is removed",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "code": "feature.not-transferred",
-          "kind": "parametric_record_omitted",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "object FemAnalysis property Group refers to an omitted record and is removed",
-        "severity": "error"
-      },
-      {
-        "code": {
           "code": "geometry.not-transferred",
           "kind": "geometry_not_transferred",
           "namespace": "fcstd",
@@ -279,7 +226,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExtensionPayload:ExpressionEngine, fcstd:native:property#ExtensionPayload:Members, fcstd:native:property#ExtensionPayload:Payload, fcstd:native:property#FemAnalysis:ExpressionEngine, fcstd:native:property#FemAnalysis:Group, fcstd:native:property#Mesh:ExpressionEngine, fcstd:native:property#Mesh:Mesh, fcstd:native:property#PointCloud:ExpressionEngine, fcstd:native:property#PointCloud:Points, fcstd:native:property#TemperatureConstraint:ExpressionEngine, fcstd:native:property#TemperatureConstraint:Normals, fcstd:native:property#TemperatureConstraint:Points, fcstd:native:property#Toolpath:ExpressionEngine, fcstd:native:property#Toolpath:Path",
+        "message": "the fcstd write omits 13 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExtensionPayload:ExpressionEngine, fcstd:native:property#ExtensionPayload:Payload, fcstd:native:property#FemAnalysis:ExpressionEngine, fcstd:native:property#Mesh:ExpressionEngine, fcstd:native:property#Mesh:Mesh, fcstd:native:property#PointCloud:ExpressionEngine, fcstd:native:property#PointCloud:Points, fcstd:native:property#TemperatureConstraint:ExpressionEngine, fcstd:native:property#TemperatureConstraint:Normals, fcstd:native:property#TemperatureConstraint:Points, fcstd:native:property#Toolpath:ExpressionEngine, fcstd:native:property#Toolpath:Path",
         "severity": "info"
       }
     ],
@@ -397,32 +344,34 @@
                 "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "written",
+                "fcstd:native:property#CorpusMetadata:Label2": "written",
+                "fcstd:native:property#CorpusMetadata:License": "written",
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
-                "fcstd:native:property#ExtensionPayload:Domain": "regenerated",
-                "fcstd:native:property#ExtensionPayload:Label": "regenerated",
-                "fcstd:native:property#ExtensionPayload:Label2": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Purpose": "written",
+                "fcstd:native:property#CorpusMetadata:Visibility": "written",
+                "fcstd:native:property#ExtensionPayload:Domain": "written",
+                "fcstd:native:property#ExtensionPayload:Label": "written",
+                "fcstd:native:property#ExtensionPayload:Label2": "written",
+                "fcstd:native:property#ExtensionPayload:Members": "written",
                 "fcstd:native:property#ExtensionPayload:Proxy": "written",
                 "fcstd:native:property#ExtensionPayload:SerializedState": "written",
-                "fcstd:native:property#ExtensionPayload:Visibility": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Visibility": "written",
+                "fcstd:native:property#FemAnalysis:Group": "regenerated",
                 "fcstd:native:property#FemAnalysis:Label": "regenerated",
                 "fcstd:native:property#FemAnalysis:Label2": "regenerated",
                 "fcstd:native:property#FemAnalysis:Uid": "written",
                 "fcstd:native:property#FemAnalysis:Visibility": "regenerated",
                 "fcstd:native:property#FemAnalysis:_GroupTouched": "written",
-                "fcstd:native:property#Mesh:Label": "regenerated",
-                "fcstd:native:property#Mesh:Label2": "regenerated",
+                "fcstd:native:property#Mesh:Label": "written",
+                "fcstd:native:property#Mesh:Label2": "written",
                 "fcstd:native:property#Mesh:Placement": "regenerated",
-                "fcstd:native:property#Mesh:Visibility": "regenerated",
+                "fcstd:native:property#Mesh:Visibility": "written",
                 "fcstd:native:property#Mesh:_ElementMapVersion": "written",
-                "fcstd:native:property#PointCloud:Label": "regenerated",
-                "fcstd:native:property#PointCloud:Label2": "regenerated",
+                "fcstd:native:property#PointCloud:Label": "written",
+                "fcstd:native:property#PointCloud:Label2": "written",
                 "fcstd:native:property#PointCloud:Placement": "regenerated",
-                "fcstd:native:property#PointCloud:Visibility": "regenerated",
+                "fcstd:native:property#PointCloud:Visibility": "written",
                 "fcstd:native:property#PointCloud:_ElementMapVersion": "written",
                 "fcstd:native:property#TemperatureConstraint:AmplitudeValues": "written",
                 "fcstd:native:property#TemperatureConstraint:CFlux": "regenerated",

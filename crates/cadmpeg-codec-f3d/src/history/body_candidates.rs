@@ -117,12 +117,14 @@ impl<'a> BodyCandidates<'a> {
                 .collect::<std::collections::HashSet<_>>();
             let mut latest = HashMap::<&BodyId, &PersistentDesignLink>::new();
             for link in self.links {
-                let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
+                let Some(body) = self.bodies.iter().find(|body| {
+                    body.native_ref.as_deref() == Some(link.target.as_str())
+                }) else {
                     continue;
                 };
 
                 latest
-                    .entry(body)
+                    .entry(&body.id)
                     .and_modify(|previous| {
                         if link.ordinal > previous.ordinal {
                             *previous = link;

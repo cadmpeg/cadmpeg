@@ -41,7 +41,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:crv#0"
+            "id": "nx:s0:crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:curve-record#9"
+            }
           }
         ],
         "drawings": [],
@@ -152,7 +156,11 @@
                 "z": 0.0
               }
             },
-            "id": "nx:s0:surf#0"
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#6"
+            }
           }
         ],
         "tessellations": [],
@@ -169,11 +177,7 @@
         "nx": {
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0",
-              "links": [
-                "nx:s0:surf#0",
-                "nx:s0:crv#0"
-              ]
+              "id": "nx:container:parasolid#0"
             }
           ]
         }
@@ -278,9 +282,6 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "fields": {
-              "links": "derived"
-            },
             "scope": "entity"
           },
           "nx:s0:crv#0": {
@@ -389,6 +390,7 @@
           }
         }
       },
+      "decode_digest": "e02d114984966dd0c8e483e4246ff3b12d96460baa49f61f81f4e4ee57f0a0e7",
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {

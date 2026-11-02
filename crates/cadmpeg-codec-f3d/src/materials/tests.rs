@@ -61,13 +61,24 @@ fn raw_body_map_pair(
     }
 }
 
+fn unit_body(id: &str, native_ref: &str) -> cadmpeg_ir::topology::Body {
+    let mut body = cadmpeg_ir::examples::unit_cube()
+        .expect("synthetic cube")
+        .model
+        .bodies
+        .remove(0);
+    body.id = cadmpeg_ir::ids::BodyId::try_from(id).expect("body id");
+    body.native_ref = Some(native_ref.to_owned());
+    body
+}
+
 fn resolved_body_binding(
     map_ordinal: u32,
     stream: &str,
     asm_key_offset: u64,
     entity_suffix: u64,
     blob_name: &str,
-    body: &str,
+    row: &str,
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire {
@@ -84,7 +95,9 @@ fn resolved_body_binding(
             entity_suffix_offset: asm_key_offset + 8,
             blob_name: blob_name.into(),
             blob_name_offset: asm_key_offset + 32,
-            body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
+            body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            row.to_owned(),
+        )),
         },
     )
     .unwrap()
@@ -414,7 +427,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         25,
         100,
         "BREP.first.smbh",
-        "f3d:brep/first/brep:entity#1",
+        "f3d:asm:body-native-key#1",
     );
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
@@ -424,8 +437,15 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         125,
         200,
         "BREP.second.smbh",
-        second_body.as_str(),
+        "f3d:asm:body-native-key#2",
     );
+    let bodies = [
+        unit_body(
+            "f3d:brep/first/brep:entity#1",
+            "f3d:asm:body-native-key#1",
+        ),
+        unit_body(second_body.as_str(), "f3d:asm:body-native-key#2"),
+    ];
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
@@ -471,6 +491,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         &std::collections::HashMap::new(),
         &std::collections::HashMap::new(),
         &[first, second],
+        &bodies,
     )
     .expect("blob-qualified material binding");
     let [binding] = projected.as_slice() else {
@@ -1243,6 +1264,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     let vertex = source.model.vertices[0].id.clone();
+    source.model.vertices[0].native_ref = Some("f3d:asm:vertex-ownership#0".to_owned());
     source.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
     source
@@ -1256,7 +1278,10 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
             id: "f3d:asm:creation-timestamp#generated".into(),
-            target: AttributeTarget::Vertex(vertex),
+            target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                "f3d:asm:vertex-ownership#0".to_owned(),
+            ),
+                    target_coedge: None,
             record_index: 0,
             unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_037.0)
                 .unwrap(),
@@ -1318,6 +1343,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
     crate::test_support::native_test::edit_timestamp_attribute(
         &mut edited,
         &timestamp.target,
+        timestamp.target_coedge,
         timestamp.unix_microseconds,
     );
     let mut regenerated = Vec::new();
@@ -1348,12 +1374,20 @@ fn decode_transfers_generated_sketch_curve_link() {
         .first()
         .cloned()
         .unwrap();
-    assert_eq!(
-        link.target,
-        cadmpeg_ir::attributes::AttributeTarget::Coedge(
-            cadmpeg_ir::ids::CoedgeId::mint("f3d:brep:entity#7").expect("identity grammar")
-        )
-    );
+    let edge = result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.native_ref.as_deref() == Some(link.target.as_str()))
+        .expect("linked edge");
+    assert_eq!(link.target_coedge, Some(7));
+    assert!(result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.edge == edge.id && coedge.id.as_str() == "f3d:brep:entity#7"));
     assert_eq!(link.sketch_curve_id, 113);
     assert_eq!(link.sense.map(i64::from), Some(1));
     assert_eq!((link.role, link.closure), (2, 3));
@@ -1433,10 +1467,30 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     );
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let coedge = source_less.model.coedges[0].id.clone();
+    crate::test_support::native_test::pair_cube_coedge_with_native_record(
+        &mut source_less,
+        &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        0,
+        0,
+    );
+    let coedge = source_less.model.coedges[0].clone();
+    let edge_id = coedge.edge.clone();
+    source_less
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .expect("linked edge")
+        .native_ref = Some("f3d:asm:edge-ownership#0".to_owned());
+    let coedge_index =
+        cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+            .expect("coedge source index");
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
-        target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:edge-ownership#0".to_owned(),
+        ),
+        target_coedge: Some(coedge_index),
         sketch_curve_id: 113,
         ref_b: 0,
         sense: None,
@@ -1483,10 +1537,30 @@ fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
     );
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let coedge = source_less.model.coedges[0].id.clone();
+    crate::test_support::native_test::pair_cube_coedge_with_native_record(
+        &mut source_less,
+        &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        0,
+        0,
+    );
+    let coedge = source_less.model.coedges[0].clone();
+    let edge_id = coedge.edge.clone();
+    source_less
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .expect("linked edge")
+        .native_ref = Some("f3d:asm:edge-ownership#0".to_owned());
+    let coedge_index =
+        cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+            .expect("coedge source index");
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
-        target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
+        target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:edge-ownership#0".to_owned(),
+        ),
+        target_coedge: Some(coedge_index),
         sketch_curve_id: 113,
         ref_b: 0,
         sense: None,

@@ -2,143 +2,63 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 38886,
-      "payload_sha256": "58fc8a5c9176804a7d5980f77fae22c4da0a8510150c196b00c85187afe9b54c"
+      "payload_len": 31021,
+      "payload_sha256": "2c640937c695a73ea17882c7be80af5c73a25165b29b7583b3a95542b0a64709"
     },
     {
-      "name": "StringHasher.Table.txt",
-      "payload_len": 342,
-      "payload_sha256": "8e77a865cee2e1c8e09e3c55cb601a692ad46711962ee25f5c9a4ea677f04e58"
+      "name": "Body.LineColorArray",
+      "payload_len": 52,
+      "payload_sha256": "13166c9c820cad867c842877c6428bc99e7d740c957aaf98a90be8e98aa6c265"
     },
     {
-      "name": "Body.Shape.brp",
-      "payload_len": 7114,
-      "payload_sha256": "a38d9592ab3883146e846f31b59fad8ccca1987ef54b7c958534ca4808269d47"
+      "name": "Body.PointColorArray",
+      "payload_len": 36,
+      "payload_sha256": "33955dd52f77c1f7509de72563635b737e7ab07a4310ec245a433265e9558df2"
     },
     {
-      "name": "Body.Shape.Map.txt",
-      "payload_len": 876,
-      "payload_sha256": "944304bdf8636c5b718b726df97f696590bd17901b21da30207ab74550ada63f"
+      "name": "Body.brp",
+      "payload_len": 2045,
+      "payload_sha256": "eb2cc56250bb73f4cea7f182b8d5e2c97634ac82758abd794fda50d31964b3d4"
     },
     {
-      "name": "Sketch.InternalShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "Sketch.Shape.brp",
-      "payload_len": 1671,
-      "payload_sha256": "5205dbc940c53f2677ad9eaaf53dcdacc69fa55d5f0900a70bd7ef88cc75dbec"
-    },
-    {
-      "name": "Sketch.Shape.Map.txt",
-      "payload_len": 267,
-      "payload_sha256": "3122a2e70dafbd5617afe7851c9a3864672cd03df3cc15e737748f470219b4a7"
-    },
-    {
-      "name": "Pad.AddSubShape.brp",
-      "payload_len": 4994,
-      "payload_sha256": "5c55f936471ea534850cad98778a903a39488e56a6e459aa2544986412640ac1"
-    },
-    {
-      "name": "Pad.AddSubShape.Map.txt",
-      "payload_len": 673,
-      "payload_sha256": "ab9e8cc6d75350ec3af9886923e6a9752e5c1f9f8d778de52f4f3fd707fd5c1f"
-    },
-    {
-      "name": "Pad.Shape.brp",
-      "payload_len": 5217,
-      "payload_sha256": "6f00822e745b1e6c186b52e2fe079d38698abc3e4c8b92ca25d9718a8410fba0"
-    },
-    {
-      "name": "Pad.Shape.Map.txt",
-      "payload_len": 673,
-      "payload_sha256": "7ec51dee3dd146d3d00f208cbd8f9aa17877e96dd314f13810bfc6198d2162f2"
-    },
-    {
-      "name": "Pad.SuppressedShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 338,
+      "payload_sha256": "17bdba7e82d21ebc253808465f45d986db686c7d2db37a24f35f3ce9d1c42cb0"
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 29158,
-      "payload_sha256": "8347943bfcc910a7ec347841a913ced954d3ec2ac12eaa44ece63fff49e0d55a"
+      "payload_len": 8866,
+      "payload_sha256": "f8b479496863eeab57ddc012503e7d4298c44bc59328134721a2e03c6c69c55e"
     },
     {
-      "name": "ShapeAppearance",
-      "payload_len": 40,
-      "payload_sha256": "dfb385b9303aae83a9eae2b5832b5817a43c021fdb8acab487b580cfa391b1d0"
+      "name": "Pad.LineColorArray",
+      "payload_len": 100,
+      "payload_sha256": "bf7d148a098960b0bdce064f72d7930b359ea68cbedd7eeb9e7c2d3f8ef33b68"
     },
     {
-      "name": "ShapeAppearance1",
-      "payload_len": 40,
-      "payload_sha256": "2d56650ec983691f84d21507b4e37cfd5d1dff4499635f186177c7a304df8151"
+      "name": "Pad.PointColorArray",
+      "payload_len": 68,
+      "payload_sha256": "9c7a88f0957a6ee3be4ac7fe9c1b67976f11139a13a4fe8ac7b9f0f357b7a36a"
     },
     {
-      "name": "LineColorArray",
-      "payload_len": 8,
-      "payload_sha256": "a0959ba3748c0a3fe93c11405dab5779cc29b507c17f426bc12f3916ebcb95f0"
+      "name": "Pad.brp",
+      "payload_len": 3746,
+      "payload_sha256": "47e461c9156b38a9d02c6b13c4844cd8c248467d1a05fe1f668613fa7c338f6f"
     },
     {
-      "name": "PointColorArray",
-      "payload_len": 8,
-      "payload_sha256": "a0959ba3748c0a3fe93c11405dab5779cc29b507c17f426bc12f3916ebcb95f0"
+      "name": "Sketch.LineColorArray",
+      "payload_len": 20,
+      "payload_sha256": "4b7e6f023f560d01538078db3b1ad02d6218b6096c6f75444a3a5f68f303503f"
     },
     {
-      "name": "ShapeAppearance2",
-      "payload_len": 76,
-      "payload_sha256": "1a2d20e28e429ae7011be70e2e824b4b75736732e09ee104681f862e745db344"
+      "name": "Sketch.PointColorArray",
+      "payload_len": 20,
+      "payload_sha256": "4b7e6f023f560d01538078db3b1ad02d6218b6096c6f75444a3a5f68f303503f"
     },
     {
-      "name": "ShapeAppearance3",
-      "payload_len": 40,
-      "payload_sha256": "dfb385b9303aae83a9eae2b5832b5817a43c021fdb8acab487b580cfa391b1d0"
-    },
-    {
-      "name": "LineColorArray1",
-      "payload_len": 8,
-      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
-    },
-    {
-      "name": "PointColorArray1",
-      "payload_len": 8,
-      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
-    },
-    {
-      "name": "ShapeAppearance4",
-      "payload_len": 76,
-      "payload_sha256": "1a2d20e28e429ae7011be70e2e824b4b75736732e09ee104681f862e745db344"
-    },
-    {
-      "name": "ShapeAppearance5",
-      "payload_len": 40,
-      "payload_sha256": "065c227be60df6d2678fb3456b22132270244af945bd1d46d8a6428343cbbe29"
-    },
-    {
-      "name": "ShapeAppearance6",
-      "payload_len": 40,
-      "payload_sha256": "a8a979bd1e99ea8abadfc0d09e5d376d7c44d4ca20659aea5eb9b0c5df76f08d"
-    },
-    {
-      "name": "LineColorArray2",
-      "payload_len": 8,
-      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
-    },
-    {
-      "name": "PointColorArray2",
-      "payload_len": 8,
-      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
-    },
-    {
-      "name": "ShapeAppearance7",
-      "payload_len": 76,
-      "payload_sha256": "1a2d20e28e429ae7011be70e2e824b4b75736732e09ee104681f862e745db344"
-    },
-    {
-      "name": "ShapeAppearance8",
-      "payload_len": 40,
-      "payload_sha256": "dfb385b9303aae83a9eae2b5832b5817a43c021fdb8acab487b580cfa391b1d0"
+      "name": "Sketch.brp",
+      "payload_len": 680,
+      "payload_sha256": "ea9436e6f4f725edec62ad51a1f8b185a57cb21911b51ed1d66a78fe6b855e50"
     }
   ],
   "report": {
@@ -150,7 +70,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 29,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -166,7 +86,6 @@
         "mass_properties": 0,
         "native.fcstd.applications": 11,
         "native.fcstd.attachments": 9,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 4,
         "native.fcstd.design_census": 4,
         "native.fcstd.document": 1,
@@ -176,14 +95,13 @@
         "native.fcstd.gui_documents": 1,
         "native.fcstd.gui_properties": 150,
         "native.fcstd.gui_view_providers": 11,
-        "native.fcstd.logical_ledger": 600,
         "native.fcstd.objects": 11,
-        "native.fcstd.physical_ledger": 197,
         "native.fcstd.properties": 135,
         "native.fcstd.shape_payloads": 6,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 6,
+        "parameters": 9,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -214,20 +132,1943 @@
         "view_presentations": 11
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "reported",
+        "appearances": "reported",
+        "articulations": "omitted",
+        "assembly_joints": "reported",
+        "assets": "dropped",
+        "attributes": "written",
+        "bodies": "written",
+        "coedges": "written",
+        "colliders": "omitted",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "reported",
+        "loops": "written",
+        "mass_properties": "omitted",
+        "occurrences": "reported",
+        "parameters": "reported",
+        "pcurves": "written",
+        "physical_materials": "omitted",
+        "physics_scenes": "omitted",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "reported",
+        "regions": "written",
+        "rigid_bodies": "omitted",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "reported",
+        "sketch_entities": "reported",
+        "sketches": "reported",
+        "solver_settings": "omitted",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "reported",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "feature.not-transferred",
+          "kind": "parametric_record_omitted",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "sketch constraint fcstd:design:sketch-constraint#Sketch:9 has no synthesized FreeCAD relation encoding and is omitted",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "element map fcstd:native:element-map#Pad:AddSubShape:map has an omitted shape property",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#XZ_Plane:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Z_Axis:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Sketch:LineColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Sketch:PointColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Sketch:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Sketch:TempoVis has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#YZ_Plane:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Body:LineColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Body:PointColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Body:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#X_Axis:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Y_Axis:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Pad:LineColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Pad:PointColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Pad:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#XY_Plane:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:14%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:15%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:20%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:21%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:22%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:25%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:26%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:7%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:8%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:9%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Body:1 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Body:1 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Body:1 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Body:1 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Pad:1 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Pad:1 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Pad:1 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Pad:1 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Sketch:1 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Sketch:1 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Sketch:1 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Sketch:1 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:1%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:11%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:12%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:18%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:19%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:2%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:4%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:5%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Sketch:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:edge#Body has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:edge#Pad has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:edge#Sketch has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#XY_Plane:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#XZ_Plane:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#X_Axis:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#YZ_Plane:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#Y_Axis:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:shape-material#Z_Axis:1 has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:vertex#Body has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:vertex#Pad has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:vertex#Sketch has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#Pad:AddSubShape:map",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 26 native record(s) from `fcstd.entries`: fcstd:native:entry#Body.Shape.Map.txt, fcstd:native:entry#Body.Shape.brp, fcstd:native:entry#LineColorArray, fcstd:native:entry#LineColorArray1, fcstd:native:entry#LineColorArray2, fcstd:native:entry#Pad.AddSubShape.Map.txt, fcstd:native:entry#Pad.AddSubShape.brp, fcstd:native:entry#Pad.Shape.Map.txt, fcstd:native:entry#Pad.Shape.brp, fcstd:native:entry#Pad.SuppressedShape.brp, fcstd:native:entry#PointColorArray, fcstd:native:entry#PointColorArray1, fcstd:native:entry#PointColorArray2, fcstd:native:entry#ShapeAppearance, fcstd:native:entry#ShapeAppearance1, fcstd:native:entry#ShapeAppearance2, fcstd:native:entry#ShapeAppearance3, fcstd:native:entry#ShapeAppearance4, fcstd:native:entry#ShapeAppearance5, fcstd:native:entry#ShapeAppearance6, fcstd:native:entry#ShapeAppearance7, fcstd:native:entry#ShapeAppearance8, fcstd:native:entry#Sketch.InternalShape.brp, fcstd:native:entry#Sketch.Shape.Map.txt, fcstd:native:entry#Sketch.Shape.brp, fcstd:native:entry#StringHasher.Table.txt",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 94 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#Body:AngularDeflection, fcstd:native:gui-property#Body:BoundingBox, fcstd:native:gui-property#Body:Deviation, fcstd:native:gui-property#Body:DisplayModeBody, fcstd:native:gui-property#Body:DrawStyle, fcstd:native:gui-property#Body:Lighting, fcstd:native:gui-property#Body:LineColor, fcstd:native:gui-property#Body:OnTopWhenSelected, fcstd:native:gui-property#Body:PointColor, fcstd:native:gui-property#Body:Selectable, fcstd:native:gui-property#Body:ShapeAppearance, fcstd:native:gui-property#Body:ShowInTree, fcstd:native:gui-property#Origin:OnTopWhenSelected, fcstd:native:gui-property#Origin:ShowInTree, fcstd:native:gui-property#Pad:AngularDeflection, fcstd:native:gui-property#Pad:BoundingBox, fcstd:native:gui-property#Pad:Deviation, fcstd:native:gui-property#Pad:DrawStyle, fcstd:native:gui-property#Pad:Lighting, fcstd:native:gui-property#Pad:LineColor, fcstd:native:gui-property#Pad:OnTopWhenSelected, fcstd:native:gui-property#Pad:PointColor, fcstd:native:gui-property#Pad:Selectable, fcstd:native:gui-property#Pad:ShapeAppearance, fcstd:native:gui-property#Pad:ShowInTree, fcstd:native:gui-property#Parameters:OnTopWhenSelected, fcstd:native:gui-property#Parameters:ShowInTree, fcstd:native:gui-property#Sketch:AngularDeflection, fcstd:native:gui-property#Sketch:AutoColor, fcstd:native:gui-property#Sketch:Autoconstraints, fcstd:native:gui-property#Sketch:AvoidRedundant, fcstd:native:gui-property#Sketch:BoundingBox, fcstd:native:gui-property#Sketch:Deviation, fcstd:native:gui-property#Sketch:DrawStyle, fcstd:native:gui-property#Sketch:EditingWorkbench, fcstd:native:gui-property#Sketch:ForceOrtho, fcstd:native:gui-property#Sketch:GridAuto, fcstd:native:gui-property#Sketch:GridSize, fcstd:native:gui-property#Sketch:HideDependent, fcstd:native:gui-property#Sketch:Lighting, fcstd:native:gui-property#Sketch:LineColor, fcstd:native:gui-property#Sketch:OnTopWhenSelected, fcstd:native:gui-property#Sketch:PointColor, fcstd:native:gui-property#Sketch:RestoreCamera, fcstd:native:gui-property#Sketch:SectionView, fcstd:native:gui-property#Sketch:Selectable, fcstd:native:gui-property#Sketch:ShapeAppearance, fcstd:native:gui-property#Sketch:ShowGrid, fcstd:native:gui-property#Sketch:ShowInTree, fcstd:native:gui-property#Sketch:ShowLinks, fcstd:native:gui-property#Sketch:ShowSupport, fcstd:native:gui-property#Sketch:TempoVis, fcstd:native:gui-property#XY_Plane:BoundingBox, fcstd:native:gui-property#XY_Plane:OnTopWhenSelected, fcstd:native:gui-property#XY_Plane:Selectable, fcstd:native:gui-property#XY_Plane:ShapeAppearance, fcstd:native:gui-property#XY_Plane:ShowInTree, fcstd:native:gui-property#XY_Plane:Size, fcstd:native:gui-property#XY_Plane:Transparency, fcstd:native:gui-property#XZ_Plane:BoundingBox, fcstd:native:gui-property#XZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#XZ_Plane:Selectable, fcstd:native:gui-property#XZ_Plane:ShapeAppearance, fcstd:native:gui-property#XZ_Plane:ShowInTree, fcstd:native:gui-property#XZ_Plane:Size, fcstd:native:gui-property#XZ_Plane:Transparency, fcstd:native:gui-property#X_Axis:BoundingBox, fcstd:native:gui-property#X_Axis:OnTopWhenSelected, fcstd:native:gui-property#X_Axis:Selectable, fcstd:native:gui-property#X_Axis:ShapeAppearance, fcstd:native:gui-property#X_Axis:ShowInTree, fcstd:native:gui-property#X_Axis:Size, fcstd:native:gui-property#X_Axis:Transparency, fcstd:native:gui-property#YZ_Plane:BoundingBox, fcstd:native:gui-property#YZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#YZ_Plane:Selectable, fcstd:native:gui-property#YZ_Plane:ShapeAppearance, fcstd:native:gui-property#YZ_Plane:ShowInTree, fcstd:native:gui-property#YZ_Plane:Size, fcstd:native:gui-property#YZ_Plane:Transparency, fcstd:native:gui-property#Y_Axis:BoundingBox, fcstd:native:gui-property#Y_Axis:OnTopWhenSelected, fcstd:native:gui-property#Y_Axis:Selectable, fcstd:native:gui-property#Y_Axis:ShapeAppearance, fcstd:native:gui-property#Y_Axis:ShowInTree, fcstd:native:gui-property#Y_Axis:Size, fcstd:native:gui-property#Y_Axis:Transparency, fcstd:native:gui-property#Z_Axis:BoundingBox, fcstd:native:gui-property#Z_Axis:OnTopWhenSelected, fcstd:native:gui-property#Z_Axis:Selectable, fcstd:native:gui-property#Z_Axis:ShapeAppearance, fcstd:native:gui-property#Z_Axis:ShowInTree, fcstd:native:gui-property#Z_Axis:Size, fcstd:native:gui-property#Z_Axis:Transparency",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 22 native record(s) from `fcstd.properties`: fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Placement, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Pad:AddSubShape, fcstd:native:property#Pad:BaseFeature, fcstd:native:property#Pad:Direction, fcstd:native:property#Pad:Placement, fcstd:native:property#Pad:ReferenceAxis, fcstd:native:property#Pad:Reversed, fcstd:native:property#Pad:SuppressedShape, fcstd:native:property#Pad:UpToFace, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Sketch:ExternalGeo, fcstd:native:property#Sketch:ExternalGeometry, fcstd:native:property#Sketch:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp, fcstd:native:shape-payload#Pad:SuppressedShape:Pad.SuppressedShape.brp, fcstd:native:shape-payload#Sketch:InternalShape:Sketch.InternalShape.brp",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#Body": "regenerated",
+                "fcstd:native:application#Origin": "regenerated",
+                "fcstd:native:application#Pad": "regenerated",
+                "fcstd:native:application#Parameters": "regenerated",
+                "fcstd:native:application#Sketch": "regenerated",
+                "fcstd:native:application#XY_Plane": "regenerated",
+                "fcstd:native:application#XZ_Plane": "regenerated",
+                "fcstd:native:application#X_Axis": "regenerated",
+                "fcstd:native:application#YZ_Plane": "regenerated",
+                "fcstd:native:application#Y_Axis": "regenerated",
+                "fcstd:native:application#Z_Axis": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#Body": "written",
+                "fcstd:native:attachment#Pad": "written",
+                "fcstd:native:attachment#Sketch": "written",
+                "fcstd:native:attachment#XY_Plane": "written",
+                "fcstd:native:attachment#XZ_Plane": "written",
+                "fcstd:native:attachment#X_Axis": "written",
+                "fcstd:native:attachment#YZ_Plane": "written",
+                "fcstd:native:attachment#Y_Axis": "written",
+                "fcstd:native:attachment#Z_Axis": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#Body:Shape:Body.Shape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Pad:AddSubShape:Pad.AddSubShape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Pad:Shape:Pad.Shape.brp:families": "regenerated",
+                "fcstd:native:carrier-census#Sketch:Shape:Sketch.Shape.brp:families": "regenerated"
+              }
+            },
+            "design_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#Body:projection": "regenerated",
+                "fcstd:native:design-census#Pad:projection": "regenerated",
+                "fcstd:native:design-census#Parameters:projection": "regenerated",
+                "fcstd:native:design-census#Sketch:projection": "regenerated"
+              }
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:element-map#Body:Shape:map": "written",
+                "fcstd:native:element-map#Pad:Shape:map": "written",
+                "fcstd:native:element-map#Sketch:Shape:map": "written"
+              }
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#GuiDocument.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:extension#Body:0%3AOriginGroupExtension": "written",
+                "fcstd:native:extension#Origin:0%3AGeoFeatureGroupExtension": "written",
+                "fcstd:native:extension#Pad:0%3ASuppressibleExtension": "written",
+                "fcstd:native:extension#Sketch:0%3AAttachExtension": "written"
+              }
+            },
+            "gui_documents": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:gui:document#0": "regenerated"
+              }
+            },
+            "gui_properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:gui-property#Body:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Body:LineColorArray": "regenerated",
+                "fcstd:native:gui-property#Body:LineMaterial": "regenerated",
+                "fcstd:native:gui-property#Body:LineWidth": "regenerated",
+                "fcstd:native:gui-property#Body:PointColorArray": "regenerated",
+                "fcstd:native:gui-property#Body:PointMaterial": "regenerated",
+                "fcstd:native:gui-property#Body:PointSize": "regenerated",
+                "fcstd:native:gui-property#Body:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Body:Transparency": "regenerated",
+                "fcstd:native:gui-property#Body:Visibility": "regenerated",
+                "fcstd:native:gui-property#Origin:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Origin:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Origin:Size": "regenerated",
+                "fcstd:native:gui-property#Origin:Visibility": "regenerated",
+                "fcstd:native:gui-property#Pad:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Pad:LineColorArray": "regenerated",
+                "fcstd:native:gui-property#Pad:LineMaterial": "regenerated",
+                "fcstd:native:gui-property#Pad:LineWidth": "regenerated",
+                "fcstd:native:gui-property#Pad:PointColorArray": "regenerated",
+                "fcstd:native:gui-property#Pad:PointMaterial": "regenerated",
+                "fcstd:native:gui-property#Pad:PointSize": "regenerated",
+                "fcstd:native:gui-property#Pad:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Pad:Transparency": "regenerated",
+                "fcstd:native:gui-property#Pad:Visibility": "regenerated",
+                "fcstd:native:gui-property#Parameters:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Parameters:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Parameters:Visibility": "regenerated",
+                "fcstd:native:gui-property#Sketch:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Sketch:LineColorArray": "regenerated",
+                "fcstd:native:gui-property#Sketch:LineMaterial": "regenerated",
+                "fcstd:native:gui-property#Sketch:LineWidth": "regenerated",
+                "fcstd:native:gui-property#Sketch:PointColorArray": "regenerated",
+                "fcstd:native:gui-property#Sketch:PointMaterial": "regenerated",
+                "fcstd:native:gui-property#Sketch:PointSize": "regenerated",
+                "fcstd:native:gui-property#Sketch:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Sketch:Transparency": "regenerated",
+                "fcstd:native:gui-property#Sketch:Visibility": "regenerated",
+                "fcstd:native:gui-property#Sketch:VisualLayerList": "regenerated",
+                "fcstd:native:gui-property#XY_Plane:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#XY_Plane:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#XY_Plane:Visibility": "regenerated",
+                "fcstd:native:gui-property#XZ_Plane:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#XZ_Plane:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#XZ_Plane:Visibility": "regenerated",
+                "fcstd:native:gui-property#X_Axis:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#X_Axis:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#X_Axis:Visibility": "regenerated",
+                "fcstd:native:gui-property#YZ_Plane:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#YZ_Plane:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#YZ_Plane:Visibility": "regenerated",
+                "fcstd:native:gui-property#Y_Axis:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Y_Axis:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Y_Axis:Visibility": "regenerated",
+                "fcstd:native:gui-property#Z_Axis:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Z_Axis:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Z_Axis:Visibility": "regenerated"
+              }
+            },
+            "gui_view_providers": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:gui-view-provider#Body": "regenerated",
+                "fcstd:native:gui-view-provider#Origin": "regenerated",
+                "fcstd:native:gui-view-provider#Pad": "regenerated",
+                "fcstd:native:gui-view-provider#Parameters": "regenerated",
+                "fcstd:native:gui-view-provider#Sketch": "regenerated",
+                "fcstd:native:gui-view-provider#XY_Plane": "regenerated",
+                "fcstd:native:gui-view-provider#XZ_Plane": "regenerated",
+                "fcstd:native:gui-view-provider#X_Axis": "regenerated",
+                "fcstd:native:gui-view-provider#YZ_Plane": "regenerated",
+                "fcstd:native:gui-view-provider#Y_Axis": "regenerated",
+                "fcstd:native:gui-view-provider#Z_Axis": "regenerated"
+              }
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#Body": "regenerated",
+                "fcstd:native:object#Origin": "written",
+                "fcstd:native:object#Pad": "regenerated",
+                "fcstd:native:object#Parameters": "regenerated",
+                "fcstd:native:object#Sketch": "regenerated",
+                "fcstd:native:object#XY_Plane": "written",
+                "fcstd:native:object#XZ_Plane": "written",
+                "fcstd:native:object#X_Axis": "written",
+                "fcstd:native:object#YZ_Plane": "written",
+                "fcstd:native:object#Y_Axis": "written",
+                "fcstd:native:object#Z_Axis": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#Body:AllowCompound": "regenerated",
+                "fcstd:native:property#Body:Group": "regenerated",
+                "fcstd:native:property#Body:Label": "regenerated",
+                "fcstd:native:property#Body:Label2": "regenerated",
+                "fcstd:native:property#Body:Origin": "regenerated",
+                "fcstd:native:property#Body:Shape": "regenerated",
+                "fcstd:native:property#Body:ShapeMaterial": "written",
+                "fcstd:native:property#Body:Tip": "regenerated",
+                "fcstd:native:property#Body:Visibility": "regenerated",
+                "fcstd:native:property#Body:_GroupTouched": "written",
+                "fcstd:native:property#Origin:Group": "written",
+                "fcstd:native:property#Origin:Label": "written",
+                "fcstd:native:property#Origin:Label2": "written",
+                "fcstd:native:property#Origin:OriginFeatures": "written",
+                "fcstd:native:property#Origin:Visibility": "written",
+                "fcstd:native:property#Origin:_GroupTouched": "written",
+                "fcstd:native:property#Pad:AllowMultiFace": "regenerated",
+                "fcstd:native:property#Pad:AlongSketchNormal": "regenerated",
+                "fcstd:native:property#Pad:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Pad:Label": "regenerated",
+                "fcstd:native:property#Pad:Label2": "regenerated",
+                "fcstd:native:property#Pad:Length": "regenerated",
+                "fcstd:native:property#Pad:Length2": "regenerated",
+                "fcstd:native:property#Pad:Midplane": "regenerated",
+                "fcstd:native:property#Pad:Offset": "regenerated",
+                "fcstd:native:property#Pad:Profile": "regenerated",
+                "fcstd:native:property#Pad:Refine": "regenerated",
+                "fcstd:native:property#Pad:Shape": "regenerated",
+                "fcstd:native:property#Pad:ShapeMaterial": "written",
+                "fcstd:native:property#Pad:Suppressed": "regenerated",
+                "fcstd:native:property#Pad:TaperAngle": "regenerated",
+                "fcstd:native:property#Pad:TaperAngle2": "regenerated",
+                "fcstd:native:property#Pad:Type": "regenerated",
+                "fcstd:native:property#Pad:UpToShape": "written",
+                "fcstd:native:property#Pad:UseCustomVector": "regenerated",
+                "fcstd:native:property#Pad:Visibility": "regenerated",
+                "fcstd:native:property#Pad:_Body": "written",
+                "fcstd:native:property#Parameters:Label": "regenerated",
+                "fcstd:native:property#Parameters:Label2": "regenerated",
+                "fcstd:native:property#Parameters:Visibility": "regenerated",
+                "fcstd:native:property#Parameters:cells": "regenerated",
+                "fcstd:native:property#Parameters:columnWidths": "written",
+                "fcstd:native:property#Parameters:rowHeights": "written",
+                "fcstd:native:property#Sketch:ArcFitTolerance": "regenerated",
+                "fcstd:native:property#Sketch:AttacherEngine": "written",
+                "fcstd:native:property#Sketch:AttacherType": "regenerated",
+                "fcstd:native:property#Sketch:AttachmentOffset": "regenerated",
+                "fcstd:native:property#Sketch:AttachmentSupport": "written",
+                "fcstd:native:property#Sketch:Constraints": "regenerated",
+                "fcstd:native:property#Sketch:Exports": "written",
+                "fcstd:native:property#Sketch:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Sketch:FullyConstrained": "regenerated",
+                "fcstd:native:property#Sketch:Geometry": "regenerated",
+                "fcstd:native:property#Sketch:Label": "regenerated",
+                "fcstd:native:property#Sketch:Label2": "regenerated",
+                "fcstd:native:property#Sketch:MakeInternals": "regenerated",
+                "fcstd:native:property#Sketch:MapMode": "regenerated",
+                "fcstd:native:property#Sketch:MapPathParameter": "regenerated",
+                "fcstd:native:property#Sketch:MapReversed": "regenerated",
+                "fcstd:native:property#Sketch:Placement": "regenerated",
+                "fcstd:native:property#Sketch:Shape": "regenerated",
+                "fcstd:native:property#Sketch:ShapeMaterial": "written",
+                "fcstd:native:property#Sketch:Visibility": "regenerated",
+                "fcstd:native:property#XY_Plane:Label": "written",
+                "fcstd:native:property#XY_Plane:Label2": "written",
+                "fcstd:native:property#XY_Plane:Placement": "regenerated",
+                "fcstd:native:property#XY_Plane:Role": "written",
+                "fcstd:native:property#XY_Plane:Visibility": "written",
+                "fcstd:native:property#XZ_Plane:Label": "written",
+                "fcstd:native:property#XZ_Plane:Label2": "written",
+                "fcstd:native:property#XZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#XZ_Plane:Role": "written",
+                "fcstd:native:property#XZ_Plane:Visibility": "written",
+                "fcstd:native:property#X_Axis:Label": "written",
+                "fcstd:native:property#X_Axis:Label2": "written",
+                "fcstd:native:property#X_Axis:Placement": "regenerated",
+                "fcstd:native:property#X_Axis:Role": "written",
+                "fcstd:native:property#X_Axis:Visibility": "written",
+                "fcstd:native:property#YZ_Plane:Label": "written",
+                "fcstd:native:property#YZ_Plane:Label2": "written",
+                "fcstd:native:property#YZ_Plane:Placement": "regenerated",
+                "fcstd:native:property#YZ_Plane:Role": "written",
+                "fcstd:native:property#YZ_Plane:Visibility": "written",
+                "fcstd:native:property#Y_Axis:Label": "written",
+                "fcstd:native:property#Y_Axis:Label2": "written",
+                "fcstd:native:property#Y_Axis:Placement": "regenerated",
+                "fcstd:native:property#Y_Axis:Role": "written",
+                "fcstd:native:property#Y_Axis:Visibility": "written",
+                "fcstd:native:property#Z_Axis:Label": "written",
+                "fcstd:native:property#Z_Axis:Label2": "written",
+                "fcstd:native:property#Z_Axis:Placement": "regenerated",
+                "fcstd:native:property#Z_Axis:Role": "written",
+                "fcstd:native:property#Z_Axis:Visibility": "written"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp": "regenerated"
+              }
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:9": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Sketch:Shape:Sketch.Shape.brp:topology-use:9": "regenerated"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: current uncarried typed records require FCStd graph regeneration"
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

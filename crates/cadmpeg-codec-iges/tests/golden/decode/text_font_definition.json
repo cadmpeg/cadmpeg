@@ -792,7 +792,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "1cdc10624da0849a80e37059779ea324e3c0b0ab2471a132df4ed3f0e419b69e",
+    "decode_digest": "0d06766f4317457f9bb575280644ea911ec616d0a0a4c6de6a335403c44e3913",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

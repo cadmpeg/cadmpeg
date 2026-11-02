@@ -482,36 +482,41 @@ mod tests {
             vec![first.clone(), second.clone()]
         };
 
+        let namespace =
+            cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                cadmpeg_asm::asm_format!("generated"),
+            );
+        let first_key = cadmpeg_asm::brep::records::BodyNativeKey {
+            source_namespace: namespace.clone(),
+            record_index: 1,
+            body_ordinal: 0,
+            source_brep: None,
+            asm_body_key: Some(11),
+        };
+        let second_key = cadmpeg_asm::brep::records::BodyNativeKey {
+            source_namespace: namespace.clone(),
+            record_index: 2,
+            body_ordinal: 1,
+            source_brep: None,
+            asm_body_key: Some(22),
+        };
+        first.native_ref = Some(first_key.id());
+        second.native_ref = Some(second_key.id());
+        target.model.bodies = if reverse {
+            vec![second.clone(), first.clone()]
+        } else {
+            vec![first.clone(), second.clone()]
+        };
+
         let native = crate::native::F3dNative {
-            body_native_keys: vec![
-                cadmpeg_asm::brep::records::BodyNativeKey {
-                    source_namespace:
-                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::asm_format!("generated"),
-                        ),
-                    body: first.id.clone(),
-                    record_index: 1,
-                    body_ordinal: 0,
-                    source_brep: None,
-                    asm_body_key: Some(11),
-                },
-                cadmpeg_asm::brep::records::BodyNativeKey {
-                    source_namespace:
-                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::asm_format!("generated"),
-                        ),
-                    body: second.id.clone(),
-                    record_index: 2,
-                    body_ordinal: 1,
-                    source_brep: None,
-                    asm_body_key: Some(22),
-                },
-            ],
+            body_native_keys: vec![first_key, second_key],
             body_visibilities: vec![
                 crate::records::bodies::BodyVisibility::try_from(
                     crate::records::bodies::BodyVisibilityWire {
                         id: "f3d:generated:body-visibility#11".into(),
-                        body: first.id,
+                        body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                            first.native_ref.clone().expect("first body links its key row"),
+                        ),
                         stream: "generated/Design1/BulkStream.dat".into(),
                         byte_offset: 0,
                         asm_body_key_offset: 0,
@@ -524,7 +529,9 @@ mod tests {
                 crate::records::bodies::BodyVisibility::try_from(
                     crate::records::bodies::BodyVisibilityWire {
                         id: "f3d:generated:body-visibility#22".into(),
-                        body: second.id,
+                        body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                            second.native_ref.clone().expect("second body links its key row"),
+                        ),
                         stream: "generated/Design1/BulkStream.dat".into(),
                         byte_offset: 0,
                         asm_body_key_offset: 0,

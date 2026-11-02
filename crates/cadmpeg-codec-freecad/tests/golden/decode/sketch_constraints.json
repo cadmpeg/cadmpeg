@@ -189,97 +189,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Independent Sketcher geometry and constraint families"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#DimensionalRelations:ArcFitTolerance:property",
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#DimensionalRelations:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -293,8 +211,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DimensionalRelations:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -308,8 +229,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#DimensionalRelations:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -323,8 +247,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#DimensionalRelations:Label2",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -338,8 +265,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#DimensionalRelations:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -353,8 +283,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#DimensionalRelations:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -368,8 +301,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#DimensionalRelations:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -383,8 +319,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#DimensionalRelations:Visibility",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -398,8 +337,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#DimensionalRelations:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#DimensionalRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -413,8 +355,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#GeometricRelations:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -428,8 +373,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#GeometricRelations:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -443,8 +391,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#GeometricRelations:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -458,8 +409,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#GeometricRelations:Label2",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -473,8 +427,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#GeometricRelations:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -488,8 +445,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#GeometricRelations:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -503,8 +463,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#GeometricRelations:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -518,8 +481,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#GeometricRelations:Visibility",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -533,8 +499,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#GeometricRelations:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#GeometricRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -548,8 +517,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#InactiveRelation:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -563,8 +535,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#InactiveRelation:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -578,8 +553,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#InactiveRelation:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -593,8 +571,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#InactiveRelation:Label2",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -608,8 +589,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#InactiveRelation:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -623,8 +607,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#InactiveRelation:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -638,8 +625,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#InactiveRelation:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -653,8 +643,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#InactiveRelation:Visibility",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -668,8 +661,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#InactiveRelation:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#InactiveRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -683,8 +679,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -698,8 +697,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -713,8 +715,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -728,8 +733,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:Label2",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -743,8 +751,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -758,8 +769,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -773,8 +787,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -788,8 +805,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:Visibility",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -803,8 +823,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#InternalAlignmentRelations",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -818,8 +841,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#OpticalRelation:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -833,8 +859,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#OpticalRelation:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -848,8 +877,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#OpticalRelation:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -863,8 +895,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#OpticalRelation:Label2",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -878,8 +913,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#OpticalRelation:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -893,8 +931,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#OpticalRelation:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -908,8 +949,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#OpticalRelation:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -923,8 +967,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#OpticalRelation:Visibility",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -938,8 +985,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#OpticalRelation:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#OpticalRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -953,8 +1003,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#SplineWeightRelation:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -968,8 +1021,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#SplineWeightRelation:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -983,8 +1039,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#SplineWeightRelation:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -998,8 +1057,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#SplineWeightRelation:Label2",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1013,8 +1075,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#SplineWeightRelation:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1028,8 +1093,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#SplineWeightRelation:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1043,8 +1111,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#SplineWeightRelation:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1058,8 +1129,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#SplineWeightRelation:Visibility",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1073,8 +1147,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#SplineWeightRelation:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#SplineWeightRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1088,8 +1165,11 @@
           "name": "ArcFitTolerance",
           "native_ref": "fcstd:native:property#SymmetryRelation:ArcFitTolerance",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1103,8 +1183,11 @@
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#SymmetryRelation:AttacherType",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1118,8 +1201,11 @@
           "name": "FullyConstrained",
           "native_ref": "fcstd:native:property#SymmetryRelation:FullyConstrained",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1133,8 +1219,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#SymmetryRelation:Label2",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1148,8 +1237,11 @@
           "name": "MakeInternals",
           "native_ref": "fcstd:native:property#SymmetryRelation:MakeInternals",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1163,8 +1255,11 @@
           "name": "MapPathParameter",
           "native_ref": "fcstd:native:property#SymmetryRelation:MapPathParameter",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1178,8 +1273,11 @@
           "name": "MapReversed",
           "native_ref": "fcstd:native:property#SymmetryRelation:MapReversed",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1193,8 +1291,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#SymmetryRelation:Visibility",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1208,8 +1309,11 @@
           "name": "_ExternalGeoVersion",
           "native_ref": "fcstd:native:property#SymmetryRelation:_ExternalGeoVersion",
           "target": {
-            "id": "fcstd:design:feature#SymmetryRelation",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -7464,7 +7568,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "89d652072f8e369b389fc4424737a9ee8c5fd515e66383f51aa95cb8bc8ba93f",
+    "decode_digest": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

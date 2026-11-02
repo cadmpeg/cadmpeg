@@ -193,7 +193,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         .merge(
             &mut ir,
             &mut report,
-            &mut cadmpeg_ir::SourceFidelity::default(),
+            &mut cadmpeg_ir::SourceFidelity::for_decode(&ctx, cadmpeg_ir::Annotations::default()),
             &crate::xref::XrefTable::default(),
         )
         .unwrap();
@@ -455,7 +455,9 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     .expect("admitted configuration payload");
     let visibility = BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
         id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
-        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
+            "f3d:asm:body-native-key#1".to_string(),
+        ),
         stream: "Design/BulkStream.dat".into(),
         byte_offset: 10,
         asm_body_key_offset: 20,
@@ -502,7 +504,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_visibility[0].body.as_str(),
-        "f3d:xref/role/occurrence-0/brep:entity#1"
+        "f3d:xref/role/occurrence-0/asm:body-native-key#1"
     );
     assert_eq!(merged_visibility[0].stream(), "Design/BulkStream.dat");
 
@@ -916,7 +918,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             scope: cadmpeg_ir::document::ContentScope::full(),
             geometry_transferred: false,
         });
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::for_decode(&ctx, cadmpeg_ir::Annotations::default());
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
@@ -1433,7 +1436,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .merge(
                 &mut ir,
                 &mut report,
-                &mut cadmpeg_ir::SourceFidelity::default(),
+                &mut cadmpeg_ir::SourceFidelity::for_decode(
+                    &ctx,
+                    cadmpeg_ir::Annotations::default()
+                ),
                 &table
             )
             .unwrap(),

@@ -95,7 +95,7 @@ impl super::Builder<'_, '_, '_, '_> {
             name: Some(prim.name.clone()),
             gravity_direction,
             gravity_magnitude,
-            native_ref: Some(prim.path.clone()),
+            native_ref: None,
         });
         self.admit("usd_physics_scene")?;
         self.physx(
@@ -196,7 +196,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 schema: pending.schema,
                 target: pending.target,
                 values,
-                native_ref: Some(pending.path),
+                native_ref: None,
             });
             self.admit("usd_solver_settings")?;
         }

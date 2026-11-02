@@ -189,194 +189,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Mesh, points, FEM, CAM, embedded bytes, and inert extension data"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Domain:property",
-          "name": "Domain",
-          "native_ref": "fcstd:native:property#ExtensionPayload:Domain",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Extension retention fixture"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#ExtensionPayload:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#ExtensionPayload:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ExtensionPayload"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Members:property",
-          "name": "Members",
-          "native_ref": "fcstd:native:property#ExtensionPayload:Members",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Mesh"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#PointCloud"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#FemAnalysis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Toolpath"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#ExtensionPayload:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#FemAnalysis:Group:property",
           "name": "Group",
           "native_ref": "fcstd:native:property#FemAnalysis:Group",
           "target": {
-            "id": "fcstd:design:feature#FemAnalysis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#FemAnalysis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -390,8 +211,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#FemAnalysis:Label2",
           "target": {
-            "id": "fcstd:design:feature#FemAnalysis",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#FemAnalysis"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -405,110 +229,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#FemAnalysis:Visibility",
           "target": {
-            "id": "fcstd:design:feature#FemAnalysis",
-            "kind": "feature"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Mesh:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Mesh:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#Mesh"
+              "arena": "features",
+              "id": "fcstd:design:feature#FemAnalysis"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Mesh:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Mesh:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Mesh"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Mesh"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Mesh:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Mesh:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Mesh"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PointCloud:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#PointCloud:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PointCloud"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PointCloud:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#PointCloud:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PointCloud"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "PointCloud"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PointCloud:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#PointCloud:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PointCloud"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -522,8 +247,11 @@
           "name": "CFlux",
           "native_ref": "fcstd:native:property#TemperatureConstraint:CFlux",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -537,8 +265,11 @@
           "name": "ConstraintType",
           "native_ref": "fcstd:native:property#TemperatureConstraint:ConstraintType",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -552,8 +283,11 @@
           "name": "EnableAmplitude",
           "native_ref": "fcstd:native:property#TemperatureConstraint:EnableAmplitude",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -567,8 +301,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#TemperatureConstraint:Label2",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -582,8 +319,11 @@
           "name": "NormalDirection",
           "native_ref": "fcstd:native:property#TemperatureConstraint:NormalDirection",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -601,8 +341,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#TemperatureConstraint:Scale",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -616,8 +359,11 @@
           "name": "Temperature",
           "native_ref": "fcstd:native:property#TemperatureConstraint:Temperature",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -631,8 +377,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#TemperatureConstraint:Visibility",
           "target": {
-            "id": "fcstd:design:feature#TemperatureConstraint",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -646,8 +395,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Toolpath:Label2",
           "target": {
-            "id": "fcstd:design:feature#Toolpath",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Toolpath"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -661,8 +413,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Toolpath:Visibility",
           "target": {
-            "id": "fcstd:design:feature#Toolpath",
-            "kind": "feature"
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Toolpath"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1444,7 +1199,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "f004ab9645866ca3e2bad417233a447017f079d1f1063cd47f6f1cb3cdc4043a",
+    "decode_digest": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
     "retained_records": {
       "fcstd:native:entry#Normals": {
         "bytes": {

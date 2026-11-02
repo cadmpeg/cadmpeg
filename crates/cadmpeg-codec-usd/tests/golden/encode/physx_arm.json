@@ -54,6 +54,59 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "reported",
+        "appearances": "reported",
+        "articulations": "written",
+        "assembly_joints": "reported",
+        "assets": "written",
+        "attributes": "omitted",
+        "bodies": "reported",
+        "coedges": "reported",
+        "colliders": "written",
+        "configurations": "omitted",
+        "curves": "reported",
+        "drawings": "omitted",
+        "edges": "reported",
+        "faces": "reported",
+        "feature_input_topologies": "omitted",
+        "feature_result_topologies": "omitted",
+        "features": "omitted",
+        "loops": "reported",
+        "mass_properties": "written",
+        "occurrences": "written",
+        "parameters": "omitted",
+        "pcurves": "reported",
+        "physical_materials": "written",
+        "physics_scenes": "written",
+        "pmi": "omitted",
+        "points": "reported",
+        "presentation_documents": "omitted",
+        "presentation_layers": "omitted",
+        "procedural_curves": "omitted",
+        "procedural_surfaces": "omitted",
+        "product_definitions": "written",
+        "regions": "reported",
+        "rigid_bodies": "written",
+        "semantic_annotations": "omitted",
+        "shells": "reported",
+        "sketch_constraints": "omitted",
+        "sketch_entities": "omitted",
+        "sketches": "omitted",
+        "solver_settings": "written",
+        "spatial_sketch_constraints": "omitted",
+        "spatial_sketch_entities": "omitted",
+        "spatial_sketches": "omitted",
+        "spreadsheets": "omitted",
+        "subds": "omitted",
+        "surfaces": "reported",
+        "tessellations": "reported",
+        "vertices": "reported",
+        "view_presentations": "omitted"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "usd:usda-1.0"
@@ -70,6 +123,9 @@
         "severity": "info"
       }
     ],
+    "native_dispositions": {
+      "namespaces": {}
+    },
     "notes": [
       "USDA 1.0 text layer, metre units"
     ],
@@ -156,7 +212,7 @@
     "            float physics:staticFriction = 0.9",
     "            float physics:dynamicFriction = 0.8",
     "        }",
-    "        def PhysicsPrismaticJoint \"Grip\" (",
+    "        def PhysicsPrismaticJoint \"Joint\" (",
     "            prepend apiSchemas = [\"PhysxJointAPI\", \"PhysxMimicJointAPI:transX\"]",
     "        )",
     "        {",
@@ -164,7 +220,7 @@
     "            float physxJoint:maxJointVelocity = 0.1",
     "            float physxMimicJoint:transX:gearing = 0.0002",
     "            float physxMimicJoint:transX:offset = 0.01",
-    "            rel physxMimicJoint:transX:referenceJoint = [</Arm/Physics/Shoulder>]",
+    "            rel physxMimicJoint:transX:referenceJoint = [</Arm/Physics/Joint_1>]",
     "            uniform token physxMimicJoint:transX:referenceJointAxis = \"rotX\"",
     "            rel physics:body0 = </Arm/Link>",
     "            point3f physics:localPos0 = (0, 0, 0.02)",
@@ -176,7 +232,7 @@
     "            float physics:lowerLimit = 0",
     "            float physics:upperLimit = 0.03",
     "        }",
-    "        def PhysicsRevoluteJoint \"Shoulder\" (",
+    "        def PhysicsRevoluteJoint \"Joint_1\" (",
     "            prepend apiSchemas = [\"PhysicsJointStateAPI:angular\", \"PhysxJointAPI\", \"PhysxLimitAPI:angular\"]",
     "        )",
     "        {",

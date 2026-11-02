@@ -663,6 +663,7 @@
           }
         }
       },
+      "decode_digest": "1b93d2895bc5438cbc863495cf1607f2e2ac4f315edf29c7e38366c6424227fc",
       "retained_records": {
         "nx:source:image#whole": {
           "bytes": {

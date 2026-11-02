@@ -361,8 +361,11 @@
           "name": "Id",
           "native_ref": "fcstd:native:property#Assembly:Id",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -376,8 +379,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#Assembly:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -391,8 +397,11 @@
           "name": "License",
           "native_ref": "fcstd:native:property#Assembly:License",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -406,8 +415,11 @@
           "name": "LicenseURL",
           "native_ref": "fcstd:native:property#Assembly:LicenseURL",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -421,8 +433,11 @@
           "name": "Origin",
           "native_ref": "fcstd:native:property#Assembly:Origin",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -436,8 +451,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Assembly:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -451,8 +469,11 @@
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#BracketOccurrence:ElementCount",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -466,8 +487,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#BracketOccurrence:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -481,8 +505,11 @@
           "name": "LinkClaimChild",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkClaimChild",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -496,8 +523,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -511,8 +541,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -526,8 +559,11 @@
           "name": "LinkExecute",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkExecute",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -541,8 +577,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -556,8 +595,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#BracketOccurrence:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -571,8 +613,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#BracketOccurrence:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -586,8 +631,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#BracketOccurrence:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -605,8 +653,11 @@
           "name": "ShowElement",
           "native_ref": "fcstd:native:property#BracketOccurrence:ShowElement",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -620,8 +671,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#BracketOccurrence:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -635,8 +689,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#BracketOccurrence:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -650,8 +707,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#BracketPrototype:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#BracketPrototype:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketPrototype:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -665,8 +725,11 @@
           "name": "PartNumber",
           "native_ref": "fcstd:native:property#BracketPrototype:PartNumber",
           "target": {
-            "id": "fcstd:model:product_definition#BracketPrototype:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketPrototype:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -680,93 +743,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#BracketPrototype:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#BracketPrototype:definition",
-            "kind": "product_definition"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketPrototype:definition"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CorpusMetadata"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
-          "name": "License",
-          "native_ref": "fcstd:native:property#CorpusMetadata:License",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "CC0-1.0"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
-          "name": "Purpose",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Components, occurrences, grounding, and revolute assembly joint"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -780,8 +761,11 @@
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#ExternalOccurrence:ElementCount",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -795,8 +779,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#ExternalOccurrence:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -810,8 +797,11 @@
           "name": "LinkClaimChild",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkClaimChild",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -825,8 +815,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -840,8 +833,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -855,8 +851,11 @@
           "name": "LinkExecute",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkExecute",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -870,8 +869,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -885,8 +887,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#ExternalOccurrence:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -900,8 +905,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#ExternalOccurrence:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -919,8 +927,11 @@
           "name": "ShowElement",
           "native_ref": "fcstd:native:property#ExternalOccurrence:ShowElement",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -934,8 +945,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#ExternalOccurrence:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -949,8 +963,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#ExternalOccurrence:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -960,63 +977,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#GroundBracket:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#GroundBracket:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#GroundBracket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#GroundBracket:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#GroundBracket:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#GroundBracket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "GroundBracket"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#GroundBracket:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#GroundBracket:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#GroundBracket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#NestedBracketOccurrence:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:ElementCount",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1030,8 +999,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1045,8 +1017,11 @@
           "name": "LinkClaimChild",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkClaimChild",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1060,8 +1035,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1075,8 +1053,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1090,8 +1071,11 @@
           "name": "LinkExecute",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkExecute",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1105,8 +1089,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1120,8 +1107,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1135,8 +1125,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1150,8 +1143,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1169,8 +1165,11 @@
           "name": "ShowElement",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:ShowElement",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1184,8 +1183,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1199,8 +1201,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1214,8 +1219,11 @@
           "name": "ElementList",
           "native_ref": "fcstd:native:property#OccurrenceGroup:ElementList",
           "target": {
-            "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1237,8 +1245,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#OccurrenceGroup:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1252,8 +1263,11 @@
           "name": "LinkMode",
           "native_ref": "fcstd:native:property#OccurrenceGroup:LinkMode",
           "target": {
-            "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1267,8 +1281,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#OccurrenceGroup:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1282,8 +1299,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#OccurrenceGroup:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1293,172 +1313,15 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Origin001:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin001:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin001:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Origin001:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin001:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Origin:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Origin:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Origin"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:OriginFeatures:property",
-          "name": "OriginFeatures",
-          "native_ref": "fcstd:native:property#Origin:OriginFeatures",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#X_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Y_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Z_Axis"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XY_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#XZ_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#YZ_Plane"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#Origin001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Origin:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PinArray:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#PinArray:ElementCount",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1472,8 +1335,11 @@
           "name": "ElementList",
           "native_ref": "fcstd:native:property#PinArray:ElementList",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1495,8 +1361,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinArray:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1510,8 +1379,11 @@
           "name": "LinkClaimChild",
           "native_ref": "fcstd:native:property#PinArray:LinkClaimChild",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1525,8 +1397,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#PinArray:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1540,8 +1415,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1555,8 +1433,11 @@
           "name": "LinkExecute",
           "native_ref": "fcstd:native:property#PinArray:LinkExecute",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1570,8 +1451,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#PinArray:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1585,8 +1469,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#PinArray:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1600,8 +1487,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#PinArray:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1615,8 +1505,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#PinArray:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1634,8 +1527,11 @@
           "name": "ShowElement",
           "native_ref": "fcstd:native:property#PinArray:ShowElement",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1649,8 +1545,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinArray:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1664,8 +1563,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#PinArray:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1679,8 +1581,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinArray_i0:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1694,8 +1599,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#PinArray_i0:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1709,8 +1617,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray_i0:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1724,8 +1635,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#PinArray_i0:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1739,8 +1653,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#PinArray_i0:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1754,8 +1671,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#PinArray_i0:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1769,8 +1689,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#PinArray_i0:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1788,8 +1711,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinArray_i0:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1803,8 +1729,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#PinArray_i0:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i0:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1818,8 +1747,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinArray_i1:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1833,8 +1765,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#PinArray_i1:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1848,8 +1783,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray_i1:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1863,8 +1801,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#PinArray_i1:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1878,8 +1819,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#PinArray_i1:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1893,8 +1837,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#PinArray_i1:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1908,8 +1855,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#PinArray_i1:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1927,8 +1877,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinArray_i1:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1942,8 +1895,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#PinArray_i1:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i1:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1957,8 +1913,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinArray_i2:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1972,8 +1931,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#PinArray_i2:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -1987,8 +1949,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray_i2:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2002,8 +1967,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#PinArray_i2:LinkTransform",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2017,8 +1985,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#PinArray_i2:LinkedObject",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2032,8 +2003,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#PinArray_i2:Scale",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2047,8 +2021,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#PinArray_i2:ScaleVector",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2066,8 +2043,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinArray_i2:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2081,8 +2061,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#PinArray_i2:_LinkOwner",
           "target": {
-            "id": "fcstd:model:product_definition#PinArray_i2:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2096,8 +2079,11 @@
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#PinOccurrence:ElementCount",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2111,8 +2097,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinOccurrence:Label2",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2126,8 +2115,11 @@
           "name": "LinkClaimChild",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkClaimChild",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2141,8 +2133,11 @@
           "name": "LinkCopyOnChange",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkCopyOnChange",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2156,8 +2151,11 @@
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkCopyOnChangeTouched",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2171,8 +2169,11 @@
           "name": "LinkExecute",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkExecute",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2186,8 +2187,11 @@
           "name": "LinkTransform",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkTransform",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2201,8 +2205,11 @@
           "name": "LinkedObject",
           "native_ref": "fcstd:native:property#PinOccurrence:LinkedObject",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2216,8 +2223,11 @@
           "name": "Scale",
           "native_ref": "fcstd:native:property#PinOccurrence:Scale",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2231,8 +2241,11 @@
           "name": "ScaleVector",
           "native_ref": "fcstd:native:property#PinOccurrence:ScaleVector",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2250,8 +2263,11 @@
           "name": "ShowElement",
           "native_ref": "fcstd:native:property#PinOccurrence:ShowElement",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2265,8 +2281,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinOccurrence:Visibility",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2280,8 +2299,11 @@
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#PinOccurrence:_LinkOwner",
           "target": {
-            "id": "fcstd:model:occurrence#PinOccurrence:instance",
-            "kind": "occurrence"
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2295,8 +2317,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PinPrototype:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinPrototype:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2310,8 +2335,11 @@
           "name": "PartNumber",
           "native_ref": "fcstd:native:property#PinPrototype:PartNumber",
           "target": {
-            "id": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinPrototype:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2325,8 +2353,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PinPrototype:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinPrototype:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2340,8 +2371,11 @@
           "name": "Label2",
           "native_ref": "fcstd:native:property#PrototypeGroup:Label2",
           "target": {
-            "id": "fcstd:model:product_definition#PrototypeGroup:definition",
-            "kind": "product_definition"
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PrototypeGroup:definition"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -2355,586 +2389,11 @@
           "name": "Visibility",
           "native_ref": "fcstd:native:property#PrototypeGroup:Visibility",
           "target": {
-            "id": "fcstd:model:product_definition#PrototypeGroup:definition",
-            "kind": "product_definition"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Angle:property",
-          "name": "Angle",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Angle",
-          "target": {
             "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PrototypeGroup:definition"
             },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 12.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:AngleMax:property",
-          "name": "AngleMax",
-          "native_ref": "fcstd:native:property#RevoluteJoint:AngleMax",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 55.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:AngleMin:property",
-          "name": "AngleMin",
-          "native_ref": "fcstd:native:property#RevoluteJoint:AngleMin",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": -35.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Detach1:property",
-          "name": "Detach1",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Detach1",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:EnableAngleMax:property",
-          "name": "EnableAngleMax",
-          "native_ref": "fcstd:native:property#RevoluteJoint:EnableAngleMax",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:EnableAngleMin:property",
-          "name": "EnableAngleMin",
-          "native_ref": "fcstd:native:property#RevoluteJoint:EnableAngleMin",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "RevoluteJoint"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Suppressed:property",
-          "name": "Suppressed",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Suppressed",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#RevoluteJoint:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#RevoluteJoint:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#RevoluteJoint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XY_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XY_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XY_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XY_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XY_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#XZ_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#XZ_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#XZ_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "XZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XZ_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#XZ_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#X_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#X_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#X_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "X_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#X_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#YZ_Plane:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#YZ_Plane:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ-plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#YZ_Plane:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "YZ_Plane"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#YZ_Plane:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#YZ_Plane:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Y_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Y_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Y_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Y_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Y_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Y_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Label2:property",
-          "name": "Label2",
-          "native_ref": "fcstd:native:property#Z_Axis:Label2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": ""
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Label:property",
-          "name": "Label",
-          "native_ref": "fcstd:native:property#Z_Axis:Label",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z-axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Role:property",
-          "name": "Role",
-          "native_ref": "fcstd:native:property#Z_Axis:Role",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "Z_Axis"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:Visibility:property",
-          "name": "Visibility",
-          "native_ref": "fcstd:native:property#Z_Axis:Visibility",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
+            "kind": "record"
           },
           "values": [
             {
@@ -9250,7 +8709,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "92b882df8533080ad4515919d0eae5f03d33d66a2b1e97090f66be3edf320402",
+    "decode_digest": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

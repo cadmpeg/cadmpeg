@@ -2,8 +2,27 @@
   "ir": {
     "ir_version": "10",
     "model": {
-      "appearance_bindings": [],
-      "appearances": [],
+      "appearance_bindings": [
+        {
+          "appearance": "rhino:model:display-color#layer-0",
+          "id": "rhino:model:display-color-binding#0-0",
+          "target": {
+            "id": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
+            "kind": "point"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 0.0
+          },
+          "id": "rhino:model:display-color#layer-0"
+        }
+      ],
       "assembly_joints": [],
       "attributes": [],
       "bodies": [
@@ -16,6 +35,7 @@
           },
           "id": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
           "kind": "general",
+          "native_ref": "rhino:object:record#000000",
           "regions": [
             "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742"
           ],
@@ -54,8 +74,8 @@
           "id": "rhino:model:layer#000000",
           "items": [
             {
-              "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
-              "kind": "body"
+              "kind": "point",
+              "point": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742"
             }
           ],
           "name": "Default",
@@ -103,7 +123,14 @@
           "point": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742"
         }
       ],
-      "view_presentations": []
+      "view_presentations": [
+        {
+          "id": "rhino:model:object-view#0-0",
+          "object": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "order": 0,
+          "visible": true
+        }
+      ]
     },
     "native": {
       "rhino": {
@@ -215,10 +242,7 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000",
-            "links": [
-              "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742"
-            ]
+            "id": "rhino:object:record#000000"
           }
         ],
         "views": [],
@@ -316,6 +340,7 @@
         }
       }
     },
+    "decode_digest": "ecd6291d0a6e64203f211d205036e534c916e0b57d8befdc0b5e58a70800873c",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
