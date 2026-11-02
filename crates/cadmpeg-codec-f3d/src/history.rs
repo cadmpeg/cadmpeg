@@ -24,6 +24,7 @@ mod delete_face;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
+pub(crate) mod fillet_blends;
 mod hole_support;
 mod loop_index;
 mod move_face;
