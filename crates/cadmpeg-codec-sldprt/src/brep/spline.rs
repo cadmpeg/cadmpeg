@@ -180,6 +180,59 @@ pub(super) fn surface_descriptor_prefix_end(bytes: &[u8], offset: usize) -> Opti
     Some(parse_surface_descriptor(bytes, offset)?.end)
 }
 
+pub(super) fn curve_prefix_end(bytes: &[u8], off: usize) -> Option<usize> {
+    match *bytes.get(off + 1)? {
+        tag @ (0x7c | 0x86) => super::record_starts(bytes, off, tag)
+            .filter_map(|p| {
+                let attr = native_attr(bytes, p)?;
+                let (descriptor, end) = if tag == 0x86 {
+                    tripled_b_curve_nurbs(bytes, p).or_else(|| bare_b_curve_nurbs(bytes, p))?
+                } else {
+                    bare_b_curve_nurbs(bytes, p)?
+                };
+                (attr > 1 && descriptor > 1).then_some(end)
+            })
+            .min(),
+        0x88 => super::record_starts(bytes, off, 0x88)
+            .filter_map(|p| parse_curve_descriptor(bytes, p).map(|(_, _, end)| end))
+            .min(),
+        _ => None,
+    }
+}
+
+pub(super) fn referenced_array_attrs(bytes: &[u8]) -> HashSet<u32> {
+    let mut attrs = HashSet::new();
+    for descriptor in scan_curve_descriptors(bytes, |_| true).into_values() {
+        attrs.extend([
+            descriptor.control_attr,
+            descriptor.multiplicity_attr,
+            descriptor.knot_attr,
+        ]);
+    }
+    for descriptor in scan_surface_descriptors(bytes).into_values() {
+        attrs.extend(descriptor.refs);
+    }
+    attrs
+}
+
+pub(super) fn array_record_end(bytes: &[u8], off: usize, attrs: &HashSet<u32>) -> Option<usize> {
+    let tag = *bytes.get(off + 1)?;
+    let width = match tag {
+        0x2d | 0x80 => 8,
+        0x7f => 2,
+        _ => return None,
+    };
+    let p = array_body(bytes, off, tag)?;
+    let (count, attr, data) = array_header(bytes, p)?;
+    (count <= MAX_ARRAY_VALUES && attrs.contains(&attr) && attr > 1).then_some(())?;
+    let count = cadmpeg_core::decode::bounded_len(
+        cadmpeg_core::decode::u64_from_index(count),
+        width,
+        bytes.len().checked_sub(data)?,
+    )?;
+    data.checked_add(count.checked_mul(width)?)
+}
+
 fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     if bytes.get(off..off + 2) != Some(&[0x00, tag]) {
         return None;
