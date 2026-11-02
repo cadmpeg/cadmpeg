@@ -21,6 +21,8 @@ struct Fixture {
     references: usize,
     operation: u32,
     zero_run: u8,
+    marker: u8,
+    zero_value: u32,
     extent_kind: u32,
     direction_kind: u8,
     project_axis: u8,
@@ -37,6 +39,8 @@ impl Fixture {
             references: 6,
             operation: 4,
             zero_run: 0,
+            marker: 1,
+            zero_value: 0,
             extent_kind: 2,
             direction_kind: 0,
             project_axis: 0,
@@ -73,8 +77,8 @@ impl Fixture {
         } else {
             bytes.push(self.zero_run);
             bytes.extend_from_slice(&[0; 8]);
-            bytes.push(1);
-            bytes.extend_from_slice(&0_u32.to_le_bytes());
+            bytes.push(self.marker);
+            bytes.extend_from_slice(&self.zero_value.to_le_bytes());
         }
         bytes.extend_from_slice(&self.operation.to_le_bytes());
         bytes.extend_from_slice(&self.extent_kind.to_le_bytes());
@@ -211,6 +215,15 @@ fn both_forms_refuse_other_prologue_values() {
             let mut fixture = base.clone();
             fixture.zero_run = 1;
             cases.push(("zero run", fixture));
+        } else {
+            for marker in [0, 2] {
+                let mut fixture = base.clone();
+                fixture.marker = marker;
+                cases.push(("marker", fixture));
+            }
+            let mut fixture = base.clone();
+            fixture.zero_value = 1;
+            cases.push(("zero value", fixture));
         }
         let mut fixture = base.clone();
         fixture.angle_marker = 0;

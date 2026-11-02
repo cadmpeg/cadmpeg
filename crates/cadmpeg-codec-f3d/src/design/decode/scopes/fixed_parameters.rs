@@ -618,16 +618,14 @@ pub(super) fn unique_revolve_angle_owner<'a>(
     )
 }
 
-/// The one nonzero angle owner at local ordinal zero that a referenced-angle
-/// `Revolve` scope names.
+/// The angle owner at local ordinal zero that a referenced-angle `Revolve`
+/// scope names; its angle can be negative.
 pub(super) fn referenced_revolve_angle_owner<'a>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
     record_index: u32,
 ) -> Option<&'a DesignParameterOwner> {
-    revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |angle| {
-        angle.abs() > 0.0
-    })
+    revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |_| true)
 }
 
 fn revolve_angle_owner<'a>(
