@@ -349,8 +349,12 @@ impl Scan<'_> {
                 .iter()
                 .any(|object| self.object_history_part(object));
         // A located-but-given-up table still locates its band's parts (§1.1):
-        // the bytes were found, so their classes stay in scope.
+        // the bytes were found, so their classes stay in scope. Absent tables
+        // retain no bytes and locate nothing.
         for part in &self.give_ups {
+            if part.range.is_empty() {
+                continue;
+            }
             if let Some(table) = part.table {
                 let (model, design) = table_scope_band(table);
                 model_part |= model;
@@ -450,20 +454,31 @@ fn framing_error(error: FramingError) -> CodecError {
 
 /// Record one given-up part (#215 rule 1). The range is clamped to the
 /// source; a part whose end cannot be found extends to the end of the source.
-#[allow(clippy::too_many_arguments)]
+/// The untyped classes derive from the part kind and table (§1.3): a known
+/// model or design table names its band, any other table chunk can hold
+/// either class, and a table record defaults to model.
 pub(crate) fn give_up(
     give_ups: &mut Vec<GivenUpPart>,
     label: &'static str,
-    offset: usize,
-    end: usize,
+    range: std::ops::Range<usize>,
     data_len: usize,
-    classes: cadmpeg_ir::ArenaClasses,
     table: Option<u32>,
     dropped: Vec<String>,
     error: impl std::fmt::Display,
 ) {
-    let start = offset.min(data_len);
-    let end = end.clamp(start, data_len);
+    let start = range.start.min(data_len);
+    let end = range.end.clamp(start, data_len);
+    let classes = match label {
+        "rhino.table_record" => table
+            .map(table_record_classes)
+            .unwrap_or_else(model_classes),
+        "rhino.v1_record" => model_classes(),
+        _ => match table.map(table_scope_band) {
+            Some((true, _)) => model_classes(),
+            Some((false, true)) => cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design]),
+            _ => table_chunk_classes(),
+        },
+    };
     give_ups.push(GivenUpPart {
         label,
         range: start..end,
@@ -513,10 +528,8 @@ pub(crate) fn settings_record_give_up(
     give_up(
         give_ups,
         "rhino.table_record",
-        record.range.start,
-        record.range.end,
+        record.range.clone(),
         data_len,
-        table_record_classes(table_typecode),
         Some(table_base(table_typecode)),
         dropped,
         error,
@@ -544,11 +557,7 @@ fn mint_table_span_dropped(
     offset: usize,
     start_order: usize,
 ) -> (Option<u32>, Vec<String>) {
-    let Some(typecode) = data
-        .get(offset..offset + 4)
-        .and_then(|window| window.try_into().ok())
-        .map(u32::from_le_bytes)
-    else {
+    let Some(typecode) = cadmpeg_core::decode::View::u32_le_at(data, offset) else {
         return (None, Vec::new());
     };
     if typecode & 0xFFFF_0000 != 0x1000_0000 {
@@ -1537,10 +1546,8 @@ fn first_writer_version(
                 give_up(
                     give_ups,
                     "rhino.table_chunk",
-                    offset,
+                    offset..data.len(),
                     data.len(),
-                    data.len(),
-                    table_chunk_classes(),
                     None,
                     Vec::new(),
                     error,
@@ -1558,10 +1565,8 @@ fn first_writer_version(
                 give_up(
                     give_ups,
                     "rhino.table_chunk",
-                    offset,
+                    offset..data.len(),
                     data.len(),
-                    data.len(),
-                    table_chunk_classes(),
                     Some(TCODE_PROPERTIES),
                     Vec::new(),
                     "properties table must use long framing",
@@ -1577,10 +1582,8 @@ fn first_writer_version(
                         give_up(
                             give_ups,
                             "rhino.table_chunk",
-                            child_offset,
-                            chunk.body().end,
+                            child_offset..chunk.body().end,
                             data.len(),
-                            table_chunk_classes(),
                             Some(TCODE_PROPERTIES),
                             Vec::new(),
                             error,
@@ -1598,10 +1601,8 @@ fn first_writer_version(
                             give_up(
                                 give_ups,
                                 "rhino.table_record",
-                                child.header_start,
-                                child.next_offset(),
+                                child.header_start..child.next_offset(),
                                 data.len(),
-                                model_classes(),
                                 Some(TCODE_PROPERTIES),
                                 Vec::new(),
                                 error,
@@ -1662,10 +1663,8 @@ fn scan_with_record_limit<'a>(
             give_up(
                 &mut give_ups,
                 "rhino.table_chunk",
-                comment_offset,
+                comment_offset..data.len(),
                 data.len(),
-                data.len(),
-                table_chunk_classes(),
                 None,
                 Vec::new(),
                 error,
@@ -1696,10 +1695,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
+                    offset..data.len(),
                     data.len(),
-                    data.len(),
-                    table_chunk_classes(),
                     table,
                     dropped,
                     error,
@@ -1712,11 +1709,9 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    offset,
+                    offset..offset,
                     data.len(),
-                    model_classes(),
-                    None,
+                    Some(TCODE_SETTINGS),
                     Vec::new(),
                     "settings table is required but absent",
                 );
@@ -1725,11 +1720,9 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    offset,
+                    offset..offset,
                     data.len(),
-                    model_classes(),
-                    None,
+                    Some(TCODE_OBJECTS),
                     Vec::new(),
                     "object table is required but absent",
                 );
@@ -1738,10 +1731,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    chunk.next_offset(),
+                    offset..chunk.next_offset(),
                     data.len(),
-                    table_chunk_classes(),
                     Some(table_base(chunk.typecode)),
                     Vec::new(),
                     error,
@@ -1758,10 +1749,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    chunk.next_offset(),
+                    offset..chunk.next_offset(),
                     data.len(),
-                    table_chunk_classes(),
                     None,
                     Vec::new(),
                     format_args!("expected table or EOF at offset {offset}"),
@@ -1787,10 +1776,8 @@ fn scan_with_record_limit<'a>(
             give_up(
                 &mut give_ups,
                 "rhino.table_chunk",
-                offset,
+                offset..data.len(),
                 data.len(),
-                data.len(),
-                table_chunk_classes(),
                 Some(table_base(chunk.typecode)),
                 Vec::new(),
                 "table chunks must use long framing",
@@ -1810,10 +1797,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    chunk.next_offset(),
+                    offset..chunk.next_offset(),
                     data.len(),
-                    table_chunk_classes(),
                     Some(TCODE_USER),
                     Vec::new(),
                     "user table is out of order",
@@ -1834,10 +1819,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    chunk.next_offset(),
+                    offset..chunk.next_offset(),
                     data.len(),
-                    table_chunk_classes(),
                     Some(table_base(chunk.typecode)),
                     dropped,
                     format_args!(
@@ -1873,10 +1856,8 @@ fn scan_with_record_limit<'a>(
                     give_up(
                         &mut give_ups,
                         "rhino.table_chunk",
-                        child_offset,
-                        chunk.body().end,
+                        child_offset..chunk.body().end,
                         data.len(),
-                        table_chunk_classes(),
                         Some(table_base(chunk.typecode)),
                         dropped,
                         error,
@@ -1900,10 +1881,8 @@ fn scan_with_record_limit<'a>(
                         give_up(
                             &mut give_ups,
                             "rhino.table_chunk",
-                            child_offset,
-                            chunk.body().end,
+                            child_offset..chunk.body().end,
                             data.len(),
-                            table_chunk_classes(),
                             Some(table_base(chunk.typecode)),
                             dropped,
                             error,
@@ -1915,10 +1894,8 @@ fn scan_with_record_limit<'a>(
                     give_up(
                         &mut give_ups,
                         "rhino.table_chunk",
-                        child_offset,
-                        chunk.body().end,
+                        child_offset..chunk.body().end,
                         data.len(),
-                        table_chunk_classes(),
                         Some(table_base(chunk.typecode)),
                         if table_base(chunk.typecode) == TCODE_OBJECTS {
                             mint_object_span_dropped(
@@ -1936,10 +1913,8 @@ fn scan_with_record_limit<'a>(
                     give_up(
                         &mut give_ups,
                         "rhino.table_chunk",
-                        child_offset,
-                        chunk.body().end,
+                        child_offset..chunk.body().end,
                         data.len(),
-                        table_chunk_classes(),
                         Some(table_base(chunk.typecode)),
                         if table_base(chunk.typecode) == TCODE_OBJECTS {
                             mint_object_span_dropped(
@@ -1985,10 +1960,8 @@ fn scan_with_record_limit<'a>(
                     give_up(
                         &mut give_ups,
                         "rhino.table_record",
-                        child_offset,
-                        child.next_offset(),
+                        child_offset..child.next_offset(),
                         data.len(),
-                        table_record_classes(chunk.typecode),
                         Some(table_base(chunk.typecode)),
                         Vec::new(),
                         format_args!(
@@ -2104,10 +2077,8 @@ fn scan_with_record_limit<'a>(
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
-                    offset,
-                    chunk.next_offset(),
+                    offset..chunk.next_offset(),
                     data.len(),
-                    table_chunk_classes(),
                     Some(table_base(chunk.typecode)),
                     dropped,
                     "table chunk declares a body that does not fit its framing",
@@ -2131,11 +2102,9 @@ fn scan_with_record_limit<'a>(
             give_up(
                 &mut give_ups,
                 "rhino.table_chunk",
-                offset,
-                offset,
+                offset..offset,
                 data.len(),
-                model_classes(),
-                None,
+                Some(TCODE_SETTINGS),
                 Vec::new(),
                 "settings table is required but absent",
             );
@@ -2144,11 +2113,9 @@ fn scan_with_record_limit<'a>(
             give_up(
                 &mut give_ups,
                 "rhino.table_chunk",
-                offset,
-                offset,
+                offset..offset,
                 data.len(),
-                model_classes(),
-                None,
+                Some(TCODE_OBJECTS),
                 Vec::new(),
                 "object table is required but absent",
             );
