@@ -5867,10 +5867,42 @@ pub(crate) mod referenced_angle_revolve_prologue {
     pub(crate) const DIRECTION_KIND: usize = 33;
     /// Offset of `project_axis` (`u8`). Spec §3.1.
     pub(crate) const PROJECT_AXIS: usize = 34;
-    /// Offset of `structural_constant` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const STRUCTURAL_CONSTANT: usize = 35;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 35;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 36;
     /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
     pub(crate) const ANGLE_REFERENCE_MARKER: usize = 39;
+}
+
+/// Byte offsets for the `unmarked_referenced_angle_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 46 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 35 through 45.
+/// ```
+pub(crate) mod unmarked_referenced_angle_revolve_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 25;
+    /// Stated value of `extent_kind` (`u32`). Spec §3.1.
+    pub(crate) const EXTENT_KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Stated value of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND_VALUE: u8 = 0;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 30;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 31;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 32;
+    /// Offset of `angle_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE: usize = 35;
 }
 
 /// Byte offsets for the `two_sided_revolve_prologue` record.

@@ -346,6 +346,8 @@ fn revolve_target_group_requires_a_scope_without_an_angle_construction() {
                             angle_offset: 0,
                             second_side: None,
                             opposite_angle: None,
+                            solid: None,
+                            reversed: false,
                         })
                         .into();
                 }

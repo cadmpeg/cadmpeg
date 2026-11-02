@@ -20234,11 +20234,18 @@ source = "spec"
 anchor = "Offset 34 stores the Project Axis flag"
 
 [[record.field]]
-name = "structural_constant"
+name = "solid"
 offset = 35
-type = "u32"
+type = "u8"
 source = "spec"
-anchor = "Offset 35 stores u32 one"
+anchor = "Offset 35 stores the solid flag"
+
+[[record.field]]
+name = "zero_flags"
+offset = 36
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 36 and 37 store zero Symmetric and Two Sides flags, and offset 38 stores the null opposite-angle reference marker"
 
 [[record.field]]
 name = "angle_reference_marker"
@@ -20252,6 +20259,78 @@ offset = 40
 size = 10
 note = "The marked reference stores the u32 angle-owner record index followed by six zero bytes."
 
+
+[[record]]
+name = "unmarked_referenced_angle_revolve_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The unmarked referenced-angle form has a 369-byte token-independent frame and eight ordered references"
+size = 46
+note = "Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 35 through 45."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero, offset 21 stores the result operation"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0`"
+
+[[record.field]]
+name = "extent_kind"
+offset = 25
+type = "u32"
+value = 2
+source = "spec"
+anchor = "offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0`"
+
+[[record.field]]
+name = "direction_kind"
+offset = 29
+type = "u8"
+value = 0
+source = "spec"
+anchor = "offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 stores direction kind `0`"
+
+[[record.field]]
+name = "project_axis"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "Offset 30 stores the Project Axis flag and offset 31 stores the solid flag"
+
+[[record.field]]
+name = "solid"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "Offset 30 stores the Project Axis flag and offset 31 stores the solid flag"
+
+[[record.field]]
+name = "zero_flags"
+offset = 32
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 32 and 33 store zero Symmetric and Two Sides flags, and offset 34 stores the null opposite-angle reference marker"
+
+[[record.field]]
+name = "angle_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked angle-owner reference starts at offset 35"
 [[record]]
 name = "two_sided_revolve_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
