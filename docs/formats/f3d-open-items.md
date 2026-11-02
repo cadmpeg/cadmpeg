@@ -1010,3 +1010,11 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The public FHCS frame selects points with persistent identities `117` and `119`.
+
+### DR-175. Ownerless fixed Fillet lanes across several operand groups
+
+**Question.** How do ownerless fixed scalar lanes assign radius laws to several role-`0x0000000800000000` Fillet groups?
+
+**Known.** The scalar records name the owning scope and have consecutive owner-local ordinals. Their scope reference table interleaves the scalar records with several counted operand groups. A scalar run can contain two values with two groups, or three values with three groups. The fixed single-group grammar reads these runs as a tangency weight and constant radius, or a tangency weight and two endpoint radii.
+
+**Need.** A record discriminator or explicit assignment that separates per-group radii from a shared tangency weight and a multi-value radius law.
