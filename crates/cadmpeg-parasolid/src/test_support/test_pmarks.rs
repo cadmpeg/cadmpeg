@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Primary-layout byte fixtures for current and historical PMARK nodes.
 
-use super::test_deltas::push_xmt;
+use super::xmt::push_xmt;
 
-pub(crate) fn header() -> Vec<u8> {
+/// An embedded-schema 13006 Deltas transmit header.
+pub fn header() -> Vec<u8> {
     let mut bytes = b"PS".to_vec();
     for text in [b"Transmit (deltas)".as_slice(), b"SCH_3501171_35102_13006"] {
         bytes.extend_from_slice(
@@ -18,7 +19,8 @@ pub(crate) fn header() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn node(xmt: u32, preceding: u32, following: u32, identifier: u32) -> Vec<u8> {
+/// One type-4 PMARK instance with its type tag.
+pub fn node(xmt: u32, preceding: u32, following: u32, identifier: u32) -> Vec<u8> {
     let mut bytes = 4_u16.to_be_bytes().to_vec();
     for value in [xmt, preceding, following, 1, 1] {
         push_xmt(&mut bytes, value);
@@ -31,7 +33,8 @@ pub(crate) fn node(xmt: u32, preceding: u32, following: u32, identifier: u32) ->
     bytes
 }
 
-pub(crate) fn prefix(preceding: u32) -> Vec<u8> {
+/// A Deltas header, partition node, and first-use PMARK whose preceding mark is `preceding`.
+pub fn prefix(preceding: u32) -> Vec<u8> {
     let mut bytes = header();
     bytes.extend_from_slice(&[0, 3, 255]);
     for value in [49_947, 49_948] {
@@ -45,16 +48,20 @@ pub(crate) fn prefix(preceding: u32) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn packet() -> Vec<u8> {
+/// A PMARK packet: a terminator followed by one PMARK node.
+pub fn packet() -> Vec<u8> {
     let mut bytes = vec![0, 1, 0, 1];
     bytes.extend(node(40_000, 1, 49_948, 0x1234_5677));
     bytes
 }
 
-pub(crate) const TERMINATOR: [u8; 4] = [0, 1, 0, 1];
-pub(crate) const EMPTY_MAP: [u8; 6] = [0, 1, 0, 0, 0, 0];
+/// A `0001 0001` terminator.
+pub const TERMINATOR: [u8; 4] = [0, 1, 0, 1];
+/// An empty index map and its zero terminal word.
+pub const EMPTY_MAP: [u8; 6] = [0, 1, 0, 0, 0, 0];
 
-pub(crate) fn complete(mut bytes: Vec<u8>) -> Vec<u8> {
+/// Close `bytes` with a terminator, an empty map, and two terminators.
+pub fn complete(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes.extend(TERMINATOR);
     bytes.extend(EMPTY_MAP);
     bytes.extend(TERMINATOR);

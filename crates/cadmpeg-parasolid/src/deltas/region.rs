@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+//! REGION node fields of a Deltas stream.
 use crate::records::{DataType, SchemaPlan};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
+/// Region type byte of a REGION node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum RegionType {
+pub enum RegionType {
+    /// `S`: a solid region.
     Solid,
+    /// `V`: a void region.
     Void,
 }
 
@@ -43,20 +47,23 @@ enum RegionTail {
     },
 }
 
+/// The checked fields of one REGION node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RegionFields {
+pub struct RegionFields {
     pub(super) node_id: u32,
     attributes_features: NonZeroU32,
     body: NonZeroU32,
     next: NonZeroU32,
     previous: NonZeroU32,
     shell: NonZeroU32,
-    pub(crate) region_type: RegionType,
+    /// Solid or void region type.
+    pub region_type: RegionType,
     tail: RegionTail,
 }
 
 impl RegionFields {
-    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + Clone {
+    /// Non-null pointer fields in field order, the tail references last.
+    pub fn references(&self) -> impl Iterator<Item = u32> + Clone {
         let tail = match self.tail {
             RegionTail::Base => [None, None],
             RegionTail::Owned { owner } => [Some(owner), None],
@@ -74,11 +81,8 @@ impl RegionFields {
         .map(NonZeroU32::get)
     }
 
-    pub(crate) fn from_wire(
-        node_id: u32,
-        references: Vec<u32>,
-        region_type: RegionType,
-    ) -> Option<Self> {
+    /// Build the fields from five, six, or seven non-null references, or return `None`.
+    pub fn from_wire(node_id: u32, references: Vec<u32>, region_type: RegionType) -> Option<Self> {
         let count = references.len();
         let mut references = references.into_iter();
         let mut target = || NonZeroU32::new(references.next()?);
@@ -109,15 +113,20 @@ impl RegionFields {
     }
 }
 
+/// Field list of a REGION node type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RegionLayout {
+pub enum RegionLayout {
+    /// The base field list.
     Base,
+    /// The base field list with an appended `owner` pointer.
     Owned,
+    /// The base field list with an inserted `frame` and an appended `owner` pointer.
     Framed,
 }
 
 impl RegionLayout {
-    pub(crate) fn from_schema(schema: &SchemaPlan) -> Option<Self> {
+    /// The layout whose field list equals `schema`, if any.
+    pub fn from_schema(schema: &SchemaPlan) -> Option<Self> {
         [Self::Base, Self::Owned, Self::Framed]
             .into_iter()
             .find(|layout| {

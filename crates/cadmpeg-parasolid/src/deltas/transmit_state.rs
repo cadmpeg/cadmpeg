@@ -4,9 +4,10 @@
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
 
+/// The checked transmit header of a Deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TransmitWire")]
-pub(crate) struct TransmitState {
+pub struct TransmitState {
     description: String,
     schema: String,
     maximum_node_type: NonZeroU16,

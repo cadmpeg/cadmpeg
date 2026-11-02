@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Neutral-binary node reading through base and embedded schema field lists.
+//!
+//! A node type's first occurrence in an embedded-schema stream carries its
+//! effective field list as an edit program over the base schema. Later
+//! occurrences reuse the established list.
 
-use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod base;
-pub(crate) mod deltas;
-pub(crate) mod group;
-mod primary;
+pub mod deltas;
+pub mod group;
+pub(crate) mod primary;
 
-pub(crate) use deltas::DeltasRecords;
-pub(crate) use primary::PrimaryRecords;
+pub use deltas::DeltasRecords;
+pub use primary::PrimaryRecords;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BaseVersion {
@@ -19,39 +24,54 @@ enum BaseVersion {
     V13006,
 }
 
-pub(crate) fn is_partition_description(description: &[u8]) -> bool {
+/// Whether a transmit description names a partition stream.
+pub fn is_partition_description(description: &[u8]) -> bool {
     description == b": TRANSMIT FILE (partition)"
         || description.starts_with(b": TRANSMIT FILE (partition) ")
 }
 
-pub(crate) mod instance;
+pub mod instance;
 
+/// Field type code of one schema field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum DataType {
+pub enum DataType {
+    /// `u`: one unsigned byte.
     #[serde(rename = "u")]
     Byte,
+    /// `c`: one character byte.
     #[serde(rename = "c")]
     Char,
+    /// `l`: one logical byte, zero or one.
     #[serde(rename = "l")]
     Logical,
+    /// `n`: one big-endian u16 short.
     #[serde(rename = "n")]
     Short,
+    /// `w`: one big-endian u16 word.
     #[serde(rename = "w")]
     Word,
+    /// `d`: one big-endian u32 integer.
     #[serde(rename = "d")]
     Integer,
+    /// `p`: one biased-index node pointer.
     #[serde(rename = "p")]
     Pointer,
+    /// `f`: one big-endian binary64 real.
     #[serde(rename = "f")]
     Real,
+    /// `i`: two reals, an interval.
     #[serde(rename = "i")]
     Interval,
+    /// `v`: three reals, a vector.
     #[serde(rename = "v")]
     Vector,
+    /// `b`: six reals, a box.
     #[serde(rename = "b")]
     Box,
+    /// `h`: one Hvec value.
     #[serde(rename = "h")]
     Hvec,
+    /// A declared type code without an established instance width.
     #[serde(skip)]
     Unestablished(u8),
 }
@@ -78,14 +98,19 @@ impl DataType {
     }
 }
 
+/// One effective field of a node type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FieldWire")]
-pub(crate) struct SchemaField {
-    pub(crate) name: PrintableString<String>,
-    pub(crate) data_type: DataType,
+pub struct SchemaField {
+    /// Field name.
+    pub name: PrintableString<String>,
+    /// Field type code.
+    pub data_type: DataType,
     pub(crate) pointer_class: u16,
-    pub(crate) n_elements: u32,
-    pub(crate) transmit: bool,
+    /// Element extent: zero is scalar, one is variable, a greater value is a fixed array.
+    pub n_elements: u32,
+    /// Whether instances transmit the field.
+    pub transmit: bool,
 }
 
 #[derive(Deserialize)]
@@ -116,18 +141,24 @@ impl TryFrom<FieldWire> for SchemaField {
     }
 }
 
+/// The effective field list of one node type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SchemaPlan {
-    pub(crate) kind: u16,
-    pub(crate) fields: Vec<SchemaField>,
+pub struct SchemaPlan {
+    /// Node type.
+    pub kind: u16,
+    /// Effective fields in instance order.
+    pub fields: Vec<SchemaField>,
+    /// Name declared by a node type absent from the base schema.
     #[serde(skip)]
-    pub(crate) custom_name: Option<String>,
+    pub custom_name: Option<String>,
+    /// Description declared by a node type absent from the base schema.
     #[serde(skip)]
-    pub(crate) custom_description: Option<String>,
+    pub custom_description: Option<String>,
 }
 
 impl SchemaPlan {
-    pub(crate) fn matches_base_with_pointer_tail(&self, kind: u16, tail: &[(&str, u16)]) -> bool {
+    /// Whether the plan is the base-13006 field list of `kind` followed by the scalar pointer fields `tail`.
+    pub fn matches_base_with_pointer_tail(&self, kind: u16, tail: &[(&str, u16)]) -> bool {
         if self.kind != kind {
             return false;
         }
@@ -218,7 +249,11 @@ fn short_string<'a>(view: &mut View<'a>) -> Option<&'a str> {
     Some(text)
 }
 
-pub(crate) fn positive(view: &mut View<'_>) -> Option<u32> {
+/// Read one positive integer in the biased index encoding and return its logical value.
+///
+/// A positive `i16` holds the value plus one. A negative `i16` remainder and a
+/// `u16` quotient hold `quotient * 32767 + |remainder|` plus one.
+pub fn positive(view: &mut View<'_>) -> Option<u32> {
     let remainder = view.i16_be()?;
     if remainder > 0 {
         return u32::try_from(remainder).ok()?.checked_sub(1);

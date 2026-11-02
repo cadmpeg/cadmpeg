@@ -3,19 +3,19 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 use cadmpeg_core::CodecError;
+use cadmpeg_parasolid::xmt::XmtTarget;
 use serde::{Deserialize, Serialize};
 
-use crate::deltas::record_family::RecordFamily;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
-use crate::records::deltas::EventContent;
-use crate::records::DeltasRecords;
+use cadmpeg_parasolid::deltas::record_family::RecordFamily;
+use cadmpeg_parasolid::records::deltas::EventContent;
+use cadmpeg_parasolid::records::DeltasRecords;
 use std::num::NonZeroU32;
 
 pub(super) mod structured_value_kind;
@@ -44,16 +44,16 @@ use deltas_metadata::ParasolidDeltasMetadata;
 mod chart_wire;
 mod support_uv_wire;
 mod transmit_header_wire;
-use crate::deltas::partition_prefix::PartitionPrefixState;
-use crate::deltas::transmit_state::TransmitState;
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::deltas::partition_prefix::PartitionPrefixState;
+use cadmpeg_parasolid::deltas::transmit_state::TransmitState;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use transmit_header_wire::TransmitHeaderWire;
 pub(super) mod group_member;
 mod group_state;
 use group_member::GroupMemberTarget;
 pub(super) mod group_record;
-use crate::deltas::group::GroupReferenceStatus;
-use crate::records::group::GroupSelector;
+use cadmpeg_parasolid::deltas::group::GroupReferenceStatus;
+use cadmpeg_parasolid::records::group::GroupSelector;
 use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
@@ -181,7 +181,8 @@ pub(super) fn parasolid_groups(
             continue;
         };
 
-        let Some(primary) = crate::records::PrimaryRecords::read(&stream.inflated)? else {
+        let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?
+        else {
             continue;
         };
         for record in primary.groups() {
@@ -214,7 +215,7 @@ pub(super) fn parasolid_groups(
         current.append_members(stream_ordinal_u32, &mut members);
     }
     for record in &deltas.records {
-        let crate::deltas::record_family::RecordFamily::Group {
+        let cadmpeg_parasolid::deltas::record_family::RecordFamily::Group {
             node_id,
             selector,
             linked_reference_status,
@@ -273,7 +274,7 @@ pub(super) struct ParasolidDeltasRecord {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Source projection derived from the owned generic instance.
-    pub(super) family: crate::deltas::record_family::RecordFamily,
+    pub(super) family: cadmpeg_parasolid::deltas::record_family::RecordFamily,
     /// Stream-local XMT identity.
     pub(super) xmt: u32,
     /// Exact serialized record length.
@@ -284,7 +285,7 @@ pub(super) struct ParasolidDeltasRecord {
 
 impl Serialize for ParasolidDeltasRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use crate::deltas::record_family::RecordFamilyReferences;
+        use cadmpeg_parasolid::deltas::record_family::RecordFamilyReferences;
         use serde::ser::SerializeStruct;
 
         let region_type = match &self.family {
@@ -342,7 +343,7 @@ struct ParasolidDeltasRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_region_type"
     )]
-    region_type: Option<crate::deltas::region::RegionType>,
+    region_type: Option<cadmpeg_parasolid::deltas::region::RegionType>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -377,7 +378,7 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
             wire.group_linked_reference_status,
         ) {
             (19, "REGION", Some(region_type), None, None) => RecordFamily::Region {
-                fields: crate::deltas::region::RegionFields::from_wire(
+                fields: cadmpeg_parasolid::deltas::region::RegionFields::from_wire(
                     wire.node_id,
                     wire.references,
                     region_type,
@@ -1274,11 +1275,11 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
             xmt: row.xmt,
             header_references: row
                 .header_references
-                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+                .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
             sense: row.sense,
             construction_references: row
                 .references
-                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+                .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
             inflated_offset: cadmpeg_core::decode::u64_from_index(row.pos),
         }
     }
@@ -3209,7 +3210,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(
     deserialize_region_type,
-    crate::deltas::region::RegionType,
+    cadmpeg_parasolid::deltas::region::RegionType,
     "region_type"
 );
 cadmpeg_core::named_optional_field!(deserialize_group_selector, GroupSelector, "group_selector");

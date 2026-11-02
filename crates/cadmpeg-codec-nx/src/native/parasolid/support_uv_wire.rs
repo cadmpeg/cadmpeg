@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub(super) struct SupportUvWire {
     id: String,
     stream_ordinal: u32,
-    xmt: crate::framing::xmt_reference::NonNullXmt,
+    xmt: cadmpeg_parasolid::xmt::NonNullXmt,
     count: u32,
     marker: u8,
     values: Vec<f64>,
@@ -23,7 +23,7 @@ pub(super) struct SupportUvWire {
 struct SupportUvRef<'a> {
     id: &'a str,
     stream_ordinal: u32,
-    xmt: crate::framing::xmt_reference::NonNullXmt,
+    xmt: cadmpeg_parasolid::xmt::NonNullXmt,
     count: u32,
     marker: u8,
     values: &'a [cadmpeg_ir::scalar::FiniteReal],

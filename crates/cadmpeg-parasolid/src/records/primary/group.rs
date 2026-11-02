@@ -3,17 +3,18 @@
 use super::PrimaryRecords;
 use crate::records::group::GroupSelector;
 
-pub(crate) struct PrimaryGroup {
-    pub(crate) xmt: u32,
-    pub(crate) node_id: u32,
-    pub(crate) references: [u32; 5],
-    pub(crate) selector: GroupSelector,
-    pub(crate) offset: usize,
-    pub(crate) end: usize,
+pub struct PrimaryGroup {
+    pub xmt: u32,
+    pub node_id: u32,
+    pub references: [u32; 5],
+    pub selector: GroupSelector,
+    pub offset: usize,
+    pub end: usize,
 }
 
 impl PrimaryRecords<'_> {
-    pub(crate) fn groups(&self) -> Vec<PrimaryGroup> {
+    /// Type-90 GROUP nodes in stream order.
+    pub fn groups(&self) -> Vec<PrimaryGroup> {
         (self.records.iter().filter_map(|record| {
             if record.definition.kind != 90 {
                 return None;

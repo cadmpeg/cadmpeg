@@ -124,7 +124,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![4, u32::MAX]).unwrap(),
         byte_len: 18,
         inflated_offset: 400,
@@ -132,7 +132,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let double = ParasolidEntity53DoubleRecord {
         id: "doubles".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(71).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![0.25, 7.5]).unwrap(),
         byte_len: 26,
         inflated_offset: 500,
@@ -143,7 +143,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
-            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+            referenced_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(71).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: double.id.clone(),
             inflated_offset: 200,
@@ -153,7 +153,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            referenced_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
             value_record: integer.id.clone(),
             inflated_offset: 200,
@@ -162,9 +162,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
         name: cadmpeg_core::printable::PrintableString::new("SDL/TYSA_DENSITY".to_string())
             .unwrap(),
@@ -284,9 +284,9 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
         name: cadmpeg_core::printable::PrintableString::new("SDL/TYSA_DENSITY".to_string())
             .unwrap(),
@@ -356,7 +356,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
 
     let generic_definition = ParasolidAttributeDefinition {
         name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
-        field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
+        field_names_xmt: cadmpeg_parasolid::xmt::XmtTarget::from_wire(25),
         ..definition.clone()
     };
     assert_eq!(
@@ -374,7 +374,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
 
     let named_definition = ParasolidAttributeDefinition {
         name: cadmpeg_core::printable::PrintableString::new("PVM/25_1".to_string()).unwrap(),
-        field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
+        field_names_xmt: cadmpeg_parasolid::xmt::XmtTarget::from_wire(25),
         ..definition.clone()
     };
     let field_names = ParasolidAttributeFieldNames {
@@ -440,9 +440,9 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
         name: cadmpeg_core::printable::PrintableString::new("SDL/TYSA_BLEND_ID".to_string())
             .unwrap(),
@@ -537,9 +537,9 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
         name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8000).unwrap(),
@@ -604,7 +604,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             stream_ordinal: 3,
             entity_51_record: "head".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            referenced_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "head-value".into(),
             inflated_offset: 200,
@@ -614,7 +614,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             stream_ordinal: 3,
             entity_51_record: "child".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+            referenced_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(71).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "child-value".into(),
             inflated_offset: 210,
@@ -624,7 +624,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "head-value".into(),
             stream_ordinal: 3,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![1.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 400,
@@ -632,7 +632,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "child-value".into(),
             stream_ordinal: 3,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(71).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![2.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 410,
@@ -743,7 +743,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: id.into(),
         stream_ordinal: 3,
         kind,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![value]).unwrap(),
         byte_len: 36,
         inflated_offset: 400,
@@ -751,7 +751,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let axis = ParasolidEntity57AxisRecord {
         id: "axis".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(73).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(73).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![[
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
@@ -763,7 +763,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let tag = ParasolidEntity58TagRecord {
         id: "tag".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(74).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(74).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![u32::MAX]).unwrap(),
         byte_len: 16,
         inflated_offset: 440,
@@ -771,7 +771,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let unicode = ParasolidEntity62UnicodeRecord {
         id: "unicode".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(75).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(75).unwrap(),
         value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
         byte_len: 14,
         inflated_offset: 450,
@@ -794,7 +794,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
         )
         .unwrap(),
-        referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(
+        referenced_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(
             u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
         )
         .unwrap(),

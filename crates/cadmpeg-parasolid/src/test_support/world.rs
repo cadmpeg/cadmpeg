@@ -13,7 +13,8 @@ fn integer(bytes: &mut Vec<u8>, name: &str) {
     bytes.extend_from_slice(&[1, b'd']);
 }
 
-pub(crate) fn schema(count: u8) -> Vec<u8> {
+/// A WORLD first-use edit program declaring `count` effective fields, 15, 18, or 19.
+pub fn schema(count: u8) -> Vec<u8> {
     assert!(matches!(count, 15 | 18 | 19));
     let mut bytes = vec![0, 101, count];
     bytes.extend_from_slice(b"CCCCCCC");
@@ -37,7 +38,8 @@ pub(crate) fn schema(count: u8) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn record(count: u8, escaped: bool) -> Vec<u8> {
+/// A WORLD instance for `count` effective fields, with an `ff` first-use byte when `escaped`.
+pub fn record(count: u8, escaped: bool) -> Vec<u8> {
     assert!(matches!(count, 15 | 18 | 19));
     let mut bytes = vec![0, 101];
     if escaped {
@@ -69,7 +71,8 @@ pub(crate) fn record(count: u8, escaped: bool) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn first_node(count: u8) -> Vec<u8> {
+/// A WORLD edit program followed by its first instance.
+pub fn first_node(count: u8) -> Vec<u8> {
     let mut bytes = schema(count);
     bytes.extend_from_slice(&record(count, false)[2..]);
     bytes

@@ -2,7 +2,7 @@
 //! Leading ordinary PARTITION and current PMARK nodes.
 
 use super::pmark_state::PmarkState;
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ struct PartitionState {
 /// A leading partition node and the current mark it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PrefixWire")]
-pub(crate) struct PartitionPrefixState {
+pub struct PartitionPrefixState {
     partition: PartitionState,
     current_pmark: PmarkState,
 }

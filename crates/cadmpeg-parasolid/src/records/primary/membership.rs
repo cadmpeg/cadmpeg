@@ -4,7 +4,8 @@ use super::{DataType, PrimaryRecord, PrimaryRecords};
 use crate::records::group::{GroupSelector, MembershipKind, MembershipRecord};
 
 impl PrimaryRecords<'_> {
-    pub(crate) fn membership_records(&self) -> Vec<MembershipRecord> {
+    /// The membership role of each framed node, in stream order.
+    pub fn membership_records(&self) -> Vec<MembershipRecord> {
         (self.records.iter().map(|record| MembershipRecord {
             xmt: record.xmt,
             kind: self

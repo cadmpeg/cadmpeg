@@ -10,12 +10,12 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{

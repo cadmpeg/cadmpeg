@@ -2,14 +2,16 @@
 //! Literal BODY witnesses from the independent raw census and documented 27/29 omissions.
 //! These fixtures are placed after a constructed proved prefix; they do not certify corpus enclosure.
 
-pub(crate) fn hex(text: &str) -> Vec<u8> {
+/// Decode a lowercase hexadecimal fixture string.
+pub fn hex(text: &str) -> Vec<u8> {
     text.as_bytes()
         .chunks_exact(2)
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect()
 }
 
-pub(crate) fn body(form: u8) -> (Vec<u8>, Vec<u8>, Vec<(&'static str, usize)>) {
+/// BODY first-use declaration, instance, and field widths for edit-program `form` 27, 29, 34, 35, or 36.
+pub fn body(form: u8) -> (Vec<u8>, Vec<u8>, Vec<(&'static str, usize)>) {
     let (declaration, instance, fields): (&str, &str, &[(&str, usize)]) = match form {
         // Raw stream 2796092eec5ad33a96b3d7a28e71b883bc67d0d57d40347c379391ae69b68414, ordinary BODY at 8890; form 27.
         27 => ("000c1b434343434343434343434343434449056f776e6572041000014343434343434343434110696e6465785f6d61705f6f66667365740000000101644109696e6465785f6d61700052000141116e6f64655f69645f696e6465785f6d6170005200014114736368656d615f656d62656464696e675f6d6170005200015a", "000c0003000071e4040901000601004e01010c01000101000101408f4000000000013e45798ee2308c3a000101000101000101010002010101000901000a01005601000c01000d01005c01000f0100000000000101000101000101", &[("highest_node_id", 4),("attributes_features", 3),("attribute_chains", 3),("surface", 3),("curve", 3),("point", 3),("key", 3),("res_size", 8),("res_linear", 8),("ref_instance", 3),("next", 3),("previous", 3),("state", 1),("owner", 3),("body_type", 1),("nom_geom_state", 1),("shell", 3),("boundary_surface", 3),("boundary_curve", 3),("boundary_point", 3),("region", 3),("edge", 3),("vertex", 3),("index_map_offset", 4),("index_map", 3),("node_id_index_map", 3),("schema_embedding_map", 3)]),
@@ -26,7 +28,8 @@ pub(crate) fn body(form: u8) -> (Vec<u8>, Vec<u8>, Vec<(&'static str, usize)>) {
     (hex(declaration), hex(instance), fields.to_vec())
 }
 
-pub(crate) fn body_stream(form: u8) -> Vec<u8> {
+/// A Deltas prefix followed by the BODY declaration and instance of `form`.
+pub fn body_stream(form: u8) -> Vec<u8> {
     let (declaration, instance, _) = body(form);
     let mut bytes = super::test_pmarks::prefix(1);
     bytes.extend(declaration);
@@ -34,7 +37,8 @@ pub(crate) fn body_stream(form: u8) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn region(layout: u8, xmt: u16, region_type: u8) -> Vec<u8> {
+/// A REGION node of field-list `layout` 7, 8, or 9.
+pub fn region(layout: u8, xmt: u16, region_type: u8) -> Vec<u8> {
     let mut bytes = match layout {
         7 => vec![0, 19, 255],
         8 => b"\0\x13\x08CCCCCCCA\x05owner\0\x0c\0\x01Z".to_vec(),
@@ -55,18 +59,4 @@ pub(crate) fn region(layout: u8, xmt: u16, region_type: u8) -> Vec<u8> {
         bytes.extend([0, 90, 1]);
     }
     bytes
-}
-
-pub(crate) fn stream(bytes: Vec<u8>) -> crate::parasolid::Stream {
-    crate::parasolid::Stream {
-        file_offset: 0,
-        consumed: u64::try_from(bytes.len()).unwrap(),
-        inflated: bytes,
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006").unwrap(),
-            ),
-        },
-    }
 }

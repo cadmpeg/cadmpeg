@@ -5,9 +5,9 @@ use super::{
     FeatureDatumPlaneDescriptor, FeatureDatumPlanePayload, FeaturePayloadBlock,
     FeaturePayloadContent,
 };
-use cadmpeg_core::iter_wire::IterWire;
 use crate::om::compact::RawCompactIndex;
 use crate::om::datum_index::DatumIndexLane;
+use cadmpeg_core::iter_wire::IterWire;
 use serde::ser::SerializeMap;
 use serde::Serialize;
 

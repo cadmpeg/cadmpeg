@@ -4,8 +4,8 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::FeatureExtrudePayload32Branch;
-use cadmpeg_core::iter_wire::IterWire;
 use crate::om::compact::RawCompactIndex;
+use cadmpeg_core::iter_wire::IterWire;
 use serde::ser::SerializeMap;
 use serde::Serialize;
 

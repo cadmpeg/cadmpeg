@@ -47,8 +47,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
-use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 

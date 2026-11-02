@@ -33,7 +33,7 @@ fn unique_candidate_filter_reuses_input_storage() {
         .enumerate()
         .map(|(index, xmt)| NodeCandidate {
             kind: NodeKind::Point,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
             pos: 40 * index,
             end: 40 * (index + 1),
             shift: index % 2,
@@ -57,7 +57,7 @@ fn unique_candidate_filter_reuses_input_storage() {
 fn unique_candidate_identity_includes_the_record_kind() {
     let point = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(9).unwrap(),
         pos: 0,
         end: 40,
         shift: 0,
@@ -668,14 +668,14 @@ fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
 fn topology_rejects_overlapping_candidates_without_ranking() {
     let first = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 0,
         shift: 0,
         end: 24,
     };
     let second = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(12).unwrap(),
         pos: 8,
         shift: 0,
         end: 32,
@@ -698,14 +698,14 @@ fn topology_admits_disjoint_bounded_records_in_one_overlap_cluster() {
     stream.extend([0xaa; 39]);
     let face = |xmt, pos| NodeCandidate {
         kind: NodeKind::Face,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
         pos,
         shift: 0,
         end: pos + 39,
     };
     let spanning = NodeCandidate {
         kind: NodeKind::Edge,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(40).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(40).unwrap(),
         pos: 20,
         shift: 0,
         end: 70,
@@ -726,14 +726,14 @@ fn topology_bounds_a_record_at_the_type_38_schema_header() {
     stream.extend([0xaa; 8]);
     let plane = NodeCandidate {
         kind: NodeKind::Plane,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(6).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(6).unwrap(),
         pos: 0,
         shift: 0,
         end: 91,
     };
     let embedded = NodeCandidate {
         kind: NodeKind::Vertex,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(19).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(19).unwrap(),
         pos: 11,
         shift: 0,
         end: 39,
@@ -796,14 +796,14 @@ fn topology_resolves_overlap_before_duplicate_identity() {
     let stream = vec![0; 40];
     let outer = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 0,
         shift: 0,
         end: 40,
     };
     let embedded = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 8,
         shift: 0,
         end: 32,
@@ -854,7 +854,7 @@ fn declared_intersection_requires_its_own_complete_schema() {
     assert_eq!(
         curves[0]
             .references
-            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+            .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
         [6, 7, 20, 21, 22, 23]
     );
     for at in [16, TYPE_38_SCHEMA_HEADER.len() - 1] {
@@ -906,7 +906,7 @@ fn topology_reference_views_reserve_only_one_as_null() {
             }
             let node = Node {
                 kind,
-                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
+                xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(2).unwrap(),
                 pos: 0,
                 end: bytes.len(),
                 shift: 0,
@@ -1049,7 +1049,7 @@ fn topology_field_tolerances_require_finite_native_values() {
 fn ownership_admission_matches_pairwise_overlap() {
     let span = |kind, xmt: u32, pos: usize, len: usize| NodeCandidate {
         kind,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
         pos,
         end: pos + len,
         shift: 0,

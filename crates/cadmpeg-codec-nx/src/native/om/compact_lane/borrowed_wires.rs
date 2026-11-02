@@ -2,8 +2,8 @@
 //! Borrowed compact lane wire columns.
 
 use super::{DataBlockAbrReferenceLane, DataBlockCountedIndexLane};
-use cadmpeg_core::iter_wire::IterWire;
 use crate::om::compact::{CompactIndexAtom, RawCompactIndex};
+use cadmpeg_core::iter_wire::IterWire;
 use serde::ser::SerializeMap;
 use serde::Serialize;
 
