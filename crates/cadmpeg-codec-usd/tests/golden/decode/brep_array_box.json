@@ -1,6 +1,5 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "10",
     "model": {
       "appearance_bindings": [
@@ -1129,7 +1128,6 @@
         {
           "id": "usd:stage:occurrence#/Occurrence",
           "name": "Occurrence",
-          "native_ref": "/Occurrence",
           "ordinal": 0,
           "parent": {
             "kind": "root"
@@ -1138,11 +1136,6 @@
             "definition": "usd:stage:definition#/Occurrence",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -1990,7 +1983,6 @@
           ],
           "id": "usd:stage:definition#/Occurrence",
           "kind": "group",
-          "native_ref": "/Occurrence",
           "source_name": "Occurrence"
         }
       ],
@@ -2750,6 +2742,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Occurrence",
@@ -2796,10 +2792,15 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "453bdbb85e72abe595dd8794290a177583b16303f8e5a64d41d87fe46ad04500",
+    "unrepresented": []
   }
 }

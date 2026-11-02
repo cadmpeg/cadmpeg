@@ -682,6 +682,7 @@
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
+        "design_component_paths": [],
         "design_configurations": [],
         "design_construction_operand_groups": [
           {
@@ -689,6 +690,7 @@
             "class_tag": "264",
             "frame": {
               "opaque_index": 1,
+              "opaque_index_offset": 3254,
               "opaque_scalar": 1.0,
               "variant": false
             },
