@@ -2,6 +2,7 @@
 //! Analytic relations whose current solved carriers supply a complete witness.
 
 use super::{close, distance2, endpoints, mismatch, sketch_locus_point, Geometries};
+use crate::math::portable::Portable;
 use crate::math::Point2;
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistanceMeasurement, SketchEntityId,
@@ -30,13 +31,14 @@ fn circle(id: &SketchEntityId, geometry: &Geometries<'_>) -> Option<(Point2, f64
 fn parallel(ir: &CadIr, first: (Point2, Point2), second: (Point2, Point2)) -> bool {
     let a = (first.1.u - first.0.u, first.1.v - first.0.v);
     let b = (second.1.u - second.0.u, second.1.v - second.0.v);
-    (a.0 * b.1 - a.1 * b.0).abs() <= ir.tolerances.angular.get() * a.0.hypot(a.1) * b.0.hypot(b.1)
+    (a.0 * b.1 - a.1 * b.0).abs()
+        <= ir.tolerances.angular.get() * a.0.portable_hypot(a.1) * b.0.portable_hypot(b.1)
 }
 
 fn line_distance(point: Point2, line: (Point2, Point2)) -> f64 {
     let direction = (line.1.u - line.0.u, line.1.v - line.0.v);
     ((point.u - line.0.u) * direction.1 - (point.v - line.0.v) * direction.0).abs()
-        / direction.0.hypot(direction.1)
+        / direction.0.portable_hypot(direction.1)
 }
 
 fn tangent(
@@ -87,8 +89,8 @@ fn tangent_direction(
             radii,
             ..
         } => {
-            let cosine = major_angle.get().cos();
-            let sine = major_angle.get().sin();
+            let cosine = major_angle.get().portable_cos();
+            let sine = major_angle.get().portable_sin();
             let u = cosine * (point.u - center.u) + sine * (point.v - center.v);
             let v = -sine * (point.u - center.u) + cosine * (point.v - center.v);
             let normal_u = u / radii.major().get().powi(2);
@@ -168,7 +170,7 @@ pub(super) fn check(
                     close(ir, line_distance(midpoint, axis), 0.0)
                         && ((second.u - first.u) * direction.0 + (second.v - first.v) * direction.1)
                             .abs()
-                            <= ir.tolerances.linear.get() * direction.0.hypot(direction.1)
+                            <= ir.tolerances.linear.get() * direction.0.portable_hypot(direction.1)
                 }),
             "solved loci disagree with their line-symmetry constraint",
         ),
@@ -185,7 +187,9 @@ pub(super) fn check(
                     Some(
                         close(ir, distance2(first_point, second_point), 0.0)
                             && (a.0 * b.1 - a.1 * b.0).abs()
-                                <= ir.tolerances.angular.get() * a.0.hypot(a.1) * b.0.hypot(b.1),
+                                <= ir.tolerances.angular.get()
+                                    * a.0.portable_hypot(a.1)
+                                    * b.0.portable_hypot(b.1),
                     )
                 }),
             "solved contact loci disagree with their tangency constraint",

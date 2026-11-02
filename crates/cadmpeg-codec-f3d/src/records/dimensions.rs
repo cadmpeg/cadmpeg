@@ -22,6 +22,7 @@ cadmpeg_core::named_optional_field!(
     u32,
     "companion_record_index"
 );
+cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
 cadmpeg_core::named_optional_field!(deserialize_opaque_index, u32, "opaque_index");
 /// Indexed record that directly contains one construction recipe owned by a
 /// dimensional parameter companion.
@@ -908,7 +909,11 @@ struct DesignDimensionAnnotationFrameWire {
     class_tag: String,
     record_index: u32,
     operands: Vec<DesignDimensionAnnotationOperand>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity_genesis"
+    )]
     entity_genesis: Option<u64>,
     #[serde(
         default,

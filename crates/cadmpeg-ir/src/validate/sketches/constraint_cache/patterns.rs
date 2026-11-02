@@ -2,6 +2,7 @@
 //! Compare analytic pattern copies with their canonical distribution controls.
 
 use super::{angle_close, close, distance2, sketch_locus_point, Geometries};
+use crate::math::portable::Portable;
 use crate::math::Point2;
 use crate::sketches::{
     SketchCircularPattern, SketchEntityId, SketchGeometryDefinition as Geometry, SketchLocus,
@@ -160,8 +161,8 @@ pub(super) fn circular(
         let Some(center) = center else {
             continue;
         };
-        let sine = angle.sin();
-        let cosine = angle.cos();
+        let sine = angle.portable_sin();
+        let cosine = angle.portable_cos();
         for (seed, copy) in pattern.seed().iter().zip(&instance.entities) {
             if geometry_agrees(
                 ir,
