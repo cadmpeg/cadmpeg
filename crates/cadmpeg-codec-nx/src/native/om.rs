@@ -63,6 +63,8 @@ pub(super) enum OmSchemaRole {
     FeatureHistory,
     /// Expression model declaring `UGS::EXP_expression`.
     Expressions,
+    /// Assembly model declaring `UGS::OCC_instance`.
+    Assembly,
     /// Audit model declaring only `UGS::OM::SaveAuditTrail`.
     AuditTrail,
     /// More than one specialized role marker occurs in the registry.
@@ -232,7 +234,12 @@ pub(super) fn audit_trail_rows(
     let mut out = Vec::new();
     for (section_ordinal, link) in segment_om_links(container)?
         .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
+        .filter(|link| {
+            matches!(
+                link.schema_role,
+                OmSchemaRole::AuditTrail | OmSchemaRole::Assembly
+            )
+        })
         .enumerate()
     {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
