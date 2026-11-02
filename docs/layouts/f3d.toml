@@ -8346,6 +8346,35 @@ anchor = "u32 12 at offset 153"
 value = 12
 
 [[record]]
+name = "timeline_body_owner_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A paste or body-to-component timeline object owns"
+size = 25
+note = "Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Bytes 11 through 20 of its primary record are zero"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "offset 21 stores u32 `N`"
+
+[[record]]
 name = "base_feature_result_body_entry"
 kind = "byte"
 section = "3.1"

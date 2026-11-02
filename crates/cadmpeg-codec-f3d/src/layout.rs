@@ -2514,6 +2514,22 @@ pub(crate) mod base_feature_legacy_444_zero_body {
     pub(crate) const KIND_LENGTH_VALUE: u32 = 0x0000_000c;
 }
 
+/// Byte offsets for the `timeline_body_owner_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
+/// ```
+pub(crate) mod timeline_body_owner_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `base_feature_result_body_entry` record.
 ///
 /// Spec §3.1. Record length 15 B.
