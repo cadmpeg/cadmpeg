@@ -35,7 +35,9 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
     };
     let mut complete_edge = edge;
     complete_edge[7] = 5;
-    let complete = crate::native::CatiaNative::decode(&build(&complete_edge));
+    let mut complete_bytes = build(&complete_edge);
+    complete_bytes[face.len() - 1] = 7;
+    let complete = crate::native::CatiaNative::decode(&complete_bytes);
     let [first, second] = complete.consolidated_edge_nodes.as_slice() else {
         panic!("two successor edges with complete endpoints");
     };
