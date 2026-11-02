@@ -3,66 +3,17 @@
 //! that move them.
 
 use super::output_chain::OutputChain;
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane,
-    AsmHistoricalTopology, AsmHistory,
-};
+use super::surface_rows::{Carrier, StateRows};
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use cadmpeg_ir::features::{FaceMotion, FaceSelection};
 use cadmpeg_ir::math::Vector3;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 /// Millimetres between a stored surface position and the position the motion
 /// states.
 const FACE_MOTION_POSITION_TOLERANCE: f64 = 1.0e-6;
 /// Distance between two unit directions that a motion leaves unchanged.
 const FACE_MOTION_DIRECTION_TOLERANCE: f64 = 1.0e-9;
-
-#[derive(Clone, Copy)]
-enum Carrier<'a> {
-    Plane(&'a AsmHistoricalPlane),
-    Cylinder(&'a AsmHistoricalCylinder),
-}
-
-/// Rows of one state, keyed by slot. A slot with two rows maps to `None`.
-fn unique_rows<'a, R>(
-    rows: impl IntoIterator<Item = &'a R>,
-    slot: impl Fn(&R) -> i64,
-) -> HashMap<i64, Option<&'a R>> {
-    let mut unique = HashMap::new();
-    for row in rows {
-        unique
-            .entry(slot(row))
-            .and_modify(|found| *found = None)
-            .or_insert(Some(row));
-    }
-    unique
-}
-
-/// The face bindings and the plane and cylinder rows of one state.
-struct StateRows<'a> {
-    bindings: HashMap<i64, Option<&'a AsmHistoricalCarrierBinding>>,
-    planes: HashMap<i64, Option<&'a AsmHistoricalPlane>>,
-    cylinders: HashMap<i64, Option<&'a AsmHistoricalCylinder>>,
-}
-
-impl<'a> StateRows<'a> {
-    fn new(topology: &'a AsmHistoricalTopology) -> Self {
-        Self {
-            bindings: unique_rows(&topology.face_surfaces, |row| row.entity),
-            planes: unique_rows(&topology.surface_planes, |row| row.surface),
-            cylinders: unique_rows(&topology.surface_cylinders, |row| row.surface),
-        }
-    }
-
-    fn carrier(&self, face: i64) -> Option<Carrier<'a>> {
-        let surface = (*self.bindings.get(&face)?)?.carrier;
-        match (self.planes.get(&surface), self.cylinders.get(&surface)) {
-            (Some(plane), None) => plane.map(Carrier::Plane),
-            (None, Some(cylinder)) => cylinder.map(Carrier::Cylinder),
-            _ => None,
-        }
-    }
-}
 
 fn same_direction(left: Vector3, right: Vector3) -> Option<bool> {
     Some((left.unit()? - right.unit()?).norm() <= FACE_MOTION_DIRECTION_TOLERANCE)
