@@ -20,6 +20,84 @@
               "value": "MEMBER"
             }
           ]
+        },
+        {
+          "id": "iges:application:attribute#document:author",
+          "name": "author",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "author"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:generation_date",
+          "name": "generation_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "20260714.000000"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:organization",
+          "name": "organization",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "org"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:receiver",
+          "name": "receiver",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "product"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:start",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "original fixture"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:system_id",
+          "name": "system_id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
         }
       ],
       "bodies": [],
@@ -61,7 +139,7 @@
         {
           "id": "iges:model:occurrence#D9",
           "native_ref": "iges:product:occurrence#9",
-          "ordinal": 9,
+          "ordinal": 0,
           "parent": {
             "kind": "root"
           },
@@ -93,7 +171,7 @@
         {
           "id": "iges:model:occurrence#D9:D5",
           "native_ref": "iges:product:occurrence#9/5",
-          "ordinal": 5,
+          "ordinal": 1,
           "parent": {
             "kind": "occurrence",
             "occurrence": "iges:model:occurrence#D9"
@@ -897,8 +975,6 @@
         ],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -1017,18 +1093,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "projection.native-only",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "iges:product:occurrence#9/5/D1 member iges:entity:directory#1: product membership of carrier iges:entity:directory#1 has no neutral body owner",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "entities=5",
       "entity.110.form.0=1",

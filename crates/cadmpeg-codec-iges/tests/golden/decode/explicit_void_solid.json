@@ -425,6 +425,84 @@
               "value": "VOIDVERT"
             }
           ]
+        },
+        {
+          "id": "iges:application:attribute#document:author",
+          "name": "author",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "author"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:generation_date",
+          "name": "generation_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "20260714.000000"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:organization",
+          "name": "organization",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "org"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:receiver",
+          "name": "receiver",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "product"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:start",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "original fixture"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:system_id",
+          "name": "system_id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
         }
       ],
       "bodies": [
@@ -1623,9 +1701,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.5773502691896257,
-              "y": 0.5773502691896257,
-              "z": 0.5773502691896257
+              "x": 0.5773502691896258,
+              "y": 0.5773502691896258,
+              "z": 0.5773502691896258
             },
             "origin": {
               "x": 4.0,
@@ -1633,9 +1711,9 @@
               "z": 0.0
             },
             "u_axis": {
-              "x": 0.816496580927726,
-              "y": -0.40824829046386296,
-              "z": -0.40824829046386296
+              "x": 0.8164965809277259,
+              "y": -0.4082482904638632,
+              "z": -0.4082482904638632
             }
           },
           "id": "iges:model:surface#D19",
@@ -1727,9 +1805,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.5773502691896257,
-              "y": 0.5773502691896257,
-              "z": 0.5773502691896257
+              "x": 0.5773502691896258,
+              "y": 0.5773502691896258,
+              "z": 0.5773502691896258
             },
             "origin": {
               "x": 1.0,
@@ -1737,9 +1815,9 @@
               "z": 0.5
             },
             "u_axis": {
-              "x": 0.816496580927726,
-              "y": -0.40824829046386296,
-              "z": -0.40824829046386296
+              "x": 0.8164965809277259,
+              "y": -0.4082482904638632,
+              "z": -0.4082482904638632
             }
           },
           "id": "iges:model:surface#D73",
@@ -7892,8 +7970,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
