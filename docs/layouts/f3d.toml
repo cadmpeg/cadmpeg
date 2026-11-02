@@ -18701,6 +18701,35 @@ source = "spec"
 anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
 
 [[record]]
+name = "body_consumer_browser_node_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A browser node named this way stores ten zero bytes after its indexed header"
+size = 25
+note = "Offsets are relative to the browser-node record header. The GUID code units start at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A browser node named this way stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the counted GUID at offset 21, hidden flag `1`"
+
+[[record]]
 name = "body_reference_persistent_pair"
 kind = "byte"
 section = "3.1"

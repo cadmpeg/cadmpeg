@@ -5481,6 +5481,18 @@ pub(crate) mod body_reference_tail_prefix {
     pub(crate) const REFERENCE_COUNT: usize = 21;
 }
 
+/// Byte offsets for the `body_consumer_browser_node_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+/// ```
+pub(crate) mod body_consumer_browser_node_prefix {
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `body_reference_persistent_pair` record.
 ///
 /// Spec §3.1. Record length 12 B.

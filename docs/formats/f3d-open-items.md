@@ -597,25 +597,13 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
-### DR-163. Body-map entity with no membership and no browser node
-
-**Question.** Is a body-map pair outside the current model when complete Body-container memberships omit its entity and the entity has no browser node?
-
-**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" removes such a pair from the current model only when its browser node stores hidden flag `1`. A Combine tool hidden before the Combine has no list entry and no browser node, and it is consumed. No live body with this form is known.
-
-**Need.** Designs where a live body has no browser node, and designs that hide, show, and consume one body in each order.
-
-**Conflict.** None.
-
-**Note.** The decoder keeps this pair in `model.bodies` until this item is settled.
-
 ### DR-119. Entity-cluster component-ownership fallback
 
 **Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
 
 **Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding in the current model without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
 
-**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component. A consumed body that retains a bound component cluster needs a positive consumer or history-state join that separates it from a current hidden body.
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component.
 
 **Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
 
