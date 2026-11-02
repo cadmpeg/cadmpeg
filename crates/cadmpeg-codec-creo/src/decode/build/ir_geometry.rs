@@ -309,6 +309,23 @@ pub(super) fn transfer_and_record_scanned_geometry(
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_part_product =
         transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
+    let root_occurrence = transferred_part_product
+        .then(|| {
+            crate::identity::compose_checked::<cadmpeg_ir::ids::OccurrenceId>(
+                &crate::identity::MODEL_OCCURRENCE,
+                "root",
+            )
+        })
+        .transpose()?;
+    super::super::assembly::transfer_assembly_members(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+        root_occurrence.as_ref(),
+    )?;
     let decoded_feature_skamp_count = scan
         .features
         .definitions

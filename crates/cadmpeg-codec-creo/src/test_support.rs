@@ -337,3 +337,58 @@ pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
         .expect("native hexadecimal byte string")
         .into_inner()
 }
+
+/// A component table: a sub-assembly at the identity,
+/// part `BRACKET` with x along x, z along negative y, and origin
+/// `(340, 408, 0)`, and part `BRACKET` turned a quarter turn about z with
+/// origin `(-355, 2.5, 619)`.
+pub(crate) fn members_table() -> Vec<u8> {
+    let mut table = b"\xe0\x00members\0\xf1\xf8\x03\xf7\x44\xfb\xe3".to_vec();
+    table.extend_from_slice(b"\xe0\x01id\0\x2a\xe0\x01type\0\x01");
+    table.extend_from_slice(b"\xe0\x0aname\0SUBASM\0\xe0\x0afamily_name\0SUBASM\0");
+    table.extend_from_slice(b"\xe0\x00tha_ref\0\xe1");
+    table.extend_from_slice(b"\xe0\x02e1\0\xf8\x03\x0f\x18\xe4");
+    table.extend_from_slice(b"\xe0\x02e2\0\xf8\x03\x18\x0f\x18");
+    table.extend_from_slice(b"\xe0\x02e3\0\xf8\x03\x18\xe4\x0f");
+    table.extend_from_slice(b"\xe0\x02origin\0\xf8\x03\x18\xe5");
+    table.extend_from_slice(b"\xf1\xf7\x44\xe3");
+    table.extend_from_slice(b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe1");
+    table.extend_from_slice(b"\x0f\x18\xe4\x18\xe4\x0f\x18\x10\x18");
+    table.extend_from_slice(b"\x2d\x75\x40\x00\x00\x00\x00\x00\x2f\x79\x80\x18\xe3");
+    table.extend_from_slice(b"\x8a\x10\x02BRACKET\0BRACKET\0\xe1");
+    table.extend_from_slice(b"\x18\x0f\x18\x10\x18\xe4\x18\xe4\x0f");
+    table.extend_from_slice(b"\x48\x76\x30\x8f\x00\x00\x00\x00\x00\x00\x2f\x83\x58\xf4");
+    table
+}
+
+/// A `NeuAsmSld` payload holding `table`.
+pub(crate) fn neu_asm_payload(table: Vec<u8>) -> Vec<u8> {
+    let mut payload = b"\xe0\x00Sld_NeutAssem\0\xe3".to_vec();
+    payload.extend(table);
+    payload.push(0x04);
+    payload
+}
+
+/// A minimal assembly file: an `ASSEMBLY` header, model name `TOP_ASSY`, and
+/// the [`members_table`] component table.
+pub(crate) fn build_asm() -> Vec<u8> {
+    build_asm_with(members_table())
+}
+
+/// [`build_asm`] with `table` as its component table.
+pub(crate) fn build_asm_with(table: Vec<u8>) -> Vec<u8> {
+    let part = build_prt_raw(
+        "test",
+        &[
+            ("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec()),
+            ("NeuAsmSld", neu_asm_payload(table)),
+        ],
+    );
+    let header_end = part
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .expect("header line");
+    let mut assembly = b"#UGC:2 ASSEMBLY 2562 2120".to_vec();
+    assembly.extend_from_slice(&part[header_end..]);
+    assembly
+}
