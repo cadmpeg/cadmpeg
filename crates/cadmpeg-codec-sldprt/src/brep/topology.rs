@@ -871,10 +871,25 @@ fn unsupported_vertex_prefix(buf: &[u8], off: usize) -> Option<VertexUse> {
 }
 
 fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> {
+    if let Some(carrier) = super::parse_carrier(buf, off) {
+        return Some(match carrier {
+            super::Carrier::Curve(curve) => curve.end,
+            super::Carrier::Surface(surface) => surface.end,
+        });
+    }
+    if let Some(end) = super::subset::record_end(buf, off) {
+        return Some(end);
+    }
+    if let Some(end) = super::sp_curve::record_end(buf, off) {
+        return Some(end);
+    }
     if let Some(end) = super::typed::schema_prefix_end(buf, off) {
         return Some(end);
     }
     if let Some(end) = super::spline::surface_descriptor_prefix_end(buf, off) {
+        return Some(end);
+    }
+    if let Some(end) = super::spline::curve_prefix_end(buf, off) {
         return Some(end);
     }
     if let Some(end) = super::typed::tagged_owner_prefix_end(buf, off) {
@@ -1087,6 +1102,7 @@ pub(super) struct TopologyScopes {
 }
 
 pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
+    let array_attrs = super::spline::referenced_array_attrs(buf);
     let mut scopes = TopologyScopes {
         payloads: Vec::new(),
         excluded_starts: Vec::new(),
@@ -1102,6 +1118,7 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             continue;
         };
         let end = match tag {
+            0x2d | 0x7f | 0x80 => super::spline::array_record_end(buf, off, &array_attrs),
             0x52 => (|| {
                 let (stated, _, start) = super::entity::integer_values_header(buf, p)?;
                 let available = buf.len().checked_sub(start)?;
@@ -2342,6 +2359,8 @@ mod scope_tests;
 #[cfg(test)]
 mod tests {
     mod wide_scopes;
+
+    mod carrier_scopes;
 
     use super::{
         parse_bridge, parse_point, parse_vertex_candidates, patch_point, patch_point_values, scan,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn pointer(out: &mut Vec<u8>, value: u32) {
+pub(crate) fn pointer(out: &mut Vec<u8>, value: u32) {
     if value <= 0x7fff {
         out.extend(u16::try_from(value).unwrap().to_be_bytes());
     } else {
@@ -148,6 +148,20 @@ pub(crate) fn bounded_curve(key: u32, source: u32, values: &[f64; 8]) -> Vec<u8>
     out
 }
 
+pub(crate) fn line(key: u32, node_id: u32, origin: [f64; 3]) -> Vec<u8> {
+    let mut out = Vec::new();
+    node(&mut out, 0x1e, key, false, false);
+    out.extend(node_id.to_be_bytes());
+    for reference in [1, 512, 512, 512, 512] {
+        pointer(&mut out, reference);
+    }
+    out.push(b'+');
+    for value in origin.into_iter().chain([1.0, 0.0, 0.0]) {
+        out.extend(value.to_be_bytes());
+    }
+    out
+}
+
 pub(crate) fn sp_curve(key: u32, surface: u32, b_curve: u32, first: bool) -> Vec<u8> {
     let mut out = Vec::new();
     node(&mut out, 0x89, key, true, first);
@@ -167,5 +181,41 @@ pub(crate) fn string_node(tag: u8, key: u32, text: &str) -> Vec<u8> {
     out.extend(u32::try_from(text.len()).unwrap().to_be_bytes());
     pointer(&mut out, key);
     out.extend(text.as_bytes());
+    out
+}
+
+pub(crate) fn curve_wrapper(tag: u8, key: u32, node_id: u32, descriptor: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    node(&mut out, tag, key, false, false);
+    out.extend(node_id.to_be_bytes());
+    for reference in [1, 0x1_0000, 1, 0x7fff, 1] {
+        pointer(&mut out, reference);
+    }
+    out.push(b'+');
+    pointer(&mut out, descriptor);
+    out
+}
+
+pub(crate) fn curve_descriptor(key: u32, arrays: [u32; 3]) -> Vec<u8> {
+    let mut out = Vec::new();
+    node(&mut out, 0x88, key, false, false);
+    out.extend(1_u16.to_be_bytes());
+    out.extend(2_u32.to_be_bytes());
+    out.extend(3_u16.to_be_bytes());
+    out.extend(2_u32.to_be_bytes());
+    out.extend([0; 5]);
+    for reference in arrays {
+        pointer(&mut out, reference);
+    }
+    out
+}
+
+pub(crate) fn float_values(key: u32, values: &[f64]) -> Vec<u8> {
+    let mut out = vec![0, 0x2d];
+    out.extend(u32::try_from(values.len()).unwrap().to_be_bytes());
+    pointer(&mut out, key);
+    for value in values {
+        out.extend(value.to_be_bytes());
+    }
     out
 }
