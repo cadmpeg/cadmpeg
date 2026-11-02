@@ -150,9 +150,7 @@ fn definitions(
                         .iter()
                         .find(|native| native.id().as_str() == id)
                 }) {
-                    object
-                        .declaration_attributes
-                        .clone_from(&native.attributes);
+                    object.declaration_attributes.clone_from(&native.attributes);
                 }
                 object
             }
