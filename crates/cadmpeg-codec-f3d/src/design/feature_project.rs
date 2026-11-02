@@ -1113,9 +1113,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 ))
                             },
                         )?
-                    } else if scope.kind()
-                        == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                    {
+                    } else if matches!(
+                        scope.kind(),
+                        crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                            | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
+                    ) {
                         scope.work_plane_transform().map_or_else(
                             || native_scope_definition(scope, &parameters),
                             |transform| Ok(project_work_plane(scope, transform.into())),
@@ -1852,6 +1854,14 @@ fn project_solid_primitive(
             op: operation(*result),
         }),
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(
+            crate::records::feature::primitives::DesignSpherePrimitive {
+                transform,
+                diameter,
+                operation: result,
+                ..
+            },
+        ))
+        | crate::records::feature::scope::DesignScopePayload::EsferaPrimitiva(Some(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 transform,
                 diameter,
@@ -3576,7 +3586,11 @@ fn selected_work_planes<'a>(
         let target = unique_feature_match(scopes.iter().filter(|candidate| {
             native_stream(&candidate.id) == Some(stream)
                 && candidate.record_index == target_record_index
-                && candidate.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                && matches!(
+                    candidate.kind(),
+                    crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                        | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
+                )
                 && candidate.work_plane_transform().is_some()
         }));
         let target = target?;
@@ -3763,7 +3777,8 @@ pub(super) fn project_shell(
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let (crate::records::feature::scope::DesignScopePayload::Shell(Some(operation))
-    | crate::records::feature::scope::DesignScopePayload::Schale(Some(operation))) =
+    | crate::records::feature::scope::DesignScopePayload::Schale(Some(operation))
+    | crate::records::feature::scope::DesignScopePayload::Vaciado(Some(operation))) =
         &scope.payload()
     else {
         return Ok(None);
@@ -4012,6 +4027,7 @@ fn project_edge_flange(
                             && matches!(
                                 candidate.kind(),
                                 crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                                    | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
                                     | crate::records::feature::scope::DesignFeatureKind::WorkPoint
                             )
                     });
@@ -6097,7 +6113,9 @@ pub(super) fn project_fixed_loft(
         ..
     } = inputs;
 
-    let crate::records::feature::scope::DesignScopePayload::Loft(loft_payload) = &scope.payload()
+    let (crate::records::feature::scope::DesignScopePayload::Loft(loft_payload)
+    | crate::records::feature::scope::DesignScopePayload::Solevacion(loft_payload)) =
+        &scope.payload()
     else {
         return Ok(None);
     };
@@ -6881,8 +6899,11 @@ fn project_mirror(
             let plane = unique_feature_match(scopes.iter().filter(|candidate| {
                 native_stream(&candidate.id) == Some(stream)
                     && candidate.record_index == plane_scope_record_index
-                    && candidate.kind()
-                        == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                    && matches!(
+                        candidate.kind(),
+                        crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                            | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
+                    )
                     && candidate.work_plane_transform().is_some()
             }));
             let plane = plane?;
