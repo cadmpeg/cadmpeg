@@ -334,6 +334,7 @@ fn run_pattern_constructions_fixture() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "258".to_owned(),
             )
@@ -1252,6 +1253,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "258".to_owned(),
             )
@@ -1326,6 +1328,7 @@ fn circular_pattern_historical_wrappers_resolve_an_edge_axis() {
             .unwrap(),
             payload: DesignFeatureKind::CPattern.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: "258".to_owned().try_into().unwrap(),
             paired_byte_offset: 329,
         }

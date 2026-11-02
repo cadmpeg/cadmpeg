@@ -4272,11 +4272,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     }
             }
             _ => true,
-        } && scope
-            .reference_members()
-            .values()
-            .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
-            && records_by_index.contains_key(&(native_stream, scope.record_index))
+        } && scope.reference_members().values().all(|record_index| {
+            records_by_index.contains_key(&(native_stream, *record_index))
+                || scope.deleted_sketch_members.contains(record_index)
+        }) && records_by_index.contains_key(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(true)
             && extrude_profile_link
             && sweep_profile_link

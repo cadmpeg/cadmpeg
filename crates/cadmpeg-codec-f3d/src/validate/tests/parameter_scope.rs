@@ -403,3 +403,51 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     }
     assert!(!findings(invalid).is_empty());
 }
+
+#[test]
+fn sketch_scope_admits_only_its_deleted_absent_members() {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#17",
+        DesignFeatureKind::Sketch,
+        17,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = ReferenceRun::unlocated(vec![301, 302]);
+            draft.reference_count_offset = 126;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.kind_offset + 22 + 78;
+            draft.frame_length = draft.paired_byte_offset;
+            draft.feature_ordinal_offset = draft.kind_offset + 22;
+        })
+        .unwrap();
+    let mut native = crate::native::F3dNative::default();
+    for record_index in [17, 301] {
+        native.design_record_headers.push(DesignRecordHeader {
+            id: format!("f3d:Design/BulkStream.dat:design-record-header#{record_index}"),
+            record_index,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            byte_offset: u64::from(record_index),
+        });
+    }
+    native.design_parameter_scopes.push(scope);
+    let findings = |native: &crate::native::F3dNative| {
+        crate::test_support::with_decode_context(|service_ctx| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            findings
+        })
+    };
+    assert_eq!(findings(&native).len(), 1);
+    native.design_parameter_scopes[0].deleted_sketch_members = vec![302];
+    assert!(findings(&native).is_empty());
+    native.design_record_headers.pop();
+    assert_eq!(findings(&native).len(), 1);
+}

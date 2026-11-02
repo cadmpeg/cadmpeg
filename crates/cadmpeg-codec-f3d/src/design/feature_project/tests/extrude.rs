@@ -254,6 +254,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )

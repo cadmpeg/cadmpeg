@@ -62,6 +62,7 @@ fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: "261".to_owned().try_into().unwrap(),
             paired_byte_offset: 300,
         }

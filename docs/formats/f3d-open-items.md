@@ -376,14 +376,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
 
-### DR-108. Sketch scope references without a record
-
-**Question.** What did a Sketch scope reference name when the Design stream contains no record with that index?
-
-**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" defines the ordered reference table. A Sketch scope can name record indices that occur in no indexed header and in no other record of the stream. Its other references name records that only the generic indexed header classifies. `f3d.md` §3.1 "An owner frame whose stored scope record is absent" defines detached parameter owners, which remain after their dimension is deleted.
-
-**Need.** A rule must tell a deleted sketch member from a missing record before the scope can pass structural validation without its absent references.
-
 ### DR-101. Fixed typed occurrence path discriminator
 
 **Question.** What binding does the path discriminator of a fixed typed local component occurrence select?
