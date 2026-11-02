@@ -29,6 +29,7 @@ const FIDELITY_SIDECAR: &str = r#"{
   "fidelity": {
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
+    "decode_digest": "e9c0f8b575cbfcb42ab3b78ecc87efa3b011d9a5d10b09fa4e96f240bf6a82f5",
     "retained_records": {
       "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0, "untyped": [],
              "bytes": {"retention": "inline", "data": "QUJDRA=="}},
