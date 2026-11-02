@@ -8245,13 +8245,32 @@ fn complete_plane_compact_scalar_suffix<'a>(
     if frame.offset == 0 || frame.slots.len() != 9 {
         return None;
     }
-    let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
+    let mut slots =
+        plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
     (slots.consumed == body.len() - frame.offset).then_some(())?;
+    for (value, token) in &mut slots.slots[3..] {
+        if let Some(signed) = signed_world_coordinate(token) {
+            *value = Some(signed);
+        }
+    }
     slots
         .slots
         .iter()
         .all(|(value, _)| value.is_some())
         .then_some(slots)
+}
+
+/// The signed first-coordinate lane value of a complete eight-byte `2d` or
+/// `46` world-coordinate token.
+fn signed_world_coordinate(token: &[u8]) -> Option<f64> {
+    let first = match token.first()? {
+        0x2d => 0x40,
+        0x46 => 0xc0,
+        _ => return None,
+    };
+    scalar::ieee8(token, 0, first)
+        .filter(|(_, end)| *end == token.len())
+        .map(|(value, _)| value)
 }
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
