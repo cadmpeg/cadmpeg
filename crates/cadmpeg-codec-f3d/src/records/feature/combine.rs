@@ -12,6 +12,7 @@ cadmpeg_core::named_optional_field!(
     DesignCombineExternalBodyIdentity,
     "external_identity"
 );
+cadmpeg_core::named_optional_field!(deserialize_body_node, DesignCombineBodyNode, "body_node");
 cadmpeg_core::named_optional_field!(
     deserialize_external_property_key,
     DesignRelaxedGuidText,
@@ -494,7 +495,11 @@ pub(crate) struct DesignCombineBodySelection {
     )]
     pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
     /// Browser node that the selector names in the operand-list form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_node"
+    )]
     pub(crate) body_node: Option<DesignCombineBodyNode>,
 }
 
@@ -759,6 +764,61 @@ mod tests {
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
         );
+    }
+
+    #[test]
+    fn a_body_node_is_present_or_its_key_is_absent() {
+        use super::{DesignCombineBodyNode, DesignCombineBodySelection};
+        let node = DesignCombineBodyNode {
+            record_index: 358,
+            body_entity_suffix: 354,
+            creating_scope_record_index: 322,
+        };
+        let selection = DesignCombineBodySelection {
+            record_index: 363,
+            external_identity: None,
+            body_node: Some(node),
+        };
+        let wire = serde_json::to_value(&selection).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            selection
+        );
+
+        let without = DesignCombineBodySelection {
+            body_node: None,
+            ..selection
+        };
+        let wire = serde_json::to_value(&without).unwrap();
+        assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
+        assert_eq!(
+            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            without
+        );
+
+        let error = serde_json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+            "record_index": 363,
+            "body_node": null,
+        }))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("body_node"), "{error}");
+    }
+
+    #[test]
+    fn an_operation_keeps_its_target_and_tool_body_nodes_on_the_wire() {
+        let node = |record_index| super::DesignCombineBodyNode {
+            record_index,
+            body_entity_suffix: record_index + 1,
+            creating_scope_record_index: record_index + 2,
+        };
+        let mut value = operation(false);
+        value.form = super::DesignCombineForm::OperandLists;
+        value.target_body_node = Some(node(10));
+        value.tools.first.body_node = Some(node(20));
+        let wire = serde_json::to_value(&value).unwrap();
+        let read: DesignCombineOperation = serde_json::from_value(wire).unwrap();
+        assert_eq!(read, value);
     }
 
     #[test]
