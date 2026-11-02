@@ -811,7 +811,7 @@ impl DesignDimensionAnnotationFrame {
         self.byte_offset?
             .checked_add(24)?
             .checked_add(u64_from_index(self.operands.len()).checked_mul(15)?)?
-            .checked_add(57)
+            .checked_add(annotation_metadata_length(self.entity_genesis))
     }
     #[cfg(test)]
     fn governing_owner_reference_offset(&self) -> Option<u64> {

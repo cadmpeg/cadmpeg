@@ -467,6 +467,8 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             #[serde(skip_serializing_if = "Vec::is_empty")]
             trailing_flags: &'a Vec<DesignConstructionOperandFlag>,
             opaque_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            opaque_index_offset: Option<u64>,
             opaque_scalar: f64,
             variant: bool,
             #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -481,6 +483,7 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             trailing_dual_transforms: &self.trailing_dual_transforms,
             trailing_flags: &self.trailing_flags,
             opaque_index: self.opaque_index.get(),
+            opaque_index_offset: self.opaque_index_offset,
             opaque_scalar: self.opaque_scalar().get(),
             variant: self.variant,
             closing_flag: self.closing_flag,
@@ -729,9 +732,11 @@ pub(crate) struct DesignConstructionOperandGroupFrameWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     trailing_flags: Vec<DesignConstructionOperandFlag>,
     opaque_index: u32,
-    opaque_index_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_index_offset: Option<u64>,
     opaque_scalar: f64,
-    opaque_scalar_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_scalar_offset: Option<u64>,
     pub(crate) variant: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     closing_flag: bool,
@@ -788,7 +793,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
             trailing_flags: wire.trailing_flags,
             opaque_index: NonZeroU32::new(wire.opaque_index)
                 .ok_or("opaque_index must be nonzero")?,
-            opaque_index_offset: None,
+            opaque_index_offset: wire.opaque_index_offset,
             opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal::new(wire.opaque_scalar)
                 .ok_or("opaque_scalar must be finite and nonnegative")?,
             variant: wire.variant,
@@ -799,8 +804,8 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
 #[cfg(test)]
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
-        let opaque_index_offset = frame.opaque_index_offset().unwrap_or(0);
-        let opaque_scalar_offset = frame.opaque_scalar_offset().unwrap_or(0);
+        let opaque_index_offset = frame.opaque_index_offset();
+        let opaque_scalar_offset = frame.opaque_scalar_offset();
         Self {
             auxiliary_record_indices: frame
                 .auxiliary_records
