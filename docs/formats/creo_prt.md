@@ -1431,6 +1431,14 @@ origin. The standalone `18 e5` image expands to `[0, 1, 0]`. The remaining
 explicit slots use the scalar lanes already defined for tabulated-cylinder
 coordinates and positional surface rows.
 
+The three-coordinate origin operand after a compact image has the repeat
+semantics of the compact plane origin in §3.4. `e4`, `e5`, and `e6` repeat the
+preceding stored scalar one, two, and three times, and a repeat stays within
+the three origin coordinates. The preceding value carries from the image's
+final direction slot: it is `C` for the two model-Z images and zero for the
+other images. Each literal replaces that value. Eight-byte `2d` and `46`
+coordinates use the signed first-coordinate lane at every origin coordinate.
+
 The carrier placement is admitted only when the envelope, outline, and stored
 frame provide one witness. The compact image names the axis coordinate, whose
 outline span equals `abs(v1 - v0)` in the separated envelope production.

@@ -5078,7 +5078,13 @@ fn inline_resolved_frames(
     let compact_origins = match compact {
         Some(frame) => Some((
             frame,
-            scalar::decode_inline_non_plane_origin_prefix(ctx, local, frame.cursor, cache)?,
+            scalar::decode_inline_non_plane_origin_prefix(
+                ctx,
+                local,
+                frame.cursor,
+                frame.values.get()[8],
+                cache,
+            )?,
         )),
         None => None,
     };
