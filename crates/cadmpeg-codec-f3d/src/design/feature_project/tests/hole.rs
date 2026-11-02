@@ -883,6 +883,7 @@ fn four_start_operands_need_a_face_point_carrier_and_one_consecutive_run() {
     let scope = through_all_scope(19);
     assert!(!through_all(&scope, &start_operands(&[2, 3, 4, 6])));
     assert!(!through_all(&scope, &start_operands(&[2, 3, 4, 5, 6])));
+    assert!(!through_all(&scope, &start_operands(&[2, 3, 3, 4, 5])));
     assert!(!through_all(&scope, &start_operands(&[2, 3, 4])));
     let mut face_second = start_operands(&[2, 3, 4, 5]);
     face_second[1].recipe_kind = ConstructionRecipeKind::Face;

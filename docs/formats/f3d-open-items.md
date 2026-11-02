@@ -821,6 +821,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the group as the native face selection.
 
+### DR-244. Reference edges of a Hole's placement distances
+
+**Question.** Which role-`0x0000002100000000` group does each of `RefDim1` and `RefDim2` measure from, and does a distance carry a sign?
+
+**Known.** A Hole placed by distances from two edges stores both parameters and two role-`0x0000002100000000` groups, and its carrier point stores the resulting position. In the control both distances are 10 mm from two perpendicular edges.
+
+**Need.** Controls with two different distances, with the edges selected in both orders, and with a hole on the other side of an edge.
+
+**Conflict.** None.
+
+**Note.** The Hole projects from its carrier point and reports `feature.hole-reference-dimensions-native`.
+
 ### DR-124. Partial-curve operands in profile selections
 
 **Question.** How do the three u32 operands of a typed profile curve entry and the incidence words of a counted profile member select a partial curve?

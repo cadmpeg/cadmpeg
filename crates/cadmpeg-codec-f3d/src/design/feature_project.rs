@@ -7712,7 +7712,6 @@ fn project_hole(
         _ => None,
     };
     let placed_by_reference_dimensions = match (parameter("RefDim1"), parameter("RefDim2")) {
-        (None, None) => false,
         (Some(first), Some(second)) => {
             let edge_groups = groups
                 .iter()
@@ -7730,7 +7729,7 @@ fn project_hole(
             }
             true
         }
-        _ => return Ok(None),
+        _ => false,
     };
     let base_count =
         if depth.is_some() { 3 } else { 2 } + if placed_by_reference_dimensions { 2 } else { 0 };
