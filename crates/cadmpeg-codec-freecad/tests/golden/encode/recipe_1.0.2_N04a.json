@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 24203,
-      "payload_sha256": "9afba47232788d17544aed87ef673b34638bdc1db41eedb5f2c6ef9538908073"
+      "payload_len": 24018,
+      "payload_sha256": "58d735ff565b6a1c70e9f7315fb456818e59047919d03b7abaf5aa00683983f1"
     },
     {
       "name": "Body.brp",
