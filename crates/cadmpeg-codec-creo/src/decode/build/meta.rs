@@ -44,6 +44,9 @@ pub(super) fn source_meta(
     if let Some(name) = &scan.framing.model_name {
         insert_source_attribute(&mut attributes, "model_name", &name.name);
     }
+    if let Some(name) = &scan.framing.common_name {
+        insert_source_attribute(&mut attributes, "common_name", &name.name);
+    }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         insert_source_attribute(&mut attributes, "legacy_ascii_schema", &legacy.schema);
         if let Some(release) = &legacy.product_release {
