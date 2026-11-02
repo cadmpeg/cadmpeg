@@ -1065,7 +1065,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which dimension does a direct presentation frame govern when its label states a value that differs from the first following dimension owner's parameter?
 
-**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. The decoder retains the native dimensional constraint when the owner has two frames, and when the operand measurement differs from the parameter.
+**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. When one owner has several frames, the frame whose operand measurement equals the parameter governs it.
 
 **Need.** Files with the direct two-operand frame form that create a dimension, delete or replace it, and save the document after each change.
 
