@@ -34,8 +34,8 @@ use crate::decode::analytic::carriers::{
 };
 use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
-    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
-    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
+    full_periodic_nurbs_edge_parameter_range, orient_line_edge_carrier,
+    orient_nonperiodic_conic_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
 };
 use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
 use crate::decode::analytic::pcurve_geometry::{
@@ -2491,7 +2491,7 @@ pub(in super::super) fn transfer_native_brep(
                     range = exact_line_edge_parameter_range(&geometry, points);
                 }
                 if range.is_none() {
-                    range = nonperiodic_conic_edge_parameter_range(&geometry, points);
+                    range = orient_nonperiodic_conic_edge_carrier(&mut geometry, points);
                 }
                 if range.is_none() {
                     if let Some(faces) = curve_faces.get(curve_id).copied() {
@@ -2516,7 +2516,7 @@ pub(in super::super) fn transfer_native_brep(
                         if unrelated {
                             range = pcurve_backed_periodic_conic_parameter_range(
                                 ctx,
-                                &geometry,
+                                &mut geometry,
                                 (*curve_id, faces),
                                 &native_pcurves,
                                 &ir.model.surfaces,
