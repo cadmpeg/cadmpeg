@@ -160,6 +160,16 @@ fn project(
     Some(Projected { anchor, outward })
 }
 
+/// A flipped axis-aligned pull keeps `+0.0` in its zero components.
+fn assert_zero_components_are_unsigned(direction: Vector3) {
+    for component in [direction.x, direction.y, direction.z] {
+        assert!(
+            component != 0.0 || !component.is_sign_negative(),
+            "{direction:?}"
+        );
+    }
+}
+
 fn pull_direction(anchor: &DraftAnchor) -> Option<Vector3> {
     let DraftAnchor::NeutralPlane { pull, .. } = anchor else {
         panic!("expected a neutral-plane anchor");
@@ -188,12 +198,18 @@ fn an_origin_plane_states_its_normal_as_the_pull_direction() {
 
 #[test]
 fn a_flip_reverses_a_stated_pull_and_keeps_the_angle_sense() {
-    let projected = project(&draft_scope(0.25, Some(true)), &[selection(42, &[])]).unwrap();
-    assert_eq!(
-        pull_direction(&projected.anchor),
-        Some(Vector3::new(0.0, 0.0, -1.0))
-    );
-    assert_eq!(projected.outward, Some(false));
+    for (identity, flipped_normal) in [
+        (42, Vector3::new(0.0, 0.0, -1.0)),
+        (43, Vector3::new(0.0, -1.0, 0.0)),
+        (44, Vector3::new(-1.0, 0.0, 0.0)),
+    ] {
+        let projected =
+            project(&draft_scope(0.25, Some(true)), &[selection(identity, &[])]).unwrap();
+        let pull = pull_direction(&projected.anchor).unwrap();
+        assert_eq!(pull, flipped_normal);
+        assert_zero_components_are_unsigned(pull);
+        assert_eq!(projected.outward, Some(false));
+    }
 
     let negative = project(&draft_scope(-0.25, Some(true)), &[selection(42, &[])]).unwrap();
     assert_eq!(negative.outward, Some(true));
@@ -287,7 +303,9 @@ fn a_flip_reverses_the_pull_of_a_work_plane() {
         else {
             panic!("expected a Draft");
         };
-        assert_eq!(pull_direction(&anchor), Some(Vector3::new(0.0, 0.0, z)));
+        let pull = pull_direction(&anchor).unwrap();
+        assert_eq!(pull, Vector3::new(0.0, 0.0, z));
+        assert_zero_components_are_unsigned(pull);
         assert_eq!(outward, Some(false));
     }
 }
