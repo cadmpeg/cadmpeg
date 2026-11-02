@@ -12,7 +12,7 @@ use crate::framing::node_kind::NodeKind;
 use std::collections::BTreeMap;
 
 use crate::framing::read_xmt_width as read_xmt;
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 pub(crate) mod curve_references;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;

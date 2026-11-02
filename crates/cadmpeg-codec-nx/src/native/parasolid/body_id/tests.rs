@@ -94,7 +94,7 @@ fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {
         )
         .is_none());
         let mut aliased = definition();
-        aliased.name = crate::printable_string::PrintableString::new("other".to_string()).unwrap();
+        aliased.name = cadmpeg_core::printable::PrintableString::new("other".to_string()).unwrap();
         assert!(resolve(
             11,
             BodyIdEncoding::CurveMeshIgnored,

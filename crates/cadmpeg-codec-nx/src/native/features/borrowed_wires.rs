@@ -15,7 +15,7 @@ use super::{
     FeaturePayloadScalar, FeatureScalarPayload, FeatureSketchConstructionInputs,
     FeatureSketchPayloadScalarLane, FeatureSketchPointUse, OffsetStoreNamedPoint,
 };
-use crate::iter_wire::IterWire;
+use cadmpeg_core::iter_wire::IterWire;
 
 impl Serialize for FeatureOperationObjectReference {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

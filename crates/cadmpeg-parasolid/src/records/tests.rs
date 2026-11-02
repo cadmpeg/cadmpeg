@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{positive, read_definition, BaseVersion, DataType, SchemaField, SchemaPlan};
+use super::{
+    positive, read_definition, read_edit_program, BaseVersion, DataType, SchemaField, SchemaPlan,
+};
 use crate::test_support::with_decode_context;
 use cadmpeg_core::decode::View;
 
@@ -213,4 +215,29 @@ fn unestablished_primary_scalar_codes_cannot_enter_status_metadata() {
             assert_eq!(owner.census().instance_count(), 0);
         }
     });
+}
+
+#[test]
+fn an_edit_program_reports_whether_it_consumed_every_base_field() {
+    // SHELL has nine base fields. A program may end before the base list
+    // does; the remaining base fields then need no explicit `D`.
+    for (program, count, consumed) in [
+        (b"CCCZ".as_slice(), 3, false),
+        (b"CCCDDDDDDZ".as_slice(), 3, true),
+        (b"CCCCCCCCCZ".as_slice(), 9, true),
+    ] {
+        let mut view = View::over_retained(program);
+        let edit = read_edit_program(&mut view, BaseVersion::V13006, 13, count)
+            .unwrap()
+            .unwrap();
+        assert_eq!(edit.plan().fields.len(), usize::from(count));
+        assert_eq!(edit.consumes_base(), consumed);
+        assert_eq!(view.position(), program.len());
+    }
+    let mut view = View::over_retained(&[]);
+    let base = read_edit_program(&mut view, BaseVersion::V13006, 13, 255)
+        .unwrap()
+        .unwrap();
+    assert_eq!(base.plan().fields.len(), 9);
+    assert!(base.consumes_base());
 }

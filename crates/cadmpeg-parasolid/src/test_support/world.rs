@@ -2,7 +2,7 @@
 //! Primary WORLD edit programs and status-framed instances.
 
 fn pointer(bytes: &mut Vec<u8>, op: u8, name: &str, class: u16) {
-    bytes.extend_from_slice(&[op, u8::try_from(name.len()).unwrap()]);
+    bytes.extend_from_slice(&[op, u8::try_from(name.len()).unwrap_or(u8::MAX)]);
     bytes.extend_from_slice(name.as_bytes());
     bytes.extend_from_slice(&class.to_be_bytes());
     bytes.extend_from_slice(&[0, 1]);
@@ -13,7 +13,8 @@ fn integer(bytes: &mut Vec<u8>, name: &str) {
     bytes.extend_from_slice(&[1, b'd']);
 }
 
-pub(crate) fn schema(count: u8) -> Vec<u8> {
+/// A WORLD first-use edit program declaring `count` effective fields, 15, 18, or 19.
+pub fn schema(count: u8) -> Vec<u8> {
     assert!(matches!(count, 15 | 18 | 19));
     let mut bytes = vec![0, 101, count];
     bytes.extend_from_slice(b"CCCCCCC");
@@ -37,7 +38,8 @@ pub(crate) fn schema(count: u8) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn record(count: u8, escaped: bool) -> Vec<u8> {
+/// A WORLD instance for `count` effective fields, with an `ff` first-use byte when `escaped`.
+pub fn record(count: u8, escaped: bool) -> Vec<u8> {
     assert!(matches!(count, 15 | 18 | 19));
     let mut bytes = vec![0, 101];
     if escaped {
@@ -69,7 +71,8 @@ pub(crate) fn record(count: u8, escaped: bool) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn first_node(count: u8) -> Vec<u8> {
+/// A WORLD edit program followed by its first instance.
+pub fn first_node(count: u8) -> Vec<u8> {
     let mut bytes = schema(count);
     bytes.extend_from_slice(&record(count, false)[2..]);
     bytes

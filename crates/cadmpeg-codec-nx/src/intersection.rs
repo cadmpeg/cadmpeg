@@ -25,9 +25,9 @@ use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAME
 use crate::framing::insert_unique;
 use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 

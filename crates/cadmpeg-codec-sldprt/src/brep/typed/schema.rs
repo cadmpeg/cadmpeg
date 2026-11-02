@@ -2,6 +2,7 @@
 
 use crate::layout::parasolid_edited_type_header as header;
 use cadmpeg_core::decode::View;
+use cadmpeg_parasolid::records::{read_edit_program, BaseVersion, EditProgram};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Class {
@@ -12,83 +13,22 @@ pub(super) enum Class {
     World,
 }
 
-impl Class {
-    fn base_fields(self) -> usize {
-        match self {
-            Self::Body => 23,
-            Self::Shell => 9,
-            Self::Region => 7,
-            Self::Face => 14,
-            Self::World => 11,
-        }
-    }
+/// The base-schema edit program at `at` and the offset just past its `Z`.
+/// The program needs an explicit effective-field count; `ff` yields `None`.
+fn edit_program(bytes: &[u8], at: usize, kind: u16) -> Option<(EditProgram, usize)> {
+    let start = at.checked_add(header::FIELD_COUNT)?;
+    let mut view = View::over_retained(bytes.get(start..)?);
+    let count = view.u8()?;
+    (count != 255).then_some(())?;
+    let program = read_edit_program(&mut view, BaseVersion::V13006, kind, count).ok()??;
+    Some((program, start.checked_add(view.position())?))
 }
 
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn byte(&mut self) -> Option<u8> {
-        let value = *self.bytes.get(self.at)?;
-        self.at += 1;
-        Some(value)
-    }
-
-    fn short(&mut self) -> Option<u16> {
-        let value = View::u16_be_at(self.bytes, self.at)?;
-        self.at += 2;
-        Some(value)
-    }
-
-    fn positive(&mut self) -> Option<u32> {
-        let first = self.short()?;
-        if first == 0 {
-            return None;
-        }
-        if first <= 32767 {
-            return Some(u32::from(first) - 1);
-        }
-        let magnitude = u32::from((!first).checked_add(1)?);
-        let quotient = u32::from(self.short()?);
-        if magnitude > 32767 || quotient == 0 || quotient > 32767 {
-            return None;
-        }
-        quotient
-            .checked_mul(32767)?
-            .checked_add(magnitude)?
-            .checked_sub(1)
-    }
-
-    fn string(&mut self) -> Option<&'a str> {
-        let len = usize::from(self.byte()?);
-        let end = self.at.checked_add(len)?;
-        let value = std::str::from_utf8(self.bytes.get(self.at..end)?).ok()?;
-        self.at = end;
-        Some(value)
-    }
-
-    fn field(&mut self) -> Option<()> {
-        (!self.string()?.is_empty()).then_some(())?;
-        let pointer = self.short()?;
-        let elements = self.positive()?;
-        if pointer == 0 {
-            matches!(
-                self.string()?,
-                "u" | "c" | "l" | "n" | "w" | "d" | "p" | "f" | "i" | "v" | "b" | "h"
-            )
-            .then_some(())?;
-        }
-        if elements == 1 {
-            (self.byte()? <= 1).then_some(())?;
-        }
-        Some(())
-    }
-}
-
+/// An edited ownership-node header whose program consumes every base field
+/// (spec §4.1), and the offset of the class's first record after it.
 pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> {
-    let class = match View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)? {
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    let class = match kind {
         12 => Class::Body,
         13 => Class::Shell,
         14 => Class::Face,
@@ -96,66 +36,17 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
         101 => Class::World,
         _ => return None,
     };
-    let mut cursor = Cursor {
-        bytes,
-        at: at.checked_add(header::FIELD_COUNT)?,
-    };
-    let current_fields = usize::from(cursor.byte()?);
-    if current_fields == 255 {
-        return None;
-    }
-    let mut base = 0;
-    let mut current = 0;
-    loop {
-        match cursor.byte()? {
-            b'Z' => {
-                return (base == class.base_fields() && current == current_fields)
-                    .then_some((class, cursor.at));
-            }
-            b'C' if base < class.base_fields() && current < current_fields => {
-                base += 1;
-                current += 1;
-            }
-            b'D' if base < class.base_fields() => base += 1,
-            b'I' if base < class.base_fields() && current < current_fields => {
-                cursor.field()?;
-                current += 1;
-            }
-            b'A' if base == class.base_fields() && current < current_fields => {
-                cursor.field()?;
-                current += 1;
-            }
-            _ => return None,
-        }
-    }
+    let (program, end) = edit_program(bytes, at, kind)?;
+    program.consumes_base().then_some((class, end))
 }
 
-/// An edited type header of any class (spec §4.1): its node type and the
-/// offset just past its closing `Z`, where the class's first record follows
-/// without a tag of its own.
+/// An edited type header (spec §4.1): its node type and the offset just past
+/// its declaration, where the class's first record follows without a tag of
+/// its own.
 pub(super) fn edited_header(bytes: &[u8], at: usize) -> Option<(u16, usize)> {
-    let node_type = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
-    let mut cursor = Cursor {
-        bytes,
-        at: at.checked_add(header::FIELD_COUNT)?,
-    };
-    let current_fields = usize::from(cursor.byte()?);
-    if current_fields == 255 {
-        return None;
-    }
-    let mut current = 0;
-    loop {
-        match cursor.byte()? {
-            b'Z' => return (current == current_fields).then_some((node_type, cursor.at)),
-            b'C' if current < current_fields => current += 1,
-            b'D' => {}
-            b'I' | b'A' if current < current_fields => {
-                cursor.field()?;
-                current += 1;
-            }
-            _ => return None,
-        }
-    }
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    let (_, end) = edit_program(bytes, at, kind)?;
+    Some((kind, end))
 }
 
 #[cfg(test)]
@@ -212,7 +103,7 @@ mod tests {
         bytes[2] = 24;
         bytes.pop();
         bytes.push(b'A');
-        pointer(&mut bytes, b"Z\0\r\x09CCCCCCCCCZCIA", 1);
+        pointer(&mut bytes, b"Z CCCCCCCCCZCIA", 1);
         bytes.push(b'Z');
         assert_eq!(edited_payload(&bytes, 0), Some((Class::Body, bytes.len())));
         for end in 0..bytes.len() {

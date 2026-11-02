@@ -29,7 +29,7 @@ bytes = 2
 endianness = "big"
 note = "Parasolid XMT index, small form: a big-endian u16. The large form is a negative i16 remainder plus a u16 quotient and occupies 4 bytes, shifting every later fixed field in the record."
 section = "3.1"
-anchor = "| Small index | `uint16` BE, 2 bytes |"
+anchor = "XMT index encoding."
 
 [[record]]
 name = "parasolid_transmit_prefix"
@@ -58,7 +58,7 @@ anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes
 
 [[record]]
 name = "pmark_scalar_tail"
-parsed_by = "crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs"
+parsed_by = "crates/cadmpeg-parasolid/src/deltas/pmark_state.rs"
 kind = "byte"
 section = "4.2"
 anchor = "A PMARK scalar tail starts immediately after the five encoded indices."

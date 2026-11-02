@@ -122,7 +122,7 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     ));
 
     let mut broken = records;
-    broken[2].kind = crate::records::group::MembershipKind::Member {
+    broken[2].kind = cadmpeg_parasolid::records::group::MembershipKind::Member {
         owning_group: 10,
         owner: 101,
         next_member: 1,
@@ -140,17 +140,19 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
 #[test]
 fn paired_deltas_do_not_change_primary_group_membership() {
     let primary = primary_group_stream(10, 7, 30);
-    let mut delta = crate::test_support::test_pmarks::prefix(1);
-    delta.extend(crate::test_support::owned_deltas::region(7, 100, b'S'));
+    let mut delta = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
+    delta.extend(cadmpeg_parasolid::test_support::owned_deltas::region(
+        7, 100, b'S',
+    ));
     let streams = [
         stream(
             crate::parasolid::ParasolidSubtype::Partition,
             "SCH_TEST_13006",
             primary,
         ),
-        crate::test_support::owned_deltas::stream(crate::test_support::test_pmarks::complete(
-            delta,
-        )),
+        crate::test_support::deltas_stream::stream(
+            cadmpeg_parasolid::test_support::test_pmarks::complete(delta),
+        ),
     ];
     crate::test_support::with_decode_context(|_ctx| {
         let events = crate::native::parasolid::parasolid_deltas_events(&streams);
@@ -172,7 +174,7 @@ fn paired_deltas_do_not_change_primary_group_membership() {
 
 #[test]
 fn group_members_reject_ambiguous_owners_cycles_and_wrong_selectors() {
-    use crate::records::group::{GroupSelector, MembershipKind};
+    use cadmpeg_parasolid::records::group::{GroupSelector, MembershipKind};
     let records = [
         membership_record(90, 10, Some(7), vec![3, 4, 5, 6, 30]),
         membership_record(91, 30, None, vec![10, 100, 3, 4, 20, 1]),
@@ -326,11 +328,11 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
 #[test]
 fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     let owned_group = |xmt, node, linked| {
-        let mut bytes = crate::test_support::test_pmarks::prefix(1);
+        let mut bytes = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
         let mut record = group_record(xmt, node, linked);
         record.insert(2, 0xff);
         bytes.extend(record);
-        crate::test_support::test_pmarks::complete(bytes)
+        cadmpeg_parasolid::test_support::test_pmarks::complete(bytes)
     };
     let streams = [
         stream(

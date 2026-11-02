@@ -5,7 +5,7 @@ use crate::records::deltas::{DeltasRecords, EventContent};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]
-pub(crate) struct Census<'r, 's> {
+pub struct Census<'r, 's> {
     records: &'r DeltasRecords<'s>,
 }
 
@@ -14,11 +14,11 @@ impl<'r, 's> Census<'r, 's> {
         Self { records }
     }
 
-    pub(crate) fn bytes_decoded(self) -> usize {
+    pub fn bytes_decoded(self) -> usize {
         self.records.suffix().start
     }
 
-    pub(crate) fn instance_count(self) -> usize {
+    pub fn instance_count(self) -> usize {
         self.records
             .events()
             .iter()
@@ -26,11 +26,11 @@ impl<'r, 's> Census<'r, 's> {
             .count()
     }
 
-    pub(crate) fn schema_count(self) -> usize {
+    pub fn schema_count(self) -> usize {
         self.records.definitions().len()
     }
 
-    pub(crate) fn full_counts(self) -> BTreeMap<&'static str, usize> {
+    pub fn full_counts(self) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
         for event in self.records.events() {
             let EventContent::Instance(instance) = event.content() else {

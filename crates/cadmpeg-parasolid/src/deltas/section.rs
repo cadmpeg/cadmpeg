@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Sections and index maps of a Deltas stream.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
+/// Kind of one Deltas section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SectionKind {
+pub enum SectionKind {
+    /// The leading node section.
     Leading,
+    /// An index-map section.
     Map,
+    /// A PMARK section.
     Pmark,
 }
 
@@ -32,9 +37,10 @@ impl From<MapKind> for u16 {
     }
 }
 
+/// One index-map entry: a node index and its node type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "[u32; 2]", into = "[u32; 2]")]
-pub(crate) struct MapEntry(NonNullXmt, MapKind);
+pub struct MapEntry(NonNullXmt, MapKind);
 
 pub(crate) enum MapRead {
     End,
@@ -77,7 +83,8 @@ impl MapEntry {
         Some(MapRead::Entry(Self(xmt, MapKind::try_from(kind).ok()?)))
     }
 
-    pub(crate) fn encoded_len(self) -> u64 {
+    /// Encoded byte length of the entry.
+    pub fn encoded_len(self) -> u64 {
         if u32::from(self.0) <= 32_767 {
             4
         } else {
@@ -86,9 +93,10 @@ impl MapEntry {
     }
 }
 
+/// The word that ends an index map, below `0x8000`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u16", into = "u16")]
-pub(crate) struct TerminalWord(u16);
+pub struct TerminalWord(u16);
 
 impl TryFrom<u16> for TerminalWord {
     type Error = &'static str;

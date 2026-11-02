@@ -6,21 +6,19 @@
 
 #![allow(clippy::unwrap_used)]
 
+pub(crate) mod deltas_stream;
 pub(crate) mod final_member_registry;
 pub(crate) mod move_face;
 pub(crate) mod native_references;
-pub(crate) mod owned_deltas;
 pub(crate) mod rmfastload;
 pub(crate) mod studio_surface;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;
 pub(crate) mod test_deltas;
 pub(crate) mod test_om;
-pub(crate) mod test_pmarks;
 pub(crate) mod test_prt;
 pub(crate) mod test_streams;
 pub(crate) mod test_wire;
-pub(crate) mod world;
 
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

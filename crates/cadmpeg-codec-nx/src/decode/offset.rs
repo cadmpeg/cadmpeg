@@ -2416,7 +2416,7 @@ pub(super) fn solve_damped_least_squares_4x4(
 pub(super) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
+    surface_xmt: Option<cadmpeg_parasolid::xmt::NonNullXmt>,
     uv: Option<(&[cadmpeg_ir::units::FiniteVector<2>], &[f64])>,
 ) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
     let surface = surface_xmt

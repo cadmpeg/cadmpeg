@@ -31,7 +31,6 @@ use super::pcurves::{
 };
 use super::MISSING_TOLERANCE;
 use crate::framing::node_kind::NodeKind;
-use crate::framing::xmt_reference::NonNullXmt;
 use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
@@ -46,6 +45,7 @@ use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum serialized support-UV lane length admitted by one model record.

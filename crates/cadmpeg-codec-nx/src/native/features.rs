@@ -74,7 +74,7 @@ use crate::om::scalar::ShiftedScalar;
 use crate::om::scalar_pair::{DatumPairForm, MixedPairForm, PairPosition, SketchPairForm};
 use crate::om::scalar_run::FramedScalarRun;
 use crate::om::sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use object_frame::DataBlockObjectFrame;
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
 use std::borrow::Cow;

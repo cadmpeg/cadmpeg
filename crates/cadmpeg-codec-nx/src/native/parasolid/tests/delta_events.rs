@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::test_support::{owned_deltas, test_pmarks, with_decode_context};
+use crate::test_support::{deltas_stream, with_decode_context};
+use cadmpeg_parasolid::test_support::{owned_deltas, test_pmarks};
 
 #[test]
 fn owned_definitions_are_shared_and_instances_retain_exact_source_ranges() {
@@ -8,7 +9,7 @@ fn owned_definitions_are_shared_and_instances_retain_exact_source_ranges() {
     let second = bytes.len();
     bytes.extend(&ordinary);
     let bytes = test_pmarks::complete(bytes);
-    let streams = [owned_deltas::stream(bytes.clone())];
+    let streams = [deltas_stream::stream(bytes.clone())];
     let events = super::super::parasolid_deltas_events(&streams);
     assert_eq!(events.schemas.len(), 3);
     assert_eq!(events.instances.len(), 2);
@@ -28,7 +29,8 @@ fn owned_definitions_are_shared_and_instances_retain_exact_source_ranges() {
     assert_eq!(later["inflated_offset"], second);
     assert_eq!(later["byte_len"], ordinary.len());
     assert_eq!(first["fields"].as_array().unwrap().len(), 36);
-    let owner = with_decode_context(|_ctx| crate::records::DeltasRecords::read(&bytes)).unwrap();
+    let owner = with_decode_context(|_ctx| cadmpeg_parasolid::records::DeltasRecords::read(&bytes))
+        .unwrap();
     assert_eq!(
         owner
             .events()
@@ -56,7 +58,7 @@ fn unsupported_packets_and_every_later_marker_remain_one_exact_suffix() {
             };
         bytes.extend(suffix);
         bytes.extend(owned_deltas::region(9, 52, b'S'));
-        let streams = [owned_deltas::stream(bytes.clone())];
+        let streams = [deltas_stream::stream(bytes.clone())];
         let events = super::super::parasolid_deltas_events(&streams);
         assert!(events.instances.is_empty());
         assert_eq!(events.transmit_headers.len(), 1);
@@ -79,13 +81,14 @@ fn region_projection_uses_the_same_owned_fields_as_generic_native_values() {
         for region_type in *b"SV" {
             let mut bytes = test_pmarks::prefix(1);
             bytes.extend(owned_deltas::region(layout, 52, region_type));
-            let streams = [owned_deltas::stream(test_pmarks::complete(bytes))];
+            let streams = [deltas_stream::stream(test_pmarks::complete(bytes))];
             let events = super::super::parasolid_deltas_events(&streams);
             assert_eq!(events.instances.len(), 1);
             let [record] = events.records.as_slice() else {
                 panic!("REGION projection");
             };
-            let crate::deltas::record_family::RecordFamily::Region { fields } = &record.family
+            let cadmpeg_parasolid::deltas::record_family::RecordFamily::Region { fields } =
+                &record.family
             else {
                 panic!("REGION");
             };
@@ -103,8 +106,8 @@ fn two_streams_join_instances_to_their_own_aggregate_schema_indices() {
     let mut region = test_pmarks::prefix(1);
     region.extend(owned_deltas::region(7, 8, b'S'));
     let streams = [
-        owned_deltas::stream(test_pmarks::complete(owned_deltas::body_stream(36))),
-        owned_deltas::stream(test_pmarks::complete(region)),
+        deltas_stream::stream(test_pmarks::complete(owned_deltas::body_stream(36))),
+        deltas_stream::stream(test_pmarks::complete(region)),
     ];
     let events = super::super::parasolid_deltas_events(&streams);
     assert_eq!(events.schemas.len(), 6);

@@ -3,9 +3,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A stream-local node index greater than one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub(crate) struct NonNullXmt(u32);
+pub struct NonNullXmt(u32);
 
 impl TryFrom<u32> for NonNullXmt {
     type Error = &'static str;
@@ -26,10 +27,11 @@ impl From<NonNullXmt> for u32 {
 /// A retained reference target other than the null token. Zero remains
 /// representable for unresolved references; record identities require `NonNullXmt`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct XmtTarget(u32);
+pub struct XmtTarget(u32);
 
 impl XmtTarget {
-    pub(crate) fn from_wire(value: u32) -> Option<Self> {
+    /// Build a target from its wire value; the null token `1` gives `None`.
+    pub fn from_wire(value: u32) -> Option<Self> {
         if value == 1 {
             None
         } else {
@@ -37,7 +39,8 @@ impl XmtTarget {
         }
     }
 
-    pub(crate) fn to_wire(value: Option<Self>) -> u32 {
+    /// Wire value of an optional target; `None` gives the null token `1`.
+    pub fn to_wire(value: Option<Self>) -> u32 {
         value.map_or(1, |target| target.0)
     }
 }

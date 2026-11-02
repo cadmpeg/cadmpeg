@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Primary PARTITION-mark fields, shared by current and historical nodes.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 /// One status-free type-4 instance after its schema information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PmarkState {
+pub struct PmarkState {
     xmt: NonNullXmt,
     preceding: NonZeroU32,
     first_following: NonZeroU32,
@@ -60,7 +60,8 @@ impl PmarkState {
         })
     }
 
-    pub(crate) fn encoded_len(self) -> Option<u64> {
+    /// Encoded byte length of the instance, or `None` when a pointer exceeds the encoding range.
+    pub fn encoded_len(self) -> Option<u64> {
         [
             u32::from(self.xmt),
             self.preceding.get(),

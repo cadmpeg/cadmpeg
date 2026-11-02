@@ -3,8 +3,8 @@
 
 use super::ParasolidGroupMember;
 use crate::framing::node_kind::NodeKind;
-use crate::records::group::{GroupSelector, MembershipKind};
 use crate::topology::Graph;
+use cadmpeg_parasolid::records::group::{GroupSelector, MembershipKind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn group_member_wire_covers_member_entities_and_rejects_nonmembers() {
         use super::GroupMemberTarget;
-        use crate::records::group::{GroupSelector, MembershipKind};
+        use cadmpeg_parasolid::records::group::{GroupSelector, MembershipKind};
         for (kind, name, selector) in [
             (11, "INSTANCE", 1),
             (14, "FACE", 2),

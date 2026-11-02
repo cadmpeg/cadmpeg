@@ -123,15 +123,15 @@ fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
         relabeled.extend_from_slice(&bytes[6 + short.len()..]);
         relabeled
     };
-    let mut schema_only = crate::test_support::test_pmarks::prefix(1);
-    schema_only.extend(crate::test_support::owned_deltas::body(36).0);
+    let mut schema_only = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
+    schema_only.extend(cadmpeg_parasolid::test_support::owned_deltas::body(36).0);
     for bytes in [
         d::deltas_point_partition_stream(),
         d::status_framed_deltas_stream(),
         d::variable_status_framed_deltas_stream(),
         transmit_file(schema_only),
-        transmit_file(crate::test_support::test_pmarks::complete(
-            crate::test_support::owned_deltas::body_stream(36),
+        transmit_file(cadmpeg_parasolid::test_support::test_pmarks::complete(
+            cadmpeg_parasolid::test_support::owned_deltas::body_stream(36),
         )),
     ] {
         let decoded = NxCodec

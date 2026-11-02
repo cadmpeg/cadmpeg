@@ -1788,7 +1788,7 @@ pub(super) fn source_meta(
         let owner = if let Some(owner) = parsed.and_then(|parsed| parsed.deltas(ordinal)) {
             owner
         } else {
-            uncached = crate::records::DeltasRecords::read(&stream.inflated)?;
+            uncached = cadmpeg_parasolid::records::DeltasRecords::read(&stream.inflated)?;
             &uncached
         };
         let census = owner.census();
@@ -1809,7 +1809,9 @@ pub(super) fn source_meta(
             format_args!("deltas.{index}.grammar"),
             "sequential_owned_records",
         );
-        if let crate::records::deltas::DeltasEnd::Stopped { offset, reason } = owner.end() {
+        if let cadmpeg_parasolid::records::deltas::DeltasEnd::Stopped { offset, reason } =
+            owner.end()
+        {
             insert_source_attribute(
                 &mut attributes,
                 format_args!("deltas.{index}.stop_offset"),

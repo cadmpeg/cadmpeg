@@ -1,46 +1,75 @@
 // SPDX-License-Identifier: Apache-2.0
+//! GROUP and `MEMBER_OF_FEATURE` membership records of a primary node sequence.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
+/// One membership-relevant node of a primary node sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MembershipRecord {
-    pub(crate) xmt: NonNullXmt,
-    pub(crate) kind: MembershipKind,
+pub struct MembershipRecord {
+    /// Stream-local node index.
+    pub xmt: NonNullXmt,
+    /// Membership role of the node.
+    pub kind: MembershipKind,
 }
 
+/// Membership role of one node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MembershipKind {
+pub enum MembershipKind {
+    /// A type-90 GROUP node.
     Group {
+        /// GROUP node ID.
         node_id: u32,
+        /// Entity class the GROUP collects.
         selector: GroupSelector,
+        /// First `MEMBER_OF_FEATURE` pointer.
         first_member: u32,
     },
+    /// A type-91 `MEMBER_OF_FEATURE` node.
     Member {
+        /// Owning GROUP pointer.
         owning_group: u32,
+        /// Member entity pointer.
         owner: u32,
+        /// Next member pointer.
         next_member: u32,
+        /// Previous member pointer.
         previous_member: u32,
     },
+    /// A node that a member can name.
     Node {
+        /// Node type.
         kind: u16,
+        /// Node ID.
         node_id: u32,
     },
+    /// A node outside the membership roles.
     Other,
 }
 
+/// Entity class code `1..=10` of a GROUP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum GroupSelector {
+pub enum GroupSelector {
+    /// 1: instances.
     Instance,
+    /// 2: faces.
     Face,
+    /// 3: loops.
     Loop,
+    /// 4: edges.
     Edge,
+    /// 5: vertices.
     Vertex,
+    /// 6: surfaces.
     Surface,
+    /// 7: curves.
     Curve,
+    /// 8: points.
     Point,
+    /// 9: mixed entity classes.
     Mixed,
+    /// 10: regions.
     Region,
 }
 

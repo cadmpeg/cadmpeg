@@ -8,12 +8,11 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_core::decode::View;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod node_kind;
-pub(crate) mod xmt_reference;
 
 use crate::layout::analytic_common_header as analytic;
 use crate::layout::circle_payload as circle;

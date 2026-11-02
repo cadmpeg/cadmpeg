@@ -329,7 +329,7 @@ fn intersection_rejects_duplicate_xmt_states_atomically() {
         xmt: 12,
         header_references: [None; 5],
         sense: true,
-        references: [6, 7, 20, 21, 22, 23].map(crate::framing::xmt_reference::XmtTarget::from_wire),
+        references: [6, 7, 20, 21, 22, 23].map(cadmpeg_parasolid::xmt::XmtTarget::from_wire),
         pos,
     };
     let scan = crate::test_support::with_decode_context(|_ctx| {

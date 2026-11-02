@@ -2,9 +2,9 @@
 //! Exact source scope and wire fields of GROUP records.
 
 use super::ParasolidGroupRecord;
-use crate::deltas::group::GroupReferenceStatus;
 use crate::parasolid::StreamKind;
-use crate::records::group::GroupSelector;
+use cadmpeg_parasolid::deltas::group::GroupReferenceStatus;
+use cadmpeg_parasolid::records::group::GroupSelector;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
