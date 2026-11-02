@@ -102,6 +102,76 @@ fn offset_faces_counted_member_runs_validate() {
 }
 
 #[test]
+fn operand_list_combine_requires_its_own_offsets() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::feature::{
+        combine::{
+            DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+            DesignCombineTools,
+        },
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+    };
+    use crate::records::identity::ReferenceRun;
+
+    let findings = |operation_offset: u64, keep_tools_offset: u64| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#17",
+            DesignFeatureKind::Combine,
+            17,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![301, 302, 303, 304]);
+                draft.reference_count_offset = 126;
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.kind_offset + 22 + 78;
+                draft.frame_length = draft.paired_byte_offset;
+                draft.feature_ordinal_offset = draft.kind_offset + 22;
+            })
+            .unwrap();
+        if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
+            *slot = Some(DesignCombineOperation {
+                form: DesignCombineForm::OperandLists,
+                operation: cadmpeg_ir::features::BooleanKind::Join,
+                operation_offset,
+                keep_tools: false,
+                keep_tools_offset,
+                target_record_index: 304,
+                target_body_node: None,
+                tools: DesignCombineTools {
+                    first: DesignCombineBodySelection {
+                        record_index: 302,
+                        external_identity: None,
+                        body_node: None,
+                    },
+                    additional: Vec::new(),
+                },
+            });
+        }
+        let mut native = crate::native::F3dNative::default();
+        for record_index in [17, 301, 302, 303, 304] {
+            native.design_record_headers.push(DesignRecordHeader {
+                id: format!("f3d:Design/BulkStream.dat:design-record-header#{record_index}"),
+                record_index,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: u64::from(record_index),
+            });
+        }
+        native.design_parameter_scopes.push(scope);
+        crate::test_support::with_decode_context(|service_ctx| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            findings.len()
+        })
+    };
+    assert_eq!(findings(21, 29), 0);
+    assert_eq!(findings(20, 29), 1);
+    assert_eq!(findings(21, 25), 1);
+}
+
+#[test]
 fn placement_ordered_owner_count_and_references_match_the_frame() {
     use crate::records::feature::{
         assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun},

@@ -977,6 +977,30 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** DR-12 tracks placement construction types. Sketch support identity remains in the native placement construction record.
 
+### DR-200. Fields of the class-387 and class-329 Combine prologues
+
+**Question.** Do the class-387 and class-329 `Combine` prologues store the fields of the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 reads the operation at offset 21 with values one through three and keep-tools at offset 25 in the class-387 form, and reads keep-tools at offset 30 and the operation at offset 31 in the class-329 form. The operand-list form stores a zero-based operation at offset 21, keep-tools at offset 29, and u32 one at offset 31.
+
+**Need.** Controlled class-387 and class-329 frames, or a type-table rule that separates them from the operand-list form, with stored operations proved by result volumes.
+
+**Conflict.** A class-387 frame with zero at offset 25 and bytes `01 00` at offsets 29 and 30 also satisfies the operand-list fixed fields. The two readings give different operation and keep-tools values. The rule that resolves a stored `Join` with kept tools to `Cut` applies only to the older forms and can follow from this difference.
+
+**Note.** Class tags are local to a stream, so a class value does not identify a frame layout.
+
+### DR-201. Byte after the hidden flag of a Combine browser node
+
+**Question.** What does the byte after the hidden flag of a browser node named by an operand-list `Combine` state?
+
+**Known.** The byte is zero or one. It is zero when the tool body was hidden before the `Combine` and the feature consumes the tool. It is one in the other observed frames, including a consumed tool that was visible before the `Combine` and a kept tool that was hidden before it.
+
+**Need.** Controlled bodies that vary visibility before and after the `Combine`, with keep-tools varied independently.
+
+**Conflict.** None.
+
+**Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
