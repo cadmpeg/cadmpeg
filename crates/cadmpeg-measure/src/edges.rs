@@ -185,6 +185,17 @@ pub(crate) fn measure_edge<'ir>(
             },
         ),
     };
+    let point_edge = edge.start == edge.end
+        && matches!(&curve, Ok(chart) if matches!(chart.shape, CurveShape::Degenerate { .. }));
+    let length = if point_edge {
+        Ok(Length {
+            value: 0.0,
+            numeric_error: 0.0,
+            method: Method::ClosedForm,
+        })
+    } else {
+        length
+    };
     Ok(EdgeGeometry {
         edge,
         tau,

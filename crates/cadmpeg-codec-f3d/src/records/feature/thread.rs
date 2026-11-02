@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thread constructions, forms, diameters and nominal sizes.
 
+use crate::layout::thread_extended_scope_prefix as extended_prefix;
+use crate::layout::thread_owner_marked_scope_prefix as owner_prefix;
+use crate::layout::thread_standard_scope_prefix as direct_prefix;
+use crate::records::identity::Located;
 use crate::records::identity::Sourced;
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
@@ -24,16 +28,95 @@ pub(crate) enum DesignThreadForm {
     CompactLegacy,
     /// Standard prefix with the compact construction marker and a reference trailer.
     StandardCompact,
+    /// Extended standard prefix with offset and length owner references.
+    StandardExtended,
+    /// Extended compact prefix with two owners before its face-selection pairs.
+    CompactExtended(Located<NonZeroU32>),
 }
 
 impl DesignThreadForm {
+    pub(crate) fn class_pair_holds(self, class: &str, paired: &str) -> bool {
+        match self {
+            Self::StandardLegacy => class == "334" && paired == "262",
+            Self::CompactLegacy => class == "414" && paired == "263",
+            Self::Standard
+            | Self::Compact(_)
+            | Self::CompactExtended(_)
+            | Self::StandardCompact
+            | Self::StandardExtended => true,
+        }
+    }
+
+    pub(crate) fn designation_offset_holds(self, designation: u64, scope: u64) -> bool {
+        let Some(delta) = designation
+            .checked_sub(scope)
+            .and_then(|delta| usize::try_from(delta).ok())
+        else {
+            return false;
+        };
+        match self {
+            Self::StandardExtended | Self::CompactExtended(_) => delta == extended_prefix::LEN,
+            _ => [direct_prefix::LEN, owner_prefix::LEN].contains(&delta),
+        }
+    }
+
+    pub(crate) fn reference_count_holds(self, count: usize) -> bool {
+        count.is_multiple_of(2)
+            && match self {
+                Self::StandardExtended => count == 4,
+                Self::CompactExtended(_) => count >= 4,
+                _ => count >= 2,
+            }
+    }
+
+    pub(crate) fn owners_hold(
+        self,
+        scope: &super::scope::DesignParameterScope,
+        owners: &[crate::records::parameters::DesignParameterOwner],
+    ) -> bool {
+        let (offset_ordinal, length_ordinal) = match self {
+            Self::StandardExtended => (2, 3),
+            Self::CompactExtended(_) => (0, 1),
+            _ => return true,
+        };
+        let owner_at = |ordinal| {
+            let index = scope.reference_members().values().nth(ordinal)?;
+            let mut matching = owners.iter().filter(|owner| {
+                crate::ids::native_stream(owner.id()) == crate::ids::native_stream(&scope.id)
+                    && owner.scope_record_index() == Some(scope.record_index)
+                    && owner.record_index() == *index
+            });
+            let owner = matching.next()?;
+            matching.next().is_none().then_some(owner)
+        };
+        match (owner_at(offset_ordinal), owner_at(length_ordinal)) {
+            (Some(offset), Some(length)) => {
+                offset.local_ordinal() == Some(0)
+                    && offset.evaluated_value().get() == 0.0
+                    && length.local_ordinal() == Some(1)
+                    && length.evaluated_value().get() > 0.0
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) const fn face_reference_start(self) -> usize {
+        match self {
+            Self::CompactExtended(_) => 2,
+            _ => 0,
+        }
+    }
+
     /// Whether the scope carries the standard one-group reference table.
     ///
     /// The other forms carry ordered `(face-selection group, sole member)` pairs.
     pub(crate) const fn has_standard_reference_table(&self) -> bool {
         match self {
-            Self::Standard | Self::StandardLegacy | Self::StandardCompact => true,
-            Self::Compact(_) | Self::CompactLegacy => false,
+            Self::Standard
+            | Self::StandardLegacy
+            | Self::StandardCompact
+            | Self::StandardExtended => true,
+            Self::Compact(_) | Self::CompactExtended(_) | Self::CompactLegacy => false,
         }
     }
 }
@@ -130,16 +213,27 @@ impl Serialize for DesignThreadConstruction {
         })?;
         let (form, trailing_reference) = match &self.form {
             DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
-            DesignThreadForm::Compact(reference) => {
-                (DesignThreadFormWire::Compact, reference.as_ref())
-            }
+            DesignThreadForm::Compact(reference) => (
+                DesignThreadFormWire::Compact,
+                reference
+                    .as_ref()
+                    .map(|reference| (reference.value.get(), reference.offset)),
+            ),
+            DesignThreadForm::CompactExtended(reference) => (
+                DesignThreadFormWire::CompactExtended,
+                Some((reference.value.get(), Some(reference.offset))),
+            ),
             DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
             DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
             DesignThreadForm::StandardCompact => (DesignThreadFormWire::StandardCompact, None),
+            DesignThreadForm::StandardExtended => (DesignThreadFormWire::StandardExtended, None),
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
-            if trailing_reference.is_some() { 11 } else { 10 },
+            10 + usize::from(trailing_reference.is_some())
+                + usize::from(
+                    trailing_reference.is_some_and(|(_, offset)| offset.is_some()),
+                ),
         )?;
         fields.serialize_field("form", &form)?;
         fields.serialize_field("designation", self.designation.as_str())?;
@@ -150,8 +244,11 @@ impl Serialize for DesignThreadConstruction {
         fields.serialize_field("minor_diameter", &self.diameters.minor())?;
         fields.serialize_field("pitch", &self.pitch.get())?;
         fields.serialize_field("pitch_diameter", &self.diameters.pitch())?;
-        if let Some(reference) = trailing_reference {
-            fields.serialize_field("trailing_reference_record_index", &reference.value.get())?;
+        if let Some((record_index, offset)) = trailing_reference {
+            fields.serialize_field("trailing_reference_record_index", &record_index)?;
+            if let Some(offset) = offset {
+                fields.serialize_field("trailing_reference_offset", &offset)?;
+            }
         }
         fields.serialize_field("face_group_record_indices", &self.face_group_record_indices)?;
         fields.end()
@@ -171,6 +268,8 @@ enum DesignThreadFormWire {
     CompactLegacy,
     /// Standard prefix with the compact construction marker and a reference trailer.
     StandardCompact,
+    StandardExtended,
+    CompactExtended,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -200,6 +299,9 @@ struct DesignThreadConstructionWire {
         deserialize_with = "deserialize_trailing_reference_record_index"
     )]
     trailing_reference_record_index: Option<u32>,
+    /// Byte offset of `trailing_reference_record_index`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
 }
@@ -216,20 +318,34 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         {
             return Err("nominal_size must match nominal_size_text".into());
         }
-        let reference = match value.trailing_reference_record_index {
+        let record_index = match value.trailing_reference_record_index {
             None => None,
-            Some(value) => Some(Sourced {
-                value: NonZeroU32::new(value)
+            Some(value) => Some(
+                NonZeroU32::new(value)
                     .ok_or("trailing_reference_record_index must be nonzero")?,
-                offset: None,
-            }),
+            ),
         };
-        let form = match (value.form, reference) {
-            (DesignThreadFormWire::Compact, reference) => DesignThreadForm::Compact(reference),
+        let form = match (value.form, record_index) {
+            (DesignThreadFormWire::Compact, record_index) => DesignThreadForm::Compact(
+                record_index.map(|value| Sourced { value, offset: None }),
+            ),
+            (
+                DesignThreadFormWire::CompactExtended,
+                Some(record_index),
+            ) => DesignThreadForm::CompactExtended(Located {
+                value: record_index,
+                offset: value.trailing_reference_offset.ok_or(
+                    "compact_extended requires a trailing Hole reference offset",
+                )?,
+            }),
+            (DesignThreadFormWire::CompactExtended, None) => {
+                return Err("compact_extended requires a trailing Hole reference".into());
+            }
             (DesignThreadFormWire::Standard, None) => DesignThreadForm::Standard,
             (DesignThreadFormWire::StandardLegacy, None) => DesignThreadForm::StandardLegacy,
             (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
             (DesignThreadFormWire::StandardCompact, None) => DesignThreadForm::StandardCompact,
+            (DesignThreadFormWire::StandardExtended, None) => DesignThreadForm::StandardExtended,
             _ => {
                 return Err("trailing_reference_record_index is only valid for compact form".into())
             }

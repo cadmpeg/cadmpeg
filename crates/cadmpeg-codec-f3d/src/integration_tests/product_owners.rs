@@ -41,3 +41,46 @@ fn product_history_owner_survives_two_component_archive_merge() {
     }
     assert_valid(&decoded);
 }
+
+#[test]
+fn root_sketch_owner_follows_document_membership() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_sketch_dimension;
+
+    let document =
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());
+    let standalone = decode(document.clone());
+    let standalone_model = &standalone.ir().model;
+    assert_eq!(standalone_model.sketches.len(), 1);
+    let sketch = &standalone_model.sketches[0].id;
+    assert!(standalone_model
+        .product_definitions
+        .iter()
+        .all(|definition| !definition.sketches.contains(sketch)));
+    assert_valid(&standalone);
+
+    let root = f3d_without_brep("owner-root", "root.f3d", &[("member.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[("root.f3d", &root), ("member.f3d", &document)],
+    );
+    let merged = decode(archive);
+    let model = &merged.ir().model;
+    assert_eq!(model.sketches.len(), 1);
+    let holders = model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.sketches.contains(&model.sketches[0].id))
+        .collect::<Vec<_>>();
+    assert_eq!(holders.len(), 1);
+    assert!(holders[0]
+        .id
+        .as_str()
+        .ends_with("archive:product-definition#0"));
+    assert!(model.occurrences.iter().any(|occurrence| matches!(
+        &occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &holders[0].id
+    )));
+    assert_valid(&merged);
+}

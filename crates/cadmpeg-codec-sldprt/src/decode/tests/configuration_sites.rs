@@ -13,6 +13,7 @@ use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::container::sldprt_with_partition_and_deltas;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::triangle_body;
@@ -346,4 +347,158 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
     assert!(!result.report().losses.iter().any(|loss| loss
         .message
         .contains("active configuration identity is unresolved")));
+}
+
+/// A `Config-<configuration>-FeatureBodies/LocalBodies` block with one
+/// Imported feature per plain stream body (spec §3.3).
+fn local_bodies_block(configuration: usize, bodies: &[Vec<u8>]) -> Vec<u8> {
+    let mut payload = u32::try_from(bodies.len()).unwrap().to_le_bytes().to_vec();
+    for (index, body) in bodies.iter().enumerate() {
+        let name: Vec<u16> = format!("Imported{}", index + 1).encode_utf16().collect();
+        payload.extend([0xff, 0xfe, 0xff, u8::try_from(name.len()).unwrap()]);
+        payload.extend(name.iter().flat_map(|unit| unit.to_le_bytes()));
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(1u32.to_le_bytes());
+        let stream = parasolid_with_body(
+            ": TRANSMIT FILE created by modeller version 3500125",
+            "SCH_SW_33103_11000",
+            body,
+        );
+        payload.extend([0; 5]);
+        payload.extend(u32::try_from(stream.len() + 5).unwrap().to_le_bytes());
+        payload.push(0);
+        payload.extend(stream);
+    }
+    make_block(
+        0x46,
+        &format!("Config-{configuration}-FeatureBodies/LocalBodies"),
+        &payload,
+    )
+}
+
+fn decode(source: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap()
+}
+
+#[test]
+fn an_empty_partition_takes_the_bodies_of_its_imported_features() {
+    let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+    source.extend(local_bodies_block(0, &[triangle_body(), triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert!(decoded.report().geometry_transferred());
+    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().model.faces.len(), 2);
+    let ids: std::collections::BTreeSet<_> = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("validate the neutral model")
+        .is_ok());
+}
+
+#[test]
+fn an_imported_body_whose_faces_store_a_tolerance_decodes() {
+    let mut body = triangle_body();
+    let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+    let at = (0..body.len() - 18)
+        .find(|&at| body[at..at + 2] == [0x00, 0x0e] && body[at + 10..at + 18] == sentinel)
+        .unwrap();
+    body[at + 10..at + 18].copy_from_slice(&1.0e-8f64.to_be_bytes());
+    let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+    source.extend(local_bodies_block(0, &[body]));
+
+    let decoded = decode(source);
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+}
+
+#[test]
+fn a_partition_with_geometry_keeps_its_own_bodies() {
+    let mut source = sldprt_with_body(&triangle_body());
+    let alone = decode(source.clone());
+    source.extend(local_bodies_block(0, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        decoded.ir().model.bodies.len(),
+        alone.ir().model.bodies.len()
+    );
+    assert_eq!(decoded.ir().model.faces.len(), alone.ir().model.faces.len());
+}
+
+/// One block with an empty partition/deltas model, named `section`.
+fn empty_model_block(section: &str) -> Vec<u8> {
+    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &[]);
+    payload.extend(parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &[],
+    ));
+    make_block(0x20, section, &payload)
+}
+
+#[test]
+fn imported_bodies_stay_out_while_another_site_has_geometry() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(empty_model_block("Contents/Config-1-Partition"));
+    let alone = decode(source.clone());
+    source.extend(local_bodies_block(1, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        decoded.ir().model.bodies.len(),
+        alone.ir().model.bodies.len()
+    );
+}
+
+#[test]
+fn imported_bodies_need_a_configuration() {
+    let mut source = outer_header();
+    source.extend(empty_model_block("Contents/Model"));
+    source.extend(local_bodies_block(0, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert!(decoded.ir().model.bodies.is_empty());
+}
+
+#[test]
+fn imported_bodies_of_another_configuration_are_not_taken() {
+    let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+    source.extend(local_bodies_block(1, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert!(decoded.ir().model.bodies.is_empty());
+}
+
+#[test]
+fn imported_body_streams_that_do_not_decode_are_reported() {
+    assert!(super::super::imported_bodies_loss(0, 2).is_none());
+    let loss = super::super::imported_bodies_loss(1, 2).unwrap();
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 of 2 imported body stream(s) do not decode."
+    );
 }

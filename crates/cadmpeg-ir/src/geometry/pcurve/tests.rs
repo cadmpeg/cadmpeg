@@ -355,7 +355,7 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
                 "form": {
                     "wrapper_reversed": false,
                     "native_tail_flags": [true, false, true, false],
-                    "parameter_range": [-1.0, 2.0],
+                    "uv_offset": [-1.0, 2.0],
                     "fit_tolerance": 0.001
                 }
             }
@@ -378,7 +378,7 @@ fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
         },
         "wrapper_reversed": false,
         "native_tail_flags": [true, false, true, false],
-        "parameter_range": [-1.0, 2.0]
+        "uv_offset": [-1.0, 2.0]
     }));
     assert!(result.is_err());
 }

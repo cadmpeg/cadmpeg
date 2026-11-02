@@ -70,7 +70,7 @@ pub(super) fn admit(
         let sides = cadmpeg_ir::validate::geometry_consistency::cache_support_endpoint_failures(
             ctx,
             &index,
-            &owner.geometry,
+            owner,
             spring.support_context(),
             curve
                 .cache_fit_tolerance()

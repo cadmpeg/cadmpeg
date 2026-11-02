@@ -187,6 +187,22 @@ fn inherit_synthesizes_the_default_for_an_edition_unspecified_ap242_source() {
 }
 
 /// An unrecognized declaration selects the catalog default and names its displacement.
+/// The AP214 committee-draft schema name is the `step:ap214` row, so `Inherit`
+/// writes that row's identifier and the output declares a name the registry
+/// writes.
+#[test]
+fn inherit_writes_ap214_from_the_committee_draft_schema_name() {
+    let decoded = source_declaring("AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }");
+
+    let plan = inherit(&StepCodec::default(), decoded.ir()).expect("step:ap214 has a write target");
+
+    assert_eq!(target_of(&plan).as_deref(), Some("step:ap214"));
+    assert!(written_text(plan).contains(StepSchema::Ap214.file_schema()));
+}
+
+/// A declaration the registry does not name lands on `step:unknown`, the
+/// totality row, which is also read-side only. `Inherit` refuses it for the same
+/// reason: there is no schema to preserve.
 #[test]
 fn inherit_synthesizes_the_default_for_an_unrecognized_source_declaration() {
     let decoded = source_declaring("NOT_A_DECLARED_SCHEMA");

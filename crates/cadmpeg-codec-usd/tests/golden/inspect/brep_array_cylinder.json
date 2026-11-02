@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Occurrence",
+        "header": "#usda 1.0",
+        "metersPerUnit": "1",
+        "prim_specs": "2",
+        "property_specs": "47",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 34319
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "header": "#usda 1.0"
+        },
+        "dialect": "usd:usda-1.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: BrepArray 1, Xform 1"
+  ]
+}

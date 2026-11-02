@@ -760,7 +760,7 @@ fn stored_frame_branch_constraints(
             ),
         )?;
     }
-    for pcurve in &scan.curves.two_chart_pcurves {
+    for pcurve in scan.curves.legacy_two_chart_paths() {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
@@ -1163,7 +1163,7 @@ fn select_stored_frame_carrier_pcurve_branches(
             ),
         )?;
     }
-    for pcurve in &scan.curves.two_chart_pcurves {
+    for pcurve in scan.curves.legacy_two_chart_paths() {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;

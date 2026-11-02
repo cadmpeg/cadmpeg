@@ -428,8 +428,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    let untyped_tracking_paths =
+    let (untyped_tracking_paths, profile_losses) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    losses.extend(profile_losses);
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
             format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
@@ -696,6 +697,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut design.asm_histories,
         geometry.bodies,
+        &scope_histories,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     crate::history::bind_feature_body_selections(
@@ -1064,9 +1066,12 @@ pub(super) fn scope_related_indices(
             scope
                 .thread_construction()
                 .and_then(|construction| match &construction.form {
-                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
-                        Some(reference.value.get())
-                    }
+                    crate::records::feature::thread::DesignThreadForm::Compact(Some(
+                        reference,
+                    )) => Some(reference.value.get()),
+                    crate::records::feature::thread::DesignThreadForm::CompactExtended(
+                        reference,
+                    ) => Some(reference.value.get()),
                     _ => None,
                 });
         scope
@@ -1092,7 +1097,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<usize, CodecError> {
+) -> Result<(usize, Vec<LossNote>), CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -1176,7 +1181,7 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    crate::design::decode::operands::bind_sketch_profiles(
+    let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -1418,6 +1423,10 @@ fn extend_related_design_records(
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
+    crate::design::decode::operands::release_extrude_body_target_groups(
+        &mut design.design_construction_operand_groups,
+        &design.design_body_recipe_operands,
+    );
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
@@ -1640,5 +1649,5 @@ fn extend_related_design_records(
         &mut design.design_dimension_recipe_records,
         &design.design_edge_operands,
     );
-    Ok(untyped_tracking_paths)
+    Ok((untyped_tracking_paths, profile_losses))
 }

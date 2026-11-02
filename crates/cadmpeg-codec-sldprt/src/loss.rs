@@ -102,6 +102,9 @@ pub(crate) enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// Referenced POINT records have conflicting complete frames.
     GeometryPointRecordAmbiguous,
+    /// Compact curve records of one attribute disagree on orientation, so an
+    /// edge on that curve has no range.
+    GeometryCurveMarkerConflict,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
     /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
@@ -125,18 +128,17 @@ pub(crate) enum SldprtLossCode {
     TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// Shared-edge coedge senses give an odd-parity face cycle, so some face
-    /// sense contradicts one of its edges.
-    TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
+    /// A face has no decoded loop, so the face and its surface are withheld.
+    TopologyFaceWithheld,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
     /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop
@@ -150,6 +152,8 @@ pub(crate) enum SldprtLossCode {
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
+    /// Imported-feature body streams that do not decode.
+    GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -217,6 +221,29 @@ pub(crate) enum SldprtLossCode {
     /// Export degrades the records named by the loss message.
     WriterProceduralReduced,
     SourcePropertyKeyBlank,
+    /// An assembly document carries no readable component tree, so no
+    /// occurrence, placement, or component reference is transferred.
+    AssemblyStructureNotTransferred,
+    /// Assembly mate records are not transferred.
+    AssemblyMatesNotTransferred,
+    /// Assembly occurrences reference component documents that the decoder
+    /// does not open.
+    AssemblyComponentsExternal,
+    /// Virtual components are stored inside the assembly document and are not
+    /// transferred; their occurrences have an unresolved prototype.
+    AssemblyVirtualComponentsNotTransferred,
+    /// Suppressed component instances, and the instances below them, are
+    /// omitted from the occurrence tree.
+    AssemblySuppressedComponentsOmitted,
+    /// A component instance has no valid placement or names no component
+    /// model; the instance and the instances below it are omitted.
+    AssemblyPlacementUnresolved,
+    /// Assembly configurations other than the active one are not transferred.
+    AssemblyConfigurationsNotTransferred,
+    /// Component documents embedded in the assembly document are not decoded.
+    AssemblyEmbeddedDocumentsNotTransferred,
+    /// An occurrence's exclusion from the bill of materials is not transferred.
+    AssemblyBomExclusionNotTransferred,
 }
 
 impl SldprtLossCode {
@@ -260,6 +287,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPointRecordAmbiguous,
+        Self::GeometryCurveMarkerConflict,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
@@ -271,8 +299,8 @@ impl SldprtLossCode {
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
+        Self::TopologyFaceWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
@@ -281,6 +309,7 @@ impl SldprtLossCode {
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
+        Self::GeometryImportedBodiesNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -308,6 +337,15 @@ impl SldprtLossCode {
         Self::SourceOpaqueRecordsUnrepresented,
         Self::WriterProceduralReduced,
         Self::SourcePropertyKeyBlank,
+        Self::AssemblyStructureNotTransferred,
+        Self::AssemblyMatesNotTransferred,
+        Self::AssemblyComponentsExternal,
+        Self::AssemblyVirtualComponentsNotTransferred,
+        Self::AssemblySuppressedComponentsOmitted,
+        Self::AssemblyPlacementUnresolved,
+        Self::AssemblyConfigurationsNotTransferred,
+        Self::AssemblyEmbeddedDocumentsNotTransferred,
+        Self::AssemblyBomExclusionNotTransferred,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -351,6 +389,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
+            Self::GeometryCurveMarkerConflict => "geometry.curve-marker-conflict",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
@@ -362,8 +401,8 @@ impl SldprtLossCode {
             Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyFaceWithheld => "topology.face-withheld",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
@@ -372,6 +411,9 @@ impl SldprtLossCode {
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
+            Self::GeometryImportedBodiesNotTransferred => {
+                "geometry.imported-bodies-not-transferred"
+            }
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -401,6 +443,19 @@ impl SldprtLossCode {
             Self::SourceOpaqueRecordsUnrepresented => "source.opaque-records-unrepresented",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
+            Self::AssemblyStructureNotTransferred => "assembly.structure-not-transferred",
+            Self::AssemblyMatesNotTransferred => "assembly.mates-not-transferred",
+            Self::AssemblyComponentsExternal => "assembly.components-external",
+            Self::AssemblyVirtualComponentsNotTransferred => {
+                "assembly.virtual-components-not-transferred"
+            }
+            Self::AssemblySuppressedComponentsOmitted => "assembly.suppressed-components-omitted",
+            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
+            Self::AssemblyConfigurationsNotTransferred => "assembly.configurations-not-transferred",
+            Self::AssemblyEmbeddedDocumentsNotTransferred => {
+                "assembly.embedded-documents-not-transferred"
+            }
+            Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
         }
     }
 
@@ -428,7 +483,9 @@ impl SldprtLossCode {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::ContainerNoParasolidStream => Severity::Error,
+            Self::ContainerNoParasolidStream | Self::GeometryImportedBodiesNotTransferred => {
+                Severity::Error
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -466,6 +523,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
@@ -477,8 +535,8 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -493,6 +551,15 @@ impl SldprtLossCode {
             | Self::DialectLayerCollision
             | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank => Severity::Warning,
+            Self::AssemblyMatesNotTransferred
+            | Self::AssemblyVirtualComponentsNotTransferred
+            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            Self::AssemblyStructureNotTransferred => Severity::Blocking,
+            Self::AssemblyPlacementUnresolved => Severity::Error,
+            Self::AssemblyComponentsExternal
+            | Self::AssemblySuppressedComponentsOmitted
+            | Self::AssemblyConfigurationsNotTransferred
+            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
         }
     }
 
@@ -525,10 +592,22 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
-                LossTaxonomy::TopologyGaugeSubstituted
+            Self::AssemblyComponentsExternal
+            | Self::AssemblyVirtualComponentsNotTransferred
+            | Self::AssemblyEmbeddedDocumentsNotTransferred => {
+                LossTaxonomy::AssemblyComponentsExternal
             }
+            Self::AssemblyStructureNotTransferred
+            | Self::AssemblyMatesNotTransferred
+            | Self::AssemblySuppressedComponentsOmitted
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyConfigurationsNotTransferred
+            | Self::AssemblyBomExclusionNotTransferred => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
+            Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
+            | Self::TopologyFaceWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -540,8 +619,10 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
+            | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
@@ -817,10 +898,6 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::TopologyBodyHierarchyDerived,
-        Representation::Reduced,
-    ),
-    (
-        SldprtLossCode::TopologyFaceSenseConflict,
         Representation::Reduced,
     ),
     (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
@@ -1221,6 +1298,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.point-record-ambiguous",
+                "geometry.curve-marker-conflict",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
@@ -1232,8 +1310,8 @@ mod tests {
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
-                "topology.face-sense-conflict",
                 "topology.face-unclaimed",
+                "topology.face-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",
@@ -1242,6 +1320,7 @@ mod tests {
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
+                "geometry.imported-bodies-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
@@ -1269,6 +1348,15 @@ mod tests {
                 "source.opaque-records-unrepresented",
                 "writer.procedural-reduced",
                 "source.property-key-blank",
+                "assembly.structure-not-transferred",
+                "assembly.mates-not-transferred",
+                "assembly.components-external",
+                "assembly.virtual-components-not-transferred",
+                "assembly.suppressed-components-omitted",
+                "assembly.placement-unresolved",
+                "assembly.configurations-not-transferred",
+                "assembly.embedded-documents-not-transferred",
+                "assembly.bom-exclusion-not-transferred",
             ]
         );
     }

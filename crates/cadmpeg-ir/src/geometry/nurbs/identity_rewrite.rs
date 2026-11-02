@@ -16,5 +16,5 @@ rewrite_enum!(NurbsPoles3<P>, [P]; {
     Polynomial {points},
     Rational {points},
 });
-rewrite_record!(NurbsSurface, []; {u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic});
+rewrite_record!(NurbsSurface, []; {u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic, cache_fit_tolerance});
 rewrite_record!(WeightedPole3<P>, [P]; {point, weight});

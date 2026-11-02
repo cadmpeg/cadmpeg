@@ -166,8 +166,13 @@ const CASES: &[Case] = &[
     },
     Case {
         identifiers: &["AUTOMOTIVE_DESIGN_CC2"],
-        id: "step:unknown",
+        id: "step:ap214",
         arcs: None,
+    },
+    Case {
+        identifiers: &["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"],
+        id: "step:ap214",
+        arcs: Some(" 1 2 10303 214 -1 1 5 4 "),
     },
     // The identity is the first identifier of the list.
     Case {

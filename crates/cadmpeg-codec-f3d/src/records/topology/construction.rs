@@ -420,6 +420,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+    /// Last byte of the tail flag block.
+    pub(crate) closing_flag: bool,
 }
 
 #[cfg(test)]
@@ -443,6 +445,7 @@ impl Clone for DesignConstructionOperandGroupFrame {
             opaque_index_offset: self.opaque_index_offset,
             opaque_scalar: self.opaque_scalar,
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
     }
 }
@@ -466,6 +469,8 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_index: u32,
             opaque_scalar: f64,
             variant: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            closing_flag: bool,
         }
         let trailing = self.trailing_records.as_slice();
         BorrowedWire {
@@ -478,6 +483,7 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_index: self.opaque_index.get(),
             opaque_scalar: self.opaque_scalar().get(),
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
         .serialize(serializer)
     }
@@ -497,6 +503,7 @@ pub(crate) struct DesignConstructionOperandGroupFrameDraft<T = f64, I = u32> {
     pub(crate) opaque_scalar: T,
     pub(crate) opaque_scalar_offset: u64,
     pub(crate) variant: bool,
+    pub(crate) closing_flag: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOperandGroupFrame {
@@ -522,6 +529,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             opaque_scalar,
             opaque_scalar_offset: draft.opaque_scalar_offset,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -595,6 +603,7 @@ impl DesignConstructionOperandGroupFrame {
             opaque_index_offset: Some(draft.opaque_index_offset),
             opaque_scalar: draft.opaque_scalar,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -714,14 +723,18 @@ pub(crate) struct DesignConstructionOperandGroupFrameWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) trailing_record_indices: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    trailing_transforms: Vec<DesignConstructionOperandTransform>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) trailing_flags: Vec<DesignConstructionOperandFlag>,
-    pub(crate) opaque_index: u32,
-    pub(crate) opaque_scalar: f64,
+    trailing_flags: Vec<DesignConstructionOperandFlag>,
+    opaque_index: u32,
+    opaque_index_offset: u64,
+    opaque_scalar: f64,
+    opaque_scalar_offset: u64,
     pub(crate) variant: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    closing_flag: bool,
 }
 impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOperandGroupFrame {
     type Error = String;
@@ -779,12 +792,15 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
             opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal::new(wire.opaque_scalar)
                 .ok_or("opaque_scalar must be finite and nonnegative")?,
             variant: wire.variant,
+            closing_flag: wire.closing_flag,
         })
     }
 }
 #[cfg(test)]
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
+        let opaque_index_offset = frame.opaque_index_offset().unwrap_or(0);
+        let opaque_scalar_offset = frame.opaque_scalar_offset().unwrap_or(0);
         Self {
             auxiliary_record_indices: frame
                 .auxiliary_records
@@ -798,7 +814,10 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
             trailing_flags: frame.trailing_flags,
             opaque_index: frame.opaque_index.get(),
             opaque_scalar: frame.opaque_scalar.get(),
+            opaque_index_offset,
+            opaque_scalar_offset,
             variant: frame.variant,
+            closing_flag: frame.closing_flag,
         }
     }
 }

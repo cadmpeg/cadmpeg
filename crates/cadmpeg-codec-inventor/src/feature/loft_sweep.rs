@@ -15,6 +15,7 @@ use crate::pmdc::{
 pub(crate) mod controls;
 pub(super) mod projection;
 pub(crate) mod slots;
+pub(crate) mod sweep;
 pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(

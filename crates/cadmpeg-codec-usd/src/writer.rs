@@ -16,8 +16,10 @@
 //! scope under the one root prim, or at the layer root.
 
 mod brep;
+mod brep_array;
 mod physics;
 mod physx;
+mod records;
 mod shading;
 mod text;
 mod texture;
@@ -145,6 +147,7 @@ pub(crate) fn plan(
     let mut writer = Writer::new(input.ir, version);
     if packaged {
         writer.package = Some(Vec::new());
+        writer.assets = None;
     }
     let text = writer.layer();
     let losses = writer.losses();
@@ -171,6 +174,10 @@ pub(crate) fn plan(
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Bodies with faces and no `BrepArray` prim, with the reason.
+    breps: Vec<String>,
+    /// Bodies whose `BrepArray` prim has no trim curves.
+    untrimmed_breps: Vec<String>,
     curves: usize,
     channels: usize,
     reduced_appearances: BTreeSet<String>,
@@ -218,6 +225,8 @@ impl Default for Placement<'_> {
 
 /// One geometry prim of a body.
 enum Geometry<'ir> {
+    /// The exact B-rep of a body.
+    Brep(Box<brep_array::BrepPrim>),
     Mesh(&'ir Tessellation),
     /// The mesh of faces of a body with no tessellation.
     Meshed(Box<Tessellation>),
@@ -291,6 +300,8 @@ struct Writer<'ir> {
     /// The members a package holds beside the root layer, or `None` for a
     /// layer that no package holds.
     package: Option<Vec<Member>>,
+    /// The source of the files that external assets name.
+    assets: Option<&'ir dyn cadmpeg_core::decode::Companions>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -300,6 +311,7 @@ impl<'ir> Writer<'ir> {
             let key = match &binding.target {
                 AppearanceTarget::Tessellation(id) => id.clone(),
                 AppearanceTarget::Body(id) => id.to_string(),
+                AppearanceTarget::Face(id) => id.to_string(),
                 AppearanceTarget::TriangleGroup {
                     tessellation,
                     group,
@@ -379,6 +391,7 @@ impl<'ir> Writer<'ir> {
             ),
             above_parts,
             package: None,
+            assets: None,
         }
     }
 
@@ -817,8 +830,14 @@ impl<'ir> Writer<'ir> {
         let mut prims = Vec::new();
         let tessellations = self.tessellations(&body.id);
         let faces = self.body_faces(body);
+        if !faces.is_empty() {
+            if let Some(packed) = self.brep_packed(body) {
+                prims.push(Geometry::Brep(packed));
+            }
+        }
+        let exact = !prims.is_empty();
         if !tessellations.is_empty() {
-            if !faces.is_empty() {
+            if !faces.is_empty() && !exact {
                 self.unwritten.tessellated_bodies += 1;
             }
             prims.extend(tessellations.into_iter().map(Geometry::Mesh));
@@ -826,7 +845,7 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() => {
+                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -838,7 +857,9 @@ impl<'ir> Writer<'ir> {
                 let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
                 self.unwritten.unmeshed.extend(unmeshed);
                 if let Some(mesh) = mesh {
-                    self.unwritten.tessellated_bodies += 1;
+                    if !exact {
+                        self.unwritten.tessellated_bodies += 1;
+                    }
                     prims.push(Geometry::Meshed(Box::new(mesh)));
                 }
             }
@@ -848,6 +869,65 @@ impl<'ir> Writer<'ir> {
             prims.push(Geometry::Wires(wires));
         }
         prims
+    }
+
+    /// Whether the one loop of `face` runs along the boundary of the domain
+    /// of its surface `nurbs`: each pcurve is a segment on one side.
+    fn whole_domain(&self, face: &cadmpeg_ir::topology::Face, nurbs: &NurbsSurface) -> bool {
+        let model = &self.ir.model;
+        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+            return false;
+        };
+        let Some(loop_) = model
+            .loops
+            .iter()
+            .find(|candidate| &candidate.id == loop_id)
+        else {
+            return false;
+        };
+        let bounds = |knots: &[f64], degree: u32, count: usize| {
+            let degree = usize::try_from(degree).ok()?;
+            Some([*knots.get(degree)?, *knots.get(count)?])
+        };
+        let (Some(u), Some(v)) = (
+            bounds(
+                nurbs.u_knots().as_slice(),
+                nurbs.u_degree(),
+                nurbs.u_count(),
+            ),
+            bounds(
+                nurbs.v_knots().as_slice(),
+                nurbs.v_degree(),
+                nurbs.v_count(),
+            ),
+        ) else {
+            return false;
+        };
+        !loop_.coedges().is_empty()
+            && loop_.coedges().iter().all(|coedge| {
+                let Some(pcurve) = model
+                    .coedges
+                    .iter()
+                    .find(|candidate| &candidate.id == coedge)
+                    .and_then(|coedge| coedge.pcurves.first())
+                    .and_then(|use_| model.pcurves.iter().find(|pcurve| pcurve.id == use_.pcurve))
+                else {
+                    return false;
+                };
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs: pcurve } =
+                    &pcurve.geometry
+                else {
+                    return false;
+                };
+                let points = pcurve.control_points();
+                let [first, last] = [points.first(), points.last()];
+                let (Some(first), Some(last)) = (first, last) else {
+                    return false;
+                };
+                let (a, b) = (first.get(), last.get());
+                let on = |value: f64, range: [f64; 2]| value == range[0] || value == range[1];
+                points.len() == 2 && ((a.u == b.u && on(a.u, u)) || (a.v == b.v && on(a.v, v)))
+            })
     }
 
     /// Writes one body. A body of one geometry prim is written as that prim
@@ -895,14 +975,32 @@ impl<'ir> Writer<'ir> {
             ..Placement::default()
         };
         let mut children = Names::default();
+        let brep = prims
+            .iter()
+            .any(|prim| matches!(prim, Geometry::Brep(_)))
+            .then(|| children.unique(brep_array::PRIM_NAME));
         for prim in prims {
             let base = match &prim {
+                Geometry::Brep(_) => {
+                    let name = brep.clone().unwrap_or_default();
+                    self.geometry_prim(prim, &name, body, &inner, &collider);
+                    continue;
+                }
                 Geometry::Mesh(_) | Geometry::Meshed(_) => "Mesh",
                 Geometry::Patch(..) => "Patch",
                 Geometry::Wires(_) => "Curves",
             };
+            let mut placement = inner.clone();
+            let fallback = !matches!(prim, Geometry::Wires(_));
+            if let Some(brep) = brep.as_ref().filter(|_| fallback) {
+                placement.metadata.push(format!(
+                    "customData = {{ string {} = {} }}",
+                    crate::brep::solid::FALLBACK_KEY,
+                    quoted(brep)
+                ));
+            }
             let child = children.unique(base);
-            self.geometry_prim(prim, &child, body, &inner, &collider);
+            self.geometry_prim(prim, &child, body, &placement, &collider);
         }
         self.out.close();
     }
@@ -916,6 +1014,7 @@ impl<'ir> Writer<'ir> {
         collider: &physics::PrimPhysics,
     ) {
         match prim {
+            Geometry::Brep(brep) => self.brep_array_prim(&brep, name, body, placement),
             Geometry::Mesh(tessellation) => {
                 let mut placement = placement.clone();
                 placement.metadata.extend(collider.0.iter().cloned());
@@ -1492,6 +1591,21 @@ impl<'ir> Writer<'ir> {
                 "{} bodies were written as meshes; their faces, edges, vertices, and carriers \
                  were not written",
                 unwritten.tessellated_bodies
+            )));
+        }
+        if !unwritten.breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepNotWritten.note(format!(
+                "{} bodies have no BrepArray prim: {}",
+                unwritten.breps.len(),
+                unwritten.breps.join("; ")
+            )));
+        }
+        if !unwritten.untrimmed_breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepUntrimmed.note(format!(
+                "the BrepArray prims of {} bodies have no trim curves, because a pcurve has no \
+                 exact image on its NURBS surface: {}",
+                unwritten.untrimmed_breps.len(),
+                unwritten.untrimmed_breps.join(", ")
             )));
         }
         if unwritten.curves > 0 {

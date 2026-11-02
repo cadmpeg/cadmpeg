@@ -290,35 +290,87 @@ fn product_history_owner_follows_the_one_definition_holding_every_output() {
     assert!(losses.is_empty(), "{losses:?}");
 }
 
-#[test]
-fn product_history_owner_keeps_conflicting_sketch_binding_native() {
-    let native = native();
-    let mut model = model(&native);
+fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sketches::SketchId) {
+    let mut model = model(native);
     let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
-        "id": "test:model:sketch#profile",
+        "id": sketch_id,
         "placement": {"kind": "unresolved"}
     }))
     .unwrap();
-    model.product_definitions[1]
-        .sketches
-        .push(sketch.id.clone());
-    model.features[0].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    let id = sketch.id.clone();
+    model.sketches.push(sketch);
+    (model, id)
+}
+
+fn bind_sketch(model: &mut Model, feature: usize, sketch: &cadmpeg_ir::sketches::SketchId) {
+    model.features[feature].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            sketch: SketchFeatureBinding::Planar(Some(sketch.clone())),
         }),
     );
-    let sketch_id = sketch.id.clone();
-    model.sketches.push(sketch);
-    let mut losses = Vec::new();
-    attach(&native, &mut model, &mut losses).unwrap();
-    assert!(model.product_definitions[0].sketches.is_empty());
-    assert_eq!(model.product_definitions[1].sketches, [sketch_id]);
-    assert!(matches!(
-        model.features[0].evaluation.definition(),
+}
+
+fn is_unbound_sketch(model: &Model, feature: usize) -> bool {
+    matches!(
+        model.features[feature].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(None),
         })
+    )
+}
+
+#[test]
+fn product_history_owner_follows_the_collection_definition_of_a_sketch() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    model.product_definitions[1]
+        .sketches
+        .push(sketch_id.clone());
+    bind_sketch(&mut model, 0, &sketch_id);
+    let holder = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(model.product_definitions[0].sketches.is_empty());
+    assert_eq!(
+        model.product_definitions[1].sketches,
+        std::slice::from_ref(&sketch_id)
+    );
+    assert_eq!(model.features[0].product_definition, Some(holder));
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(bound)),
+        }) if *bound == sketch_id
     ));
+}
+
+#[test]
+fn product_history_owner_keeps_sketch_native_when_two_definitions_list_it() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    for definition in &mut model.product_definitions {
+        definition.sketches.push(sketch_id.clone());
+    }
+    bind_sketch(&mut model, 0, &sketch_id);
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(is_unbound_sketch(&model, 0));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::ScopeSketchOwnerMismatch.kind());
+}
+
+#[test]
+fn product_history_owner_keeps_sketch_native_when_two_clusters_claim_it() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    bind_sketch(&mut model, 0, &sketch_id);
+    bind_sketch(&mut model, 1, &sketch_id);
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(!is_unbound_sketch(&model, 0));
+    assert!(is_unbound_sketch(&model, 1));
+    assert_eq!(model.product_definitions[0].sketches, [sketch_id]);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::ScopeSketchOwnerMismatch.kind());
 }
@@ -336,4 +388,135 @@ fn product_history_owner_without_member_definition_is_released() {
     assert_eq!(model.features[0].product_definition, None);
     assert_eq!(model.features[1].product_definition, Some(kept));
     assert_eq!(model.product_definitions, definitions);
+}
+
+fn sketch_feature(native: &F3dNative, name: &str) -> cadmpeg_ir::features::Feature {
+    let sketch: cadmpeg_ir::sketches::SketchId =
+        format!("test:model:sketch#{name}").try_into().unwrap();
+    let mut row = model(native).features.remove(0);
+    row.id = format!("test:model:feature#{name}").try_into().unwrap();
+    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(sketch)),
+        }),
+    );
+    row
+}
+
+#[test]
+fn product_history_owner_moves_a_consumed_sketch_with_its_feature() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "profile");
+    let sketch_id = sketch.id.clone();
+    model.features.push(sketch);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let holder = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    let moved = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(moved.product_definition, Some(holder));
+    assert_eq!(
+        model.product_definitions[1].sketches,
+        ["test:model:sketch#profile".try_into().unwrap()]
+    );
+    assert!(model.product_definitions[0].sketches.is_empty());
+}
+
+#[test]
+fn product_history_owner_keeps_a_collection_listed_sketch_when_its_consumer_moves() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "listed");
+    let sketch_id = sketch.id.clone();
+    let listed: cadmpeg_ir::sketches::SketchId = "test:model:sketch#listed".try_into().unwrap();
+    model.product_definitions[0].sketches = vec![listed.clone()];
+    model.features.push(sketch);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let listing = model.product_definitions[0].id.clone();
+    let consumer = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert_eq!(model.features[0].product_definition, Some(consumer));
+    let kept = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(kept.product_definition, Some(listing));
+    assert_eq!(model.product_definitions[0].sketches, [listed]);
+    assert!(model.product_definitions[1].sketches.is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn product_history_owner_keeps_a_sketch_still_consumed_by_its_old_definition() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "shared");
+    let sketch_id = sketch.id.clone();
+    model.features.push(sketch);
+    let mut stay = model.features[0].clone();
+    stay.id = "test:model:feature#stay".try_into().unwrap();
+    stay.dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    model.features.push(stay);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let old = model.product_definitions[0].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    let kept = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(kept.product_definition, Some(old));
+}
+
+fn attach(
+    native: &F3dNative,
+    model: &mut Model,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    super::attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+}
+
+#[test]
+fn product_history_implicit_root_uses_archive_owner_until_release() {
+    let mut native = native();
+    native.design_component_naming_spaces.truncate(1);
+    let mut model = model(&native);
+    let root = model.product_definitions.remove(0).id;
+    let mut losses = Vec::new();
+    super::attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root]))
+        .unwrap();
+    assert!(losses.is_empty());
+    assert!(model
+        .features
+        .iter()
+        .all(|feature| feature.product_definition
+            == Some(crate::ids::archive_product_definition_id())));
+    release_unbound(&mut model);
+    assert!(model
+        .features
+        .iter()
+        .all(|feature| feature.product_definition.is_none()));
 }

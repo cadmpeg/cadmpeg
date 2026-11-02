@@ -605,7 +605,7 @@ fn null_like_or_existing<T>(value: u32, nodes: &HashMap<u16, T>) -> bool {
     value <= 1 || u16_from_ref(value).is_some_and(|value| nodes.contains_key(&value))
 }
 
-fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+pub(super) fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     let first = View::u16_be_at(bytes, *at)?;
     *at = at.checked_add(2)?;
     if first <= 0x7ffe {
@@ -826,6 +826,12 @@ fn push_record<T>(offsets: &mut HashSet<usize>, records: &mut Vec<T>, offset: us
 
 pub(super) fn schema_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     schema::edited_payload(bytes, offset).map(|(_, end)| end)
+}
+
+/// The node type of the edited type header at `offset` and the offset of
+/// the class's first record after it (spec §4.1).
+pub(super) fn edited_header_end(bytes: &[u8], offset: usize) -> Option<(u16, usize)> {
+    schema::edited_header(bytes, offset)
 }
 
 pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {

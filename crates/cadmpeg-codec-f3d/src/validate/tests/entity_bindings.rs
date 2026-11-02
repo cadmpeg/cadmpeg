@@ -247,7 +247,7 @@ fn sketch_geometry_ordinals_use_collections_independently_of_components() {
 }
 
 #[test]
-fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
+fn sketch_geometry_ordinals_may_skip_values_and_decrease_with_entity_order() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let findings_for = |stream_ordinals| {
@@ -260,12 +260,32 @@ fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
         let skipped = findings_for([2, 5]);
         assert!(skipped.is_empty(), "{skipped:?}");
         let decreasing = findings_for([5, 2]);
-        assert_eq!(decreasing.len(), 1, "{decreasing:?}");
-        assert_eq!(
-            decreasing[0].message,
-            "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order"
-        );
+        assert!(decreasing.is_empty(), "{decreasing:?}");
     })
+}
+
+#[test]
+fn sketch_geometry_decreasing_ordinals_keep_duplicate_refusal() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = two_sketch_placements(false, [8, 3]);
+        let mut findings = Vec::new();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_sketch_placements[1]
+            .visibility
+            .as_mut()
+            .unwrap()
+            .stream_ordinal = std::num::NonZeroU32::new(8).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design sketch placement has an invalid frame or scope link"
+        );
+    });
 }
 
 #[test]
@@ -347,7 +367,7 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
 }
 
 #[test]
-fn sketch_geometry_order_uses_explicit_collections() {
+fn sketch_geometry_ordinals_follow_entities_across_placement_order() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = two_sketch_placements(false, [5, 2]);
@@ -366,8 +386,11 @@ fn sketch_geometry_order_uses_explicit_collections() {
             .ordinal_collection = std::num::NonZeroU64::new(100);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         super::super::validate_sketch_placements(&ctx, &mut findings);
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].message, "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order");
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_sketch_placements.reverse();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
     });
 }
 
@@ -402,10 +425,10 @@ fn add_ordinal_collection_types(native: &mut crate::native::F3dNative) {
 }
 
 #[test]
-fn sketch_visibility_requires_decoded_ordinal_collection() {
+fn sketch_visibility_names_a_decoded_ordinal_collection_or_none() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        for collection in [None, std::num::NonZeroU64::new(999)] {
+        for (collection, finding_count) in [(None, 0), (std::num::NonZeroU64::new(999), 1)] {
             let mut native = two_sketch_placements(false, [1, 2]);
             native.design_sketch_placements[0]
                 .visibility
@@ -415,11 +438,9 @@ fn sketch_visibility_requires_decoded_ordinal_collection() {
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
             super::super::validate_sketch_placements(&ctx, &mut findings);
-            assert_eq!(findings.len(), 1);
-            assert_eq!(
-                findings[0].message,
-                "Fusion Design sketch placement has an invalid frame or scope link"
-            );
+            assert_eq!(findings.len(), finding_count);
+            assert!(findings.iter().all(|finding| finding.message
+                == "Fusion Design sketch placement has an invalid frame or scope link"));
         }
         let mut native = two_sketch_placements(false, [1, 2]);
         native.design_types.clear();

@@ -717,3 +717,86 @@ fn periodic_pcurve_range_span_comparison_handles_width_overflow() {
         [0.0, f64::MAX]
     ));
 }
+
+fn use_curve_on_a_line_nurbs(knot_end: f64, range: [f64; 2], periodic: bool) -> Vec<String> {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, knot_end, knot_end],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            periodic,
+        )
+        .unwrap(),
+    ));
+    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: curve_id,
+        parameter_range: crate::topology::ParameterInterval::new(range).unwrap(),
+    });
+    validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::ParameterDomain && finding.message.contains("coedge use-curve")
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn use_curve_range_admits_roundoff_relative_to_the_knot_domain() {
+    assert!(use_curve_on_a_line_nurbs(1.0e3, [0.0, 1.0e3 + 1.0e-10], false).is_empty());
+    assert!(use_curve_on_a_line_nurbs(1.0e3, [-1.0e-7, 1.0e3], false).is_empty());
+    let findings = use_curve_on_a_line_nurbs(1.0e3, [0.0, 1.0e3 + 1.0e-3], false);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].contains("is outside its carrier domain"));
+}
+
+#[test]
+fn use_curve_on_a_periodic_carrier_may_cross_the_seam() {
+    assert!(use_curve_on_a_line_nurbs(1.0e3, [900.0, 1.1e3], true).is_empty());
+    assert_eq!(
+        use_curve_on_a_line_nurbs(1.0e3, [0.0, 1.5e3], true).len(),
+        1
+    );
+}
+
+#[test]
+fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
+    let construction =
+        crate::ids::ProceduralCurveId::mint("test:model:construction#use-curve").unwrap();
+    ir.model
+        .procedural_curves
+        .push(crate::geometry::ProceduralCurve::new(
+            construction.clone(),
+            crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
+        ));
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Procedural {
+        construction,
+        cache: None,
+    };
+    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: curve_id,
+        parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
+    });
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("coedge use-curve")));
+}

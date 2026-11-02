@@ -5,6 +5,7 @@ use super::{
     sum::{fast_dot, ExactSignedSum},
     Point2,
 };
+use crate::math::portable::Portable;
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 use std::cmp::Ordering;
@@ -63,7 +64,7 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
 /// Reversing that origin retains short offsets when the other endpoint is distant.
 /// Interior distances use the line determinant, without reconstructing a rounded point.
 pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: FinitePoint2) -> f64 {
-    let distance = |a: FinitePoint2, b: FinitePoint2| (a.u - b.u).hypot(a.v - b.v);
+    let distance = |a: FinitePoint2, b: FinitePoint2| (a.u - b.u).portable_hypot(a.v - b.v);
     let first_distance = distance(point, start);
     let last_distance = distance(point, end);
     let (start, end) = if last_distance < first_distance {
@@ -83,7 +84,7 @@ pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: Fin
     let (point, start, end) = (point.get(), start.get(), end.get());
     let (direction, scale) = scaled_displacement(start, end, 0.0);
     let mut length = ExactSignedSum::default();
-    length.add_product(direction.u.hypot(direction.v), scale);
+    length.add_product(direction.u.portable_hypot(direction.v), scale);
     let Some(length) = length.finish() else {
         return f64::NAN;
     };
@@ -218,7 +219,7 @@ pub fn line_circle_intersections(
     if direction_scale == 0.0 {
         return None;
     }
-    let length = direction.u.hypot(direction.v);
+    let length = direction.u.portable_hypot(direction.v);
     // `(end - start) . (end - start) / direction_scale`, the divisor that turns a
     // projection on `direction` into a parameter on `end - start`. It is formed
     // exactly, so a tangent, whose half chord contributes nothing, keeps every bit
@@ -417,7 +418,7 @@ pub fn circle_intersections(
         return circle_intersections(second, second_radius, first, first_radius);
     }
     let (delta, scale) = scaled_displacement(first, second, 0.0);
-    let distance = delta.u.hypot(delta.v);
+    let distance = delta.u.portable_hypot(delta.v);
     if distance == 0.0 {
         return (first_radius != second_radius).then_some([None; 2]);
     }

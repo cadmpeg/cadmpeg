@@ -131,6 +131,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_canvas_images",
     "design_component_naming_spaces",
     "design_component_occurrences",
+    "design_component_paths",
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
@@ -511,6 +512,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_component_occurrences)
         },
         len: |model| model.design_component_occurrences.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_component_paths",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_component_paths)
+        },
+        len: |model| model.design_component_paths.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1324,6 +1335,9 @@ pub(crate) struct F3dNative {
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
     pub(crate) design_component_occurrences: Vec<DesignComponentOccurrence>,
+    /// Component-path carriers whose elements are all local records.
+    #[serde(default)]
+    pub(crate) design_component_paths: Vec<crate::records::component_path::DesignComponentPath>,
     /// Component-local entity naming spaces selected by context UUID.
     #[serde(default)]
     pub(crate) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
@@ -1588,6 +1602,7 @@ impl F3dNative {
             design_decal_images: read_arena!("design_decal_images"),
             design_mesh_features: read_arena!("design_mesh_features"),
             design_component_occurrences: read_arena!("design_component_occurrences"),
+            design_component_paths: read_arena!("design_component_paths"),
             design_component_naming_spaces: read_arena!("design_component_naming_spaces"),
             design_body_recipe_operands: read_arena!("design_body_recipe_operands"),
             design_body_reference_tails: read_arena!("design_body_reference_tails"),

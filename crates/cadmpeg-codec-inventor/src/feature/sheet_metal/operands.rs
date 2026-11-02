@@ -8,6 +8,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::scalar::{Length, NonNegativeLength, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
+use super::refusal::{require, PlateRefusal, Refuse};
 use super::{style::Style, SheetMetalProperty};
 use crate::feature::{
     PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureProperty, PmDcFeaturePropertyKind,
@@ -25,6 +26,59 @@ pub(crate) struct PlateOperands {
     pub(crate) inside_radius: PositiveLength,
     pub(crate) relief: SheetMetalRelief,
     pub(crate) transition: SheetMetalTransition,
+}
+
+/// The property layout of an attached plate.
+///
+/// The form fixes the plate property count, the slot that holds the result,
+/// and the paired bend layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlateForm {
+    /// 15 properties; slot 6 holds the result surface body.
+    Body,
+    /// 17 properties; slot 15 holds the result object collection and slot 16
+    /// the part operation.
+    Collection,
+}
+
+impl PlateForm {
+    /// The form with `count` plate properties.
+    pub(crate) const fn of_count(count: usize) -> Option<Self> {
+        match count {
+            15 => Some(Self::Body),
+            17 => Some(Self::Collection),
+            _ => None,
+        }
+    }
+
+    /// The form of an attached plate record.
+    pub(crate) fn of(source: &PmDcFeature) -> Option<Self> {
+        Self::of_count(source.properties.references().len())
+    }
+
+    /// The plate slot that holds the result.
+    pub(crate) const fn result_slot(self) -> usize {
+        match self {
+            Self::Body => 6,
+            Self::Collection => 15,
+        }
+    }
+
+    /// The paired bend slot that holds the result.
+    pub(crate) const fn bend_result_slot(self) -> usize {
+        match self {
+            Self::Body => 5,
+            Self::Collection => 9,
+        }
+    }
+
+    /// The paired bend property count.
+    pub(crate) const fn bend_count(self) -> usize {
+        match self {
+            Self::Body => 9,
+            Self::Collection => 11,
+        }
+    }
 }
 
 pub(crate) fn same(a: PmDcReference, b: PmDcReference) -> bool {
@@ -66,53 +120,88 @@ fn flange_side(property: &PmDcFeatureProperty) -> Option<SheetMetalThicknessSide
 
 pub(crate) fn plate<'a>(
     source: &PmDcFeature,
-    style: &Style,
+    style: Option<&Style>,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     length: impl Fn(PmDcReference) -> Option<Length>,
     direction: impl Fn(PmDcReference) -> Option<UnitVector3>,
     normal: UnitVector3,
     u_axis: UnitVector3,
-) -> Option<PlateOperands> {
+) -> Result<PlateOperands, PlateRefusal> {
+    let style = style.refuse(PlateRefusal::Style)?;
     let slots = source.properties.references();
-    if slots.len() != 17
-        || style.save_version_major != source.save_version_major
-        || [5, 6, 14].iter().any(|&slot| slots[slot].index() != 0)
-        || !matches!(
-            property(slots[16])?.kind,
-            PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::PartOperation,
-                type_value: 5,
-                value: 3
-            }
-        )
-        || property(slots[0])?.identity.type_id.as_str()
-            != crate::pmdc::type_id_string(crate::feature::PLATE_PROFILE_SELECTION_TYPE)
-        || !matches!(
-            property(slots[0])?.kind,
-            PmDcFeaturePropertyKind::ProfileSelection { value: 0, .. }
-        )
-        || !matches!(
-            &property(slots[7])?.kind,
-            PmDcFeaturePropertyKind::References {
+    let form = PlateForm::of(source).refuse(PlateRefusal::PropertyCount)?;
+    require(
+        style.save_version_major == source.save_version_major,
+        PlateRefusal::StyleVersion,
+    )?;
+    let reserved: &[usize] = match form {
+        PlateForm::Body => &[5, 14],
+        PlateForm::Collection => &[5, 6, 14],
+    };
+    require(
+        reserved.iter().all(|&slot| slots[slot].index() == 0),
+        PlateRefusal::ReservedSlot,
+    )?;
+    match form {
+        PlateForm::Body => require(
+            matches!(
+                property(slots[6]).map(|p| &p.kind),
+                Some(PmDcFeaturePropertyKind::SurfaceBody { .. })
+            ),
+            PlateRefusal::ResultBody,
+        )?,
+        PlateForm::Collection => require(
+            matches!(
+                property(slots[16]).map(|p| &p.kind),
+                Some(PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::PartOperation,
+                    type_value: 5,
+                    value: 3
+                })
+            ),
+            PlateRefusal::PartOperation,
+        )?,
+    }
+    let selection = property(slots[0]).refuse(PlateRefusal::ProfileSelection)?;
+    require(
+        selection.identity.type_id.as_str()
+            == crate::pmdc::type_id_string(crate::feature::PLATE_PROFILE_SELECTION_TYPE)
+            && matches!(
+                selection.kind,
+                PmDcFeaturePropertyKind::ProfileSelection { value: 0, .. }
+            ),
+        PlateRefusal::ProfileSelection,
+    )?;
+    require(
+        matches!(
+            property(slots[7]).map(|p| &p.kind),
+            Some(PmDcFeaturePropertyKind::References {
                 family: PmDcFeatureReferenceFamily::EdgeCollection,
                 items,
-            } if items.references().is_empty()
-        )
-        || !corner(property(slots[9])?, &property, &length)
-        || !matches!(
-            property(slots[8])?.kind,
-            PmDcFeaturePropertyKind::References {
+            }) if items.references().is_empty()
+        ),
+        PlateRefusal::EdgeCollection,
+    )?;
+    require(
+        property(slots[9]).is_some_and(|p| corner(p, &property, &length)),
+        PlateRefusal::CornerControl,
+    )?;
+    require(
+        matches!(
+            property(slots[8]).map(|p| &p.kind),
+            Some(PmDcFeaturePropertyKind::References {
                 family: PmDcFeatureReferenceFamily::FeatureDimensions,
                 ..
-            }
-        )
-        || !matches!(
-            sheet(property(slots[13])?)?,
-            SheetMetalProperty::PlateControl { value: 0 }
-        )
-    {
-        return None;
-    }
+            })
+        ),
+        PlateRefusal::FeatureDimensions,
+    )?;
+    require(
+        property(slots[13])
+            .and_then(sheet)
+            .is_some_and(|kind| matches!(kind, SheetMetalProperty::PlateControl { value: 0 })),
+        PlateRefusal::PlateControl,
+    )?;
     let SheetMetalProperty::Attachment {
         control,
         thickness,
@@ -126,29 +215,45 @@ pub(crate) fn plate<'a>(
         states,
         second_option,
         extension,
-    } = sheet(property(slots[4])?)?
+    } = property(slots[4])
+        .and_then(sheet)
+        .refuse(PlateRefusal::AttachmentControl)?
     else {
-        return None;
+        return Err(PlateRefusal::AttachmentControl);
     };
-    let plate_direction = direction(slots[1])?;
-    let first_direction = direction(directions[0])?;
-    let second_direction = direction(directions[1])?;
-    let v_axis = UnitVector3::normalized(normal.as_raw().cross(*u_axis.as_raw()))?;
-    if plate_direction.as_raw().dot(*first_direction.as_raw()) > -1.0 + EPS_PLATE_DIRECTION
-        || first_direction.as_raw().dot(*u_axis.as_raw()).abs() < 1.0 - EPS_ATTACHMENT_DIRECTION
-        || second_direction.as_raw().dot(*v_axis.as_raw()) < 1.0 - EPS_ATTACHMENT_DIRECTION
-        || !same(*thickness, slots[3])
-        || boolean(property(*control)?)?
-        || boolean(property(*first_option)?)?
-        || boolean(property(*second_option)?)?
-        || enumeration(property(*first_mode)?)? != (9, 1)
-        || enumeration(property(*second_mode)?)? != (9, 1)
-        || states.as_ref() != [1, 1, 1]
-    {
-        return None;
-    }
+    let plate_direction = direction(slots[1]).refuse(PlateRefusal::Direction)?;
+    let first_direction = direction(directions[0]).refuse(PlateRefusal::Direction)?;
+    let second_direction = direction(directions[1]).refuse(PlateRefusal::Direction)?;
+    let v_axis = UnitVector3::normalized(normal.as_raw().cross(*u_axis.as_raw()))
+        .refuse(PlateRefusal::SecondDirection)?;
+    require(
+        plate_direction.as_raw().dot(*first_direction.as_raw()) <= -1.0 + EPS_PLATE_DIRECTION,
+        PlateRefusal::PlateDirection,
+    )?;
+    require(
+        first_direction.as_raw().dot(*u_axis.as_raw()).abs() >= 1.0 - EPS_ATTACHMENT_DIRECTION,
+        PlateRefusal::FirstDirection,
+    )?;
+    require(
+        second_direction.as_raw().dot(*v_axis.as_raw()) >= 1.0 - EPS_ATTACHMENT_DIRECTION,
+        PlateRefusal::SecondDirection,
+    )?;
+    require(same(*thickness, slots[3]), PlateRefusal::ThicknessReference)?;
+    require(
+        [*control, *first_option, *second_option]
+            .iter()
+            .all(|&reference| property(reference).and_then(boolean) == Some(false)),
+        PlateRefusal::AttachmentBoolean,
+    )?;
+    require(
+        [*first_mode, *second_mode]
+            .iter()
+            .all(|&reference| property(reference).and_then(enumeration) == Some((9, 1))),
+        PlateRefusal::AttachmentMode,
+    )?;
+    require(states.as_ref() == [1, 1, 1], PlateRefusal::AttachmentStates)?;
     if let Some(reference) = extension {
-        let SheetMetalProperty::AttachmentState {
+        let Some(SheetMetalProperty::AttachmentState {
             state: 10,
             thickness: other_thickness,
             radius: other_radius,
@@ -156,67 +261,87 @@ pub(crate) fn plate<'a>(
             relief_width: other_width,
             minimum_remnant: other_remnant,
             options,
-        } = sheet(property(*reference)?)?
+        }) = property(*reference).and_then(sheet)
         else {
-            return None;
+            return Err(PlateRefusal::AttachmentExtension);
         };
-        if !same(*other_thickness, *thickness)
-            || !same(*other_radius, *radius)
-            || !same(*attachment, slots[4])
-            || !same(*other_width, *relief_width)
-            || !same(*other_remnant, *minimum_remnant)
-            || !same(options[0], *first_option)
-            || !same(options[1], *second_option)
-        {
-            return None;
-        }
+        require(
+            same(*other_thickness, *thickness)
+                && same(*other_radius, *radius)
+                && same(*attachment, slots[4])
+                && same(*other_width, *relief_width)
+                && same(*other_remnant, *minimum_remnant)
+                && same(options[0], *first_option)
+                && same(options[1], *second_option),
+            PlateRefusal::AttachmentExtension,
+        )?;
     }
-    let SheetMetalProperty::Relief {
+    let Some(SheetMetalProperty::Relief {
         control,
         width,
         depth,
         form,
         minimum_remnant: relief_remnant,
         seam_gap,
-    } = sheet(property(slots[10])?)?
+    }) = property(slots[10]).and_then(sheet)
     else {
-        return None;
+        return Err(PlateRefusal::Relief);
     };
-    if boolean(property(*control)?) != Some(true)
-        || !same(*width, *relief_width)
-        || !same(*relief_remnant, *minimum_remnant)
-        || enumeration(property(*form)?)? != enumeration(property(style.bend_relief_form)?)?
-    {
-        return None;
-    }
+    let style_relief = property(style.bend_relief_form).and_then(enumeration);
+    require(
+        property(*control).and_then(boolean) == Some(true)
+            && same(*width, *relief_width)
+            && same(*relief_remnant, *minimum_remnant)
+            && property(*form).and_then(enumeration).is_some()
+            && property(*form).and_then(enumeration) == style_relief,
+        PlateRefusal::Relief,
+    )?;
     let relief = SheetMetalRelief {
         form: SheetMetalReliefForm::StyleDefault,
-        width: PositiveLength::try_from(length(*width)?).ok()?,
-        depth: PositiveLength::try_from(length(*depth)?).ok()?,
-        minimum_remnant: NonNegativeLength::try_from(length(*minimum_remnant)?).ok()?,
-        seam_gap: NonNegativeLength::try_from(length(*seam_gap)?).ok()?,
+        width: length(*width)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        depth: length(*depth)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        minimum_remnant: length(*minimum_remnant)
+            .and_then(|v| NonNegativeLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        seam_gap: length(*seam_gap)
+            .and_then(|v| NonNegativeLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
     };
-    let SheetMetalProperty::Transition {
+    let Some(SheetMetalProperty::Transition {
         form,
         control,
         radius: transition_radius,
-    } = sheet(property(slots[11])?)?
+    }) = property(slots[11]).and_then(sheet)
     else {
-        return None;
+        return Err(PlateRefusal::Transition);
     };
-    if boolean(property(*control)?) != Some(true)
-        || enumeration(property(*form)?)? != enumeration(property(style.transition_form)?)?
-    {
-        return None;
-    }
-    Some(PlateOperands {
-        thickness: PositiveLength::try_from(length(*thickness)?).ok()?,
-        side: flange_side(property(slots[2])?)?,
-        inside_radius: PositiveLength::try_from(length(*radius)?).ok()?,
+    let style_transition = property(style.transition_form).and_then(enumeration);
+    require(
+        property(*control).and_then(boolean) == Some(true)
+            && property(*form).and_then(enumeration).is_some()
+            && property(*form).and_then(enumeration) == style_transition,
+        PlateRefusal::Transition,
+    )?;
+    Ok(PlateOperands {
+        thickness: length(*thickness)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        side: property(slots[2])
+            .and_then(flange_side)
+            .refuse(PlateRefusal::Side)?,
+        inside_radius: length(*radius)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
         relief,
         transition: SheetMetalTransition {
             form: SheetMetalTransitionForm::StyleDefault,
-            radius: NonNegativeLength::try_from(length(*transition_radius)?).ok()?,
+            radius: length(*transition_radius)
+                .and_then(|v| NonNegativeLength::try_from(v).ok())
+                .refuse(PlateRefusal::Length)?,
         },
     })
 }
@@ -260,30 +385,46 @@ pub(crate) fn bend<'a>(
 ) -> bool {
     let p = plate.properties.references();
     let b = bend.properties.references();
-    if p.len() != 17
-        || b.len() != 11
-        || plate.identity.segment_token != bend.identity.segment_token
-        || b[5].index() != 0
-        || ![(7, 0), (3, 2), (4, 3), (10, 4), (11, 7), (15, 9)]
-            .iter()
-            .all(|&(left, right)| same(p[left], b[right]))
-    {
+    let Some(form) = PlateForm::of(plate) else {
+        return false;
+    };
+    if b.len() != form.bend_count() || plate.identity.segment_token != bend.identity.segment_token {
+        return false;
+    }
+    let control = property(b[8]).and_then(sheet);
+    let shared: &[(usize, usize)] = match form {
+        PlateForm::Body => &[(7, 0), (3, 2), (4, 3), (10, 4), (6, 5), (11, 7)],
+        PlateForm::Collection => &[(7, 0), (3, 2), (4, 3), (10, 4), (11, 7), (15, 9)],
+    };
+    let form_controls = match form {
+        PlateForm::Body => {
+            matches!(
+                control,
+                Some(SheetMetalProperty::BendControl {
+                    value: 0,
+                    state: None
+                })
+            )
+        }
+        PlateForm::Collection => {
+            b[5].index() == 0
+                && matches!(
+                    control,
+                    Some(SheetMetalProperty::BendControl {
+                        value: 6,
+                        state: Some(1)
+                    })
+                )
+                && property(b[10]).and_then(boolean) == Some(true)
+        }
+    };
+    if !form_controls || !shared.iter().all(|&(left, right)| same(p[left], b[right])) {
         return false;
     }
     let Some(SheetMetalProperty::Attachment { radius, .. }) = property(p[4]).and_then(sheet) else {
         return false;
     };
     same(*radius, b[1])
-        && property(b[8]).and_then(sheet).is_some_and(|kind| {
-            matches!(
-                kind,
-                SheetMetalProperty::BendControl {
-                    value: 6,
-                    state: Some(1)
-                }
-            )
-        })
-        && property(b[10]).and_then(boolean) == Some(true)
         && property(b[6]).is_some_and(|property| {
             matches!(
                 property.kind,

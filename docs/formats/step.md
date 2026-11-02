@@ -747,6 +747,9 @@ The writer's supported schema identifiers are:
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }`                                    | AP242 edition 2      |
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }`                                    | AP242 edition 3      |
 
+`AUTOMOTIVE_DESIGN_CC2` is the schema name of the AP214 committee draft. Its
+schema identity is AP214, with or without an object identifier.
+
 For the CADIR AP242 edition report, the first identifier must have the exact
 long-form name and one of the exact numeric object identifiers in the table.
 An AP242 identifier with no object identifier, an ASN.1 named object

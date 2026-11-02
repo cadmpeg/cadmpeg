@@ -28,6 +28,7 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod curve;
 pub(crate) mod point_tail;
 
 use point_tail::PointPairedAssociation;
@@ -40,17 +41,68 @@ const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
 /// First save version whose midpoint relation ends with a u32 value.
 const MIDPOINT_VALUE_VERSION: u8 = 20;
-/// Entity-flag bits that the curves of profile wire bodies carry. A curve
-/// with another bit set has a construction state this decoder does not
-/// resolve.
-const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
-const SPLINE_PROFILE_CURVE_FLAGS: u32 = PROFILE_CURVE_FLAGS | 0x4;
+/// Entity-flag bits that every planar curve form carries on curves of profile
+/// wire bodies.
+const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000;
+/// Additional profile-wire flag bit of circles, ellipses, and splines.
+const NON_LINE_PROFILE_FLAG: u32 = 0x8_0000;
+/// Additional profile-wire flag bit of lines and circles.
+const LINE_CIRCLE_PROFILE_FLAG: u32 = 0x200;
+/// Entity-flag bit of a line that a distance dimension measures as an axis:
+/// the dimension parameter is twice the distance between the operands.
+/// Profile wire bodies also use lines with this bit.
+const AXIS_LINE_FLAG: u32 = 0x8000;
+/// Additional profile-wire flag bit of splines.
+const SPLINE_PROFILE_FLAG: u32 = 0x4;
+/// Entity-flag bits that mark a line as construction geometry. No line with
+/// one of these bits bounds a profile loop.
+const LINE_CONSTRUCTION_FLAGS: u32 = 0x8_0000 | 0x20_0000;
+
+/// Entity-flag bits whose meaning is resolved for the curve form of `entity`:
+/// the bits that profile wire bodies carry and the construction bits.
+fn resolved_curve_flags(entity: &PmDcSketchEntity) -> u32 {
+    match entity.kind {
+        PmDcSketchEntityKind::Line { .. } => {
+            PROFILE_CURVE_FLAGS
+                | LINE_CIRCLE_PROFILE_FLAG
+                | AXIS_LINE_FLAG
+                | LINE_CONSTRUCTION_FLAGS
+        }
+        PmDcSketchEntityKind::Circle { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | LINE_CIRCLE_PROFILE_FLAG
+        }
+        PmDcSketchEntityKind::Spline { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | SPLINE_PROFILE_FLAG
+        }
+        _ => PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG,
+    }
+}
+
+/// Whether the record is a line whose entity flags carry a construction bit.
+/// The projection and the validator share this predicate.
+pub(crate) fn marks_construction(entity: &PmDcSketchEntity) -> bool {
+    matches!(entity.kind, PmDcSketchEntityKind::Line { .. })
+        && entity.entity_flags & LINE_CONSTRUCTION_FLAGS != 0
+}
+
+/// Whether the record is a curve whose entity flags carry a bit with an
+/// unresolved construction meaning.
+fn has_unresolved_flags(entity: &PmDcSketchEntity) -> bool {
+    matches!(
+        entity.kind,
+        PmDcSketchEntityKind::Line { .. }
+            | PmDcSketchEntityKind::Circle { .. }
+            | PmDcSketchEntityKind::Ellipse { .. }
+            | PmDcSketchEntityKind::Spline { .. }
+    ) && entity.entity_flags & !resolved_curve_flags(entity) != 0
+}
+
 /// Largest departure of a block-instance placement from a rigid motion.
 const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
-mod spline;
+pub(crate) mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 pub(crate) const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
@@ -310,6 +362,8 @@ pub(crate) struct SketchProjection {
     /// Projected curves whose construction state is unresolved; they stay out
     /// of the sketch profile tables.
     pub(crate) unresolved_construction: usize,
+    /// Distance dimensions measured to an axis line; they stay native.
+    pub(crate) native_axis_distances: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,6 +387,14 @@ pub(crate) struct PmDcSketchEntityPayload {
     entity_flags: u32,
     pub(crate) sketch: PmDcReference,
     pub(crate) kind: PmDcSketchEntityKind,
+}
+
+impl PmDcSketchEntityPayload {
+    /// Whether this is a line that a distance dimension measures as an axis.
+    pub(crate) fn is_axis_line(&self) -> bool {
+        matches!(self.kind, PmDcSketchEntityKind::Line { .. })
+            && self.entity_flags & AXIS_LINE_FLAG != 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -988,7 +1050,7 @@ fn edge_prefix(
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "Inventor PmDc {field} list gate is {gate:?}"
-                )))
+                )));
             }
         }
         auxiliary.push(reference_list(
@@ -1494,6 +1556,7 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         projected_entities.push(
             SketchEntity::new(entity_id, sketch_id, geometry)
+                .with_construction(marks_construction(entity))
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
         );
@@ -1527,20 +1590,7 @@ pub(crate) fn project(
     let construction_unresolved = inventory
         .entities
         .iter()
-        .filter(|entity| {
-            let profile_flags = if matches!(entity.kind, PmDcSketchEntityKind::Spline { .. }) {
-                SPLINE_PROFILE_CURVE_FLAGS
-            } else {
-                PROFILE_CURVE_FLAGS
-            };
-            matches!(
-                entity.kind,
-                PmDcSketchEntityKind::Line { .. }
-                    | PmDcSketchEntityKind::Circle { .. }
-                    | PmDcSketchEntityKind::Ellipse { .. }
-                    | PmDcSketchEntityKind::Spline { .. }
-            ) && entity.entity_flags & !profile_flags != 0
-        })
+        .filter(|entity| has_unresolved_flags(entity))
         .map(Located::id)
         .collect::<HashSet<_>>();
     let mut sketches = Vec::new();
@@ -1650,6 +1700,13 @@ pub(crate) fn project(
             );
         }
     }
+    let axis_lines = inventory
+        .entities
+        .iter()
+        .filter(|entity| entity.is_axis_line())
+        .map(Located::id)
+        .collect::<HashSet<_>>();
+    let mut native_axis_distances = 0usize;
     let mut constraints = Vec::new();
     let mut projected_constraint_keys = HashSet::new();
     for constraint in &inventory.constraints {
@@ -1661,14 +1718,31 @@ pub(crate) fn project(
             .and_then(Option::as_ref)
             .is_some()
         {
-            if let Some(projected) =
-                project_constraint(ctx, constraint, &projected_entity_by_key, &parameter_index)
-                    .transpose()?
+            if let Some(projected) = project_constraint(
+                ctx,
+                constraint,
+                &projected_entity_by_key,
+                &parameter_index,
+                &axis_lines,
+            )
+            .transpose()?
             {
                 projected_constraint_keys.insert((
                     constraint.identity.segment_token.as_str(),
                     constraint.identity.record_ordinal,
                 ));
+                if let PmDcSketchConstraintKind::Distance { first, second, .. } = constraint.kind {
+                    let operands = [first, second].map(|operand| {
+                        let ordinal = operand.index().checked_sub(1)?;
+                        projected_entity_by_key
+                            .get(&(constraint.identity.segment_token.as_str(), ordinal))
+                            .copied()
+                    });
+                    if let [Some(first), Some(second)] = operands {
+                        native_axis_distances +=
+                            usize::from(measures_axis_line(&[first, second], &axis_lines));
+                    }
+                }
                 constraints.push(projected);
             }
         }
@@ -1782,7 +1856,37 @@ pub(crate) fn project(
         unresolved_entities,
         unresolved_constraints,
         unresolved_construction,
+        native_axis_distances,
     })
+}
+
+/// The loss for distance dimensions that stay native because they are
+/// measured to an axis line.
+pub(crate) fn axis_distance_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchAxisDistanceNative.note(format!(
+            "Retained {count} Inventor sketch distance dimension(s) measured to an axis line natively: the parameter is twice the distance between the operands."
+        ))
+    })
+}
+
+/// Whether a distance dimension has an axis line as an operand. Its
+/// parameter is then twice the distance between the operands.
+fn measures_axis_line(members: &[&SketchEntity; 2], axis_lines: &HashSet<String>) -> bool {
+    members.iter().any(|member| {
+        member
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| axis_lines.contains(native))
+    })
+}
+
+pub(crate) fn constraint_maps_supported(constraint: &PmDcSketchConstraint) -> bool {
+    (constraint.header.scalar_map.metadata().is_none()
+        && constraint.header.scalar_map.entries().is_empty()
+        && constraint.header.reference_map.metadata().is_none()
+        && constraint.header.reference_map.entries().is_empty())
+        || solver_hint(constraint)
 }
 
 fn project_constraint(
@@ -1790,6 +1894,7 @@ fn project_constraint(
     constraint: &PmDcSketchConstraint,
     entities: &HashMap<(&str, u32), &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
+    axis_lines: &HashSet<String>,
 ) -> Option<Result<SketchConstraint, CodecError>> {
     macro_rules! admit {
         ($result:expr) => {
@@ -1799,11 +1904,7 @@ fn project_constraint(
         };
     }
 
-    let maps_are_empty = constraint.header.scalar_map.metadata().is_none()
-        && constraint.header.scalar_map.entries().is_empty()
-        && constraint.header.reference_map.metadata().is_none()
-        && constraint.header.reference_map.entries().is_empty();
-    if !maps_are_empty && !solver_hint(constraint) {
+    if !constraint_maps_supported(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -2047,15 +2148,31 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter =
                 resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
-            (
+            let definition = if measures_axis_line(&members, axis_lines) {
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::nonblank_literal!("axis_distance_dimension"),
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: Some(parameter),
+                    operands: vec![
+                        native_operand(constraint, cadmpeg_core::nonblank_literal!("first"), first),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("second"),
+                            second,
+                        ),
+                    ],
+                }
+            } else {
                 SketchConstraintDefinitionInput::DistanceLoci {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
-                },
-                None,
-                members,
-            )
+                }
+            };
+            (definition, None, members)
         }
         PmDcSketchConstraintKind::Angle {
             first,
@@ -2091,10 +2208,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
             let members = [resolve(point)?, resolve(entity)?];
             (
-                SketchConstraintDefinitionInput::Midpoint {
-                    point: SketchLocus::Entity(members[0].id().clone()),
-                    entity: members[1].id().clone(),
-                },
+                curve::midpoint_definition(constraint, entity, point, members[0], members[1]),
                 None,
                 members,
             )
@@ -2370,7 +2484,7 @@ fn native_operand(
     }
 }
 
-fn project_geometry(
+pub(crate) fn project_geometry(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Option<SketchGeometry> {
@@ -2386,8 +2500,12 @@ fn project_placed_geometry(
     let resolve_point =
         |token: &str, reference: u32| placement.point(resolve_point(token, reference, entities)?);
     match &entity.kind {
-        PmDcSketchEntityKind::Spline { data } => {
-            let mut curve = data.closed_curve()?;
+        PmDcSketchEntityKind::Spline { .. } => {
+            let Some(mut curve) = spline::resolved_curve(entity, entities) else {
+                return Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
+                    "spline"
+                )));
+            };
             curve
                 .try_map_control_points(|_, point| {
                     let point = point.get();
@@ -2480,15 +2598,16 @@ fn project_placed_geometry(
             SketchGeometry::try_from(definition).ok()
         }
         PmDcSketchEntityKind::Ellipse {
-            points,
             center,
             major_direction,
             major_radius,
             minor_radius,
             ..
         } => {
-            if curve_ends(points)? != CurveEnds::Closed {
-                return None;
+            if !curve::closed_ellipse(entity) {
+                return Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
+                    "ellipse"
+                )));
             }
             let center = resolve_point(entity.identity.segment_token.as_str(), center.index())?;
             let major_direction = placement.direction(*major_direction)?;
@@ -2643,7 +2762,7 @@ fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
     Point2::new(value[0].get() * 10.0, value[1].get() * 10.0)
 }
 
-fn entity_endpoint_refs(
+pub(crate) fn entity_endpoint_refs(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
@@ -2657,6 +2776,11 @@ fn placed_endpoint_refs(
     placement: &BlockPlacement,
 ) -> Vec<String> {
     let ends = match &entity.kind {
+        PmDcSketchEntityKind::Spline { data }
+            if spline::resolved_curve(entity, entities).is_some_and(|curve| !curve.periodic()) =>
+        {
+            data.points.references()
+        }
         PmDcSketchEntityKind::Line { points, .. } => points.references().get(..2).unwrap_or(&[]),
         PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
             Some(CurveEnds::Bounded(..)) => &points.references()[..2],
@@ -3044,6 +3168,7 @@ fn place_block_curves(
                     sketch.clone(),
                     project_placed_geometry(curve, entities, &placement)?,
                 )
+                .with_construction(marks_construction(curve))
                 .with_native_ref(Some(curve.id()))
                 .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
             )
@@ -3441,7 +3566,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
+            super::project_constraint(&ctx, &constraint, &entities, &parameters, &std::collections::HashSet::new()),
             Some(Err(CodecError::ResourceLimit(limit)))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor sketch constraint"
@@ -3449,7 +3574,13 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
+            super::project_constraint(
+                &ctx,
+                &constraint,
+                &entities,
+                &parameters,
+                &std::collections::HashSet::new()
+            ),
             Some(Ok(_))
         ));
     }
@@ -4179,7 +4310,7 @@ mod tests {
             .position(|entity| matches!(entity.kind, PmDcSketchEntityKind::Line { .. }))
             .expect("square side");
         let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[line]);
-        payload.entity_flags = 0x8000;
+        payload.entity_flags = 0x100;
         let identity = inventory.entities[line].identity.clone();
         inventory.entities[line] = Located::new(
             payload,
@@ -4194,6 +4325,70 @@ mod tests {
         assert_eq!(projected.unresolved_construction, 1);
         assert_eq!(projected.entities.len(), 8);
         assert!(projected.sketches[0].profiles.is_empty());
+    }
+
+    #[test]
+    fn open_cubic_projection_requires_a_closed_owning_graph() {
+        for pole_count in [4, 5, 8] {
+            for incompatible_arc in [false, true] {
+                let (mut inventory, mut sketch) = closed_square_inventory();
+                inventory.entities =
+                    crate::test_support::sketch_curves::open_cubic_entities_with(pole_count, 2.0)
+                        .into_iter()
+                        .map(|entity| {
+                            located(
+                                PmDcSketchEntityPayload::clone(&entity),
+                                entity.kind.record_type_id(),
+                                entity.identity.record_ordinal,
+                            )
+                        })
+                        .collect();
+                let mut references = vec![4, 5, 8];
+                if incompatible_arc {
+                    let arc = parse(&circle_bytes(8, 3, [4, 5], 4, 0), |_, source| {
+                        parse_entity(SketchEntityTag::Circle, source, 22).expect("arc")
+                    });
+                    inventory.entities.push(located(arc, CIRCLE_TYPE, 8));
+                    references.push(9);
+                }
+                let (marker, metadata, _) = sketch.entities.clone().into_parts();
+                sketch.entities = PmDcReferenceList::new(
+                    marker,
+                    metadata,
+                    references
+                        .into_iter()
+                        .map(PmDcReference::from_packed)
+                        .collect(),
+                )
+                .expect("cubic member list");
+                inventory.sketches[0] = Located::new(
+                    sketch,
+                    crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+                    cadmpeg_ir::identity_key!("segment"),
+                    2,
+                );
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                        .expect("projection context");
+                let projected = project(&ctx, &inventory, &[]).expect("cubic projection");
+                if incompatible_arc {
+                    assert_eq!(projected.unresolved_sketches, 1);
+                    assert_eq!(projected.unresolved_entities, 4);
+                    assert!(projected.sketches.is_empty());
+                    assert!(projected.entities.is_empty());
+                } else {
+                    assert_eq!(projected.unresolved_sketches, 0);
+                    assert_eq!(projected.unresolved_entities, 0);
+                    assert_eq!(projected.sketches.len(), 1);
+                    assert_eq!(projected.entities.len(), 3);
+                    assert!(matches!(
+                        projected.entities[2].geometry.definition(),
+                        cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+                    ));
+                }
+            }
+        }
     }
 
     #[test]
@@ -4679,6 +4874,7 @@ mod tests {
             constraint,
             &entities,
             &std::collections::HashMap::new(),
+            &std::collections::HashSet::new(),
         ) {
             Some(Ok(_)) => true,
             None => false,
@@ -4997,6 +5193,8 @@ mod tests {
         ));
     }
 
+    mod axis_distance;
+    mod construction_flags;
     mod point_tail_projection;
     mod serialization;
 }

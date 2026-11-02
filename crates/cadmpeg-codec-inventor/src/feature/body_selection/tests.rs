@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 
-fn body(value: &str) -> BodyId {
+pub(crate) fn body(value: &str) -> BodyId {
     BodyId::mint(format!("test:model:body#{value}")).expect("synthetic body id")
 }
 
@@ -173,7 +173,7 @@ fn unresolved_result_wrappers_emit_the_pinned_loss() {
     assert_eq!(native_losses(&model, &joins()).len(), 1);
 }
 
-fn metadata() -> crate::native::SegmentMetaRecord {
+pub(crate) fn metadata() -> crate::native::SegmentMetaRecord {
     crate::native::SegmentMetaRecord {
         id: "metadata".into(),
         token: "seg".into(),
@@ -195,7 +195,7 @@ fn metadata() -> crate::native::SegmentMetaRecord {
     }
 }
 
-fn root() -> crate::design::scope::PmDcModelRoot {
+pub(crate) fn root() -> crate::design::scope::PmDcModelRoot {
     use crate::design::scope::PmDcModelRootPayload;
     crate::record_identity::Located::new(
         PmDcModelRootPayload {
@@ -262,7 +262,7 @@ fn body_scope_requires_one_document_root_and_one_named_carrier_segment() {
     .admits(&wrapper, "other"));
 }
 
-fn carrier() -> ActiveCarrierRecord {
+pub(crate) fn carrier() -> ActiveCarrierRecord {
     ActiveCarrierRecord::Selected {
         id: "carrier".into(),
         segment_token: "seg".into(),

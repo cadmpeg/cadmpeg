@@ -5,6 +5,7 @@
 //! radians.
 
 use crate::features::FiniteVector3;
+use crate::math::portable::Portable;
 use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength, PositiveReal};
@@ -615,7 +616,9 @@ impl UnitVector3 {
 /// then by the `hypot` length of the quotients.
 fn divided_by_largest_component(value: Vector3, largest: f64) -> Vector3 {
     let scaled = [value.x / largest, value.y / largest, value.z / largest];
-    let length = scaled[0].hypot(scaled[1]).hypot(scaled[2]);
+    let length = scaled[0]
+        .portable_hypot(scaled[1])
+        .portable_hypot(scaled[2]);
     Vector3::new(scaled[0] / length, scaled[1] / length, scaled[2] / length)
 }
 
@@ -697,7 +700,7 @@ pub struct UnitVector2([f64; 2]);
 impl UnitVector2 {
     /// Admit a planar unit direction.
     pub fn new(value: [f64; 2]) -> Option<Self> {
-        ((value[0].hypot(value[1]) - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
+        ((value[0].portable_hypot(value[1]) - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
     }
     /// Return the direction components.
     pub const fn get(self) -> [f64; 2] {
@@ -734,7 +737,7 @@ impl HypotDirection2 {
     /// Divide by the finite nonzero length, preserving the quotient bits.
     #[must_use]
     pub fn normalized_with_length(value: [f64; 2]) -> Option<(Self, PositiveReal)> {
-        let length = PositiveReal::new(value[0].hypot(value[1]))?;
+        let length = PositiveReal::new(value[0].portable_hypot(value[1]))?;
         let direction = FiniteVector::new(value.map(|component| component / length.get()))?;
         Some((Self(direction), length))
     }
@@ -749,7 +752,7 @@ impl HypotDirection2 {
     #[must_use]
     pub fn recharted_by_hypot(self) -> Self {
         let value = self.get();
-        let length = value[0].hypot(value[1]);
+        let length = value[0].portable_hypot(value[1]);
         Self(FiniteVector([value[0] / length, value[1] / length]))
     }
 
@@ -1187,6 +1190,7 @@ mod tests {
         DirectionAboveEpsilon, FiniteVector, NonzeroVector, SumSquaresUnitVector3, Tolerances,
         UnitVector3,
     };
+    use crate::math::portable::Portable;
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
@@ -1445,7 +1449,7 @@ mod tests {
     fn planar_hypot_quotient_keeps_the_radius_bits_and_subnormal_admission() {
         let input: [f64; 2] = [3.0, -4.0];
         let (direction, length) = super::HypotDirection2::normalized_with_length(input).unwrap();
-        assert_eq!(length.get(), input[0].hypot(input[1]));
+        assert_eq!(length.get(), input[0].portable_hypot(input[1]));
         assert_eq!(
             direction.get(),
             [input[0] / length.get(), input[1] / length.get()]
@@ -1563,8 +1567,11 @@ mod tests {
             let planar = UnitVector2::new(value).expect("planar direction inside the band");
             for turned in [planar, planar.quarter_turn(), planar.reverse_quarter_turn()] {
                 let [first, second] = turned.get();
-                let length = first.hypot(second);
-                assert_eq!(length.to_bits(), value[0].hypot(value[1]).to_bits());
+                let length = first.portable_hypot(second);
+                assert_eq!(
+                    length.to_bits(),
+                    value[0].portable_hypot(value[1]).to_bits()
+                );
                 for placed in [
                     UnitVector3::in_xy_plane(turned),
                     UnitVector3::in_xz_plane(turned),
@@ -1842,7 +1849,9 @@ mod tests {
         let divided = |value: Vector3| {
             let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
             let scaled = [value.x / largest, value.y / largest, value.z / largest];
-            let length = scaled[0].hypot(scaled[1]).hypot(scaled[2]);
+            let length = scaled[0]
+                .portable_hypot(scaled[1])
+                .portable_hypot(scaled[2]);
             Vector3::new(scaled[0] / length, scaled[1] / length, scaled[2] / length)
         };
         for value in [

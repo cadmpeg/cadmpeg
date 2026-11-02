@@ -97,6 +97,7 @@ pub(super) fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOpera
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 1076,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),

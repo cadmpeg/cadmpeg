@@ -117,6 +117,8 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
+The `static checks` job runs `python3 scripts/preflight_open_items.py` on the merge commit. It fails when an ID occurs more than once in an open-items document, so the merge queue rejects two pull requests that take one ID.
+
 `spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
 
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.

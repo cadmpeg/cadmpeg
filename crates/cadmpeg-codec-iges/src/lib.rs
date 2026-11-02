@@ -47,7 +47,6 @@ use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
-use std::io::Cursor;
 
 const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
@@ -150,13 +149,29 @@ impl CodecBackend for IgesCodec {
         Ok(representation::confidence(prefix))
     }
 
+    fn detect_whole_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        input: cadmpeg_core::decode::WholeInput<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let bytes = input.view().window();
+        let prefix = representation::confidence(bytes);
+        if prefix > Confidence::No {
+            return Ok(prefix);
+        }
+        Ok(if card::whole_file_fixed_ascii(bytes) {
+            Confidence::Medium
+        } else {
+            Confidence::No
+        })
+    }
+
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let mut reader = Cursor::new(root.window());
-        let representation = representation::classify(&mut reader)?
+        let representation = representation::classify_whole(root.window())?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         // Inspection runs the parse that decode runs.
         match representation {
@@ -175,8 +190,7 @@ impl CodecBackend for IgesCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let mut source = Cursor::new(root.window());
-        let representation = representation::classify(&mut source)?
+        let representation = representation::classify_whole(root.window())?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {

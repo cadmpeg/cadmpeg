@@ -19,6 +19,7 @@ pub(crate) mod flange;
 pub(super) mod inputs;
 pub(crate) mod operands;
 pub(crate) mod projection;
+pub(crate) mod refusal;
 pub(crate) mod style;
 
 const ATTACHMENT_TYPE: [u8; 16] = [

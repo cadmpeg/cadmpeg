@@ -566,3 +566,25 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
         assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
     }
 }
+
+#[test]
+fn native_profile_wire_round_trips_and_rejects_null() {
+    use super::DesignParameterScope;
+    let (archive, mut scope, headers, entities) =
+        crate::test_support::multiple_profiles::fixture(2);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::design::decode::operands::bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+        )
+        .unwrap();
+        let wire = serde_json::to_value(&scope).unwrap();
+        let loaded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(loaded).unwrap(), wire);
+        let mut invalid = wire;
+        invalid["extrude_native_profiles"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    });
+}

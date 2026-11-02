@@ -21,6 +21,9 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 
+/// One mutation of a sketch-profile tail.
+type TailEdit<'a> = &'a dyn Fn(&mut Vec<u8>);
+
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let mut bytes = Vec::new();
@@ -153,6 +156,90 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
 }
 
 #[test]
+fn sketch_profile_with_an_83_byte_tail_omits_the_third_reference() {
+    let build = |edit: &dyn Fn(&mut Vec<u8>)| {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"308");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&103u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b");
+        lp_utf16(&mut bytes, "172");
+        let mut tail = vec![0u8; 83];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[4..8].copy_from_slice(&1u32.to_le_bytes());
+        tail[16..20].copy_from_slice(&0x41u32.to_le_bytes());
+        for (at, record) in [(46, 102u32), (60, 101), (72, 777)] {
+            tail[at] = 1;
+            tail[at + 1..at + 5].copy_from_slice(&record.to_le_bytes());
+        }
+        edit(&mut tail);
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"258");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes
+    };
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: Some(0),
+        class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned()).unwrap(),
+        record_index: 100,
+    };
+    let entity = DesignEntityHeader {
+        id: "f3d:Design/BulkStream.dat:entity#172".into(),
+        byte_offset: Some(1000),
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned()).unwrap(),
+        optional_slot_present: Some(false),
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::entity_header::SketchHeaderReferences {
+                record_reference: Some(200),
+                record_reference_offset: Some(1010),
+                references: Vec::new(),
+            }),
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
+    };
+    let parse = |bytes: &[u8]| {
+        parse_sketch_profile(
+            bytes,
+            "f3d:Design/BulkStream.dat",
+            3,
+            &header,
+            std::slice::from_ref(&entity),
+        )
+    };
+    let profile = parse(&build(&|_| {})).expect("83-byte sketch-profile operand");
+    assert_eq!(profile.entity_id.suffix(), 172);
+    // Each fixed field of the tail is required.
+    let edits: [TailEdit<'_>; 7] = [
+        &|tail| tail[0] = 2,
+        &|tail| tail[4] = 0,
+        &|tail| tail[9] = 1,
+        &|tail| tail[16] = 0x42,
+        &|tail| tail[47] = 0,
+        &|tail| tail[61] = 0,
+        &|tail| tail[71] = 1,
+    ];
+    for edit in edits {
+        assert!(parse(&build(edit)).is_none());
+    }
+    // A tail of another length is refused.
+    let mut longer = build(&|_| {});
+    let paired_at = longer.len() - 11;
+    longer.insert(paired_at, 0);
+    assert!(parse(&longer).is_none());
+}
+
+#[test]
 fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -278,6 +365,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
                     opaque_scalar: 0.125,
                     opaque_scalar_offset: 1075,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -551,6 +639,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

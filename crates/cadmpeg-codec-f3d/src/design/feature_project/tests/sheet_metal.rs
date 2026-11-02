@@ -154,6 +154,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -746,6 +747,7 @@ fn edge_flange_to_object_fixture(
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1286,6 +1288,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -1459,6 +1462,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),

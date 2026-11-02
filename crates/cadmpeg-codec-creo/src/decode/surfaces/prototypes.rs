@@ -13,6 +13,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::legacy_geometry::LegacySurfaceNamespace;
+use crate::surface::cylinder_frame_readers::CylinderRotationFrame;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
@@ -129,9 +130,11 @@ fn prototype_spline_nurbs(
     )
 }
 
+type PrototypeLocalFrame = ([f64; 3], [f64; 3], [f64; 3]);
+
 fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
-) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+) -> Option<PrototypeLocalFrame> {
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field("local_sys")?.value
     else {
         return None;
@@ -172,6 +175,72 @@ fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
+fn prototype_analytic_local_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &crate::surface::SurfacePrototypeRecord,
+    surface_id: u32,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<PrototypeLocalFrame>, cadmpeg_core::CodecError> {
+    let generic = prototype_local_frame(record);
+    let Some(field) = record.field("local_sys") else {
+        return Ok(generic);
+    };
+    let Some(body) = field
+        .body
+        .strip_prefix(&[crate::psb::token::SCALAR_BODY, 4, 3])
+    else {
+        return Ok(generic);
+    };
+    let cache = crate::scalar::ScalarCache::default();
+    if matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Cylinder
+    ) {
+        if let Some((values, end)) = crate::scalar::decode_cylinder_rotation_prefix(body, &cache) {
+            if end != body.len() && body.get(end..) != Some(&[0xe1]) {
+                losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
+                    "Cylinder {surface_id} prototype at byte {} has trailing rotation-frame bytes; its source remains native",
+                    field.value_offset,
+                )));
+                return Ok(None);
+            }
+            let slots = values.get();
+            let reference = [slots[0], slots[3], slots[6]];
+            let axis = [slots[2], slots[5], slots[8]];
+            return Ok(Some(([slots[9], slots[10], slots[11]], axis, reference)));
+        }
+    }
+    if !crate::scalar::axis_unit_matrix_body(body, &cache) {
+        return Ok(generic);
+    }
+    let parsed = crate::surface::complete_plane_local_system(
+        ctx,
+        body,
+        &crate::scalar::ScalarCache::default(),
+        losses,
+    )?;
+    let frame = parsed.and_then(|(slots, layout)| {
+        let local = crate::surface::PlaneLocalSystem {
+            surface_id,
+            body: Vec::new(),
+            slots: slots.get().map(Some),
+            layout: Some(layout),
+            classification: crate::surface::LocalSystemClassification::Simple,
+            row_offset: record.offset,
+            offset: field.value_offset,
+        };
+        let frame = local.frame();
+        Some((frame.origin?, frame.normal()?, frame.u_axis()?))
+    });
+    if frame.is_none() {
+        losses.push(crate::loss::CreoLossCode::PrototypeLocalSystemUnresolved.note(format!(
+            "Surface {surface_id} prototype local system at byte {} has no complete admitted plane frame; its bytes remain native",
+            field.value_offset
+        )));
+    }
+    Ok(frame)
+}
+
 fn first_instance_surface_row(
     rows: &[crate::surface::SurfaceRow],
     frame_start: usize,
@@ -199,7 +268,7 @@ fn first_instance_surface_row(
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. `Ok(None)`
 /// states that no single complete surface array holds the prototype.
-pub(super) fn surface_prototype_frame_bounds(
+pub(in crate::decode) fn surface_prototype_frame_bounds(
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
     prototype_offset: usize,
@@ -374,7 +443,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                let Some((origin, axis, reference)) =
+                    prototype_analytic_local_frame(ctx, record, row.id, losses)?
+                else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -389,13 +460,43 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Cylinder(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                    .is_some_and(crate::surface::SurfaceParameterRecord::rotation_cylinder_refused)
+                {
                     continue;
-                };
-                let Some(radius) = prototype_scalar(record, "radius")
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    continue;
+                }
+                let named = crate::surface::unique_surface_parameter(
+                    &scan.surfaces.parameters,
+                    row.id,
+                )
+                .and_then(|parameter| {
+                    crate::surface::cylinder_frame_readers::named_rotation_cylinder_parameter_frame(
+                        parameter,
+                        record,
+                        &crate::scalar::ScalarCache::default(),
+                    )
+                });
+                let (origin, axis, reference, radius) = match named {
+                    Some(CylinderRotationFrame::Admitted(frame)) => (
+                        frame.frame().origin(),
+                        frame.frame().axis(),
+                        frame.frame().ref_direction(),
+                        frame.radius().get(),
+                    ),
+                    Some(CylinderRotationFrame::Unresolved) => continue,
+                    None => {
+                        let Some((origin, axis, reference)) =
+                            prototype_analytic_local_frame(ctx, record, row.id, losses)?
+                        else {
+                            continue;
+                        };
+                        let Some(radius) = prototype_scalar(record, "radius")
+                            .filter(|radius| radius.is_finite() && *radius > 0.0)
+                        else {
+                            continue;
+                        };
+                        (origin, axis, reference, radius)
+                    }
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -410,7 +511,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Torus(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                let Some((origin, axis, reference)) =
+                    prototype_analytic_local_frame(ctx, record, row.id, losses)?
+                else {
                     continue;
                 };
                 let point = Point3::from(origin);

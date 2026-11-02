@@ -173,6 +173,31 @@ impl<'l> Prim<'l> {
         }
     }
 
+    /// The strongest `customData` string entry named `key`.
+    pub(crate) fn custom_data_text(&self, key: &str) -> Option<&'l str> {
+        self.sites.iter().find_map(|site| {
+            site.metadata
+                .iter()
+                .rev()
+                .filter(|item| item.key == "customData")
+                .find_map(|item| match &item.value {
+                    MetaValue::Dictionary(dictionary) => {
+                        dictionary
+                            .entries
+                            .iter()
+                            .find_map(|entry| match &entry.value {
+                                crate::text::syntax::DictionaryValue::Typed {
+                                    value: Value::String(text),
+                                    ..
+                                } if entry.key == key => Some(text.as_str()),
+                                _ => None,
+                            })
+                    }
+                    _ => None,
+                })
+        })
+    }
+
     /// The applied API schemas: the `apiSchemas` list operations of the
     /// sites, weakest first.
     pub(crate) fn api_schemas(&self) -> BTreeSet<&'l str> {

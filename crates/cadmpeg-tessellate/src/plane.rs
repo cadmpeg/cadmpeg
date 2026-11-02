@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Vector arithmetic in the parameter plane and in model space.
 
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// A parameter-plane point `(u, v)`.
@@ -95,11 +96,12 @@ pub(crate) fn centroid3(a: Point3, b: Point3, c: Point3) -> Point3 {
 
 /// The angle between two vectors, in radians.
 pub(crate) fn angle(a: Vector3, b: Vector3) -> f64 {
-    let norms = length(a) * length(b);
-    if norms == 0.0 {
+    let sin = length(cross(a, b));
+    let cos = dot(a, b);
+    if sin == 0.0 && cos == 0.0 {
         return 0.0;
     }
-    (dot(a, b) / norms).clamp(-1.0, 1.0).acos()
+    sin.portable_atan2(cos)
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import stat
 import sys
 import tempfile
@@ -36,9 +37,14 @@ class DecodeRefusalReportTests(unittest.TestCase):
         executable = Path(self.directory.name) / "fake-cadmpeg"
         executable.write_text("#!/usr/bin/env python3\n" + source, encoding="utf-8")
         executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        return executable
+        if os.name != "nt":
+            return executable
+        # Windows starts no program from a shebang line.
+        launcher = executable.with_suffix(".cmd")
+        launcher.write_text(f'@"{sys.executable}" "{executable}" %*\n', encoding="utf-8")
+        return launcher
 
-    def test_accepts_v8_decode_refusal(self) -> None:
+    def test_accepts_current_decode_refusal(self) -> None:
         refusal = {
             "stage": "decode",
             "code": "decode_failed",

@@ -56,12 +56,16 @@ fn bridge(
     let rightmost = |ring: &[usize]| -> usize {
         ring.iter()
             .enumerate()
-            .max_by(|a, b| points[*a.1][0].total_cmp(&points[*b.1][0]))
+            .max_by(|a, b| {
+                points[*a.1][0]
+                    .total_cmp(&points[*b.1][0])
+                    .then(a.1.cmp(b.1))
+            })
             .map_or(0, |(position, _)| position)
     };
     holes.sort_by(|a, b| {
         let x = |ring: &Vec<usize>| points[ring[rightmost(ring)]][0];
-        x(b).total_cmp(&x(a))
+        x(b).total_cmp(&x(a)).then(a[0].cmp(&b[0]))
     });
     for at in 0..holes.len() {
         let hole = holes[at].clone();
@@ -74,7 +78,7 @@ fn bridge(
                 let q = points[from];
                 (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)
             };
-            gap(a).total_cmp(&gap(b))
+            gap(a).total_cmp(&gap(b)).then(a.cmp(b))
         });
         let others: Vec<&[usize]> = holes[at + 1..].iter().map(Vec::as_slice).collect();
         let mut rings: Vec<&[usize]> = vec![outer.as_slice(), hole.as_slice()];

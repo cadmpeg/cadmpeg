@@ -89,6 +89,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_losses,
         source_carriers,
     )?;
+    super::super::sweep::surfaces::transfer_envelope_replay_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let positional_spline_replay_count = transfer_positional_spline_replays(
         ctx,
         scan,
@@ -169,6 +177,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
             annotations,
             source_carriers,
         )?;
+    super::super::sweep::revolution_carriers::transfer_active_boundary_planes(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let active_datum_cylinder_count =
         transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let circular_sweep_cylinder_count =
@@ -191,8 +207,22 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         source_carriers,
     )?;
-    let analytic_pcurve_carriers =
-        transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
+    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    super::super::sweep::surfaces::transfer_sampled_sweep_circles(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
         ctx,

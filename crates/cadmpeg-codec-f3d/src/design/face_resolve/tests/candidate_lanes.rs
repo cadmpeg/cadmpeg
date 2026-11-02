@@ -106,6 +106,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
+                        closing_flag: false,
                     },
                 )
                 .expect("source construction frame"),

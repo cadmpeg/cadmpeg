@@ -4,14 +4,21 @@
 
 use cadmpeg_core::CodecError;
 
-use super::{unsupported, Crate};
+use super::{encode, unsupported, Crate};
 use crate::text::syntax::{Dictionary, DictionaryValue, ListOp, Reference, Value};
 use crate::text::value::{typed, Components, Typed};
-use crate::usdc::value::{type_number, value_kind, Component, Shape};
+use crate::usdc::value::{
+    half, type_number, value_kind, Component, Shape, COMPRESSED_BIT, MIN_COMPRESSED_ARRAY,
+};
 
 const ARRAY_BIT: u64 = 1 << 63;
 const INLINED_BIT: u64 = 1 << 62;
 const TYPE_SHIFT: u32 = 48;
+/// The most distinct values of a real array stored as a table.
+const MAX_REAL_TABLE: usize = 1024;
+/// A real array is stored as a table when its element count exceeds its
+/// distinct values this many times.
+const REAL_TABLE_RATIO: usize = 4;
 
 /// Value types of the representations this writer builds (spec §9.6).
 pub(super) mod ty {
@@ -181,6 +188,13 @@ impl Crate {
         let count = components.len() / width.max(1);
         if typed.array && count == 0 {
             return Ok(rep(ty, 0, true, false));
+        }
+        if typed.array && kind.shape == Shape::Scalar && count >= MIN_COMPRESSED_ARRAY {
+            if let Some(body) = compressed(&components, kind.component)? {
+                let start = self.here();
+                self.out.extend_from_slice(&body);
+                return Ok(rep(ty, start, true, false) | COMPRESSED_BIT);
+            }
         }
         let start = self.here();
         if typed.array {
@@ -448,6 +462,119 @@ impl Crate {
         }
         rep(ty::TIME_SAMPLES, start, false, false)
     }
+}
+
+/// The bytes of `value` as a `component` real.
+fn real_bytes(value: f64, component: Component) -> Vec<u8> {
+    match component {
+        Component::F16 => half_bits(value).to_le_bytes().to_vec(),
+        Component::F32 => crate::text::value::round_f32(value).to_le_bytes().to_vec(),
+        _ => value.to_le_bytes().to_vec(),
+    }
+}
+
+/// `value` as a reader of a `component` real reads it back.
+fn stored_real(value: f64, component: Component) -> f64 {
+    match component {
+        Component::F16 => half(half_bits(value)),
+        Component::F32 => f64::from(crate::text::value::round_f32(value)),
+        _ => value,
+    }
+}
+
+/// The 32-bit integer equal to the stored `value`.
+fn exact_integer(value: f64) -> Option<i32> {
+    cadmpeg_core::convert::truncate_f64_to_i32(value).filter(|integer| {
+        f64::from(*integer) == value && (value != 0.0 || value.is_sign_positive())
+    })
+}
+
+/// The compressed array data (spec §9.7) of a scalar array of `component`
+/// with `lane` elements, or `None` when no compressed form holds it.
+fn compressed(lane: &Lane, component: Component) -> Result<Option<Vec<u8>>, CodecError> {
+    let range = || unsupported("an integer outside its type");
+    let mut out = cadmpeg_core::decode::u64_from_index(lane.len())
+        .to_le_bytes()
+        .to_vec();
+    match (lane, component) {
+        (Lane::Integers(values), Component::I32) => {
+            let values = values
+                .iter()
+                .map(|value| i32::try_from(*value).map_err(|_| range()))
+                .collect::<Result<Vec<_>, _>>()?;
+            encode::integers(&values, &mut out)?;
+        }
+        (Lane::Integers(values), Component::U32) => {
+            let values = values
+                .iter()
+                .map(|value| {
+                    u32::try_from(*value)
+                        .map(u32::cast_signed)
+                        .map_err(|_| range())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            encode::integers(&values, &mut out)?;
+        }
+        (Lane::Integers(values), Component::I64) => {
+            let values = values
+                .iter()
+                .map(|value| i64::try_from(*value).map_err(|_| range()))
+                .collect::<Result<Vec<_>, _>>()?;
+            encode::wide_integers(&values, &mut out)?;
+        }
+        (Lane::Integers(values), Component::U64) => {
+            let values = values
+                .iter()
+                .map(|value| {
+                    u64::try_from(*value)
+                        .map(u64::cast_signed)
+                        .map_err(|_| range())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            encode::wide_integers(&values, &mut out)?;
+        }
+        (Lane::Reals(values), Component::F16 | Component::F32 | Component::F64) => {
+            let stored: Vec<f64> = values
+                .iter()
+                .map(|value| stored_real(*value, component))
+                .collect();
+            if let Some(integers) = stored
+                .iter()
+                .map(|value| exact_integer(*value))
+                .collect::<Option<Vec<i32>>>()
+            {
+                out.push(b'i');
+                encode::integers(&integers, &mut out)?;
+                return Ok(Some(out));
+            }
+            let mut table: Vec<f64> = Vec::new();
+            let mut slots: std::collections::HashMap<u64, i32> = std::collections::HashMap::new();
+            let mut indices = Vec::with_capacity(stored.len());
+            for value in &stored {
+                let next = i32::try_from(table.len()).map_err(|_| range())?;
+                let index = *slots.entry(value.to_bits()).or_insert_with(|| {
+                    table.push(*value);
+                    next
+                });
+                if table.len() > MAX_REAL_TABLE || table.len() * REAL_TABLE_RATIO >= stored.len() {
+                    return Ok(None);
+                }
+                indices.push(index);
+            }
+            out.push(b't');
+            out.extend_from_slice(
+                &u32::try_from(table.len())
+                    .map_err(|_| range())?
+                    .to_le_bytes(),
+            );
+            for value in &table {
+                out.extend_from_slice(&real_bytes(*value, component));
+            }
+            encode::integers(&indices, &mut out)?;
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some(out))
 }
 
 /// The flat components of a value, as the crate stores them.

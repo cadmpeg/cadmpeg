@@ -5,6 +5,9 @@ The check needs no Git history, baseline, ledger, or update step. Exit status
 is 0 for clean source and 1 for violations. Text and `--json` output identify
 each violation by rule, file, line, and explanation.
 Use repeatable `--crate NAME` arguments to restrict reported findings to named crates.
+The scan uses one worker process for each CPU that the process may run on: the
+CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
+`CADMPEG_JOBS` to a positive integer to set the worker count directly.
 
 ## Rules
 
@@ -139,6 +142,16 @@ states the modular operation. Index and length arithmetic use checked operations
 and an explicit overflow branch. Stale markers and markers before multiple calls
 fail with `wrapping_exception`. Test-only markers and calls are excluded. Comments
 inside literals and trailing comments grant no exception.
+
+## Portable elementary functions
+
+Production code of `cadmpeg-ir`, `cadmpeg-tessellate`, and `cadmpeg-codec-usd`
+computes elementary functions through `cadmpeg_ir::math::portable::Portable`.
+The `platform_libm` rule rejects the `f64` methods and paths that call the
+platform's libm, such as `.sin(`, `.atan2(`, and `f64::hypot`, so the USD encoder
+writes the same bytes on every target. A scalar type's method of the same name
+is called through its type, such as `FiniteReal::atan2(y, x)`. Operations that
+IEEE-754 rounds exactly, such as `.sqrt()`, pass. Test code is excluded.
 
 ## Endian exceptions
 

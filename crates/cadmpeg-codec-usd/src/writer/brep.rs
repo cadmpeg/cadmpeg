@@ -3,26 +3,54 @@
 
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh};
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::CadIr;
 
 use cadmpeg_tessellate::Tessellator;
 
-/// Mesh chord as a share of a body's vertex box diagonal.
+/// Mesh chord as a share of a body's box diagonal.
 const CHORD_RATIO: f64 = 2e-3;
 /// Smallest mesh chord, in model tolerances.
 const MIN_CHORD_TOLERANCES: f64 = 10.0;
 /// Largest normal turn across one mesh triangle, in radians.
 const MESH_ANGLE: f64 = 0.3;
 
+/// Expands `grow` by the axis-aligned box of an untrimmed analytic sphere or
+/// the control net of a NURBS face. A complete sphere has no vertices.
+fn grow_carrier(geometry: &SolvedSurfaceGeometry, grow: &mut impl FnMut(Point3)) {
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            for pole in nurbs.poles() {
+                grow(pole.get());
+            }
+        }
+        SolvedSurfaceGeometry::Sphere(sphere) => {
+            let center = sphere.center().get();
+            let radius = sphere.radius().get().abs();
+            grow(Point3::new(
+                center.x - radius,
+                center.y - radius,
+                center.z - radius,
+            ));
+            grow(Point3::new(
+                center.x + radius,
+                center.y + radius,
+                center.z + radius,
+            ));
+        }
+        _ => {}
+    }
+}
+
 /// The tessellation limits of a body: a chord of a fixed share of its
-/// vertex box diagonal, and pcurves to half the model tolerance.
+/// vertex-and-carrier box diagonal, and pcurves to half the model tolerance.
 pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Options {
     let model = &ir.model;
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
-    let mut grow = |position: cadmpeg_ir::math::Point3| {
+    let mut grow = |position: Point3| {
         for (axis, value) in [position.x, position.y, position.z].into_iter().enumerate() {
             low[axis] = low[axis].min(value);
             high[axis] = high[axis].max(value);
@@ -35,16 +63,13 @@ pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Optio
         .flat_map(|shell| shell.faces().iter())
         .filter_map(|face| model.faces.iter().find(|candidate| &candidate.id == face));
     for face in faces {
-        // A face with no edges spans its surface's control net.
-        if let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = model
+        if let Some(geometry) = model
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
             .and_then(|surface| surface.geometry.solved())
         {
-            for pole in nurbs.poles() {
-                grow(pole.get());
-            }
+            grow_carrier(geometry, &mut grow);
         }
         let edges = face
             .loops
@@ -150,3 +175,6 @@ pub(super) fn mesh(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

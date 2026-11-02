@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral drawing sheets, resources, views, and annotations.
 
+use crate::math::portable::Portable;
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -506,7 +507,7 @@ impl DrawingCurveGeometry {
                     && [start, middle, end].iter().all(|point| {
                         let [x, y] = point.get();
                         let [cx, cy] = center.get();
-                        ((x - cx).hypot(y - cy) - radius.get()).abs()
+                        ((x - cx).portable_hypot(y - cy) - radius.get()).abs()
                             <= CURVE_RADIAL_RELATIVE_TOLERANCE * radius.get()
                     })
             }

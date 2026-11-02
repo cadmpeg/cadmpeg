@@ -33,7 +33,7 @@
 //!   classes declared after it move to it on the same evidence.
 //! - The root class has one object, so a tag naming it never opens one.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -65,6 +65,13 @@ const HIGHEST_NAME_TAG_INDEX: u8 = 0x10;
 const NAME_CLASS_ABOVE_FIRST_INDEX: i64 = 2;
 /// First map index when no name tag is present.
 const FALLBACK_FIRST_INDEX: i64 = 2;
+/// The class whose declaration opens the first object name.
+const NAME_CLASS: &str = "moNodeName_c";
+/// Indices a declaration and the object it opens take.
+const DECLARATION_INDICES: i64 = 2;
+/// Highest first map index read from the name class's declaration; a higher
+/// reading is not a name tag.
+const HIGHEST_DECLARED_FIRST_INDEX: i64 = 0x7e;
 /// A word at or above this value, without bit 15, is data inside a body.
 const DATA_WORD_FLOOR: u16 = 0x1000;
 /// Largest downward move of the counter at a declaration.
@@ -109,13 +116,16 @@ pub(crate) struct ClassMap {
     end: i64,
     /// Class declarations read.
     declarations: usize,
+    /// Whether each class lies at least two indices above the class declared
+    /// before it.
+    consistent: bool,
 }
 
 impl ClassMap {
     /// Whether the map count equals `resolved_count`, the leading u32 of the
-    /// configuration's `ResolvedFeatures` stream.
+    /// configuration's `ResolvedFeatures` stream, and the map is consistent.
     fn reconciles(&self, resolved_count: u32) -> bool {
-        self.end == i64::from(resolved_count)
+        self.consistent && self.end == i64::from(resolved_count)
     }
 }
 
@@ -192,11 +202,11 @@ pub(crate) fn walk(
     resolved_count: Option<u32>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ClassMap, CodecError> {
-    let mut walker = Walker::new(payload, resolved_count.map(i64::from), ctx)?;
-    walker.run()?;
+    let walker = walked(payload, resolved_count.map(i64::from), ctx)?;
     Ok(ClassMap {
         end: walker.next,
         declarations: walker.declarations.len(),
+        consistent: walker.consistent()?,
     })
 }
 
@@ -210,9 +220,8 @@ pub(crate) fn class_index_map(
     resolved_count: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<std::collections::BTreeMap<u32, String>>, CodecError> {
-    let mut walker = Walker::new(payload, Some(i64::from(resolved_count)), ctx)?;
-    walker.run()?;
-    if walker.next != i64::from(resolved_count) {
+    let walker = walked(payload, Some(i64::from(resolved_count)), ctx)?;
+    if !walker.reaches(i64::from(resolved_count))? {
         return Ok(None);
     }
     Ok(Some(
@@ -222,6 +231,35 @@ pub(crate) fn class_index_map(
             .filter_map(|(&index, &name)| Some((u32::try_from(index).ok()?, name.to_owned())))
             .collect(),
     ))
+}
+
+/// Walks `payload` from its first map index. When the name tags do not give
+/// that index, the walk starts from the name class's declaration, and from
+/// [`FALLBACK_FIRST_INDEX`] when that walk does not reach `bound`.
+fn walked<'p, 'a, 'c>(
+    payload: &'p [u8],
+    bound: Option<i64>,
+    ctx: &'c DecodeContext<'a>,
+) -> Result<Walker<'p, 'a, 'c>, CodecError> {
+    let (first, alternate) = match name_tag_first_index(payload) {
+        Some(first) => (first, None),
+        None => match declared_first_index(payload) {
+            Some(first) => (first, Some(FALLBACK_FIRST_INDEX)),
+            None => (FALLBACK_FIRST_INDEX, None),
+        },
+    };
+    let mut walker = Walker::new(payload, bound, first, ctx)?;
+    walker.run()?;
+    if let (Some(alternate), Some(bound)) = (alternate, bound) {
+        if !walker.reaches(bound)? {
+            let mut other = Walker::new(payload, Some(bound), alternate, ctx)?;
+            other.run()?;
+            if other.reaches(bound)? {
+                walker = other;
+            }
+        }
+    }
+    Ok(walker)
 }
 
 /// The map count a `ResolvedFeatures` stream opens with (see [`resolved_count`]).
@@ -289,12 +327,15 @@ struct Walker<'p, 'a, 'c> {
     order: Vec<&'p str>,
     /// Classes declared since the last confirmed declaration.
     since: Vec<&'p str>,
+    /// For each index a class left, the offset at which it left.
+    released: HashMap<i64, usize>,
 }
 
 impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
     fn new(
         payload: &'p [u8],
         bound: Option<i64>,
+        first: i64,
         ctx: &'c DecodeContext<'a>,
     ) -> Result<Self, CodecError> {
         let declarations = declarations(payload);
@@ -350,11 +391,12 @@ impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
             opening_counts,
             site_openings,
             bound,
-            next: first_index(payload),
+            next: first,
             known: HashMap::new(),
             classes: HashMap::new(),
             order: Vec::new(),
             since: Vec::new(),
+            released: HashMap::new(),
         })
     }
 
@@ -429,7 +471,7 @@ impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
                 index = add(index, shift)?;
                 confirmed = true;
                 let since = std::mem::take(&mut self.since);
-                self.move_classes(&since, shift)?;
+                self.move_classes(&since, shift, found.offset)?;
             }
         }
         self.known.insert(index, found.name);
@@ -444,7 +486,7 @@ impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
             samples: 0,
         });
         class.index = index;
-        self.next = add(index, 2)?;
+        self.next = add(index, DECLARATION_INDICES)?;
         if confirmed {
             self.since.clear();
         } else {
@@ -514,22 +556,96 @@ impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
             return Ok(false);
         }
         self.known.remove(&held);
+        self.released.insert(held, at);
         self.known.insert(index, name);
         if let Some(class) = self.classes.get_mut(name) {
             class.index = index;
         }
         if let Some(position) = self.order.iter().position(|declared| *declared == name) {
             let later = self.order[position + 1..].to_vec();
-            self.move_classes(&later, shift)?;
+            self.move_classes(&later, shift, at)?;
         }
         if self.since.contains(&name) {
             self.next = add(self.next, shift)?;
+        }
+        if self.order.first() != Some(&name) {
+            self.count_passed(name, index, at)?;
+        }
+        Ok(true)
+    }
+
+    /// Counts the objects of `name` that the walk passed before `at` while
+    /// the map did not hold `index` for it: tags of `index` after the class's
+    /// declaration and after `index` left another class, outside declarations,
+    /// that open an object.
+    fn count_passed(&mut self, name: &'p str, index: i64, at: usize) -> Result<(), CodecError> {
+        let body = self.classes.get(name).map_or(at, |class| class.body);
+        let start = self
+            .released
+            .get(&index)
+            .copied()
+            .map_or(body, |released| released.max(body));
+        let passed = usize::try_from(index)
+            .ok()
+            .and_then(|key| self.tags.get(key))
+            .map(|sites| {
+                let first = sites.partition_point(|&site| site <= start);
+                let end = sites.partition_point(|&site| site < at);
+                sites.get(first..end).unwrap_or_default().to_vec()
+            })
+            .unwrap_or_default();
+        self.charge(u64_from_index(passed.len()))?;
+        let mut free = start;
+        for site in passed {
+            if site < free || self.in_declaration(site) {
+                continue;
+            }
+            if self.opens_object(site, name) {
+                self.next = add(self.next, 1)?;
+                free = site.checked_add(2).ok_or_else(count_overflow)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `at` lies in a class declaration's header or name.
+    fn in_declaration(&self, at: usize) -> bool {
+        let after = self
+            .declarations
+            .partition_point(|found| found.offset <= at);
+        after
+            .checked_sub(1)
+            .and_then(|last| self.declarations.get(last))
+            .is_some_and(|found| at < found.body)
+    }
+
+    /// Whether the walk reached `bound` with a consistent map.
+    fn reaches(&self, bound: i64) -> Result<bool, CodecError> {
+        Ok(self.next == bound && self.consistent()?)
+    }
+
+    /// Whether each class, in declaration order, lies at least
+    /// [`DECLARATION_INDICES`] above the class declared before it.
+    fn consistent(&self) -> Result<bool, CodecError> {
+        let mut seen = HashSet::new();
+        let mut floor: Option<i64> = None;
+        for name in &self.order {
+            if !seen.insert(*name) {
+                continue;
+            }
+            let Some(index) = self.classes.get(name).map(|class| class.index) else {
+                continue;
+            };
+            if floor.is_some_and(|floor| index < floor) {
+                return Ok(false);
+            }
+            floor = Some(add(index, DECLARATION_INDICES)?);
         }
         Ok(true)
     }
 
     /// Moves each of `names` by `shift` when its own recurrences favour the move.
-    fn move_classes(&mut self, names: &[&'p str], shift: i64) -> Result<(), CodecError> {
+    fn move_classes(&mut self, names: &[&'p str], shift: i64, at: usize) -> Result<(), CodecError> {
         for name in names {
             self.charge(1)?;
             let Some((index, body)) = self
@@ -546,6 +662,7 @@ impl<'p, 'a, 'c> Walker<'p, 'a, 'c> {
             let bytes = opening(self.payload, body);
             if self.recurrences(moved, body, bytes)? > self.recurrences(index, body, bytes)? {
                 self.known.remove(&index);
+                self.released.insert(index, at);
                 self.known.insert(moved, name);
                 if let Some(class) = self.classes.get_mut(name) {
                     class.index = moved;
@@ -675,9 +792,48 @@ fn dominant_shift(readings: &HashMap<i64, usize>) -> Option<i64> {
     (best >= MIN_MOVE_SUPPORT && best >= runner_up.checked_mul(MOVE_DOMINANCE)?).then_some(shift)
 }
 
-/// The map's first index: two below the name class's index, read from the
-/// most frequent name tag `k 80 ff fe ff`.
-fn first_index(payload: &[u8]) -> i64 {
+/// The map's first index from the name class's declaration: the index of
+/// the first name tag after the declaration's own name, less two for each
+/// declaration before it.
+fn declared_first_index(payload: &[u8]) -> Option<i64> {
+    let declarations = declarations(payload);
+    let position = declarations
+        .iter()
+        .position(|declaration| declaration.name == NAME_CLASS)?;
+    let mut at = declarations.get(position)?.body;
+    if payload.get(at..at.checked_add(STRING_MARKER.len())?)? != STRING_MARKER {
+        return None;
+    }
+    at = at.checked_add(STRING_MARKER.len())?;
+    let mut units = usize::from(*payload.get(at)?);
+    at = at.checked_add(1)?;
+    if units == usize::from(u8::MAX) {
+        units = usize::from(View::u16_le_at(payload, at)?);
+        at = at.checked_add(2)?;
+    }
+    at = at.checked_add(units.checked_mul(2)?)?;
+    let before = i64::try_from(position)
+        .ok()?
+        .checked_mul(DECLARATION_INDICES)?;
+    while at.checked_add(2 + STRING_MARKER.len())? <= payload.len() {
+        let word = View::u16_le_at(payload, at)?;
+        if word & 0x8000 != 0
+            && word != u16::MAX
+            && payload.get(at + 2..at + 2 + STRING_MARKER.len()) == Some(&STRING_MARKER[..])
+        {
+            let first = i64::from(word & 0x7fff).checked_sub(before)?;
+            return (0..=HIGHEST_DECLARED_FIRST_INDEX)
+                .contains(&first)
+                .then_some(first);
+        }
+        at += 1;
+    }
+    None
+}
+
+/// The map's first index read from name tags with an index of at most
+/// [`HIGHEST_NAME_TAG_INDEX`], or `None` when there are none.
+fn name_tag_first_index(payload: &[u8]) -> Option<i64> {
     let mut counts = Vec::<(u8, usize)>::new();
     let mut at = 0;
     while at + 5 <= payload.len() {
@@ -702,9 +858,7 @@ fn first_index(payload: &[u8]) -> i64 {
             best = Some((index, count));
         }
     }
-    best.map_or(FALLBACK_FIRST_INDEX, |(index, _)| {
-        i64::from(index) - NAME_CLASS_ABOVE_FIRST_INDEX
-    })
+    best.map(|(index, _)| i64::from(index) - NAME_CLASS_ABOVE_FIRST_INDEX)
 }
 
 /// Every class declaration, in stream order.

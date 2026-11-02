@@ -52,6 +52,7 @@ class CommandSelection(unittest.TestCase):
         workflow = (Path(__file__).resolve().parent.parent / check.WORKFLOW).read_text()
         selected = check.commands(workflow, scripts_changed=False)
         self.assertIn("python3 scripts/check-source-policy.py", selected)
+        self.assertIn("python3 scripts/preflight_open_items.py", selected)
         self.assertIn("cargo fmt --all --check", selected)
 
 

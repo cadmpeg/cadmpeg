@@ -884,7 +884,8 @@ Part `Revolution` uses `Symmetric` and `Solid`; PartDesign `Revolution` and `Gro
 `Midplane`, `Reversed`, and `AllowMultiFace`. These are `App::PropertyBool` values with direct
 `Bool` values `false` and `true` and absent defaults `false`. `Symmetric` and `Midplane` select a
 symmetric angular extent, `Solid` selects solid construction, `Reversed` reverses the resolved
-axis, and `AllowMultiFace` permits multiple profile faces. A present carrier with another runtime
+axis, and `AllowMultiFace` permits multiple profile faces. A PartDesign `Revolution` with `Reversed`
+`false` turns `Angle` right-handed about the resolved axis and turns `Angle2` the opposite way. A present carrier with another runtime
 type, without exactly one direct `Bool`, or with any other value does not select a neutral
 revolution or groove; the operation remains native.
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for

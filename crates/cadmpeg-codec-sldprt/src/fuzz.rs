@@ -42,6 +42,7 @@ pub fn spline_surfaces(data: &[u8]) {
 /// Exercise topology record scanning.
 pub fn topology(data: &[u8]) {
     drop(crate::brep::topology::scan(data));
+    drop(crate::brep::topology::scan_plain(data));
 }
 
 /// Exercise framed counted-`CString` reading.

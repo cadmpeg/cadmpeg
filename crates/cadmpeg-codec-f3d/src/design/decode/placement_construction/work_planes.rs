@@ -51,6 +51,13 @@ pub(crate) fn solved_frame(
             .fields
             .use_u_direction
             .as_ref()
+            .is_some_and(|value| {
+                value.value != 0 && !(placement.type_version == 16 && value.value == 1)
+            })
+        || placement
+            .fields
+            .periodic_face_mode
+            .as_ref()
             .is_some_and(|value| value.value != 0)
     {
         return None;

@@ -240,7 +240,8 @@ impl ItemBudget<'_> {
         }
     }
 
-    fn exhaustion(&self) -> MeasureFailure {
+    /// The failure of a step that the item's slice stopped.
+    pub(crate) fn exhaustion(&self) -> MeasureFailure {
         self.note_exhaustion();
         MeasureFailure::unavailable(
             UnavailableReason::EvaluationWorkExhausted,

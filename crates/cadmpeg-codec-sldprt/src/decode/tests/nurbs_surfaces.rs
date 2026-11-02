@@ -14,6 +14,7 @@ use crate::test_support::ir::strict_options;
 use crate::test_support::parasolid::be16;
 use crate::test_support::parasolid::be32;
 use crate::test_support::parasolid::bef64;
+use crate::test_support::parasolid::blend_on_swept_wall_body;
 use crate::test_support::parasolid::blend_triangle_body;
 use crate::test_support::parasolid::bridge;
 use crate::test_support::parasolid::coedge;
@@ -199,6 +200,60 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+/// The fit tolerance, in millimetres, of the cache the decoded blend holds.
+fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cached = result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Procedural { cache: Some(_), .. }
+        )
+    });
+    let fit_tolerance = result.ir().model.procedural_surfaces[0]
+        .cache_fit_tolerance()
+        .map(cadmpeg_ir::geometry::FitTolerance::get);
+    assert_eq!(cached, fit_tolerance.is_some());
+    fit_tolerance
+}
+
+#[test]
+fn a_blend_on_a_swept_support_solves_its_cache_through_the_face_on_the_sweep() {
+    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.0))
+        .expect("the wall's face states the sweep");
+    assert!(fit_tolerance < 1.0e-5);
+}
+
+#[test]
+fn a_blend_on_a_sweep_that_no_face_carries_has_no_cache() {
+    assert_eq!(
+        blend_cache_fit_tolerance(&blend_on_swept_wall_body(false, 0.0)),
+        None
+    );
+}
+
+#[test]
+fn a_blend_cache_covers_a_vertex_inside_a_quarter_of_the_radius() {
+    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.001))
+        .expect("a 1 mm miss on a 100 mm ball is the same branch");
+    assert!(fit_tolerance >= 0.9, "{fit_tolerance}");
+    assert!(fit_tolerance <= 1.1, "{fit_tolerance}");
+}
+
+#[test]
+fn a_blend_cache_past_a_quarter_of_the_radius_from_a_vertex_is_refused() {
+    assert_eq!(
+        blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.03)),
+        None
+    );
 }
 
 #[test]
@@ -539,7 +594,7 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: Some(true),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) => {

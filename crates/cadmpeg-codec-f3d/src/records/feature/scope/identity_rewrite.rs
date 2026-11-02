@@ -9,7 +9,7 @@ use super::{
 };
 
 rewrite_native_record!(DesignBaseFlangeScope, []; {base_flange_operation, base_flange_profile});
-rewrite_native_record!(DesignExtrudeScope, []; {extrude_prologue, fixed_extrude_parameters, extrude_profile});
+rewrite_native_record!(DesignExtrudeScope, []; {extrude_prologue, fixed_extrude_parameters, extrude_profile, extrude_native_profiles});
 rewrite_native_scalar!(DesignFaceRecipeKind);
 rewrite_native_record!(DesignJointOriginReference, []; {joint_origin_reference});
 rewrite_native_record!(DesignJointOriginTransform, []; {joint_origin_transform, reference});

@@ -147,6 +147,7 @@ Each input codec implements `Codec`:
 
 - `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
+- `detect_whole` judges a source that the registry proved the prefix holds completely. The registry calls it for every codec when the prefix is the whole source and no codec recognized the prefix. Its default is `detect`.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure and reports the losses resolved at inspection depth.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, DecodeFailure>` produces `CadIr`, `DecodeReport`, and source fidelity. `DecodeFailure::Codec` carries backend and resource failures.
 

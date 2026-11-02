@@ -214,6 +214,10 @@ impl PmDcReferenceList {
         self.marker
     }
 
+    pub(crate) fn metadata(&self) -> Option<&PmDcListMetadata> {
+        self.items.as_ref().map(|(metadata, _)| metadata)
+    }
+
     pub(crate) fn new(
         marker: u16,
         metadata: Option<PmDcListMetadata>,
@@ -379,6 +383,10 @@ struct PmDcU32ListWire {
 impl PmDcU32List {
     pub(crate) fn marker(&self) -> u16 {
         self.marker
+    }
+
+    pub(crate) fn metadata(&self) -> Option<&PmDcListMetadata> {
+        self.items.as_ref().map(|(metadata, _)| metadata)
     }
 
     pub(crate) fn new(

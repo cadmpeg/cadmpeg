@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 
@@ -108,10 +109,11 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
     let written_end = format!(
         ",{},{};",
         super::super::number(
-            cadmpeg_ir::scalar::FiniteReal::new(1.0e-7_f64.cosh()).expect("finite major endpoint"),
+            cadmpeg_ir::scalar::FiniteReal::new(1.0e-7_f64.portable_cosh())
+                .expect("finite major endpoint"),
         ),
         super::super::number(
-            cadmpeg_ir::scalar::FiniteReal::new(f64::MAX * 1.0e-7_f64.sinh())
+            cadmpeg_ir::scalar::FiniteReal::new(f64::MAX * 1.0e-7_f64.portable_sinh())
                 .expect("finite minor endpoint"),
         ),
     );

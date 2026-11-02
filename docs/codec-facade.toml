@@ -25,6 +25,7 @@ names = [
     "F3zMember",
     "F3zMemberKind",
     "F3zMemberObserver",
+    "F3zPhase",
     "F3zSession",
     "observe_f3z_members",
 ]

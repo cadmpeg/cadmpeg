@@ -9,6 +9,7 @@ use crate::geometry::nurbs::{
 };
 use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
 use crate::transform::Transform;
 const EPS_DERIVATIVE_COORDINATE: f64 = 1.0e-12;
@@ -224,7 +225,11 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     .expect("analytic tangent");
     assert_eq!(
         tangent,
-        Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
+        Vector3::new(
+            -3.0 * parameter.portable_sin(),
+            3.0 * parameter.portable_cos(),
+            0.0
+        )
     );
     assert_eq!(
         curve_second_derivative(
@@ -235,8 +240,8 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .ok()
         .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(
-            -3.0 * parameter.cos(),
-            -3.0 * parameter.sin(),
+            -3.0 * parameter.portable_cos(),
+            -3.0 * parameter.portable_sin(),
             0.0,
         ))
     );

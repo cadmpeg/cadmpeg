@@ -67,5 +67,15 @@ pub(super) fn validate_xref_placement_sources(
             );
         }
     }
+    for path in &ctx.native.design_component_paths {
+        if !crate::xref::component_path_matches(path) {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design component path does not match its carrier record",
+                Some(path.id.clone()),
+            );
+        }
+    }
     Ok(())
 }

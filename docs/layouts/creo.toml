@@ -200,8 +200,8 @@ note = "The parser gates on length 56, `0x18` at 0, the seven-byte literal at 9.
 name = "pcurve_endpoint_body"
 kind = "slot"
 section = "4.1"
-anchor = "A direct curve body consisting of exactly eight scalar slots and no references has this layout."
-note = "A scalar token occupies one slot and a standalone `12` occupies one zero-valued slot; no other unclaimed byte is permitted. All eight values are finite parameter coordinates in the corresponding face spaces. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
+anchor = "A direct curve body consisting of exactly eight scalar slots and no references"
+note = "The stateful scalar stream expands literals and bounded repeats into eight slots. A standalone `12` occupies one slot with value positive pi/2. All eight values are finite parameter coordinates in the corresponding face spaces. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
 
 [[record.field]]
 name = "endpoint_a_f0"
@@ -244,8 +244,8 @@ note = "The parser reconstructs the eight-slot pcurve endpoint body as `[f64; 8]
 name = "local_sys_support_frame"
 kind = "slot"
 section = "3.4"
-anchor = "`local_sys` has twelve scalar slots. Plane rows use three storage forms."
-note = "Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames, and by coordinate-system records. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
+anchor = "In a support-triple body, the slots are:"
+note = "This record describes the support-triple production of a twelve-slot local system. Other local-system productions use their enclosing record grammar. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
 
 [[record.field]]
 name = "direction_0"

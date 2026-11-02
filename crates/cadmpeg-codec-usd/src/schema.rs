@@ -104,6 +104,28 @@ pub(crate) fn integers(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Opti
     }
 }
 
+/// The integer-array value of attribute `name`, `width` components per
+/// element.
+pub(crate) fn integer_tuples(
+    prim: &Prim<'_>,
+    name: &str,
+    width: usize,
+    issues: &mut Issues,
+) -> Option<Vec<i128>> {
+    let value = attribute(prim, name, issues)?;
+    match value.integers() {
+        Some(values) if value.array && value.width() == width => Some(values.to_vec()),
+        _ => {
+            issues.malformed(
+                prim,
+                name,
+                format!("expected an array of {width}-component integers"),
+            );
+            None
+        }
+    }
+}
+
 /// The scalar bool value of attribute `name`.
 pub(crate) fn boolean(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<bool> {
     let value = attribute(prim, name, issues)?;

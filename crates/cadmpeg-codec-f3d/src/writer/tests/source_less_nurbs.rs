@@ -287,8 +287,8 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         expected.native_tail_flags()
     );
     assert_eq!(
-        round_trip.ir().model.pcurves[0].parameter_range(),
-        expected.parameter_range()
+        round_trip.ir().model.pcurves[0].uv_offset(),
+        expected.uv_offset()
     );
     assert_eq!(
         round_trip.ir().model.pcurves[0].fit_tolerance(),
@@ -372,22 +372,22 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         .expect("source-less line pcurve round trip");
     assert_eq!(
         round_trip.ir().model.pcurves[0]
-            .parameter_range()
+            .uv_offset()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.0, 3.0])
     );
-    assert_eq!(
-        round_trip.ir().model.pcurves[0].geometry,
-        PcurveGeometry::Nurbs {
+    crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close(
+        &round_trip.ir().model.pcurves[0].geometry,
+        &PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
-                vec![-2.0, -2.0, 3.0, 3.0],
-                vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(2.0, -1.0), Point2::new(2.5, 1.0)],
                 None,
                 false,
             )
             .unwrap(),
-        }
+        },
     );
 }
 
@@ -422,7 +422,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     assert_eq!(actual.geometry, expected.geometry);
     assert_eq!(actual.wrapper_reversed(), expected.wrapper_reversed());
     assert_eq!(actual.native_tail_flags(), expected.native_tail_flags());
-    assert_eq!(actual.parameter_range(), expected.parameter_range());
+    assert_eq!(actual.uv_offset(), expected.uv_offset());
     assert_eq!(actual.fit_tolerance(), expected.fit_tolerance());
 }
 

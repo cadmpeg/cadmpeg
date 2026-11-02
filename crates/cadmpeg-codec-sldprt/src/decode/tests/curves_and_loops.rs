@@ -426,3 +426,81 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
         1
     );
 }
+
+#[test]
+fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
+    let mut body = triangle_body();
+    let at = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x11, 0x00, 30])
+        .unwrap();
+    body[at + 8..at + 10].copy_from_slice(&31u16.to_be_bytes());
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+            .count(),
+        1
+    );
+}
+
+/// A FACE that stores no loop covers a whole sphere. Its surface marker
+/// reverses its face sense, as its bridge marker does.
+#[test]
+fn a_face_that_stores_no_loop_covers_its_sphere() {
+    use crate::test_support::parasolid::sphere_carrier;
+    use cadmpeg_ir::topology::Sense;
+
+    let decode = |surface: Vec<u8>, loop_attr: u16, bridge_marker: u8| {
+        let mut face = bridge(10, loop_attr, 100);
+        face[28] = bridge_marker;
+        let body = [surface, face].concat();
+        SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_body(&body)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let sphere = |marker: u8| {
+        let mut carrier = sphere_carrier(100, [0.0; 3], 1.0);
+        carrier[18] = marker;
+        carrier
+    };
+    let withheld = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+    };
+
+    for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {
+        let result = decode(sphere(0x2d), 1, bridge_marker);
+        let faces = &result.ir().model.faces;
+        assert_eq!(faces.len(), 1);
+        assert!(faces[0].loops.is_empty());
+        assert_eq!(faces[0].sense, sense);
+        assert!(!withheld(&result));
+    }
+    let stored_loop = decode(sphere(0x2b), 20, 0x2b);
+    assert!(stored_loop.ir().model.faces.is_empty());
+    assert!(withheld(&stored_loop));
+    let plane = decode(
+        plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        1,
+        0x2b,
+    );
+    assert!(plane.ir().model.faces.is_empty());
+    assert!(withheld(&plane));
+}

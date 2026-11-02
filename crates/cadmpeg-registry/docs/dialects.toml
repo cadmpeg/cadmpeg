@@ -341,9 +341,12 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:84"
 
 [[dialect]]
 # `StepSchema::Ap214` (options.rs:85). Fixture verified: ap214_sheet.p21 line
-# 5 is FILE_SCHEMA(('AUTOMOTIVE_DESIGN')). Two more fixture identifiers,
-# 'AP214' and 'AUTOMOTIVE_DESIGN_CC2', match no `StepSchema` variant and
-# classify into `step:unknown`.
+# 5 is FILE_SCHEMA(('AUTOMOTIVE_DESIGN')). The fixture identifier 'AP214'
+# matches no `StepSchema` variant and classifies into `step:unknown`.
+# 'AUTOMOTIVE_DESIGN_CC2' is the schema name of the AP214 committee draft, and
+# its exchanges declare the 'committee draft' status of the 'automotive_design'
+# protocol in APPLICATION_PROTOCOL_DEFINITION. It selects this row, and the
+# writer declares only the name below.
 # The reader admits the bare name or the arc-bearing form
 # (`schema_identifier_matches`, parse.rs:1995-2002); the encoder writes
 # `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }` (options.rs:85). The
@@ -351,7 +354,7 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:84"
 # AP242 editions where they select the row.
 id = "step:ap214"
 title = "STEP AP214 (AUTOMOTIVE_DESIGN)"
-discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN" }
+discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN | AUTOMOTIVE_DESIGN_CC2" }
 witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21"
 
 [[dialect]]
@@ -444,9 +447,8 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 # is recorded (reader/mod.rs) and nothing branches on it. Two kinds of
 # declaration reach here:
 #   - an identifier whose schema name matches no row's name. In-tree fixtures:
-#     'AP214' (strings.p21), 'AUTOMOTIVE_DESIGN_CC2'
-#     (noncanonical_solid_angle.p21), and the literal 'AP242'
-#     (ap242_ed3_sections.p21), none of which is a declared schema name.
+#     'AP214' (strings.p21) and the literal 'AP242' (ap242_ed3_sections.p21),
+#     neither of which is a declared schema name.
 #   - the AP242 schema name carrying an object identifier that names no
 #     declared edition (`ap242_edition`, options.rs:92-104), including arcs
 #     that do not read as a numeric object identifier. An edition claim
