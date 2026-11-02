@@ -50,25 +50,38 @@ fn document_note_is_preserved_but_does_not_make_fcstd_geometry_nonempty() {
     let unrepresented_classes = serde_json::to_value(&unrepresented).unwrap();
     let assert_path = |report: &Value, case: &str| {
         let native = case == "native";
-        // Without a document baseline the retained layout is ineligible, so
-        // both inputs synthesize without consuming fidelity.
-        assert_eq!(report["export"]["write_path"]["path"], "synthesized");
+        assert_eq!(
+            report["export"]["write_path"]["path"],
+            if native && native_patch_eligible {
+                "patched"
+            } else {
+                "synthesized"
+            }
+        );
         assert_eq!(
             report["export"]["write_path"]["fidelity"]["status"],
             if native {
-                "not_consumed"
+                if native_patch_eligible {
+                    "replayed"
+                } else {
+                    "not_consumed"
+                }
             } else {
                 "not_provided"
             }
         );
-        if native && !native_patch_eligible {
-            assert_eq!(
-                report["export"]["synthesis_cause"],
-                serde_json::json!({
-                    "cause": "source_unrepresented",
-                    "classes": unrepresented_classes,
-                })
-            );
+        if native {
+            if native_patch_eligible {
+                assert!(report["export"]["synthesis_cause"].is_null());
+            } else {
+                assert_eq!(
+                    report["export"]["synthesis_cause"],
+                    serde_json::json!({
+                        "cause": "source_unrepresented",
+                        "classes": unrepresented_classes,
+                    })
+                );
+            }
         }
     };
     let dir = tempdir().unwrap();
