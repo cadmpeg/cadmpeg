@@ -123,6 +123,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
                             "Base Feature",
                             bytes.len() - feature_ordinal,
                             false,
+                            false,
                         )
                         .unwrap()),
                 );

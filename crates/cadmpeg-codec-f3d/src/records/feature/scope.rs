@@ -2404,24 +2404,35 @@ impl DesignParameterScope {
         match draft.previous_history_state_id_offset {
             None if draft.previous_history_state_id.is_none() => {}
             Some(offset) => {
-                let relative = if typed_canvas {
-                    None
+                let relatives = if typed_canvas {
+                    Vec::new()
                 } else if typed {
-                    Some(crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID)
+                    vec![crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID]
                 } else {
-                    crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
-                        kind, tail, draft.reference_members.is_empty(),
-                    )
+                    [false, true]
+                        .into_iter()
+                        .filter_map(|second_tail_reference| {
+                            crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
+                                kind,
+                                tail,
+                                draft.reference_members.is_empty(),
+                                second_tail_reference,
+                            )
+                        })
+                        .collect()
+                };
+                if relatives.is_empty() {
+                    return Err(fail("previous_history_state_id_offset"));
                 }
-                .ok_or_else(|| fail("previous_history_state_id_offset"))?;
                 // A scope that commits no state of its own can still record
                 // the state it follows.
-                if draft
-                    .feature_ordinal_offset
-                    .checked_add(u64_from_index(relative))
-                    != Some(offset)
-                    || (draft.history_state_id.is_some()
-                        && draft.previous_history_state_id.is_none())
+                if !relatives.iter().any(|relative| {
+                    draft
+                        .feature_ordinal_offset
+                        .checked_add(u64_from_index(*relative))
+                        == Some(offset)
+                }) || (draft.history_state_id.is_some()
+                    && draft.previous_history_state_id.is_none())
                 {
                     return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));
                 }

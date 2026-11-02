@@ -591,7 +591,7 @@ fn scope_without_its_own_history_state_keeps_its_predecessor() {
         lp_utf16(&mut bytes, "Thread");
         let mut tail = [0; 87];
         tail[0..4].copy_from_slice(&3u32.to_le_bytes());
-        tail[41..45].copy_from_slice(&previous_state.to_le_bytes());
+        tail[31..35].copy_from_slice(&previous_state.to_le_bytes());
         bytes.extend_from_slice(&tail);
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"262");
