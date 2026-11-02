@@ -44,7 +44,15 @@ fn standard_compact_admits_any_class_pair_and_the_two_designation_offsets() {
 
 #[test]
 fn extended_standard_thread_has_one_face_group_and_a_designation_at_46() {
-    assert!(DesignThreadForm::StandardExtended.has_standard_reference_table());
+    assert!(!DesignThreadForm::StandardExtended.has_standard_reference_table());
+    assert_eq!(
+        DesignThreadForm::StandardExtended.face_groups(&[101, 102, 120, 123]),
+        [101]
+    );
+    assert_eq!(
+        DesignThreadForm::StandardExtended.face_groups(&[101, 102, 105, 106, 109, 110, 120, 123]),
+        [101, 105, 109]
+    );
     assert!(thread_class_pair_holds(
         DesignThreadForm::StandardExtended,
         &DesignClassTag::try_from("393".to_owned()).unwrap(),

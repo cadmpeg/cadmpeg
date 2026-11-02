@@ -49,29 +49,19 @@ pub(super) fn exact_thread_construction(
     let mut construction = parse_thread_payload(
         bytes,
         designation_at,
-        prefix_form,
+        &prefix_form,
         face_group_record_indices,
     )?;
-    match construction.form {
-        DesignThreadForm::CompactExtended(_) => {
-            construction.face_group_record_indices = scope
-                .reference_members()
-                .values()
-                .skip(construction.form.face_reference_start())
-                .step_by(2)
-                .copied()
-                .collect();
-        }
-        DesignThreadForm::StandardExtended => {
-            construction.face_group_record_indices = scope
-                .reference_members()
-                .values()
-                .take(reference_count.checked_sub(2)?)
-                .step_by(2)
-                .copied()
-                .collect();
-        }
-        _ => {}
+    if matches!(
+        construction.form,
+        DesignThreadForm::StandardExtended | DesignThreadForm::CompactExtended(_)
+    ) {
+        let references = scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
+        construction.face_group_record_indices = construction.form.face_groups(&references);
     }
     if matches!(
         construction.form,
@@ -226,14 +216,14 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Thread
 pub(super) fn parse_thread_payload(
     bytes: &[u8],
     designation_at: usize,
-    expected_form: ThreadPrefix,
+    expected_form: &ThreadPrefix,
     face_group_record_indices: Vec<u32>,
 ) -> Option<DesignThreadConstruction> {
     let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
     let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
     (|| {
-        let extended = match &expected_form {
+        let extended = match expected_form {
             ThreadPrefix::Extended(prefix) => Some(prefix),
             ThreadPrefix::Standard | ThreadPrefix::Compact => None,
         };
@@ -243,7 +233,7 @@ pub(super) fn parse_thread_payload(
             return None;
         }
         let (pitch_marker, trailer_kind, full_length) =
-            match (&expected_form, bytes.get(after_profile..after_profile + 5)?) {
+            match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
                 (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => (
                     u8::from(prefix.modeled),
                     ThreadTrailerKind::ExtendedStandard,

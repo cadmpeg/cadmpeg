@@ -51,7 +51,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         extended: None,
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988]),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
@@ -60,7 +60,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         parse_thread_payload(
             &invalid_standard_pitch_marker,
             38,
-            ThreadPrefix::Standard,
+            &ThreadPrefix::Standard,
             vec![988]
         ),
         None
@@ -90,7 +90,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
     let shifted_expected =
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
+        parse_thread_payload(&owner_marked, 42, &ThreadPrefix::Standard, vec![988])
             .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
     scope
@@ -111,7 +111,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         None
     );
     assert_eq!(
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&owner_marked, 42, &ThreadPrefix::Compact, vec![988]),
         None
     );
 }
@@ -154,7 +154,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         extended: None,
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988]),
         &expected,
     );
 
@@ -235,7 +235,7 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
     for zero_run in [2, 3] {
         let bytes = standard_compact_thread_bytes(zero_run, 612);
         assert_thread_construction(
-            parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![612]),
+            parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612]),
             &expected(38),
         );
     }
@@ -270,7 +270,7 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
 
 #[test]
 fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
-    let admit = |bytes: &[u8]| parse_thread_payload(bytes, 38, ThreadPrefix::Standard, vec![612]);
+    let admit = |bytes: &[u8]| parse_thread_payload(bytes, 38, &ThreadPrefix::Standard, vec![612]);
     assert!(admit(&standard_compact_thread_bytes(2, 612)).is_some());
     // The zero run is two or three bytes.
     assert_eq!(admit(&standard_compact_thread_bytes(1, 612)), None);
@@ -300,7 +300,7 @@ fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
     assert_eq!(admit(&base[..base.len() - 8]), None);
     // The compact prefix does not admit the marker with the standard trailer.
     assert_eq!(
-        parse_thread_payload(&base, 38, ThreadPrefix::Compact, vec![612]),
+        parse_thread_payload(&base, 38, &ThreadPrefix::Compact, vec![612]),
         None
     );
 }
@@ -375,7 +375,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         extended: None,
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&bytes, 38, &ThreadPrefix::Compact, vec![988]),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -388,7 +388,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         offset: u64_from_index(after_profile + 39),
     }));
     assert_thread_construction(
-        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&referenced, 38, &ThreadPrefix::Compact, vec![988]),
         &referenced_expected,
     );
 
@@ -493,7 +493,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         extended: None,
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&bytes, 38, &ThreadPrefix::Compact, vec![988]),
         &expected,
     );
 

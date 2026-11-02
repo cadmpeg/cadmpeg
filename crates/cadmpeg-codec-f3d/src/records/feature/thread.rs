@@ -148,11 +148,35 @@ impl DesignThreadForm {
     /// The other forms carry ordered `(face-selection group, sole member)` pairs.
     pub(crate) const fn has_standard_reference_table(&self) -> bool {
         match self {
-            Self::Standard
-            | Self::StandardLegacy
-            | Self::StandardCompact
-            | Self::StandardExtended => true,
-            Self::Compact(_) | Self::CompactExtended(_) | Self::CompactLegacy => false,
+            Self::Standard | Self::StandardLegacy | Self::StandardCompact => true,
+            Self::Compact(_)
+            | Self::CompactExtended(_)
+            | Self::CompactLegacy
+            | Self::StandardExtended => false,
+        }
+    }
+
+    /// The face-selection group of each face in the ordered scope references.
+    pub(crate) fn face_groups(self, references: &[u32]) -> Vec<u32> {
+        match self {
+            Self::StandardExtended => references
+                .len()
+                .checked_sub(2)
+                .and_then(|pairs| references.get(..pairs))
+                .unwrap_or_default()
+                .iter()
+                .step_by(2)
+                .copied()
+                .collect(),
+            _ if self.has_standard_reference_table() => {
+                references.first().copied().into_iter().collect()
+            }
+            _ => references
+                .iter()
+                .skip(self.face_reference_start())
+                .step_by(2)
+                .copied()
+                .collect(),
         }
     }
 }
