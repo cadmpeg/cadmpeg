@@ -176,6 +176,8 @@ pub(crate) enum InventorLossCode {
     FeatureTaggingNative,
     /// Stored-body composite selections retain unresolved construction controls.
     FeatureCompositeOperandsNative,
+    /// Coil construction controls retain unresolved polarity.
+    FeatureCoilOperandsNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -311,6 +313,7 @@ impl InventorLossCode {
         Self::FeatureDerivedTaggingNative,
         Self::FeatureTaggingNative,
         Self::FeatureCompositeOperandsNative,
+        Self::FeatureCoilOperandsNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -433,6 +436,7 @@ impl InventorLossCode {
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::FeatureTaggingNative => "feature.tagging-native",
             Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
+            Self::FeatureCoilOperandsNative => "feature.coil-operands-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -557,6 +561,7 @@ impl InventorLossCode {
             | Self::FeatureDerivedResultNative
             | Self::FeatureDerivedTaggingNative
             | Self::FeatureCompositeOperandsNative
+            | Self::FeatureCoilOperandsNative
             | Self::FeatureTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -690,6 +695,7 @@ mod tests {
                 "feature.derived-tagging-native",
                 "feature.tagging-native",
                 "feature.composite-operands-native",
+                "feature.coil-operands-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",
