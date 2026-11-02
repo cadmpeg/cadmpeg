@@ -3109,21 +3109,6 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let mut retention = retention::Retention::default();
-    // These source records were withheld by the B-rep builder. The exact
-    // ownership is not localized for every inverse-solve/topology branch, so
-    // the enclosing source image owns the remaining model content.
-    if brep.untyped_model
-        || brep.stats.unknown_surface_faces != 0
-        || brep.stats.unknown_procedural_supports != 0
-        || brep.stats.unknown_curve_edges != 0
-        || brep.stats.ambiguous_pcurve_parameters != 0
-        || brep.stats.off_surface_nurbs_pcurves != 0
-        || !brep.stats.surface_solver_capped.is_empty()
-        || brep.stats.unresolved_face_colors != 0
-        || brep.stats.unclaimed_faces != 0
-    {
-        retention.source(cadmpeg_ir::document::ArenaClass::Model);
-    }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let (display_sections, _) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(scan, classification, metadata_header.as_ref())?);
@@ -4257,18 +4242,38 @@ fn build_metadata_ir(
 ) -> Result<BuiltDocument, CodecError> {
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
+    let mut unknowns = Vec::new();
+    let mut annotations = Annotations::default();
     for section in scan.sections() {
         if matches!(
             container::payload_family(section.payload()),
             container::PayloadFamily::PngPreview | container::PayloadFamily::BmpThumbnail
         ) {
             // This route does not run the preview projection and has no typed
-            // native preview arena; the source image still owns that resource.
-            retention.source(cadmpeg_ir::document::ArenaClass::Model);
+            // native preview arena. The section's own retained record owns
+            // that undecoded model content.
+            let id = section.native_id();
+            retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Model);
+            let offset = match section {
+                container::Section::Block(block) => u64_from_index(block.offset),
+                container::Section::Compound(_) => 0,
+            };
+            crate::annotations::note(
+                &mut annotations,
+                id.as_str(),
+                section.source_stream(),
+                offset,
+                container::payload_family(section.payload()).label(),
+                Exactness::ByteExact,
+            )?;
+            unknowns.push(UnknownRecord::retained(
+                id,
+                offset,
+                retained_copy(ctx, section.payload(), "retain SLDPRT preview section")?,
+                Vec::new(),
+            ));
         }
     }
-    let mut unknowns = Vec::new();
-    let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles) =
@@ -4356,15 +4361,38 @@ fn build_metadata_ir(
             retained_copy(ctx, site.payload, "retain SLDPRT active site")?,
             Vec::new(),
         ));
-    } else if scan.sections().any(|section| {
-        section
-            .ps_streams()
-            .iter()
-            .any(|stream| crate::parasolid::is_body_stream(&stream.header))
-    }) {
-        // Body streams without one active site leave the model untyped; the
-        // source image still owns them.
-        retention.source(cadmpeg_ir::document::ArenaClass::Model);
+    } else {
+        for section in scan.sections() {
+            if !section
+                .ps_streams()
+                .iter()
+                .any(|stream| crate::parasolid::is_body_stream(&stream.header))
+            {
+                continue;
+            }
+            // Body streams without one active site leave the model untyped;
+            // each stream's own retained record owns its undecoded bytes.
+            let id = section.native_id();
+            retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Model);
+            let offset = match section {
+                container::Section::Block(block) => u64_from_index(block.offset),
+                container::Section::Compound(_) => 0,
+            };
+            crate::annotations::note(
+                &mut annotations,
+                id.as_str(),
+                section.source_stream(),
+                offset,
+                container::payload_family(section.payload()).label(),
+                Exactness::ByteExact,
+            )?;
+            unknowns.push(UnknownRecord::retained(
+                id,
+                offset,
+                retained_copy(ctx, section.payload(), "retain SLDPRT body stream")?,
+                Vec::new(),
+            ));
+        }
     }
 
     ir.source = Some(SourceMeta::classified(
