@@ -1458,6 +1458,16 @@ fn decode_support_frame_productions(
         return Ok(finite_local_system_slots(values)
             .map(|slots| (slots, PlaneSupportFrameLayout::RotationColumns)));
     }
+    // An orthogonal-rank image whose rank triple is the signed unit row of a
+    // complete angular-stream rotation is that rotation.
+    if decode_prefixed_orthogonal_plane_support(body, cache)
+        .or_else(|| decode_trailing_rank_orthogonal_plane_support(body, cache))
+        .is_some_and(|(_, cursor)| cursor == body.len())
+    {
+        if let Some(Ok(slots)) = sheet_frames::plane(body, cache) {
+            return Ok(Some((slots, PlaneSupportFrameLayout::RotationColumns)));
+        }
+    }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
         if cursor == body.len() {
             return Ok(Some((
