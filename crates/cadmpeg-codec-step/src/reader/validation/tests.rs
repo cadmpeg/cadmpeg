@@ -7,34 +7,84 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+use cadmpeg_ir::CadIr;
 
+use crate::test_support::exchange::decode_inline;
+use crate::test_support::validated_part::{part, validation_property, Item, PartBody};
 use crate::StepCodec;
+
+const CUBE: PartBody = PartBody::Solid {
+    min: [0.0; 3],
+    max: [10.0; 3],
+};
+
+fn decode_source(source: &str) -> cadmpeg_ir::codec::DecodeResult {
+    StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode validation fixture")
+}
+
+fn tessellation_fixture() -> String {
+    String::from_utf8(include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec())
+        .expect("fixture is UTF-8")
+}
+
+/// The declared measures of the property `#property`.
+fn of_property(ir: &CadIr, property: u64) -> Vec<&DeclaredMeasure> {
+    let prefix = format!("step:data:declared_measure#{property}-");
+    ir.model
+        .declared_measures
+        .iter()
+        .filter(|measure| measure.id.as_str().starts_with(&prefix))
+        .collect()
+}
+
+fn quantities(measures: &[&DeclaredMeasure]) -> Vec<DeclaredQuantity> {
+    measures
+        .iter()
+        .map(|measure| measure.quantity.clone())
+        .collect()
+}
+
+fn scalar(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()
+}
+
+fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::FinitePoint3 {
+    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)).unwrap()
+}
+
+fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "validation.item-unsupported")
+        .map(|loss| loss.message.clone())
+        .collect()
+}
 
 #[test]
 fn complex_validation_measure_carrier_is_decoded() {
-    let source = String::from_utf8(
-        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace(
-        "#42=REPRESENTATION('surface area',(#43),#2);",
-        "#42=(REPRESENTATION('surface area',(#43),#2) SHAPE_REPRESENTATION());",
-    )
-    .replace(
-        "#43=MEASURE_REPRESENTATION_ITEM('surface area measure',AREA_MEASURE(50.),#44);",
-        "#43=(MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(AREA_MEASURE(50.),#44) REPRESENTATION_ITEM('surface area measure'));",
-    );
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode complex validation measure");
+    let source = tessellation_fixture()
+        .replace(
+            "#42=REPRESENTATION('surface area',(#43),#2);",
+            "#42=(REPRESENTATION('surface area',(#43),#2) SHAPE_REPRESENTATION());",
+        )
+        .replace(
+            "#43=MEASURE_REPRESENTATION_ITEM('surface area measure',AREA_MEASURE(50.),#44);",
+            "#43=(MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(AREA_MEASURE(50.),#44) REPRESENTATION_ITEM('surface area measure'));",
+        );
+    let result = decode_source(&source);
 
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
-    }));
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("geometric validation property #41 has an unsupported value")
-    }));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 41)),
+        [DeclaredQuantity::SolidArea {
+            value: scalar(50.0)
+        }]
+    );
+    assert!(unsupported_items(&result).is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -42,22 +92,21 @@ fn complex_validation_measure_carrier_is_decoded() {
 
 #[test]
 fn direct_area_and_volume_unit_subtypes_scale_validation_measures() {
-    let source = String::from_utf8(
-        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace("#44=DERIVED_UNIT((#55));", "#44=AREA_UNIT((#55));")
-    .replace("#53=DERIVED_UNIT((#56));", "#53=VOLUME_UNIT((#56));");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode direct validation unit subtypes");
+    let source = tessellation_fixture()
+        .replace("#44=DERIVED_UNIT((#55));", "#44=AREA_UNIT((#55));")
+        .replace("#53=DERIVED_UNIT((#56));", "#53=VOLUME_UNIT((#56));");
+    let result = decode_source(&source);
 
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
-    }));
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation volume open sheet volume: expected 0, tessellation approximation 0"
-    }));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 41)),
+        [DeclaredQuantity::SolidArea {
+            value: scalar(50.0)
+        }]
+    );
+    assert_eq!(
+        quantities(&of_property(result.ir(), 50)),
+        [DeclaredQuantity::Volume { value: scalar(0.0) }]
+    );
     assert!(!result
         .report()
         .losses
@@ -79,75 +128,61 @@ fn direct_area_and_volume_unit_subtypes_scale_validation_measures() {
 
 #[test]
 fn validation_representation_decodes_all_measure_items() {
-    let source = String::from_utf8(
-        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace(
+    let source = tessellation_fixture().replace(
         "#42=REPRESENTATION('surface area',(#43),#2);",
         "#42=REPRESENTATION('surface area',(#43,#52),#2);",
     );
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode validation representation with multiple items");
+    let result = decode_source(&source);
 
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
-    }));
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation volume triangle sheet: expected 0, tessellation approximation 0"
-    }));
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("geometric validation property #41 has unsupported item")
-    }));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 41)),
+        [
+            DeclaredQuantity::SolidArea {
+                value: scalar(50.0)
+            },
+            DeclaredQuantity::Volume { value: scalar(0.0) },
+        ]
+    );
+    assert!(unsupported_items(&result).is_empty());
+}
+
+#[test]
+fn a_property_of_a_face_has_no_body_target() {
+    let result = decode_source(&tessellation_fixture());
+
+    for property in [41, 46, 50, 57] {
+        for measure in of_property(result.ir(), property) {
+            assert_eq!(measure.target, DeclaredTarget::Unresolved {}, "{measure:?}");
+        }
+    }
 }
 
 #[test]
 fn ps06_combined_validation_items_ignore_set_order_and_keep_siblings() {
-    let decode_fixture = |bytes: &[u8]| {
-        StepCodec::default()
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("decode PS-06 fixture")
-    };
-    let validation_notes = |result: &cadmpeg_ir::codec::DecodeResult| {
-        let mut notes = result
-            .report()
-            .notes
-            .iter()
-            .filter(|note| note.starts_with("geometric validation "))
-            .cloned()
-            .collect::<Vec<_>>();
-        notes.sort();
-        notes
-    };
-    let unsupported_items = |result: &cadmpeg_ir::codec::DecodeResult| {
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.message
-                    .contains("geometric validation property #41 has unsupported item")
-            })
-            .map(|loss| loss.message.clone())
-            .collect::<Vec<_>>()
-    };
+    let source_order = decode_source(
+        std::str::from_utf8(include_bytes!(
+            "tests/data/ps06_combined_validation_properties_source_order.p21"
+        ))
+        .unwrap(),
+    );
+    let reordered = decode_source(
+        std::str::from_utf8(include_bytes!(
+            "tests/data/ps06_combined_validation_properties_reordered.p21"
+        ))
+        .unwrap(),
+    );
 
-    let source_order = decode_fixture(include_bytes!(
-        "tests/data/ps06_combined_validation_properties_source_order.p21"
-    ));
-    let reordered = decode_fixture(include_bytes!(
-        "tests/data/ps06_combined_validation_properties_reordered.p21"
-    ));
-
-    let expected_notes = vec![
-        "geometric validation centroid combined validation: expected (1,2,3)".to_owned(),
-        "geometric validation surface area combined validation: expected 50".to_owned(),
-        "geometric validation volume combined validation: expected 8".to_owned(),
+    let expected = vec![
+        DeclaredQuantity::SolidArea {
+            value: scalar(50.0),
+        },
+        DeclaredQuantity::SolidCentroid {
+            value: point(1.0, 2.0, 3.0),
+        },
+        DeclaredQuantity::Volume { value: scalar(8.0) },
     ];
-    assert_eq!(validation_notes(&source_order), expected_notes);
-    assert_eq!(validation_notes(&reordered), expected_notes);
+    assert_eq!(quantities(&of_property(source_order.ir(), 41)), expected);
+    assert_eq!(quantities(&of_property(reordered.ir(), 41)), expected);
     assert_eq!(
         unsupported_items(&source_order),
         ["geometric validation property #41 has unsupported item #60"]
@@ -160,112 +195,324 @@ fn ps06_combined_validation_items_ignore_set_order_and_keep_siblings() {
 
 #[test]
 fn validation_shape_representation_with_parameters_uses_inherited_items() {
-    let source = String::from_utf8(
-        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace(
+    let source = tessellation_fixture().replace(
         "#42=REPRESENTATION('surface area',(#43),#2);",
         "#42=SHAPE_REPRESENTATION_WITH_PARAMETERS('surface area',(#43),#2);",
     );
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode parameterized validation representation");
+    let result = decode_source(&source);
 
-    assert!(result.report().notes.iter().any(|note| {
-        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
-    }));
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("geometric validation property #41 has unsupported item")
-    }));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 41)),
+        [DeclaredQuantity::SolidArea {
+            value: scalar(50.0)
+        }]
+    );
+    assert!(unsupported_items(&result).is_empty());
 }
 
 #[test]
-fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
-    use cadmpeg_ir::{
-        math::Point3,
-        tessellation::{Tessellation, TessellationMesh},
+fn a_product_definition_shape_property_targets_the_definition() {
+    let part = part(&[CUBE]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[
+            Item::Volume("volume measure", 1000.0),
+            Item::Area("surface area measure", 600.0),
+            Item::Point("centre point", [5.0, 5.0, 5.0]),
+        ],
+    );
+    let result = decode_inline(&format!("{}{validation}", part.records));
+    let ir = result.ir();
+    let [definition] = ir.model.product_definitions.as_slice() else {
+        panic!("one product definition");
     };
-    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut ir = decoded.ir().clone();
-    assert_eq!(ir.model.bodies.len(), 1);
-    for offset in [0.0, 1e6, 1e9] {
-        let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
-            .map(|p| Point3::new(p[0] + offset, p[1] + offset, p[2] + offset))
-            .to_vec();
-        let mesh = TessellationMesh::from_list_lanes(
-            points,
-            vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
-            None,
-        )
-        .unwrap();
-        let mut tessellation = Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint(
-                "test:step:tessellation#numerical-followup",
-            )
-            .expect("valid identity"),
-            mesh,
-            Vec::new(),
-        )
-        .unwrap();
-        tessellation.body = Some(ir.model.bodies[0].id.clone());
-        ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).expect("compute the mesh properties");
-        assert!((properties.volume - 1.0 / 3.0).abs() <= f64::EPSILON);
+    let measures = of_property(ir, 1000);
+    assert_eq!(
+        quantities(&measures),
+        [
+            DeclaredQuantity::Volume {
+                value: scalar(1000.0)
+            },
+            DeclaredQuantity::SolidArea {
+                value: scalar(600.0)
+            },
+            DeclaredQuantity::SolidCentroid {
+                value: point(5.0, 5.0, 5.0)
+            },
+        ]
+    );
+    for measure in &measures {
         assert_eq!(
-            properties.centroid,
-            Point3::new(offset + 0.5, offset + 0.25, offset + 0.25)
+            measure.target,
+            DeclaredTarget::Definition {
+                definition: definition.id.clone()
+            }
+        );
+        assert_eq!(measure.label.as_deref(), Some("validated"));
+    }
+    assert!(ir
+        .model
+        .points
+        .iter()
+        .all(|point| { !point.id.as_str().ends_with(&format!("#{}", 1009)) }));
+}
+
+/// A part of two solid boxes whose first box carries a shape aspect, with
+/// `association` relating the aspect `#900` to its geometry.
+fn aspect_part(
+    association: impl Fn(&crate::test_support::validated_part::Part) -> String,
+) -> (CadIr, Vec<cadmpeg_ir::ids::BodyId>) {
+    let part = part(&[
+        CUBE,
+        PartBody::Solid {
+            min: [20.0, 0.0, 0.0],
+            max: [30.0, 10.0, 10.0],
+        },
+    ]);
+    let validation =
+        validation_property(&part, 1000, 900, &[Item::Volume("volume measure", 1000.0)]);
+    let records = format!(
+        "{}#900=SHAPE_ASPECT('','first box',#{},.F.);\n{}{validation}",
+        part.records,
+        part.shape,
+        association(&part)
+    );
+    let result = decode_inline(&records);
+    let first = format!("step:data:body#{}", part.items[0]);
+    let bodies = result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.id.as_str() == first)
+        .map(|body| body.id.clone())
+        .collect();
+    (result.ir().clone(), bodies)
+}
+
+#[test]
+fn a_shape_aspect_resolves_through_a_shape_definition_representation() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=PROPERTY_DEFINITION('','shape for validation properties',#900);\n\
+             #902=SHAPE_REPRESENTATION('',(#{}),#{});\n\
+             #903=SHAPE_DEFINITION_REPRESENTATION(#901,#902);\n",
+            part.items[0], part.context
+        )
+    });
+    assert_eq!(first.len(), 1);
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn a_shape_aspect_resolves_through_a_geometric_item_specific_usage() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=GEOMETRIC_ITEM_SPECIFIC_USAGE('','shape for validation properties',#900,#{},#{});\n",
+            part.representation, part.items[0]
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn a_shape_aspect_of_a_face_has_no_body_target() {
+    let (ir, _) = aspect_part(|part| {
+        format!(
+            "#901=GEOMETRIC_ITEM_SPECIFIC_USAGE('','face',#900,#{},#{});\n",
+            part.representation,
+            part.items[0] - 2
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+}
+
+#[test]
+fn a_shape_aspect_without_geometry_has_no_body_target() {
+    let (ir, _) = aspect_part(|_| String::new());
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+}
+
+#[test]
+fn item_names_select_the_class_of_each_quantity() {
+    let part = part(&[
+        CUBE,
+        PartBody::Sheet {
+            min: [20.0, 0.0, 0.0],
+            max: [30.0, 10.0, 10.0],
+        },
+    ]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[
+            Item::Area("wetted area measure", 600.0),
+            Item::Area("independent surface area measure", 500.0),
+            Item::Point("surface centre point", [25.0, 5.0, 4.0]),
+            Item::Length("curve length measure", 0.0),
+            Item::Point("curve centre point", [0.0, 0.0, 0.0]),
+            Item::Point("bounding box corner point", [0.0, 0.0, 0.0]),
+            Item::Volume("surface area measure", 1.0),
+        ],
+    );
+    let result = decode_inline(&format!("{}{validation}", part.records));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 1000)),
+        [
+            DeclaredQuantity::WettedArea {
+                value: scalar(600.0)
+            },
+            DeclaredQuantity::SheetArea {
+                value: scalar(500.0)
+            },
+            DeclaredQuantity::SheetCentroid {
+                value: point(25.0, 5.0, 4.0)
+            },
+        ]
+    );
+    let first = 1007;
+    assert_eq!(
+        unsupported_items(&result),
+        (first + 3..first + 7)
+            .map(|item| format!("geometric validation property #1000 has unsupported item #{item}"))
+            .collect::<Vec<_>>()
+    );
+    for id in first..first + 7 {
+        assert!(
+            !result
+                .ir()
+                .model
+                .points
+                .iter()
+                .any(|point| point.id.as_str().ends_with(&format!("#{id}"))),
+            "validation point #{id} is a model point"
         );
     }
 }
 
 #[test]
-fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
-    use cadmpeg_ir::{
-        math::Point3,
-        tessellation::{Tessellation, TessellationMesh},
-    };
-    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut ir = decoded.ir().clone();
-    assert_eq!(ir.model.bodies.len(), 1);
-    for scale in [1.0e-90, 1.0, 1.0e90] {
-        let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
-            .map(|p| Point3::new(p[0] * scale, p[1] * scale, p[2] * scale))
-            .to_vec();
-        let mesh = TessellationMesh::from_list_lanes(
-            points,
-            vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
-            None,
-        )
-        .unwrap();
-        let mut tessellation = Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint(
-                "test:step:tessellation#numerical-followup",
-            )
-            .expect("valid identity"),
-            mesh,
-            Vec::new(),
-        )
-        .unwrap();
-        tessellation.body = Some(ir.model.bodies[0].id.clone());
-        ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).expect("compute the mesh properties");
+fn unresolved_or_dimensionally_incompatible_units_are_not_compared() {
+    for unit in [
+        "#44=(AREA_UNIT() NAMED_UNIT(*));",
+        "#44=DERIVED_UNIT((#56));",
+    ] {
+        let source = tessellation_fixture().replace("#44=DERIVED_UNIT((#55));", unit);
+        let result = decode_source(&source);
+        assert!(of_property(result.ir(), 41).is_empty());
+        assert!(!unsupported_items(&result)
+            .iter()
+            .any(|message| message.ends_with("item #43")));
         assert!(
-            (properties.volume / scale / scale / scale - 1.0 / 3.0).abs() <= 8.0 * f64::EPSILON
+            result.report().losses.iter().any(|loss| {
+                loss.message
+                    .contains("unit scale did not resolve; the quantity is not compared")
+            }),
+            "{:#?}",
+            result.report().losses
         );
-        for (actual, expected) in [
-            (properties.centroid.x / scale, 0.5),
-            (properties.centroid.y / scale, 0.25),
-            (properties.centroid.z / scale, 0.25),
-        ] {
-            assert!((actual - expected).abs() <= 8.0 * f64::EPSILON);
-        }
     }
+}
+
+#[test]
+fn validation_unit_conversion_refuses_nonfinite_quantities() {
+    let source = tessellation_fixture()
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT($,.METRE.)")
+        .replace("AREA_MEASURE(50.)", "AREA_MEASURE(1.E308)");
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("area overflows its unit conversion");
+    assert!(
+        error
+            .to_string()
+            .contains("not finite after unit conversion"),
+        "{error}"
+    );
+}
+
+#[test]
+fn complex_geometric_usage_reads_the_inherited_representation_usage_fields() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=(GEOMETRIC_ITEM_SPECIFIC_USAGE() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','shape for validation properties',#900,#{},#{}));\n",
+            part.representation, part.items[0]
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn complex_centroid_reads_coordinates_and_name_from_their_own_partials() {
+    let part = part(&[CUBE]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[Item::Point("centre point", [5.0, 5.0, 5.0])],
+    );
+    let simple = "#1007=CARTESIAN_POINT('centre point',(5.0,5.0,5.0));";
+    assert!(validation.contains(simple));
+    let complex = "#1007=(CARTESIAN_POINT((5.,5.,5.)) GEOMETRIC_REPRESENTATION_ITEM() POINT() REPRESENTATION_ITEM('centre point'));";
+    let result = decode_inline(&format!(
+        "{}{}",
+        part.records,
+        validation.replace(simple, complex)
+    ));
+    assert_eq!(
+        quantities(&of_property(result.ir(), 1000)),
+        [DeclaredQuantity::SolidCentroid {
+            value: point(5.0, 5.0, 5.0)
+        }]
+    );
+    assert!(unsupported_items(&result).is_empty());
+}
+
+#[test]
+fn complex_shape_definition_representation_reads_its_property_representation_partial() {
+    let (ir, first) = aspect_part(|part| {
+        format!(
+            "#901=PROPERTY_DEFINITION('','shape for validation properties',#900);\n\
+             #902=SHAPE_REPRESENTATION('',(#{}),#{});\n\
+             #903=(PROPERTY_DEFINITION_REPRESENTATION(#901,#902) SHAPE_DEFINITION_REPRESENTATION());\n",
+            part.items[0], part.context
+        )
+    });
+    let [measure] = of_property(&ir, 1000).try_into().unwrap();
+    assert_eq!(measure.target, DeclaredTarget::Bodies { bodies: first });
+}
+
+#[test]
+fn tessellated_input_keeps_the_stated_quantities_without_a_decode_time_comparison() {
+    let result = decode_source(&tessellation_fixture());
+    let actual: Vec<_> = [41, 46, 50, 57]
+        .into_iter()
+        .flat_map(|property| quantities(&of_property(result.ir(), property)))
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            DeclaredQuantity::SolidArea {
+                value: scalar(50.0)
+            },
+            DeclaredQuantity::SolidCentroid {
+                value: point(3.333_333_333_333_333, 3.333_333_333_333_333, 0.0)
+            },
+            DeclaredQuantity::Volume { value: scalar(0.0) },
+            DeclaredQuantity::SolidArea {
+                value: scalar(51.0)
+            },
+        ]
+    );
+    assert!(!result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("tessellation approximation")));
 }

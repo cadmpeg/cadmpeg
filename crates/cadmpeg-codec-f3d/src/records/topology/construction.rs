@@ -1064,7 +1064,17 @@ pub(crate) struct DesignConstructionOperandPath {
     pub(crate) scope_record_index: u32,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+    /// Whether the entity reference follows the extended path prefix.
+    extended_prefix: bool,
 }
+
+/// Entity-reference offset in the short path prefix.
+const SHORT_PATH_ENTITY_REFERENCE: u64 = 22;
+
+/// Entity-reference offset in the extended path prefix.
+const EXTENDED_PATH_ENTITY_REFERENCE: u64 = cadmpeg_core::decode::u64_from_index(
+    crate::layout::construction_operand_extended_path_prefix::ENTITY_REFERENCE,
+);
 
 #[cfg(test)]
 thread_local! {
@@ -1083,6 +1093,7 @@ impl Clone for DesignConstructionOperandPath {
             placement: self.placement,
             scope_record_index: self.scope_record_index,
             following_class_tag: self.following_class_tag.clone(),
+            extended_prefix: self.extended_prefix,
         }
     }
 }
@@ -1124,18 +1135,28 @@ impl Serialize for DesignConstructionOperandPath {
 
 impl DesignConstructionOperandPath {
     pub(crate) fn try_new(draft: DesignConstructionOperandPathDraft) -> Result<Self, String> {
+        let extended_prefix = draft
+            .byte_offset
+            .checked_add(EXTENDED_PATH_ENTITY_REFERENCE)
+            == Some(draft.entity_ref_offset);
+        let prefix_shift = if extended_prefix {
+            EXTENDED_PATH_ENTITY_REFERENCE - SHORT_PATH_ENTITY_REFERENCE
+        } else {
+            0
+        };
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
             2,
-            if matches!(
-                draft.placement,
-                DesignConstructionPathPlacement::Transform(_)
-            ) {
-                190
-            } else {
-                62
-            },
+            prefix_shift
+                + if matches!(
+                    draft.placement,
+                    DesignConstructionPathPlacement::Transform(_)
+                ) {
+                    190
+                } else {
+                    62
+                },
         )?;
         let value = Self {
             record_index: draft.record_index,
@@ -1145,6 +1166,7 @@ impl DesignConstructionOperandPath {
             placement: draft.placement,
             scope_record_index: draft.scope_record_index,
             following_class_tag: draft.following_class_tag,
+            extended_prefix,
         };
         if value.entity_ref_offset() != Some(draft.entity_ref_offset) {
             return Err("entity_ref_offset disagrees with frame layout".into());
@@ -1208,13 +1230,22 @@ impl DesignConstructionOperandPath {
     pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.frame.map(|frame| frame.offset(0))
     }
+    fn prefix_shift(&self) -> u64 {
+        if self.extended_prefix {
+            EXTENDED_PATH_ENTITY_REFERENCE - SHORT_PATH_ENTITY_REFERENCE
+        } else {
+            0
+        }
+    }
     fn entity_ref_offset(&self) -> Option<u64> {
-        self.frame.map(|frame| frame.offset(22))
+        self.frame
+            .map(|frame| frame.offset(SHORT_PATH_ENTITY_REFERENCE + self.prefix_shift()))
     }
     pub(crate) fn scope_record_index_offset(&self) -> Option<u64> {
         self.frame.map(|frame| {
             frame.offset(
-                if matches!(
+                self.prefix_shift()
+                + if matches!(
                     self.placement,
                     DesignConstructionPathPlacement::Transform(_)
                 ) {
@@ -1319,6 +1350,7 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
             placement,
             scope_record_index: wire.scope_record_index,
             following_class_tag: wire.following_class_tag.try_into()?,
+            extended_prefix: false,
         })
     }
 }

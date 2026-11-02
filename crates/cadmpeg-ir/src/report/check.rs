@@ -17,6 +17,8 @@ use crate::report::{loss::LossNote, Severity};
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum Check {
+    /// A whole-document check was skipped for a fragment.
+    FragmentSkipped,
     /// An entity id does not match `<format>:<scope>:<kind>#<key>`, or is not
     /// globally unique. A native validator reports a duplicated, unowned, or
     /// uncovered source-native identity here as well.
@@ -112,11 +114,16 @@ pub enum Check {
     /// checked every face, edge and closed body for [`Self::RingOrder`],
     /// [`Self::PcurveOrder`] and [`Self::Orientation`].
     MeasurementIncomplete,
+    /// A quantity that the source declares for its bodies differs from the
+    /// quantity measured on the decoded geometry by more than the
+    /// measurement's error terms, cannot be measured, or names no bodies.
+    DeclaredMeasure,
 }
 
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::FragmentSkipped => "fragment_skipped",
             Self::Identity => "identity",
             Self::Pmi => "pmi",
             Self::Presentation => "presentation",
@@ -138,6 +145,7 @@ impl fmt::Display for Check {
             Self::PcurveOrder => "pcurve_order",
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
+            Self::DeclaredMeasure => "declared_measure",
         })
     }
 }
@@ -233,6 +241,7 @@ mod tests {
             (Check::PcurveOrder, "pcurve_order"),
             (Check::Orientation, "orientation"),
             (Check::MeasurementIncomplete, "measurement_incomplete"),
+            (Check::DeclaredMeasure, "declared_measure"),
         ] {
             assert_eq!(serde_json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);

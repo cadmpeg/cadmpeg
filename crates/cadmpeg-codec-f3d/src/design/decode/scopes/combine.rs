@@ -3,18 +3,24 @@
 
 use super::draft::contains_consecutive_guid_pair;
 use super::parameter_scope::parameter_scope_payload_length;
+use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_guid_end;
 
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::layout::combine_body_node_prefix as combine_node;
+use crate::layout::combine_body_selection_prefix as combine_selection;
 use crate::layout::combine_compact_operation_prefix as combine_compact;
 use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
 use crate::layout::combine_external_selector_prefix as combine_external;
 use crate::layout::combine_external_selector_tail as combine_tail;
+use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::combine_standard_operation_prefix as combine_standard;
 use crate::records::feature::combine;
+use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::feature::combine::DesignCombineBodySelection;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentityDraft;
@@ -23,6 +29,9 @@ use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+
+const MARKED_REFERENCE_LEN: usize = 11;
+const COMBINE_CLAUSE_LEN: usize = 12;
 
 pub(super) fn exact_combine_operation(
     bytes: &[u8],
@@ -43,6 +52,9 @@ pub(super) fn exact_combine_operation(
         let extended_reference = scope.class_tag.as_str() == "329"
             && scope.paired_class_tag.as_str() == "261"
             && scope.frame_length() == Some(363);
+        let operand_lists = !compact
+            && !extended_reference
+            && bytes.get(start + combine_lists::OPERATION - 1) == Some(&0);
         let (form, operation_offset, keep_tools_offset) = if compact {
             if bytes
                 .get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
@@ -84,6 +96,26 @@ pub(super) fn exact_combine_operation(
                 start + combine_extended::OPERATION,
                 start + combine_extended::KEEP_TOOLS,
             )
+        } else if operand_lists {
+            if bytes.get(start + combine_lists::ZERO_RUN_10..start + combine_lists::OPERATION)?
+                != [0; 10]
+                || bytes
+                    .get(start + combine_lists::ZERO_RUN_4..start + combine_lists::KEEP_TOOLS)?
+                    != [0; 4]
+                || bytes.get(start + combine_lists::ZERO_FLAG) != Some(&0)
+                || View::u32_le_at(bytes, start + combine_lists::CONSTANT_ONE) != Some(1)
+                || bytes.get(start + combine_lists::REFERENCE_MARKER) != Some(&1)
+                || View::u64_le_at(bytes, start + combine_lists::REFERENCE_VALUE) == Some(0)
+                || bytes.get(start + combine_lists::REFERENCE_TAIL..start + combine_lists::STAMP)?
+                    != [0; 2]
+            {
+                return None;
+            }
+            (
+                DesignCombineForm::OperandLists,
+                start + combine_lists::OPERATION,
+                start + combine_lists::KEEP_TOOLS,
+            )
         } else {
             if bytes
                 .get(start + combine_standard::ZERO_RUN_9..start + combine_standard::OPERATION)?
@@ -100,18 +132,23 @@ pub(super) fn exact_combine_operation(
                 start + combine_standard::KEEP_TOOLS,
             )
         };
-        let operation = match View::u32_le_at(bytes, operation_offset)? {
-            1 => cadmpeg_ir::features::BooleanKind::Join,
-            2 => cadmpeg_ir::features::BooleanKind::Cut,
-            3 => cadmpeg_ir::features::BooleanKind::Intersect,
-            _ => return None,
-        };
+        let first_operation_code = u32::from(form != DesignCombineForm::OperandLists);
+        let operation =
+            match View::u32_le_at(bytes, operation_offset)?.checked_sub(first_operation_code)? {
+                0 => cadmpeg_ir::features::BooleanKind::Join,
+                1 => cadmpeg_ir::features::BooleanKind::Cut,
+                2 => cadmpeg_ir::features::BooleanKind::Intersect,
+                _ => return None,
+            };
         let keep_tools = match bytes.get(keep_tools_offset)? {
             0 => false,
             1 => true,
             _ => return None,
         };
         let mut target = None;
+        let mut target_body_node = None;
+        let mut target_operation = None;
+        let mut tool_operations = Vec::new();
         let mut first_tool = None;
         let mut additional_tools = Vec::new();
         for (operation_record_index, selection_record_index) in scope
@@ -133,13 +170,19 @@ pub(super) fn exact_combine_operation(
             if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
                 return None;
             }
+            let body_node = (form == DesignCombineForm::OperandLists)
+                .then(|| selection_body_node(bytes, records, *selection_at, *selection_end))
+                .flatten();
             match role {
                 CombineOperandRole::Target => {
                     if target.replace(*selection_record_index).is_some() {
                         return None;
                     }
+                    target_body_node = body_node;
+                    target_operation = Some(*operation_record_index);
                 }
                 CombineOperandRole::Tool => {
+                    tool_operations.push(*operation_record_index);
                     let additional = first_tool.is_some();
                     let external_identity = match exact_combine_external_body_identity(
                         bytes,
@@ -154,6 +197,7 @@ pub(super) fn exact_combine_operation(
                     let selection = DesignCombineBodySelection {
                         record_index: *selection_record_index,
                         external_identity,
+                        body_node,
                     };
                     if additional {
                         additional_tools.push(selection);
@@ -164,6 +208,18 @@ pub(super) fn exact_combine_operation(
             }
         }
         let target = target?;
+        if form == DesignCombineForm::OperandLists
+            && !operand_lists_name_operands(
+                bytes,
+                start,
+                scope,
+                keep_tools,
+                &tool_operations,
+                target_operation?,
+            )?
+        {
+            return None;
+        }
         let tools = combine::DesignCombineTools {
             first: first_tool?,
             additional: additional_tools,
@@ -175,10 +231,116 @@ pub(super) fn exact_combine_operation(
             keep_tools,
             keep_tools_offset: Some(u64::try_from(keep_tools_offset).ok()?),
             target_record_index: target,
+            target_body_node,
             tools,
         }))
     })()
     .transpose()
+}
+
+/// Check the lists between the operand-list prologue and the reference table.
+fn operand_lists_name_operands(
+    bytes: &[u8],
+    start: usize,
+    scope: &DesignParameterScope,
+    keep_tools: bool,
+    tool_operations: &[u32],
+    target_operation: u32,
+) -> Option<bool> {
+    let reference_count = scope.reference_members().len();
+    let mut cursor = start.checked_add(combine_lists::TOOL_COUNT)?;
+    let tools = take_marked_records(bytes, &mut cursor, reference_count)?;
+    let zero_values = (
+        View::u32_le_at(bytes, cursor)?,
+        View::u32_le_at(bytes, cursor.checked_add(4)?)?,
+    );
+    cursor = cursor.checked_add(8)?;
+    let consumed = take_marked_records(bytes, &mut cursor, reference_count)?;
+    let targets = take_marked_records(bytes, &mut cursor, reference_count)?;
+    let guid_end = fixed_guid_end(bytes, cursor)?;
+    let table_at = guid_end.checked_add(3)?;
+    Some(
+        zero_values == (0, 0)
+            && tools == tool_operations
+            && targets == [target_operation]
+            && consumed.len() == if keep_tools { 0 } else { tools.len() }
+            && bytes.get(guid_end..table_at)? == [0; 3]
+            && Some(u64::try_from(table_at).ok()?) == scope.reference_count_offset(),
+    )
+}
+
+fn selection_body_node(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    start: usize,
+    end: usize,
+) -> Option<DesignCombineBodyNode> {
+    let list_limit = end.checked_sub(start)? / MARKED_REFERENCE_LEN;
+    if bytes.get(start + combine_selection::ZERO_RUN_10..start + combine_selection::CLAUSE_COUNT)?
+        != [0; 10]
+    {
+        return None;
+    }
+    let clause_count = usize::try_from(View::u32_le_at(
+        bytes,
+        start + combine_selection::CLAUSE_COUNT,
+    )?)
+    .ok()?;
+    let mut cursor = start
+        .checked_add(combine_selection::CLAUSE_COUNT + 4)?
+        .checked_add(clause_count.checked_mul(COMBINE_CLAUSE_LEN)?)?;
+    marked_record_reference(bytes, cursor)?;
+    cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
+    if View::u32_le_at(bytes, cursor)? != 1 {
+        return None;
+    }
+    cursor = fixed_guid_end(bytes, cursor.checked_add(4)?)?;
+    cursor = fixed_guid_end(bytes, cursor)?;
+    if View::u32_le_at(bytes, cursor)? != 2 || View::u32_le_at(bytes, cursor.checked_add(4)?)? != 0
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(8)?;
+    take_marked_records(bytes, &mut cursor, list_limit)?;
+    let [record_index] = take_marked_records(bytes, &mut cursor, list_limit)?[..] else {
+        return None;
+    };
+    let [node_at, node_end] = records.offsets(record_index) else {
+        return None;
+    };
+    if bytes
+        .get(*node_at + combine_node::ZERO_RUN_10..*node_at + combine_node::GUID_CODE_UNIT_COUNT)?
+        != [0; 10]
+    {
+        return None;
+    }
+    let guid_end = fixed_guid_end(bytes, *node_at + combine_node::GUID_CODE_UNIT_COUNT)?;
+    let entity_at = guid_end.checked_add(2)?;
+    let scope_at = entity_at.checked_add(MARKED_REFERENCE_LEN)?;
+    if !matches!(bytes.get(guid_end..entity_at)?, [0 | 1, 0 | 1])
+        || scope_at.checked_add(MARKED_REFERENCE_LEN)? != *node_end
+    {
+        return None;
+    }
+    Some(DesignCombineBodyNode {
+        record_index,
+        body_entity_suffix: marked_record_reference(bytes, entity_at)?,
+        creating_scope_record_index: marked_record_reference(bytes, scope_at)?,
+    })
+}
+
+fn take_marked_records(bytes: &[u8], cursor: &mut usize, limit: usize) -> Option<Vec<u32>> {
+    let count = usize::try_from(View::u32_le_at(bytes, *cursor)?).ok()?;
+    if count > limit {
+        return None;
+    }
+    *cursor = cursor.checked_add(4)?;
+    let mut records = Vec::new();
+    for _ in 0..count {
+        records.push(marked_record_reference(bytes, *cursor)?);
+        *cursor = cursor.checked_add(MARKED_REFERENCE_LEN)?;
+    }
+    Some(records)
 }
 
 pub(super) struct ExternalReferenceIdentity {

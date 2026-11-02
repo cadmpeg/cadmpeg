@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_ARC_ANGULAR_TOLERANCE_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9: f64 = 1.0e-9;
 
 macro_rules! geometric {
     ($value:expr) => {
@@ -198,6 +199,49 @@ pub(super) fn arrangement_region_matching_curve_program(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Ordered(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+pub(super) fn arrangement_region_matching_curve_members(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    program: &[cadmpeg_ir::sketches::SketchEntityId],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Members(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum CurveProgram<'a> {
+    Ordered(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+    Members(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+}
+
+fn arrangement_region_matching_curves(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    selection: CurveProgram<'_>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    let (CurveProgram::Ordered(program) | CurveProgram::Members(program)) = selection;
     if program.is_empty() {
         return Ok(None);
     }
@@ -263,11 +307,19 @@ pub(super) fn arrangement_region_matching_curve_program(
             work.arrangement_skipped.set(true);
             return Ok(None);
         }
-        let matches = (0..count).any(|start| {
-            (0..count).all(|index| *boundary[(start + index) % count] == program[index])
-                || (0..count)
-                    .all(|index| *boundary[(start + count - index) % count] == program[index])
-        });
+        let matches = match selection {
+            CurveProgram::Ordered(_) => (0..count).any(|start| {
+                (0..count).all(|index| *boundary[(start + index) % count] == program[index])
+                    || (0..count)
+                        .all(|index| *boundary[(start + count - index) % count] == program[index])
+            }),
+            CurveProgram::Members(_) => {
+                boundary.sort_unstable();
+                let mut members = program.iter().collect::<Vec<_>>();
+                members.sort_unstable();
+                boundary == members
+            }
+        };
         if !matches {
             continue;
         }
@@ -678,6 +730,20 @@ fn arrangement_edges_meet_only_at_nodes(
         tolerance,
     ) {
         return true;
+    }
+    if left.boundary.entity == right.boundary.entity
+        && entities.iter().any(|entity| {
+            entity.id() == &left.boundary.entity
+                && matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+                )
+        })
+    {
+        let left = left.boundary.parameter_range.endpoints();
+        let right = right.boundary.parameter_range.endpoints();
+        return left[0].max(left[1]) <= right[0].min(right[1])
+            || right[0].max(right[1]) <= left[0].min(left[1]);
     }
     let Some(left_segment) = arrangement_analytic_segment(left, entities) else {
         return false;
@@ -3485,6 +3551,82 @@ pub(super) fn closed_sketch_profiles(
     Ok(ClosedSketchProfiles { profiles, losses })
 }
 
+/// Direction and signed curvature of a half-edge where it leaves its start node.
+fn outgoing_half_edge_ray(
+    half_edge: usize,
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+) -> (f64, f64) {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let edge = half_edge / 2;
+    let reversed = !half_edge.is_multiple_of(2);
+    let [start, end] = edges[edge].1;
+    match (edges[edge].0.geometry).definition() {
+        SketchGeometryDefinition::Arc {
+            radius,
+            start_angle,
+            end_angle,
+            ..
+        } => {
+            let counterclockwise = (end_angle.get() >= start_angle.get()) != reversed;
+            let at = if reversed {
+                end_angle.get()
+            } else {
+                start_angle.get()
+            };
+            let turn = if counterclockwise { 1.0 } else { -1.0 };
+            (
+                (turn * at.cos()).atan2(-turn * at.sin()),
+                turn / radius.get(),
+            )
+        }
+        _ => {
+            let (from, to) = if reversed { (end, start) } else { (start, end) };
+            ((to.v - from.v).atan2(to.u - from.u), 0.0)
+        }
+    }
+}
+
+/// Sort the half-edges leaving one node counterclockwise. Rays with one
+/// direction separate by curvature, because the ray that turns further left
+/// lies counterclockwise of the other next to the node.
+fn order_outgoing_half_edges(
+    half_edges: &mut [usize],
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+) {
+    half_edges.sort_by(|first, second| {
+        outgoing_half_edge_ray(*first, edges)
+            .0
+            .total_cmp(&outgoing_half_edge_ray(*second, edges).0)
+    });
+    let gap_after = |index: usize, half_edges: &[usize]| {
+        let next = (index + 1) % half_edges.len();
+        (outgoing_half_edge_ray(half_edges[next], edges).0
+            - outgoing_half_edge_ray(half_edges[index], edges).0)
+            .rem_euclid(std::f64::consts::TAU)
+    };
+    if let Some(group_end) = (0..half_edges.len())
+        .find(|index| gap_after(*index, half_edges) > EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9)
+    {
+        half_edges.rotate_left(group_end + 1);
+    }
+    let mut group_start = 0;
+    for index in 0..half_edges.len() {
+        if index + 1 == half_edges.len()
+            || gap_after(index, half_edges) > EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9
+        {
+            half_edges[group_start..=index].sort_by(|first, second| {
+                outgoing_half_edge_ray(*first, edges)
+                    .1
+                    .total_cmp(&outgoing_half_edge_ray(*second, edges).1)
+                    .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
+                    .then_with(|| first.cmp(second))
+            });
+            group_start = index + 1;
+        }
+    }
+}
+
 /// Half-edge walk over one branched line component. The local `outgoing` map
 /// is the only adjacency this walk needs: it is built here from `edge_nodes`,
 /// so every half-edge reaches its twin by construction.
@@ -3512,46 +3654,7 @@ fn branched_line_profiles(
             .push(edge * 2 + 1);
     }
     for half_edges in outgoing.values_mut() {
-        half_edges.sort_by(|first, second| {
-            let angle = |half_edge: usize| {
-                let edge = half_edge / 2;
-                let reversed = !half_edge.is_multiple_of(2);
-                let [start, end] = edges[edge].1;
-                match (edges[edge].0.geometry).definition() {
-                    SketchGeometryDefinition::Arc {
-                        start_angle,
-                        end_angle,
-                        ..
-                    } => {
-                        let s = start_angle.get();
-                        let e = end_angle.get();
-                        let sweep = e - s;
-                        let (tan_u, tan_v) = if reversed {
-                            if sweep >= 0.0 {
-                                (e.sin(), -e.cos())
-                            } else {
-                                (-e.sin(), e.cos())
-                            }
-                        } else {
-                            if sweep >= 0.0 {
-                                (-s.sin(), s.cos())
-                            } else {
-                                (s.sin(), -s.cos())
-                            }
-                        };
-                        tan_v.atan2(tan_u)
-                    }
-                    _ => {
-                        let (from, to) = if reversed { (end, start) } else { (start, end) };
-                        (to.v - from.v).atan2(to.u - from.u)
-                    }
-                }
-            };
-            angle(*first)
-                .total_cmp(&angle(*second))
-                .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
-                .then_with(|| first.cmp(second))
-        });
+        order_outgoing_half_edges(half_edges, edges);
     }
 
     let mut next = HashMap::new();

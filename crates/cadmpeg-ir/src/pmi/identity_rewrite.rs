@@ -29,6 +29,7 @@ rewrite_enum!(DimensionTolerance, []; {
     PlusMinus {lower, upper},
     Fit {fit},
     PlusMinusFit {lower, upper, fit},
+    Limits {lower, upper},
 });
 rewrite_enum!(GeometricToleranceKind, []; {
     Straightness,

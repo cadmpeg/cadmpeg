@@ -58,6 +58,7 @@ pub(super) fn declaration() -> ArenaDispositions {
         articulations: ArenaDisposition::Omitted,
         physics_scenes: ArenaDisposition::Omitted,
         solver_settings: ArenaDisposition::Omitted,
+        declared_measures: ArenaDisposition::Omitted,
     }
 }
 

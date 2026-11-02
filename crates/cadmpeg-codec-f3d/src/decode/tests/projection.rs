@@ -1372,7 +1372,12 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = mesh_texture_asset(&ctx, scan, &file, &asset);
             if admitted {
-                assert_eq!(result.unwrap().id, asset);
+                let projected = result.unwrap();
+                assert_eq!(projected.id, asset);
+                assert_eq!(
+                    projected.native_ref.as_deref(),
+                    Some("f3d:FusionAssetName[Active]/Textures/a.png:mesh-texture#0")
+                );
             } else {
                 assert!(matches!(
                     result,
@@ -1756,4 +1761,58 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::FeatureStoredBodiesRecipeAbsent.kind()));
+}
+
+#[test]
+fn counted_partial_profile_selection_reports_one_loss() {
+    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId};
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = serde_json::from_value(serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "sketch_selection", "value": {
+            "sketch": "synthetic:test:sketch#42", "selections": ["f3d:Design/BulkStream.dat:scope#10"]
+        }},
+        "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+        "op": "cut", "solid": true
+    })).unwrap();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:feature#cut").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        needs_recompute: false,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Extrude".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+        product_definition: None,
+    });
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &F3dNative::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::FeatureProfileSelectionNative.kind())
+            .count(),
+        1
+    );
 }

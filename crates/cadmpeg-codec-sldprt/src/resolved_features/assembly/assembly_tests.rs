@@ -68,6 +68,7 @@ fn configuration_names_strip_the_resolved_features_suffix() {
 fn scalar_archive_classes_map_each_value_offset() {
     let walk = Walk {
         status: Status::End,
+        sketch_profiles: Vec::new(),
         trace: Vec::new(),
         parameters: vec![
             parameter("moLengthParameter_c", 42),
@@ -99,7 +100,7 @@ fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNot
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut losses = Vec::new();
-    let lanes =
+    let (lanes, _) =
         super::lanes(&ctx, &scan, &mut annotations, &mut losses).expect("lane assembly succeeds");
     (lanes, losses)
 }

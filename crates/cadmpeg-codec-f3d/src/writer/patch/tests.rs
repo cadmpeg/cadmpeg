@@ -399,7 +399,7 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
     )
     .expect("patched torus record");
     assert!(
-        matches!(decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), false))
+        matches!(decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), true))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.frame().axis().as_raw();

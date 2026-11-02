@@ -153,6 +153,12 @@ makes it smaller still. When the allowance runs out, one `info` finding
 checked. These findings do not change the exit status
 ([measurement contract][measurement]).
 
+Stored geometric validation properties are compared with the measurements of
+the part or bodies they describe. A difference beyond measurement numeric
+error plus model uncertainty adds a `declared_measure` error and fails the
+check. An unresolved target or unavailable quantity produces a warning with
+its reason. STEP imports these declarations; CADIR preserves them.
+
 `--container-only` stops native decoding before geometry and delivers an empty
 content scope. It is useful for container diagnostics. The CLI permits only
 CADIR output with this flag, under either empty-output policy. Writers synthesize from what the document holds. Native patch and

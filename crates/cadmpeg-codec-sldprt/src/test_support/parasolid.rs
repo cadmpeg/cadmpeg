@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod wide;
 
 /// A minimal Parasolid stream payload: `PS\0\0`, description, padding, a
 /// length-prefixed schema token, then the class-definition record `body`.
@@ -502,14 +503,30 @@ fn remove_array_type_markers(bytes: &mut Vec<u8>) {
     }
 }
 
+/// Bytes of a bare `00 86` `B_CURVE` record with short pointers, its tag
+/// and its body (`sldprt.md` §2).
+const B_CURVE_RECORD_LEN: usize = 2 + crate::layout::parasolid_b_curve_short::LEN;
+
+/// A bare `00 86` `B_CURVE` record `wrapper_attr` whose `nurbs` pointer names
+/// `descriptor_attr`: node identifier 1, null pointers, sense `+`.
+fn b_curve(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x86];
+    be16(&mut b, wrapper_attr);
+    be32(&mut b, 1);
+    for _ in 0..5 {
+        be16(&mut b, 1);
+    }
+    b.push(0x2b);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 1);
+    b
+}
+
 pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 2);
@@ -533,7 +550,7 @@ pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Ve
 
 pub(crate) fn typed_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let mut bytes = nurbs_curve_carrier(wrapper_attr, descriptor_attr);
-    let descriptor = bytes.split_off(14);
+    let descriptor = bytes.split_off(B_CURVE_RECORD_LEN);
     bytes.truncate(4);
     be32(&mut bytes, 0x1a);
     for reference in [
@@ -556,10 +573,7 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut bytes = vec![0x00, 0x86];
-    be16(&mut bytes, wrapper_attr);
-    be16(&mut bytes, descriptor_attr);
-    bytes.extend_from_slice(&[0u8; 8]);
+    let mut bytes = b_curve(wrapper_attr, descriptor_attr);
     bytes.extend_from_slice(&[0x00, 0x88]);
     be16(&mut bytes, descriptor_attr);
     be16(&mut bytes, 2);
@@ -600,10 +614,7 @@ pub(crate) fn linear_nurbs_curve_carrier_through(
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 1);
@@ -1676,4 +1687,51 @@ pub(crate) fn nurbs_sketch_body(rational: bool) -> Vec<u8> {
     });
     body.extend(edge_use(40, 70));
     body
+}
+
+/// Link a void region and a faceless solid region after the single region of
+/// an owned-triangle body.
+pub(crate) fn append_void_and_faceless_regions(
+    bytes: &mut Vec<u8>,
+    body_attr: u16,
+    region_attr: u16,
+    void_attr: u16,
+    faceless_attr: u16,
+) {
+    let mut head = vec![0x00, 0x13, 0xff];
+    be16(&mut head, region_attr);
+    be32(&mut head, 300_000 + u32::from(region_attr));
+    let at = bytes
+        .windows(head.len())
+        .position(|window| window == head)
+        .expect("owned triangle region node");
+    let next_region = at + head.len() + 4;
+    bytes.splice(next_region..next_region + 2, void_attr.to_be_bytes());
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        void_attr,
+        300_000 + u32::from(void_attr),
+    );
+    for value in [
+        1,
+        u32::from(body_attr),
+        u32::from(faceless_attr),
+        u32::from(region_attr),
+        1,
+    ] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'V');
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        faceless_attr,
+        300_000 + u32::from(faceless_attr),
+    );
+    for value in [1, u32::from(body_attr), 1, u32::from(void_attr), 1] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'S');
 }

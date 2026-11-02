@@ -29,16 +29,23 @@ fn refused_mirror_operands_reach_the_feature_projection_loss_list() {
             "{name}"
         );
         assert_eq!(projected.mirror_losses.len(), 1, "{name}");
-        assert_eq!(
-            projected.mirror_losses[0].code,
-            InventorLossCode::FeatureMirrorOperandsNative
-                .note("test")
-                .code,
-            "{name}"
-        );
+        let expected = match crate::test_support::mirror::refusal_code(&name) {
+            "feature.mirror-boolean-native" => InventorLossCode::FeatureMirrorBooleanNative,
+            "feature.mirror-instance-map-native" => {
+                InventorLossCode::FeatureMirrorInstanceMapNative
+            }
+            _ => InventorLossCode::FeatureMirrorOperandsNative,
+        };
+        assert_eq!(projected.mirror_losses[0].code, expected.note("test").code);
+        if name == "true slot 11" {
+            assert_eq!(
+                projected.mirror_losses[0].message,
+                "Mirror slot 11 has a true Boolean with an unresolved construction role."
+            );
+        }
         assert_eq!(
             projected.mirror_losses[0].code.local_code(),
-            "feature.mirror-operands-native",
+            crate::test_support::mirror::refusal_code(&name),
             "{name}"
         );
     }
@@ -124,4 +131,80 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
             .iter()
             .all(|loss| { loss.code.local_code() == "feature.mirror-operands-native" }));
     }
+}
+
+#[test]
+fn mirror_body_copy_reaches_history_with_the_generated_result_and_no_loss() {
+    let (fixture, source) = crate::test_support::mirror::new_body_form();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("mirror");
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
+    ));
+    assert!(feature.dependencies.is_empty());
+    assert_eq!(projected.result_topologies.len(), 1);
+    assert_eq!(
+        projected.result_topologies[0].bodies()[0].as_str(),
+        fixture.properties.last().expect("output").id()
+    );
+    assert!(projected.mirror_losses.is_empty());
+    assert!(!projected
+        .features
+        .iter()
+        .any(|feature| feature.native_ref.as_deref()
+            == Some(fixture.generated_features[0].id().as_str())));
+}
+
+#[test]
+fn mirror_unproved_generated_flags_emit_the_pinned_instance_map_loss() {
+    let (mut fixture, source) = crate::test_support::mirror::new_body_form();
+    let mut node = serde_json::to_value(&fixture.generated_features[0]).expect("node");
+    node["header"]["flags"] = serde_json::json!(0x86200);
+    fixture.generated_features[0] = serde_json::from_value(node).expect("unproved node");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    assert_eq!(projected.mirror_losses.len(), 1);
+    assert_eq!(
+        projected.mirror_losses[0].code,
+        InventorLossCode::FeatureMirrorInstanceMapNative
+            .note("test")
+            .code
+    );
+    assert!(projected.result_topologies.is_empty());
+}
+
+#[test]
+fn replacement_reaches_history_with_the_selected_body_and_no_loss() {
+    let (fixture, source) = crate::test_support::mirror::replacement_form();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("replacement");
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
+    ));
+    assert_eq!(projected.result_topologies.len(), 1);
+    assert_eq!(
+        projected.result_topologies[0].bodies()[0].as_str(),
+        fixture.properties[3].id()
+    );
+    assert!(projected.mirror_losses.is_empty());
 }

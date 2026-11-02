@@ -130,8 +130,11 @@ fn a_given_up_type_table_links_its_segment_record_and_its_missing_states_validat
 }
 
 mod axis_distance;
+mod coil;
 mod delete_face;
+mod edge_selections;
 mod revolve_axis;
+mod split_face;
 mod tagging;
 
 mod composite;
@@ -362,6 +365,7 @@ fn empty_data() -> super::NativeData {
         pm_dc_sheet_metal_flanges: Vec::new(),
         pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
+        pm_dc_thread_definitions: Vec::new(),
         pm_dc_entity_style_links: Vec::new(),
         pm_dc_kernel_entity_links: Vec::new(),
         pm_dc_work_planes: Vec::new(),
@@ -1220,4 +1224,9 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
     Ok(())
 }
 
+mod non_geometric;
 mod sketch_curves;
+
+mod split_trim;
+
+mod thread;

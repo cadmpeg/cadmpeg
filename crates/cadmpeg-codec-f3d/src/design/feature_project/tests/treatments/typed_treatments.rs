@@ -120,6 +120,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             leading_word: None,
             extent_control: Some(0),
             saved_non_distance_depth: None,
+            direction_control: Some(Located {
+                value: 0,
+                offset: 9,
+            }),
         });
         slot.point = Some(DesignHoleConstruction {
             point_record_index: 378,
@@ -144,6 +148,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 offset: Some(129),
             }],
             face_selection: None,
+            locations: vec![crate::records::feature::hole::DesignHoleLocation {
+                record_index: 375,
+                position: crate::test_support::reals([1.25, -2.5, 3.75]),
+                position_offset: 200,
+                reference_type: 17,
+            }],
         });
     }
     scopes[2]
@@ -453,8 +463,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             && native == &scopes[2].id
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
-            }]) && ir.dimension_value(actual_diameter).unwrap().get() == 4.0 && ir.dimension_value(actual_length).unwrap().get() == 10.0)));
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: -0.0, y: -0.0, z: -1.0 }).unwrap(),
+            }]) && actual_diameter.literal().expect("literal").get() == 4.0 && actual_length.literal().expect("literal").get() == 10.0)));
 
     hole_parameters[2]
         .try_set_evaluated_value(118.0_f64.to_radians())

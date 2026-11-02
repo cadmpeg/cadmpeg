@@ -545,6 +545,55 @@ point $-1 -1 $-1 5 0 0 #\n\
 point $-1 -1 $-1 0 0 10 #\n\
 End-of-ASM-data \n";
 
+/// Two forward faces on tori of opposite minor-radius sign. `asm.md` states
+/// that a negative minor radius points the native normal toward the tube
+/// center, and the neutral normal `Su × Sv` points away from it for either
+/// sign, so only the negative-minor face reverses in the normalized B-rep.
+#[test]
+fn negative_minor_torus_reverses_the_normalized_face_sense() {
+    let source: &[u8] = b"23200 0 1 0 \n\
+14 cadmpeg-tests 4 ACIS 0 \n\
+1 1e-06 1e-10 \n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $4 $-1 $2 $-1 $5 forward single #\n\
+face $-1 -1 $-1 $-1 $-1 $2 $-1 $6 forward single #\n\
+torus-surface $-1 -1 $-1 0 0 0 0 0 1 6 -2 1 0 0 forward_v I I I I #\n\
+torus-surface $-1 -1 $-1 0 0 0 0 0 1 6 2 1 0 0 forward_v I I I I #\n\
+End-of-ASM-data \n";
+    crate::test_support::with_service_context(source, |ctx| {
+        let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        let brep = super::decode_with_header(
+            ctx,
+            &parsed.records,
+            source,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+        .expect("synthetic torus faces decode");
+
+        let senses = brep.faces.iter().map(|face| face.sense).collect::<Vec<_>>();
+        assert_eq!(
+            senses,
+            [
+                cadmpeg_ir::topology::Sense::Reversed,
+                cadmpeg_ir::topology::Sense::Forward
+            ]
+        );
+        let flipped = brep
+            .face_sidedness
+            .iter()
+            .map(|sidedness| sidedness.carrier_flipped)
+            .collect::<Vec<_>>();
+        assert_eq!(flipped, [true, false]);
+    })
+    .expect("fixture is within the service input limit");
+}
+
 fn edge_by_record(brep: &AsmBrep, index: i64) -> &cadmpeg_ir::topology::Edge {
     let edge = EdgeId::mint(id(FORMAT, index).into_string()).expect("identity grammar");
     brep.edges

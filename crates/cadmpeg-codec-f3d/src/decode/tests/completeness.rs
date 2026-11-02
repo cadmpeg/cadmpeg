@@ -569,3 +569,33 @@ fn thread_is_complete_only_with_every_field_and_a_proven_modeled_state() {
         None
     )));
 }
+
+#[test]
+fn a_shell_on_both_sides_needs_no_outward_direction() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ShellMode};
+    let shell = |outward, mode| {
+        FeatureDefinition::Operation(FeatureOperation::Shell {
+            bodies: None,
+            removed_faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                "f3d:test:face#1",
+            )
+            .unwrap()]),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).map(cadmpeg_ir::Dimension::Literal),
+            outward,
+            mode,
+            join: None,
+            resolve_intersections: None,
+            allow_self_intersections: None,
+        })
+    };
+    assert!(!feature_definition_is_incomplete(&shell(
+        None,
+        Some(ShellMode::BothSides)
+    )));
+    assert!(!feature_definition_is_incomplete(&shell(Some(true), None)));
+    assert!(feature_definition_is_incomplete(&shell(None, None)));
+    assert!(feature_definition_is_incomplete(&shell(
+        None,
+        Some(ShellMode::Skin)
+    )));
+}

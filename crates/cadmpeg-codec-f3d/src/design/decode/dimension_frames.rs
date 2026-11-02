@@ -7,7 +7,7 @@ use cadmpeg_core::decode::index_from_u32;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
-use crate::design::decode::meta::{decode_types, stream_types_by_entity};
+use crate::design::decode::meta::{decode_types, stream_types_by_class_tag};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
@@ -1676,6 +1676,14 @@ const DIMENSION_PRESENTATION_V3_TYPE_GUID: &str = "8C780195-72C0-4a56-A911-E43AB
 /// Stable `EntityTracking` type used by a dimension presentation's paired
 /// header.
 const DIMENSION_PRESENTATION_PAIR_TYPE_GUID: &str = "90055C05-546C-4EE7-B3C9-3DD922AD0C9C";
+/// Stable `Dimension` type used by a current dimension presentation's paired
+/// header.
+const DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID: &str = "855F0A64-6286-4FFC-B918-BC394F600107";
+
+fn is_dimension_presentation_pair_type(type_guid: &str) -> bool {
+    type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
+        || type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID)
+}
 
 fn is_dimension_presentation_type(type_guid: &str) -> bool {
     type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_TYPE_GUID)
@@ -1718,20 +1726,20 @@ pub(crate) fn decode_dimension_presentation_frames(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream = crate::ids::native_scope(&entry.name);
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let mut presentation_classes = HashMap::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if is_dimension_presentation_type(type_guid) {
-                presentation_classes.insert(*class_tag, *type_guid);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_type(design_type.type_guid.as_str()) {
+                presentation_classes.insert(*class_tag, design_type.type_guid.as_str());
             }
         }
         if presentation_classes.is_empty() {
             continue;
         }
         let mut paired_classes = HashSet::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
-                paired_classes.insert(*class_tag);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_pair_type(design_type.type_guid.as_str()) {
+                paired_classes.insert(u64::from(*class_tag));
             }
         }
         if paired_classes.is_empty() {
@@ -1751,9 +1759,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
-            let Some(primary_type_guid) =
-                presentation_classes.get(&u64::from(header.class_tag.code()))
-            else {
+            let Some(primary_type_guid) = presentation_classes.get(&header.class_tag.code()) else {
                 continue;
             };
             let Some(parsed) = parse_dimension_presentation_frame(

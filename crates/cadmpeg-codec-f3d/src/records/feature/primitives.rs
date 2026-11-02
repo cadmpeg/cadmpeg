@@ -103,7 +103,7 @@ pub(crate) struct DesignCylinderPrimitive {
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the evaluated diameter of a located scope.
     pub(crate) diameter_offset: Option<u64>,
-    /// Source frame carried by the shifted cylinder form.
+    /// Local-to-model cylinder placement frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) transform: Option<Sourced<SketchPlacementMatrix>>,
     /// Result Boolean operation.

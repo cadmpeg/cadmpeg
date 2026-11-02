@@ -37,6 +37,7 @@ use crate::layout::segment_stream_wrapper as stream_wrapper;
 use crate::layout::segment_stream_wrapper_a0 as wrapper_a0;
 use crate::layout::segment_stream_wrapper_c0_33 as wrapper_c0_33;
 use crate::layout::segment_stream_wrapper_c0_45 as wrapper_c0_45;
+use crate::layout::segment_stream_wrapper_c0_57 as wrapper_c0_57;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
@@ -418,6 +419,16 @@ impl<'a> Container<'a> {
                                                 )? == compressed_word =>
                                                 {
                                                     wrapper_c0_45::LEN
+                                                }
+                                                (
+                                                    wrapper_c0_57::HEADER_CODE_VALUE,
+                                                    wrapper_c0_57::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_57::ZERO,
+                                                )? == wrapper_c0_57::ZERO_VALUE =>
+                                                {
+                                                    wrapper_c0_57::LEN
                                                 }
                                                 _ => return None,
                                             };

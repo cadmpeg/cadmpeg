@@ -80,6 +80,7 @@ fn fixed_kind_edge_and_revolve_operations(
         angle_offset: Some(u64_from_index(draft_start + 40)),
         opposite_angle_record_index: 176,
         opposite_angle_offset: Some(u64_from_index(draft_start + 155)),
+        flags: None,
     });
     assert_eq!(
         exact_draft_operation_with_owners(

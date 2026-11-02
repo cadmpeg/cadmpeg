@@ -2,6 +2,7 @@
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
 mod assembly_bodies;
+mod declared_measures;
 mod partial_geometry;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -69,6 +70,7 @@ use crate::writer::tests::round_trips::{
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod measured_geometry;
+mod nist_pmi_conformance;
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -265,3 +267,4 @@ mod scope;
 mod unknown_occurrence;
 
 mod nullable_attributes;
+mod dimension_limits;

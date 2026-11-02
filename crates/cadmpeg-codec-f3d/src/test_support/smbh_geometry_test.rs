@@ -906,6 +906,127 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+/// Two disjoint one-triangle bodies with the given native body keys. The second
+/// triangle lies one centimetre above the first.
+pub(crate) fn synthetic_two_body_smbh(keys: [i64; 2]) -> Vec<u8> {
+    let mut r = Vec::new();
+    t_ident(&mut r, "asmheader");
+    push_u8_string(&mut r, "231.6.3.65535");
+    t_end(&mut r);
+    for (height, (first, key)) in [(1_i64, keys[0]), (19, keys[1])].into_iter().enumerate() {
+        let at = |record: i64| first + record - 1;
+        let height = f64::from(u32::try_from(height).unwrap());
+        t_ident(&mut r, "body");
+        t_ref(&mut r, -1);
+        t_long(&mut r, key);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(2));
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_end(&mut r);
+        t_ident(&mut r, "region");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(3));
+        t_ref(&mut r, at(1));
+        t_end(&mut r);
+        t_ident(&mut r, "shell");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(4));
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(2));
+        t_end(&mut r);
+        t_ident(&mut r, "face");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(5));
+        t_ref(&mut r, at(3));
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(6));
+        r.push(0x0b);
+        r.push(0x0b);
+        t_end(&mut r);
+        t_ident(&mut r, "loop");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, at(7));
+        t_ref(&mut r, at(4));
+        t_end(&mut r);
+        t_subident(&mut r, "plane");
+        t_ident(&mut r, "surface");
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_pos(&mut r, [0.0, 0.0, height]);
+        t_vec(&mut r, [0.0, 0.0, 1.0]);
+        t_vec(&mut r, [1.0, 0.0, 0.0]);
+        r.push(0x0b);
+        t_end(&mut r);
+        for (next, prev, edge) in [(8, 9, 10), (9, 7, 11), (7, 8, 12)] {
+            t_ident(&mut r, "coedge");
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, at(next));
+            t_ref(&mut r, at(prev));
+            t_ref(&mut r, -1);
+            t_ref(&mut r, at(edge));
+            r.push(0x0b);
+            t_ref(&mut r, at(5));
+            t_long(&mut r, 0);
+            t_ref(&mut r, -1);
+            t_end(&mut r);
+        }
+        for (start, end) in [(13, 14), (14, 15), (15, 13)] {
+            t_ident(&mut r, "edge");
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, at(start));
+            t_dbl(&mut r, 0.0);
+            t_ref(&mut r, at(end));
+            t_dbl(&mut r, 1.0);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, -1);
+            r.push(0x0b);
+            push_u8_string(&mut r, "unknown");
+            t_end(&mut r);
+        }
+        for (edge, index_flag, point) in [(10, 0, 16), (10, 1, 17), (12, 0, 18)] {
+            t_ident(&mut r, "vertex");
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_ref(&mut r, at(edge));
+            t_long(&mut r, index_flag);
+            t_ref(&mut r, at(point));
+            t_end(&mut r);
+        }
+        for point in [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+            t_ident(&mut r, "point");
+            t_ref(&mut r, -1);
+            t_long(&mut r, -1);
+            t_ref(&mut r, -1);
+            t_pos(&mut r, [point[0], point[1], height]);
+            t_end(&mut r);
+        }
+    }
+    t_ident(&mut r, "delta_state");
+    let mut out = smbh_header_prefix();
+    out.extend_from_slice(&r);
+    out
+}
+
 /// Two triangular faces sharing one edge: face 4 rests on a plane (analytic),
 /// face 5 on a `spline-surface` (undecoded → unknown-geometry carrier). The
 /// shared edge 16 is used by coedge 10 (face 4, forward) and coedge 13 (face 5,

@@ -6,6 +6,8 @@
 pub(crate) mod box_brep;
 pub(crate) mod curve_bounded;
 pub(crate) mod exchange;
+pub(crate) mod revolved_wedge;
+pub(crate) mod validated_part;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -80,3 +82,5 @@ pub(crate) fn omitted_record_ids(message: &str) -> Vec<&str> {
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{message}");
     ids
 }
+
+pub(crate) mod pmi_limits;

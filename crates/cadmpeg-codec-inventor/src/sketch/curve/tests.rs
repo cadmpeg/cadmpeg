@@ -101,12 +101,14 @@ fn native_curve_losses_name_each_retained_helper_and_trim_reason() {
     ] {
         let source = entity(kind);
         let geometry = super::super::project_geometry(&source, &std::collections::HashMap::new());
-        assert!(matches!(
-            geometry
-                .as_ref()
-                .map(cadmpeg_ir::sketches::SketchGeometry::definition),
-            Some(cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. })
-        ));
+        if is_non_geometric(&source) {
+            assert!(geometry.is_none());
+        } else {
+            assert!(matches!(
+                geometry.as_ref().map(SketchGeometry::definition),
+                Some(SketchGeometryDefinition::Native { .. })
+            ));
+        }
         let expected_code = if matches!(source.kind, PmDcSketchEntityKind::Ellipse { .. }) {
             crate::loss::InventorLossCode::SketchEllipseCurveNative.code()
         } else {
@@ -244,6 +246,57 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
                 InventorLossCode::SketchMidpointCurveNative.code()
             );
             assert!(loss.message.contains("control values"));
+        }
+    }
+}
+
+#[test]
+fn unknown_member_classes_keep_their_type_counts_and_pinned_loss() {
+    let unresolved = HashSet::from([("generated", 0), ("generated", 1), ("generated", 2)]);
+    let types = [
+        [
+            0x46, 0x73, 0x7b, 0x31, 0xd3, 0x11, 0x7c, 0x7a, 0x60, 0x00, 0x1c, 0xb3, 0xd1, 0xc1,
+            0xfb, 0xb0,
+        ],
+        [
+            0x84, 0x5c, 0x3b, 0xbf, 0xd2, 0x11, 0x2a, 0xe9, 0x60, 0x00, 0x4b, 0xb3, 0x89, 0x32,
+            0xed, 0xb0,
+        ],
+        [
+            0x0e, 0xad, 0x98, 0x7a, 0xb9, 0x49, 0x5c, 0xee, 0xfc, 0x18, 0x67, 0x87, 0xa2, 0xa2,
+            0x06, 0x43,
+        ],
+    ];
+    let losses = member_loss_counts(
+        &unresolved,
+        types.into_iter().enumerate().map(|(ordinal, id)| {
+            (
+                "generated",
+                u32::try_from(ordinal).expect("synthetic ordinal"),
+                id,
+            )
+        }),
+    );
+    assert_eq!(losses.len(), 3);
+    for loss in losses {
+        assert_eq!(loss.code.local_code(), "sketch.member-native");
+        assert!(loss.message.contains("Retained 1"));
+        assert!(loss
+            .message
+            .contains("byte grammar and curve operands remain unresolved"));
+    }
+}
+
+#[test]
+fn non_geometric_relation_gate_checks_each_entity_operand_slot() {
+    for (source, operands) in crate::test_support::sketch_relations::entity_operand_cases() {
+        for index in 0..=6 {
+            assert_eq!(
+                relation_stays_native(&source, |reference| reference.index() == index),
+                operands.contains(&index),
+                "{:?}: operand {index}",
+                source.kind
+            );
         }
     }
 }

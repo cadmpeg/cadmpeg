@@ -125,3 +125,21 @@ fn typed_profile_curve_program_refuses_two_half_disks_with_the_same_program() {
     .unwrap();
     assert_eq!(region, None);
 }
+
+#[test]
+fn counted_partial_curve_members_refuse_two_regions_with_the_same_multiset() {
+    let (sketch, entities) = divided_circle(false);
+    let members = [entities[1].id().clone(), entities[0].id().clone()];
+    let region = crate::test_support::with_decode_context(|ctx| {
+        super::super::arrangement_region_matching_curve_members(
+            &sketch,
+            &entities,
+            &members,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+        )
+    })
+    .unwrap();
+    assert_eq!(region, None);
+}

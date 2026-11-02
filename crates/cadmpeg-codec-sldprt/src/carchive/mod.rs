@@ -36,9 +36,41 @@ pub(crate) struct Walk {
     pub(crate) trace: Vec<reader::Trace>,
     /// Parameter objects read.
     pub(crate) parameters: Vec<reader::ParameterRecord>,
+    /// The sketch profile bodies read, each with the extent of the
+    /// profile-family object that holds it.
+    pub(crate) sketch_profiles: Vec<SketchProfile>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+/// A sketch's profile body and the stream extent of the profile-family object
+/// that holds it (§2.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SketchProfile {
+    /// Where the body's nested stream starts.
+    pub(crate) stream: usize,
+    /// Where the holding object's tag starts.
+    pub(crate) owner_start: usize,
+    /// Where the holding object ends.
+    pub(crate) owner_end: usize,
+}
+
+/// The profile bodies of `bodies` whose holding object was read to its end.
+fn sketch_profiles(
+    bodies: &[reader::ProfileBody],
+    ends: &HashMap<usize, usize>,
+) -> Vec<SketchProfile> {
+    bodies
+        .iter()
+        .filter_map(|body| {
+            Some(SketchProfile {
+                stream: body.stream,
+                owner_start: body.owner,
+                owner_end: *ends.get(&body.owner)?,
+            })
+        })
+        .collect()
 }
 
 /// Walk `resolved` (a `Config-N-ResolvedFeatures` stream) with the class map
@@ -73,6 +105,7 @@ pub(crate) fn walk<'b>(
         }
     };
     Some(Walk {
+        sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
         parameters: r.parameters,
         #[cfg(test)]

@@ -23,7 +23,7 @@ fn stream() -> StreamHandle {
     StreamHandle::new(cadmpeg_ir::stream_name!("test"))
 }
 
-fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
+fn fin(attr: u32, partner: u32, edge: u32, curve: u32) -> (u32, Coedge) {
     let coedge = Coedge {
         attr,
         refs: [1, 0, 0, 0, 0, partner, edge, curve, 1],
@@ -33,7 +33,7 @@ fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
     (attr, coedge)
 }
 
-fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
+fn bounded(attr: u32, surface: u32) -> SurfaceCurveCarrier {
     SurfaceCurveCarrier {
         attr,
         offset: 0,
@@ -51,12 +51,12 @@ fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
 
 /// Attach `carrier` as curve 31 of `out`, its support 200 emitted as the
 /// face surfaces of `emitted`.
-fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, u16>) {
+fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u32, u32>) {
     attach_surface_curve(
-        &ctx(),
-        out,
+        &mut super::BrepSink { ctx: &ctx(), out },
         &mut AnnotationBuilder::new(),
         carrier,
+        &super::CarrierIndex::default(),
         emitted,
         31,
         &stream(),
@@ -67,7 +67,7 @@ fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, 
 #[test]
 fn a_tolerant_edge_reads_a_decoded_curve_of_a_fin_on_it() {
     // Curve 31 is the one that decodes.
-    let decoded = |curve: u16| curve == 31;
+    let decoded = |curve: u32| curve == 31;
     let coedges = HashMap::from([
         fin(10, 11, 5, 30),
         fin(11, 10, 5, 31),
@@ -88,8 +88,8 @@ fn a_tolerant_edge_takes_a_stated_fin_curve_before_a_fitted_one() {
     // Curve 30, the canonical fin's, only decodes (a fitted curve on a
     // sweep); its partner's, 31, is stated on a surface.
     let coedges = HashMap::from([fin(10, 11, 5, 30), fin(11, 10, 5, 31)]);
-    let stated = |curve: u16| curve == 31;
-    let decodes = |curve: u16| curve == 30 || curve == 31;
+    let stated = |curve: u32| curve == 31;
+    let decodes = |curve: u32| curve == 30 || curve == 31;
     assert_eq!(
         super::tolerant_fin_curve(10, &coedges, stated, decodes),
         Some(31)
@@ -176,6 +176,53 @@ fn an_sp_curve_on_a_spun_surface_is_emitted_as_its_fitted_curve() {
 }
 
 #[test]
+fn a_surface_curve_retains_a_known_support_without_a_face() {
+    let ctx = ctx();
+    let bytes = crate::test_support::parasolid::plane_carrier(
+        200,
+        [0.0; 3],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let carriers = super::scan_carriers(&ctx, &bytes).unwrap();
+    let mut out = Brep::default();
+    attach_surface_curve(
+        &mut super::BrepSink {
+            ctx: &ctx,
+            out: &mut out,
+        },
+        &mut AnnotationBuilder::new(),
+        &bounded(31, 200),
+        &carriers,
+        &HashMap::new(),
+        31,
+        &stream(),
+    )
+    .unwrap();
+    assert!(out.faces.is_empty());
+    assert_eq!(out.surfaces.len(), 1);
+    let surface = super::id_hidden_support_surface(200);
+    assert_eq!(out.surfaces[0].id, surface);
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family: SurfaceCurveFamily::Parametric { context, .. },
+    } = out.procedural_curves[0].definition()
+    else {
+        panic!("parametric surface curve");
+    };
+    assert_eq!(context.sides()[0].surface.as_ref(), Some(&surface));
+    let CurveGeometry::Procedural {
+        cache: Some(curve), ..
+    } = &out.curves[0].geometry
+    else {
+        panic!("fitted 3D cache");
+    };
+    let point = cadmpeg_ir::eval::decode::curve_point_solved(&ctx, curve, 0.5)
+        .unwrap()
+        .get();
+    assert!(point.distance(Point3::new(0.5, 0.0, 0.0)) < 1.0e-7);
+}
+
+#[test]
 fn a_bounded_sp_curve_is_emitted_on_its_supports_face_surface() {
     let carrier = bounded(31, 200);
     let mut out = Brep::default();
@@ -240,7 +287,7 @@ fn a_bounded_sp_curve_is_emitted_on_its_supports_face_surface() {
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     ));
 
-    // A support no face emits leaves the curve opaque.
+    // An unresolved support leaves the curve opaque.
     let mut out = Brep::default();
     attach(&mut out, &carrier, &HashMap::new());
     assert!(matches!(

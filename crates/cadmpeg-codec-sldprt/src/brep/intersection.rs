@@ -53,7 +53,7 @@ impl IntersectionCarrier {
     /// are in stored order.
     pub(super) fn bounded(
         &self,
-        attr: u16,
+        attr: u32,
         record: std::ops::Range<usize>,
         points: [Point3; 2],
         parameters: [f64; 2],
@@ -165,7 +165,7 @@ fn chart_point(nodes: &[(f64, Point3)], parameter: f64) -> Option<Point3> {
 /// Ordered supports and optional UV lanes for the model-space chart curve.
 #[derive(Clone)]
 pub(super) struct IntersectionSupportData {
-    pub(super) supports: [u16; 2],
+    pub(super) supports: [u32; 2],
     pub(super) fit_tolerance_mm: f64,
     pub(super) support_uv: Option<[Vec<Point2>; 2]>,
 }
@@ -264,8 +264,8 @@ fn finite_tangent(bytes: &[u8], at: usize) -> bool {
 /// base_scale:f64 chart_count:u32 chordal_error:f64`, two [`MISSING_PARAMETER`]
 /// sentinels at +36/+44, then `count` point entries at +52 (88-byte entries
 /// carrying a finite nonzero tangent at +56, or bare 24-byte points).
-fn chart_records(bytes: &[u8]) -> HashMap<u16, Vec<Chart>> {
-    let mut out: HashMap<u16, Vec<Chart>> = HashMap::new();
+fn chart_records(bytes: &[u8]) -> HashMap<u32, Vec<Chart>> {
+    let mut out: HashMap<u32, Vec<Chart>> = HashMap::new();
     for body in record_bodies(bytes, 0x28) {
         let Some((attr, candidates)) = chart_candidates(bytes, body) else {
             continue;
@@ -275,9 +275,9 @@ fn chart_records(bytes: &[u8]) -> HashMap<u16, Vec<Chart>> {
     out
 }
 
-fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
+fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u32, Vec<Chart>)> {
     let count = View::u32_be_at(bytes, body).and_then(|count| usize::try_from(count).ok())?;
-    let attr = View::u16_be_at(bytes, body + 4)?;
+    let attr = super::word_at(bytes, body + 4)?;
     let preamble = body + 6;
     let (Some(base_parameter), Some(base_scale), Some(chart_count), Some(chordal_error)) = (
         View::f64_be_at(bytes, preamble),
@@ -348,10 +348,10 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
 /// terminator) with an optional second character (`?`, `F`, or `S`). Both
 /// label widths yield a candidate endpoint; composite validation selects the
 /// candidate that matches the chart.
-fn term_at(bytes: &[u8], body: usize, out: &mut HashMap<u16, Vec<[f64; 3]>>) {
+fn term_at(bytes: &[u8], body: usize, out: &mut HashMap<u32, Vec<[f64; 3]>>) {
     let (Some(count), Some(attr)) = (
         View::u32_be_at(bytes, body),
-        View::u16_be_at(bytes, body + 4),
+        super::word_at(bytes, body + 4),
     ) else {
         return;
     };
@@ -373,8 +373,8 @@ fn term_at(bytes: &[u8], body: usize, out: &mut HashMap<u16, Vec<[f64; 3]>>) {
 }
 
 /// Every `00 29` or inline `term_use` terminator, keyed by attribute.
-fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
-    let mut out: HashMap<u16, Vec<[f64; 3]>> = HashMap::new();
+fn term_records(bytes: &[u8]) -> HashMap<u32, Vec<[f64; 3]>> {
+    let mut out: HashMap<u32, Vec<[f64; 3]>> = HashMap::new();
     for body in record_bodies(bytes, 0x29) {
         term_at(bytes, body, &mut out);
     }
@@ -389,11 +389,11 @@ fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
 
 /// Parse a support-UV body: `count:u32 attr:u16 width_marker:u8(2|3|4)` then
 /// `count` finite f64 values.
-fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
+fn uv_at(bytes: &[u8], body: usize) -> Option<(u32, UvRecord)> {
     let (Some(count), Some(attr), Some(marker)) = (
         View::u32_be_at(bytes, body + support_uv::COUNT)
             .and_then(|count| usize::try_from(count).ok()),
-        View::u16_be_at(bytes, body + support_uv::ATTR),
+        super::word_at(bytes, body + support_uv::ATTR),
         bytes.get(body + support_uv::WIDTH).copied(),
     ) else {
         return None;
@@ -433,8 +433,8 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
 }
 
 /// Every `00 cc` or inline `values` support-UV record, keyed by attribute.
-fn uv_records(bytes: &[u8]) -> HashMap<u16, Vec<UvRecord>> {
-    let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
+fn uv_records(bytes: &[u8]) -> HashMap<u32, Vec<UvRecord>> {
+    let mut out: HashMap<u32, Vec<UvRecord>> = HashMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(bytes, body) {
             out.entry(attr).or_default().push(shape);
@@ -460,7 +460,7 @@ fn solved_curve(
     chart: &Chart,
     start: [f64; 3],
     end: [f64; 3],
-    record_attr: u16,
+    record_attr: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
     let mut parameter = chart.base_parameter;
@@ -557,8 +557,8 @@ fn solved_support_uv(
 }
 
 fn nearest_term(
-    records: &HashMap<u16, Vec<[f64; 3]>>,
-    attr: u16,
+    records: &HashMap<u32, Vec<[f64; 3]>>,
+    attr: u32,
     endpoint: [f64; 3],
 ) -> Option<([f64; 3], f64)> {
     records
@@ -578,18 +578,18 @@ fn nearest_term(
 /// attribute, with their two support references. Such a curve is the
 /// intersection of its supports; a bounded wrapper that names it supplies its
 /// ends (spec §7.3).
-pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u16, [u16; 2]> {
+pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u32, [u32; 2]> {
     let mut out = HashMap::new();
     let charts = chart_records(bytes);
     for (_, body, _) in composite_records(bytes) {
-        let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
+        let Some(attr) = super::word_at(bytes, body + isect::ATTR) else {
             continue;
         };
         let payload = body + isect::PAYLOAD;
         let (Some(first), Some(second), Some(chart)) = (
-            View::u16_be_at(bytes, payload),
-            View::u16_be_at(bytes, payload + 2),
-            View::u16_be_at(bytes, payload + 4),
+            super::word_at(bytes, payload),
+            super::word_at(bytes, payload + 2),
+            super::word_at(bytes, payload + 4),
         ) else {
             continue;
         };
@@ -614,7 +614,7 @@ pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u16, [u16; 2
 pub(super) fn scan_intersection_carriers(
     bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
-) -> HashMap<u16, IntersectionCarrier> {
+) -> HashMap<u32, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
     let uvs = uv_records(bytes);
@@ -623,14 +623,14 @@ pub(super) fn scan_intersection_carriers(
     }
     let mut out = HashMap::new();
     for (offset, body, _) in composite_records(bytes) {
-        let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
+        let Some(attr) = super::word_at(bytes, body + isect::ATTR) else {
             continue;
         };
         let payload = body + isect::PAYLOAD;
-        let mut refs = [0_u16; 6];
+        let mut refs = [0_u32; 6];
         let mut valid = true;
         for (index, reference) in refs.iter_mut().enumerate() {
-            if let Some(value) = View::u16_be_at(bytes, payload + index * 2) {
+            if let Some(value) = super::word_at(bytes, payload + index * 2) {
                 *reference = value;
             } else {
                 valid = false;
