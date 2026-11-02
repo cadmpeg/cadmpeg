@@ -5592,6 +5592,53 @@ fn sphere_latitude(height: f64, radius: f64) -> Option<f64> {
     Some(sine.asin())
 }
 
+/// One straight span of a circle's image in a sphere's parameter plane.
+struct SphereLineSpan {
+    origin: cadmpeg_ir::math::Point2,
+    direction: cadmpeg_ir::math::Point2,
+    range: Option<[f64; 2]>,
+}
+
+/// The circle parameters inside `[start, end]` where a meridian with latitude
+/// `phase + t` reaches a sphere pole, `margin` clear of the interval's ends.
+fn meridian_poles([start, end]: [f64; 2], phase: f64, margin: f64) -> Vec<f64> {
+    let (pi, half) = (std::f64::consts::PI, std::f64::consts::FRAC_PI_2);
+    let first = ((start + phase - half) / pi).ceil();
+    [0.0, 1.0, 2.0, 3.0]
+        .into_iter()
+        .map(|step| (first + step) * pi + half - phase)
+        .filter(|pole| *pole > start + margin && *pole < end - margin)
+        .collect()
+}
+
+/// The line of a meridian with latitude `phase + t`. It shifts by whole turns
+/// so `middle` is within half a turn of the equator. Beyond a pole, it uses the
+/// opposite meridian, where latitude falls.
+fn meridian_line(
+    longitude: f64,
+    phase: f64,
+    middle: Option<f64>,
+) -> (cadmpeg_ir::math::Point2, cadmpeg_ir::math::Point2) {
+    let pi = std::f64::consts::PI;
+    let phase = middle.map_or(phase, |middle| {
+        let tau = std::f64::consts::TAU;
+        phase - ((phase + middle) / tau).round() * tau
+    });
+    match middle.map(|middle| phase + middle) {
+        Some(latitude) if latitude.abs() > std::f64::consts::FRAC_PI_2 => (
+            cadmpeg_ir::math::Point2::new(
+                longitude - pi.copysign(longitude),
+                pi.copysign(latitude) - phase,
+            ),
+            cadmpeg_ir::math::Point2::new(0.0, -1.0),
+        ),
+        _ => (
+            cadmpeg_ir::math::Point2::new(longitude, phase),
+            cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        ),
+    }
+}
+
 fn derive_spherical_pcurves(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
@@ -5672,7 +5719,7 @@ fn derive_spherical_pcurves(
         // Allow rounding of the frame projections as well as the existing
         // absolute carrier fit tolerance; never form squared radii.
         let fit_tolerance = EPS_CIRCLE_RADIUS_MATCH + 64.0 * f64::EPSILON * radius;
-        let (origin, direction) = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
+        let spans: Vec<SphereLineSpan> = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
             let height = offset.dot(v_reference);
             let transverse = cadmpeg_ir::math::Vector3::new(
                 offset.x - height * v_reference.x,
@@ -5690,10 +5737,11 @@ fn derive_spherical_pcurves(
                 continue;
             }
             let phase = reference.dot(tangent).atan2(reference.dot(u_reference));
-            (
-                cadmpeg_ir::math::Point2::new(phase, latitude),
-                cadmpeg_ir::math::Point2::new(axis_dot.signum(), 0.0),
-            )
+            vec![SphereLineSpan {
+                origin: cadmpeg_ir::math::Point2::new(phase, latitude),
+                direction: cadmpeg_ir::math::Point2::new(axis_dot.signum(), 0.0),
+                range: None,
+            }]
         } else if axis_dot.abs() < EPS_AXIS_ALIGNMENT
             && (circle_radius - radius).abs() <= fit_tolerance
             && offset.norm() <= fit_tolerance
@@ -5711,118 +5759,155 @@ fn derive_spherical_pcurves(
             };
             let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));
             let phase = reference.dot(v_reference).atan2(reference.dot(equator));
-            // Shift the line by whole turns so the middle of the range is within
-            // half a turn of the equator. Beyond a pole, use the opposite
-            // meridian, where latitude falls.
-            let middle = edge
-                .param_range()
-                .map(|range| {
-                    let [start, end] = range.get();
-                    start.midpoint(end)
-                })
-                .or_else(|| {
-                    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve));
-                    let angle = |vertex: &VertexId| {
-                        carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
-                    };
-                    let start = angle(&edge.start)?;
-                    let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
-                    Some(start + 0.5 * sweep)
-                });
-            let pi = std::f64::consts::PI;
-            let phase = middle.map_or(phase, |middle| {
-                let tau = std::f64::consts::TAU;
-                phase - ((phase + middle) / tau).round() * tau
+            let range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
+            let middle = range.map(|[start, end]| start.midpoint(end)).or_else(|| {
+                let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve));
+                let angle = |vertex: &VertexId| {
+                    carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
+                };
+                let start = angle(&edge.start)?;
+                let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
+                Some(start + 0.5 * sweep)
             });
-            match middle.map(|middle| phase + middle) {
-                Some(latitude) if latitude.abs() > std::f64::consts::FRAC_PI_2 => (
-                    cadmpeg_ir::math::Point2::new(
-                        longitude - pi.copysign(longitude),
-                        pi.copysign(latitude) - phase,
-                    ),
-                    cadmpeg_ir::math::Point2::new(0.0, -1.0),
-                ),
-                _ => (
-                    cadmpeg_ir::math::Point2::new(longitude, phase),
-                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                ),
+            let poles = range.map_or_else(Vec::new, |range| {
+                meridian_poles(range, phase, fit_tolerance / radius)
+            });
+            match range {
+                Some(range) if !poles.is_empty() => {
+                    let mut bounds = vec![range[0]];
+                    bounds.extend(poles);
+                    bounds.push(range[1]);
+                    let mut spans: Vec<SphereLineSpan> = bounds
+                        .windows(2)
+                        .map(|pair| {
+                            let (origin, direction) =
+                                meridian_line(longitude, phase, Some(pair[0].midpoint(pair[1])));
+                            let ends = if coedge.sense == Sense::Reversed {
+                                [pair[1], pair[0]]
+                            } else {
+                                [pair[0], pair[1]]
+                            };
+                            SphereLineSpan {
+                                origin,
+                                direction,
+                                range: Some(ends),
+                            }
+                        })
+                        .collect();
+                    if coedge.sense == Sense::Reversed {
+                        spans.reverse();
+                    }
+                    spans
+                }
+                _ => {
+                    let (origin, direction) = meridian_line(longitude, phase, middle);
+                    vec![SphereLineSpan {
+                        origin,
+                        direction,
+                        range: None,
+                    }]
+                }
             }
         } else {
             continue;
         };
-        let Ok(line) = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) else {
-            continue;
-        };
-        let geometry = PcurveGeometry::Line(line);
-        // Verify both frame axes and their opposite points before assigning a
-        // derived support relation. Near-aligned frames still need a physical fit.
-        let mut fits = true;
-        for parameter in [
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            std::f64::consts::PI,
-            -std::f64::consts::FRAC_PI_2,
-        ] {
-            let Some(uv) =
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter),
-                )?)?
+        let mut pieces = Vec::with_capacity(spans.len());
+        for span in &spans {
+            let Ok(line) =
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(span.origin, span.direction)
             else {
-                fits = false;
+                pieces.clear();
                 break;
             };
-            let Some(lifted) =
-                super::evaluation::surface_point(ctx, &surface.geometry, uv.u, uv.v)?
-            else {
-                fits = false;
-                break;
-            };
-            let Some(curve_point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                    ctx,
-                    &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
-                    parameter,
-                ))?,
-            )?
-            else {
-                fits = false;
-                break;
-            };
-            if lifted.distance(curve_point.get()) > fit_tolerance {
-                fits = false;
+            let geometry = PcurveGeometry::Line(line);
+            // Verify both frame axes and their opposite points before assigning a
+            // derived support relation. Near-aligned frames still need a physical fit.
+            let mut fits = true;
+            for parameter in [
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::PI,
+                -std::f64::consts::FRAC_PI_2,
+            ] {
+                let Some(uv) =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter),
+                    )?)?
+                else {
+                    fits = false;
+                    break;
+                };
+                let Some(lifted) =
+                    super::evaluation::surface_point(ctx, &surface.geometry, uv.u, uv.v)?
+                else {
+                    fits = false;
+                    break;
+                };
+                let Some(curve_point) =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point(
+                            ctx,
+                            &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
+                            parameter,
+                        ),
+                    )?)?
+                else {
+                    fits = false;
+                    break;
+                };
+                if lifted.distance(curve_point.get()) > fit_tolerance {
+                    fits = false;
+                    break;
+                }
+            }
+            if !fits {
+                pieces.clear();
                 break;
             }
+            pieces.push((geometry, span.range));
         }
-        if !fits {
+        if pieces.is_empty() {
             continue;
         }
-        let id = PcurveId::compose(
-            &pcurve_namespace(),
-            cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key()),
-        );
-        derived.push((
-            coedge.id.clone(),
-            id.clone(),
-            Pcurve {
-                id,
-                geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            },
-        ));
+        let chained = pieces.len() > 1;
+        for (index, (geometry, range)) in pieces.into_iter().enumerate() {
+            let key = cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key());
+            let id = if chained {
+                PcurveId::compose(
+                    &pcurve_namespace(),
+                    key.then(cadmpeg_ir::identity_key!(":")).then(index),
+                )
+            } else {
+                PcurveId::compose(&pcurve_namespace(), key)
+            };
+            derived.push((
+                coedge.id.clone(),
+                id.clone(),
+                Pcurve {
+                    id,
+                    geometry,
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                },
+                range,
+            ));
+        }
     }
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
         let id = coedge.id.clone();
         coedge_indices.insert(id, index);
     }
-    for (coedge_id, id, pcurve) in derived {
+    for (coedge_id, id, pcurve, range) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let uses = vec![cadmpeg_ir::topology::PcurveUse {
-                pcurve: id.clone(),
-                isoparametric: None,
-                parameter_range: None,
-            }];
-            out.coedges[*index].pcurves = uses;
+            let parameter_range = range
+                .and_then(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
+            out.coedges[*index]
+                .pcurves
+                .push(cadmpeg_ir::topology::PcurveUse {
+                    pcurve: id.clone(),
+                    isoparametric: None,
+                    parameter_range,
+                });
         }
         annotations.note(
             id.as_str(),
