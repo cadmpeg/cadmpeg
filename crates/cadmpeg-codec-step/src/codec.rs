@@ -124,7 +124,7 @@ impl CodecBackend for StepCodec {
         if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::parts::decode(root, ctx, reader::Packaging::Bare)
+        reader::parts::decode(root, ctx, reader::Packaging::Bare, None)
     }
 }
 
@@ -447,13 +447,16 @@ fn decode_zip(
         view: root_view,
         data_start: _,
     } = archive::open_root(ctx, root)?;
-    let (exchange, diagnostics) = parse::parse(root_view.window(), ctx)?;
+    let stream = cadmpeg_ir::StreamName::try_from(archive::ROOT_NAME.to_owned())
+        .map_err(|_| CodecError::malformed("STEP ZIP root stream name is empty"))?;
+    let (exchange, diagnostics, parts) = parse::parts::parse(root_view, ctx, Some(stream))?;
     let resource_notes = archive::root_reference_notes(&archive, &exchange)?;
     let entry_count = archive.entries().len();
-    let mut decoded = reader::decode_exchange(
+    let mut decoded = reader::parts::decode_parsed(
         root_view.window(),
         exchange,
         &diagnostics,
+        parts,
         ctx,
         reader::Packaging::Zip,
     )?;

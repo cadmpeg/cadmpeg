@@ -642,6 +642,7 @@ pub(crate) fn parse_inner(
         budget,
         source: None,
         parts: None,
+        part_stream: None,
         shared_omitted: BTreeSet::new(),
     };
     parser.current = parser.lex_next()?;
@@ -668,6 +669,7 @@ struct Parser<'input, 'ctx, 'arena> {
     budget: &'ctx DecodeContext<'arena>,
     source: Option<View<'input>>,
     parts: Option<&'ctx mut cadmpeg_ir::source_fidelity::parts::PartOutput>,
+    part_stream: Option<cadmpeg_ir::StreamName>,
     shared_omitted: BTreeSet<usize>,
 }
 
@@ -846,15 +848,16 @@ impl Parser<'_, '_, '_> {
             if let (Some(source), Some(parts)) = (self.source, self.parts.as_deref_mut()) {
                 // The preamble decoder reads no byte, so this part is
                 // never given up; the helper call declares the part.
-                if source.location().space == cadmpeg_core::decode::SpaceId::ROOT {
-                    if let Some(extent) = source.child(0, offset) {
-                        let spec = cadmpeg_ir::source_fidelity::parts::PartSpec::new(
-                            "step.draft_preamble",
-                        );
-                        self.budget
-                            .decode_part(parts, extent, spec, |_| Ok(()))
-                            .map_err(ParseError::from)?;
-                    }
+                if let Some(extent) = source.child(0, offset) {
+                    let spec =
+                        cadmpeg_ir::source_fidelity::parts::PartSpec::new("step.draft_preamble");
+                    let spec = match &self.part_stream {
+                        Some(stream) => spec.in_stream(stream.clone()),
+                        None => spec,
+                    };
+                    self.budget
+                        .decode_part(parts, extent, spec, |_| Ok(()))
+                        .map_err(ParseError::from)?;
                 }
             }
         }
