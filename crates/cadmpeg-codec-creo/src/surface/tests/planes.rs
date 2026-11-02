@@ -667,6 +667,35 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
 }
 
 #[test]
+fn compact_plane_scalar_suffix_corners_take_signed_world_coordinates() {
+    let world = |prefix: u8, ieee: f64| {
+        let mut token = ieee.to_be_bytes();
+        token[0] = prefix;
+        token
+    };
+    let body = [
+        &[0x32, 0xbe, 0xe4][..],
+        &world(0x2d, 2.0),
+        &[0xe4],
+        &world(0x2d, 4.0),
+        &world(0x46, 8.0),
+        &[0xe4],
+        &world(0x46, 4.0),
+        &world(0x2d, 8.0),
+        &[0x0f],
+    ]
+    .concat();
+    let slots =
+        service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+            .expect("unique compact scalar suffix");
+
+    assert_eq!(
+        slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
+        [1.0, -2.0, 1.0, 4.0, -8.0, 1.0, -4.0, 8.0, 0.0].map(Some)
+    );
+}
+
+#[test]
 fn positional_plane_envelope_rejects_bytes_before_a_complete_standard_frame() {
     let payload = [
         7, 0x22, 4, 0x01, 0, 0, 0xfb, 0x0f, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4,
