@@ -2813,6 +2813,10 @@ impl<'a> F3dDecodeSession<'a> {
                 assembly_joints: &model.assembly_joints,
             },
             geometry: design_intent::DesignGeometry {
+                primary_brep: match path {
+                    FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
+                    FinalizePath::Bodyless(_) => None,
+                },
                 bodies: &model.bodies,
                 regions: &model.regions,
                 shells: &model.shells,
