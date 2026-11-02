@@ -27,16 +27,17 @@ const FIDELITY_SIDECAR: &str = r#"{
              "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
+    "decode_digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
-    "decode_digest": "e9c0f8b575cbfcb42ab3b78ecc87efa3b011d9a5d10b09fa4e96f240bf6a82f5",
     "retained_records": {
-      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0, "untyped": [],
-             "bytes": {"retention": "inline", "data": "QUJDRA=="}},
-      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4, "untyped": [],
-             "bytes": {"retention": "inline", "data": "RUY="}},
-      "f3d:source:record#r3": {"stream": "Other", "offset": 0, "untyped": [],
-             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
+      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
+             "bytes": {"retention": "inline", "data": "QUJDRA=="}, "untyped": []},
+      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
+             "bytes": {"retention": "inline", "data": "RUY="}, "untyped": []},
+      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
+             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+             "untyped": []}
     }
   }
 }"#;
