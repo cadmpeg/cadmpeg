@@ -1092,3 +1092,15 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** `cad-ir.md` applies a procedural carrier's solved cache at the construction parameters. Rational conic arcs agree with the analytic ellipse in position and use different parameters between arc endpoints.
 
 **Note.** ASM GC-40 records the corresponding neutral-model question for a revolved conic.
+
+### DR-176. Saved current-body state outside consumer selections
+
+**Question.** Which saved state determines current body membership when the Body container, Design browser visibility, and terminal ASM state retain a body that the producer omits from its current view and STEP export?
+
+**Known.** `f3d.md` §3.1 defines the Body-container membership and the consuming-scope join through whole-body selections and browser nodes. The separate browser segment carries body-entry state bytes. A state byte can distinguish body groups whose Design browser hidden flags agree. The byte's relation to body activity, display visibility, and timeline rollback requires a controlled comparison.
+
+**Need.** Save a small design with several Base Feature bodies and a later new body. Save it before and after one multi-select Remove of several Base Feature bodies, then after a second Remove with another selected set. Record the visible and exported body counts at each save. Make separate save pairs that change one body's visibility, suppress and restore a Remove, and move the timeline marker before and after each Remove and to the timeline end. Keep geometry fixed within each pair. Compare complete Design and browser entries, selection reference runs, saved scene visibility, and ASM state membership. Establish which byte changes with removal independently of visibility and rollback, and verify its identity join on an independent design before using it to omit a body.
+
+**Conflict.** Local corpus files retain ten additional bodies in the Body container and terminal ASM state while the producer's current view and STEP export contain five bodies. The complete registered whole-body selection family has 36 records; all 36 decode. Its two Remove selections name two distinct browser nodes already covered by the consuming-scope rule.
+
+**Note.** Preserve bodies while the browser-entry state and timeline endpoint remain unresolved. Creator family and container order supply comparison groups for the controlled saves.
