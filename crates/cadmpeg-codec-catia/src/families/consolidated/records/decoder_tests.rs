@@ -730,6 +730,189 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
 }
 
 #[test]
+fn counted_owner_endpoints_follow_complete_framed_allocation() {
+    let face = [0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05];
+    let owner = [
+        0xb2, 0x03, 0x62, 0x0d, 0x05, 0x87, 0x05, 0x03, 0x05, 0x0f, 0x05, 0x1b, 0x21, 0x84, 0x41,
+        0xff, 0x0f, 0x01,
+    ];
+    let edge = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x03, 0x0f, 0x07, 0x0b, 0x21,
+    ];
+    let closing_edge = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x03, 0x15, 0x07, 0x0b, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let mut bytes = face.to_vec();
+    bytes.extend_from_slice(&owner);
+    let mut expected = Vec::new();
+    let mut vertices = Vec::new();
+    for current in [&edge, &edge, &closing_edge] {
+        let edge_pos = bytes.len();
+        bytes.extend_from_slice(current);
+        vertices.push(bytes.len());
+        bytes.extend_from_slice(&vertex);
+        expected.push(edge_pos);
+        if expected.len() < 3 {
+            bytes.extend_from_slice(&filler);
+        }
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
+    let actual = endpoints
+        .iter()
+        .map(|binding| (binding.node.pos, binding.endpoint_records))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        [
+            (expected[0], [vertices[0], vertices[1]]),
+            (expected[1], [vertices[1], vertices[2]]),
+            (expected[2], [vertices[2], vertices[0]]),
+        ]
+    );
+
+    let cycles = |data: &[u8], records: &[crate::wire::records::ConsolidatedRecord]| {
+        let parsed = crate::families::b2::records::b2_edge_nodes_from_records(data, records)
+            .map(|node| (node.pos, node))
+            .collect::<std::collections::HashMap<_, _>>();
+        let nodes = records
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| {
+                parsed
+                    .get(&record.byte_offset())
+                    .copied()
+                    .map(|node| (index, node))
+            })
+            .collect();
+        super::counted_owner_endpoint_cycles(data, records, &nodes).cycles
+    };
+    let split = expected[1];
+    let split_records = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..split, split..bytes.len()],
+    );
+    assert!(cycles(&bytes, &split_records).is_empty());
+
+    let mut reordered = bytes[split..].to_vec();
+    let second_extent = reordered.len();
+    reordered.extend_from_slice(&bytes[..split]);
+    let reordered_records = crate::wire::records::consolidated_records_in_range_sources(
+        &reordered,
+        [[second_extent..reordered.len(), 0..second_extent]],
+    );
+    let physical = |offset: usize| {
+        if offset < split {
+            second_extent + offset
+        } else {
+            offset - split
+        }
+    };
+    let reordered_endpoints = parsed_compact_edge_endpoints(&reordered, &reordered_records);
+    for (edge, vertices) in &actual {
+        assert!(reordered_endpoints.iter().any(|binding| {
+            binding.node.pos == physical(*edge)
+                && binding.endpoint_records == vertices.map(physical)
+        }));
+    }
+
+    let separator = [0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d];
+    let filler_pos = vertices[0] + vertex.len();
+    let mut reset_bytes = bytes.clone();
+    reset_bytes.splice(filler_pos..filler_pos + filler.len(), separator);
+    let reset_records = crate::wire::records::consolidated_records(&reset_bytes);
+    assert!(cycles(&reset_bytes, &reset_records).is_empty());
+}
+
+#[test]
+fn incomplete_counted_owner_withholds_filtered_endpoint_walk() {
+    let face = [0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05];
+    let owner = [
+        0xb2, 0x03, 0x62, 0x0b, 0x05, 0x85, 0x05, 0x03, 0x05, 0x7f, 0x21, 0x84, 0x41, 0xff, 0x0f,
+        0x01,
+    ];
+    let edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let mut allocation = edge.to_vec();
+    allocation.extend_from_slice(&vertex);
+    allocation.extend_from_slice(&vertex);
+    let standalone = crate::wire::records::consolidated_records(&allocation);
+    assert_eq!(
+        parsed_compact_edge_endpoints(&allocation, &standalone).len(),
+        1
+    );
+
+    let mut owned = face.to_vec();
+    owned.extend_from_slice(&owner);
+    owned.extend_from_slice(&allocation);
+    let records = crate::wire::records::consolidated_records(&owned);
+    assert!(parsed_compact_edge_endpoints(&owned, &records).is_empty());
+
+    let width_coded_edge = [
+        0xb2, 0x03, 0x5e, 0x0a, 0x05, 0x03, 0x08, 0x02, 0x00, 0x08, 0x03, 0x00, 0x07, 0x0b, 0x21,
+    ];
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let endpoint = [0xb2, 0x03, 0x18, 0x01, 0x05, 0x01];
+    let mut owned = face.to_vec();
+    owned.extend_from_slice(&owner);
+    owned.extend_from_slice(&width_coded_edge);
+    owned.extend_from_slice(&filler);
+    let first = owned.len();
+    owned.extend_from_slice(&endpoint);
+    let second = owned.len();
+    owned.extend_from_slice(&endpoint);
+    let records = crate::wire::records::consolidated_records(&owned);
+    let endpoints = parsed_compact_edge_endpoints(&owned, &records);
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(endpoints[0].endpoint_records, [first, second]);
+}
+
+#[test]
+fn counted_owner_withholds_conflicting_complete_endpoint_cycles() {
+    let face = [0xb2, 3, 0x5f, 4, 5, 0x82, 0x1d, 3, 5];
+    let owner = [
+        0xb2, 3, 0x62, 13, 5, 0x87, 5, 0x0f, 5, 0x27, 5, 0x37, 0x21, 0x84, 0x41, 0xff, 0x0f, 1,
+    ];
+    let vertex = [0xb2, 3, 0x5d, 2, 5, 3, 0];
+    let filler = [0xb2, 3, 5, 1, 5, 1];
+    let edges = [
+        [0xb2, 3, 0x5e, 6, 5, 3, 7, 0x0b, 7, 0x0b, 0x21],
+        [0xb2, 3, 0x5e, 6, 5, 3, 9, 0x11, 7, 0x0b, 0x21],
+        [0xb2, 3, 0x5e, 6, 5, 3, 0x19, 0x1d, 7, 0x0b, 0x21],
+    ];
+    let mut bytes = face.to_vec();
+    bytes.extend_from_slice(&owner);
+    let mut next_edge = edges.iter();
+    for kind in b"VVFEFVVVVEVFVE" {
+        match kind {
+            b'V' => bytes.extend_from_slice(&vertex),
+            b'F' => bytes.extend_from_slice(&filler),
+            b'E' => bytes.extend_from_slice(next_edge.next().expect("one edge per slot")),
+            _ => unreachable!(),
+        }
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(parsed_compact_edge_endpoints(&bytes, &records).is_empty());
+}
+
+#[test]
+fn endpoint_cycle_requires_connected_incidence() {
+    assert!(super::is_simple_endpoint_cycle(&[[0, 1], [1, 2], [2, 0]]));
+    assert!(!super::is_simple_endpoint_cycle(&[
+        [0, 1],
+        [1, 2],
+        [2, 0],
+        [3, 4],
+        [4, 5],
+        [5, 3],
+    ]));
+}
+
+#[test]
 fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
     let first_edge = [
         0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
