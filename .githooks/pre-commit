@@ -128,18 +128,15 @@ if [ "$scope" = "WORKSPACE" ]; then
   fi
 elif [ -n "$scope" ]; then
   pkg_flags=$(printf ' -p %s' $scope)
-  # `--all-targets` rather than `--lib --bins --tests`, because `--lib` is an
-  # error when no selected package has a library target. A commit that stages
-  # only `crates/cadmpeg`, which is a binary-only package, could not pass the
-  # gate at all. Clippy uses the same flag so test targets cannot hide style debt.
+  # Exclude harness-free benchmarks from test discovery and admit binary-only packages.
   echo "pre-commit: cargo clippy$pkg_flags --all-targets"
   cargo clippy $pkg_flags --all-targets
   if nextest; then
-    echo "pre-commit: cargo nextest run$pkg_flags --all-targets"
-    cargo nextest run --cargo-quiet --status-level fail --no-tests pass $pkg_flags --all-targets
+    echo "pre-commit: cargo nextest run$pkg_flags --bins --tests"
+    cargo nextest run --cargo-quiet --status-level fail --no-tests pass $pkg_flags --bins --tests
   else
-    echo "pre-commit: cargo test$pkg_flags --all-targets"
-    cargo test $pkg_flags --all-targets
+    echo "pre-commit: cargo test$pkg_flags --bins --tests"
+    cargo test $pkg_flags --bins --tests
   fi
 else
   echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
