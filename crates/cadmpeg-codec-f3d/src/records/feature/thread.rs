@@ -238,13 +238,9 @@ impl Serialize for DesignThreadConstruction {
             10 + usize::from(trailing_reference.is_some())
                 + usize::from(
                     trailing_reference.is_some_and(|(_, offset)| offset.is_some()),
-                )
-                + usize::from(self.designation_offset.is_some()),
+                ),
         )?;
         fields.serialize_field("form", &form)?;
-        if let Some(designation_offset) = self.designation_offset {
-            fields.serialize_field("designation_offset", &designation_offset)?;
-        }
         fields.serialize_field("designation", self.designation.as_str())?;
         fields.serialize_field("nominal_size_text", &self.nominal_size.0)?;
         fields.serialize_field("nominal_size", &nominal_size)?;
@@ -285,9 +281,6 @@ enum DesignThreadFormWire {
 struct DesignThreadConstructionWire {
     /// Standard, compact, or class-specific legacy construction form.
     form: DesignThreadFormWire,
-    /// Byte offset of the designation LP-UTF16 field of a located scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    designation_offset: Option<u64>,
     /// Standard thread designation.
     designation: String,
     /// Exact nominal-size text interpreted into `nominal_size`.
@@ -368,7 +361,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         };
         Ok(Self {
             form,
-            designation_offset: value.designation_offset,
+            designation_offset: None,
             designation: cadmpeg_core::text::NonBlankString::new(value.designation).ok_or("designation must not be empty")?,
             nominal_size,
             profile: cadmpeg_core::text::NonBlankString::new(value.profile).ok_or("profile must not be empty")?,
