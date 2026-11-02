@@ -2717,48 +2717,64 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::combine::DesignCombineForm::Standard => {
                             !compact_scope
                                 && !extended_reference_scope
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(20)).is_some_and(
-                                    |expected_offset| operation.operation_offset == Some(expected_offset),
-                                )
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(25)).is_some_and(
-                                    |expected_offset| {
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(20))
+                                    .is_some_and(|expected_offset| {
+                                        operation.operation_offset == Some(expected_offset)
+                                    })
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(25))
+                                    .is_some_and(|expected_offset| {
                                         operation.keep_tools_offset == Some(expected_offset)
-                                    },
-                                )
+                                    })
                         }
                         records::feature::combine::DesignCombineForm::Compact => {
                             compact_scope
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(21)).is_some_and(
-                                    |expected_offset| operation.operation_offset == Some(expected_offset),
-                                )
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(25)).is_some_and(
-                                    |expected_offset| {
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(21))
+                                    .is_some_and(|expected_offset| {
+                                        operation.operation_offset == Some(expected_offset)
+                                    })
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(25))
+                                    .is_some_and(|expected_offset| {
                                         operation.keep_tools_offset == Some(expected_offset)
-                                    },
-                                )
+                                    })
                         }
                         records::feature::combine::DesignCombineForm::OperandLists => {
                             !compact_scope
                                 && !extended_reference_scope
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(21)).is_some_and(
-                                    |expected_offset| operation.operation_offset == Some(expected_offset),
-                                )
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(29)).is_some_and(
-                                    |expected_offset| {
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(21))
+                                    .is_some_and(|expected_offset| {
+                                        operation.operation_offset == Some(expected_offset)
+                                    })
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(29))
+                                    .is_some_and(|expected_offset| {
                                         operation.keep_tools_offset == Some(expected_offset)
-                                    },
-                                )
+                                    })
                         }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(31)).is_some_and(
-                                    |expected_offset| operation.operation_offset == Some(expected_offset),
-                                )
-                                && scope.byte_offset().and_then(|offset| offset.checked_add(30)).is_some_and(
-                                    |expected_offset| {
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(31))
+                                    .is_some_and(|expected_offset| {
+                                        operation.operation_offset == Some(expected_offset)
+                                    })
+                                && scope
+                                    .byte_offset()
+                                    .and_then(|offset| offset.checked_add(30))
+                                    .is_some_and(|expected_offset| {
                                         operation.keep_tools_offset == Some(expected_offset)
-                                    },
-                                )
+                                    })
                         }
                     }
             }
@@ -2795,38 +2811,41 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         &scope.paired_class_tag,
                     )
                     && construction.face_group_record_indices == expected_groups
-                    && construction.designation_offset.is_some_and(|designation_offset| {
-                        scope.byte_offset().is_some_and(|scope_offset| {
-                            thread_designation_offset_holds(
-                                construction.form,
-                                designation_offset,
-                                scope_offset,
-                            )
+                    && construction
+                        .designation_offset
+                        .is_some_and(|designation_offset| {
+                            scope.byte_offset().is_some_and(|scope_offset| {
+                                thread_designation_offset_holds(
+                                    construction.form,
+                                    designation_offset,
+                                    scope_offset,
+                                )
+                            })
                         })
-                    })
                     && match construction.form {
                         records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
                             reference.offset.is_some_and(|offset| {
-                                construction.designation_offset.is_some_and(|designation_offset| {
-                                    scope.paired_byte_offset().is_some_and(|paired| {
-                                        offset > designation_offset && offset < paired
+                                construction
+                                    .designation_offset
+                                    .is_some_and(|designation_offset| {
+                                        scope.paired_byte_offset().is_some_and(|paired| {
+                                            offset > designation_offset && offset < paired
+                                        })
                                     })
-                                })
-                            })
-                            && records_by_index
+                            }) && records_by_index
                                 .contains_key(&(native_stream, reference.value.get()))
                         }
-                        records::feature::thread::DesignThreadForm::CompactExtended(
-                            reference,
-                        ) => {
-                            construction.designation_offset.is_some_and(|designation_offset| {
-                                scope.paired_byte_offset().is_some_and(|paired| {
-                                    reference.offset > designation_offset
-                                        && reference.offset < paired
+                        records::feature::thread::DesignThreadForm::CompactExtended(reference) => {
+                            construction
+                                .designation_offset
+                                .is_some_and(|designation_offset| {
+                                    scope.paired_byte_offset().is_some_and(|paired| {
+                                        reference.offset > designation_offset
+                                            && reference.offset < paired
+                                    })
                                 })
-                            })
-                            && records_by_index
-                                .contains_key(&(native_stream, reference.value.get()))
+                                && records_by_index
+                                    .contains_key(&(native_stream, reference.value.get()))
                         }
                         records::feature::thread::DesignThreadForm::Compact(None)
                         | records::feature::thread::DesignThreadForm::Standard
@@ -8142,23 +8161,25 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                             .is_none_or(|ordinal_offset| ordinal_offset > offset)
                     })
                 });
-            visibility.ordinal_collection.map_or(header_valid, |collection| {
-                let collection = collection.get();
-                if header_valid
-                    && collections.contains(&(ids::design_segment(&placement.id), collection))
-                    && visibility_ordinals.insert((
-                        native_stream,
-                        collection,
-                        visibility.stream_ordinal.get(),
-                    ))
-                {
-                    visibility
-                        .visible_offset()
-                        .is_none_or(|offset| visibility_offsets.insert((native_stream, offset)))
-                } else {
-                    false
-                }
-            })
+            visibility
+                .ordinal_collection
+                .map_or(header_valid, |collection| {
+                    let collection = collection.get();
+                    if header_valid
+                        && collections.contains(&(ids::design_segment(&placement.id), collection))
+                        && visibility_ordinals.insert((
+                            native_stream,
+                            collection,
+                            visibility.stream_ordinal.get(),
+                        ))
+                    {
+                        visibility
+                            .visible_offset()
+                            .is_none_or(|offset| visibility_offsets.insert((native_stream, offset)))
+                    } else {
+                        false
+                    }
+                })
         } else {
             true
         };

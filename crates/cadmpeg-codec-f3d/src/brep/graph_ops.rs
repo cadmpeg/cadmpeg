@@ -276,26 +276,29 @@ impl Brep {
                 self.asm.$field = select_rows(std::mem::take(&mut self.asm.$field), &reachable, |row| row.id.as_str());
             )*};
         }
-        select_neutral!(bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves);
+        select_neutral!(
+            bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces,
+            curves, pcurves
+        );
         let owned = |row: &str| owners.get(row).map(String::as_str);
-        self.asm.edge_ownerships.retain(|row| {
-            owned(&row.id()).is_some_and(|edge| reachable.contains(edge))
-        });
-        self.asm.edge_continuities.retain(|row| {
-            owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge))
-        });
-        self.asm.vertex_ownerships.retain(|row| {
-            owned(&row.id()).is_some_and(|vertex| reachable.contains(vertex))
-        });
+        self.asm
+            .edge_ownerships
+            .retain(|row| owned(&row.id()).is_some_and(|edge| reachable.contains(edge)));
+        self.asm
+            .edge_continuities
+            .retain(|row| owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge)));
+        self.asm
+            .vertex_ownerships
+            .retain(|row| owned(&row.id()).is_some_and(|vertex| reachable.contains(vertex)));
         self.asm.tolerant_coedge_parameters.retain(|row| {
             cadmpeg_asm::brep::records::native_entity_id(&row.source_namespace, row.record_index)
                 .is_some_and(|entity| {
                     coedge_ids.contains(entity.as_str()) && reachable.contains(entity.as_str())
                 })
         });
-        self.asm.tolerant_edge_tails.retain(|row| {
-            owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge))
-        });
+        self.asm
+            .tolerant_edge_tails
+            .retain(|row| owned(row.owner.as_str()).is_some_and(|edge| reachable.contains(edge)));
         self.asm.tolerant_vertex_tails.retain(|row| {
             owned(row.owner.as_str()).is_some_and(|vertex| reachable.contains(vertex))
         });
@@ -305,23 +308,19 @@ impl Brep {
                     surface_ids.contains(entity.as_str()) && reachable.contains(entity.as_str())
                 })
         });
-        self.asm.transform_hints.retain(|row| {
-            owned(row.owner.as_str()).is_some_and(|body| reachable.contains(body))
-        });
-        self.asm.body_native_keys.retain(|row| {
-            owned(&row.id()).is_some_and(|body| reachable.contains(body))
-        });
+        self.asm
+            .transform_hints
+            .retain(|row| owned(row.owner.as_str()).is_some_and(|body| reachable.contains(body)));
+        self.asm
+            .body_native_keys
+            .retain(|row| owned(&row.id()).is_some_and(|body| reachable.contains(body)));
         self.asm.wire_topologies.retain(|row| {
             let member_neutrals = row
                 .members
                 .edges()
                 .iter()
                 .map(|member| member.as_str())
-                .chain(
-                    row.members
-                        .free_vertex()
-                        .map(|vertex| vertex.as_str()),
-                )
+                .chain(row.members.free_vertex().map(|vertex| vertex.as_str()))
                 .filter_map(|member| owners.get(member))
                 .collect::<Vec<_>>();
             self.asm.shells.iter().any(|shell| {
@@ -376,18 +375,14 @@ impl Brep {
             )
             .is_some_and(|neutral| reachable.contains(&neutral))
         };
-        self.sketch_curve_links.retain(|row| {
-            link_retained(&row.target, row.target_coedge)
-        });
-        self.persistent_design_links.retain(|row| {
-            link_retained(&row.target, row.target_coedge)
-        });
-        self.persistent_subentity_tags.retain(|row| {
-            link_retained(&row.target, row.target_coedge)
-        });
-        self.creation_timestamps.retain(|row| {
-            link_retained(&row.target, row.target_coedge)
-        });
+        self.sketch_curve_links
+            .retain(|row| link_retained(&row.target, row.target_coedge));
+        self.persistent_design_links
+            .retain(|row| link_retained(&row.target, row.target_coedge));
+        self.persistent_subentity_tags
+            .retain(|row| link_retained(&row.target, row.target_coedge));
+        self.creation_timestamps
+            .retain(|row| link_retained(&row.target, row.target_coedge));
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
             if reachable.contains(&row.id) {
@@ -694,8 +689,8 @@ mod tests {
                 match value {
                     serde_json::Value::String(text) => {
                         for kind in [
-                            "body", "region", "shell", "face", "loop", "coedge", "edge",
-                            "vertex", "point", "surface", "curve",
+                            "body", "region", "shell", "face", "loop", "coedge", "edge", "vertex",
+                            "point", "surface", "curve",
                         ] {
                             let prefix = format!("synthetic:cube:{kind}#");
                             if let Some(key) = text.strip_prefix(&prefix) {

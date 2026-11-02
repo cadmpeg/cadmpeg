@@ -871,5 +871,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
-mod nullable_attributes;
 mod dimension_annotations;
+mod nullable_attributes;

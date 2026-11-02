@@ -219,19 +219,25 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     // Geometry and visibility values are always authored from the neutral model.
     super::body_keys::reconcile(target, &mut native)?;
     native.body_native_keys.retain(|record| {
-        target.model.bodies.iter().any(|body| {
-            body.native_ref.as_deref() == Some(record.id().as_str())
-        })
+        target
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.native_ref.as_deref() == Some(record.id().as_str()))
     });
     native.body_visibilities.retain(|record| {
-        target.model.bodies.iter().any(|body| {
-            body.native_ref.as_deref() == Some(record.body.as_str())
-        })
+        target
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.native_ref.as_deref() == Some(record.body.as_str()))
     });
     native.edge_continuities.retain(|record| {
-        target.model.edges.iter().any(|edge| {
-            edge.native_ref.as_deref() == Some(record.owner.as_str())
-        })
+        target
+            .model
+            .edges
+            .iter()
+            .any(|edge| edge.native_ref.as_deref() == Some(record.owner.as_str()))
     });
     native.face_sidedness.retain(|record| {
         target.model.faces.iter().any(|face| {
@@ -254,9 +260,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native.creation_timestamps.iter().find(|record| {
-                record.target == row && record.target_coedge == target_coedge
-            });
+            let existing = native
+                .creation_timestamps
+                .iter()
+                .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
                 id: existing.map_or_else(
                     || format!("f3d:design:creation-timestamp#generated-{ordinal}"),
@@ -348,9 +355,11 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             .any(|body| body.native_ref.as_deref() == Some(record.id().as_str()))
     });
     native.body_visibilities.retain(|record| {
-        target.model.bodies.iter().any(|body| {
-            body.native_ref.as_deref() == Some(record.body.as_str())
-        })
+        target
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.native_ref.as_deref() == Some(record.body.as_str()))
     });
     native.edge_continuities.retain(|record| {
         target
@@ -380,9 +389,10 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native.creation_timestamps.iter().find(|record| {
-                record.target == row && record.target_coedge == target_coedge
-            });
+            let existing = native
+                .creation_timestamps
+                .iter()
+                .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
                 id: existing.map_or_else(
                     || format!("f3d:design:creation-timestamp#generated-{ordinal}"),

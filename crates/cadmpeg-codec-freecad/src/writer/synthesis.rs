@@ -167,9 +167,11 @@ pub(super) fn write(
         if crate::attributes::projection_held(ir)
             && !crate::attributes::consumed(ir, property, &native_objects)
             && crate::attributes::values(property).is_some()
-            && ir.model.attributes.iter().any(|attribute| {
-                attribute.native_ref.as_deref() == Some(property.id.as_str())
-            })
+            && ir
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.native_ref.as_deref() == Some(property.id.as_str()))
         {
             // Canonical attributes own these values and their deletion.
             continue;

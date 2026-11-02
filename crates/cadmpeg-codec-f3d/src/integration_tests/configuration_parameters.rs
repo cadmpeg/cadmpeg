@@ -172,4 +172,3 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
 }
-

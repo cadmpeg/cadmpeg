@@ -584,8 +584,14 @@ fn thread_projects_parsed_metric_and_inch_sizes_with_native_polarities() -> Test
             else {
                 return Err("missing resolved sizing".into());
             };
-            assert_eq!(diameter.literal().expect("literal diameter").get(), expected_diameter);
-            assert_eq!(pitch.literal().expect("literal pitch").get(), expected_pitch);
+            assert_eq!(
+                diameter.literal().expect("literal diameter").get(),
+                expected_diameter
+            );
+            assert_eq!(
+                pitch.literal().expect("literal pitch").get(),
+                expected_pitch
+            );
             assert!(extent.is_none());
             assert!(modeled.is_none());
             let mut invalid = serde_json::to_value(&definitions[0])?;

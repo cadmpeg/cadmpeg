@@ -413,9 +413,7 @@ fn has_to_termination_detects_one_sided_and_two_sided() {
     };
     let blind_side = ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0)
-                .unwrap()
-                .into(),
+            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap().into(),
         },
         draft: None,
     };

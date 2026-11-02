@@ -696,11 +696,11 @@ fn decode_with_occurrence_limits(
             &mut parse.references,
             global.as_ref(),
             native::ProductOccurrenceLimits::new(
-            product_occurrence_output_limit,
-            product_occurrence_depth_limit,
-        ),
-        ctx,
-    )?,
+                product_occurrence_output_limit,
+                product_occurrence_depth_limit,
+            ),
+            ctx,
+        )?,
         global::GlobalRecord::Unfinished => {
             native::store_physical_cards(&mut ir, &parse.scan, ctx)?
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{linking_record, visit_native_references};
-use crate::attributes::AttributeTarget;
 use crate::appearance::AppearanceTarget;
+use crate::attributes::AttributeTarget;
 use crate::document::ArenaName;
 
 #[test]
@@ -43,7 +43,10 @@ fn linking_record_prefers_model_class_then_registry_order_then_id() {
     ir.model.bodies[0].native_ref = None;
     let (arena, id) = linking_record(&ir.model, owner).expect("linked owner resolves");
     assert_eq!(arena, ArenaName::parse("faces").unwrap());
-    let first = ir.model.faces[0].id.as_str().min(ir.model.faces[1].id.as_str());
+    let first = ir.model.faces[0]
+        .id
+        .as_str()
+        .min(ir.model.faces[1].id.as_str());
     assert_eq!(id, first);
     assert!(linking_record(&ir.model, "test:native:object#absent").is_none());
 }

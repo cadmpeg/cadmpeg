@@ -171,10 +171,7 @@ fn an_edited_point_does_not_replay_its_source_image() {
         )
         .expect("an edited source still plans");
     assert!(
-        !matches!(
-            plan.report().write_path(),
-            WritePath::VerbatimReplay { .. }
-        ),
+        !matches!(plan.report().write_path(), WritePath::VerbatimReplay { .. }),
         "an edited document must not replay its source image"
     );
 }
@@ -222,10 +219,7 @@ fn an_altered_source_image_does_not_replay() {
         )
         .expect("an altered image still plans");
     assert!(
-        !matches!(
-            plan.report().write_path(),
-            WritePath::VerbatimReplay { .. }
-        ),
+        !matches!(plan.report().write_path(), WritePath::VerbatimReplay { .. }),
         "an altered source image must not replay"
     );
 }

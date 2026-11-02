@@ -859,8 +859,7 @@ fn typed_parameter_tail(payload: ParameterFrame<'_>) -> Option<(usize, u64)> {
     let mut cursor = start + 1;
     let reference = payload.reference(&mut cursor)?;
     let (target, guid) = reference.local()?;
-    (guid == Some(PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len())
-        .then_some((start, target))
+    (guid == Some(PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len()).then_some((start, target))
 }
 
 /// Whether `payload` is shaped as a typed compact parameter frame: the

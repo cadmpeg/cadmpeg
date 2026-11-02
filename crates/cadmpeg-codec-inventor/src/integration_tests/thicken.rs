@@ -261,7 +261,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         panic!("neutral offset")
     };
     *distance = cadmpeg_ir::Dimension::Literal(
-        cadmpeg_ir::scalar::Length::new(-4.0).expect("reversed distance")
+        cadmpeg_ir::scalar::Length::new(-4.0).expect("reversed distance"),
     );
     ir.model.features[0].evaluation = FeatureEvaluation::from_definition(definition);
     let findings = InventorCodec
@@ -278,7 +278,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: faces.clone(),
             distance: Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::Length::new(4.0).expect("distance")
+                cadmpeg_ir::scalar::Length::new(4.0).expect("distance"),
             )),
         }),
     );
@@ -477,9 +477,12 @@ fn forward_offset_validation_rejects_the_opposite_sign_at_equal_magnitude() {
     let magnitude = distance.literal().expect("literal distance").get();
     assert_eq!(magnitude, 4.0);
     *distance = cadmpeg_ir::Dimension::Literal(
-        cadmpeg_ir::scalar::Length::new(-magnitude).expect("reversed distance")
+        cadmpeg_ir::scalar::Length::new(-magnitude).expect("reversed distance"),
     );
-    assert_eq!(distance.literal().expect("literal distance").get().abs(), magnitude);
+    assert_eq!(
+        distance.literal().expect("literal distance").get().abs(),
+        magnitude
+    );
     assert!(distance.literal().expect("literal distance").get() < 0.0);
     ir.model.features[0].evaluation = FeatureEvaluation::from_definition(definition);
     let findings = InventorCodec

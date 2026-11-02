@@ -305,11 +305,7 @@ pub(super) fn decode(
         let values = characteristic_values.get(&id);
         let definition = PmiDimension::new(
             kind,
-            values.and_then(|values| {
-                values
-                    .nominal
-                    .map(cadmpeg_ir::features::Dimension::Literal)
-            }),
+            values.and_then(|values| values.nominal.map(cadmpeg_ir::features::Dimension::Literal)),
             values.and_then(|values| values.limits.clone()),
         )
         .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;

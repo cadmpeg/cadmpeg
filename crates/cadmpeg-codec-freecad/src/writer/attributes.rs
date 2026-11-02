@@ -211,15 +211,9 @@ pub(super) fn write(
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    write_matching(
-        ir,
-        names,
-        objects,
-        document,
-        losses,
-        properties,
-        |target| !is_product_or_occurrence(target),
-    )
+    write_matching(ir, names, objects, document, losses, properties, |target| {
+        !is_product_or_occurrence(target)
+    })
 }
 
 /// Attributes owned by product definitions and occurrences resolve after

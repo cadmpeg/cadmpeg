@@ -7,8 +7,8 @@
 use cadmpeg_test_support::data_checks::properties::property_map_findings;
 use cadmpeg_test_support::data_checks::{
     decode_goldens, equation_identities, expression_text_findings, feature_ordinal_findings,
-    freecad_stale_findings, never_stale_findings, solidworks_stale_findings, DecodeGolden,
-    source_attributes_findings,
+    freecad_stale_findings, never_stale_findings, solidworks_stale_findings,
+    source_attributes_findings, DecodeGolden,
 };
 use serde_json::Value;
 

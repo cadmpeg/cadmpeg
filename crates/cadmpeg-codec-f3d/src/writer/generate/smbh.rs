@@ -303,7 +303,13 @@ fn encode_source_less_wires(
             native_ref(records, -1);
             native_ref(records, native_record_index(shell_start, shell_ordinal)?);
             native_ref(records, native_record_index(vertex_start, vertex_ordinal)?);
-            records.push(native_wire_side(target, topology, &shell.id, &[], Some(vertex_id))?);
+            records.push(native_wire_side(
+                target,
+                topology,
+                &shell.id,
+                &[],
+                Some(vertex_id),
+            )?);
             records.push(0x11);
             wire_ordinal += 1;
         }
@@ -1852,12 +1858,10 @@ fn native_wire_side(
                     })
                 && match (wire.members.free_vertex(), free_vertex) {
                     (None, None) => true,
-                    (Some(member), Some(vertex)) => {
-                        target.model.vertices.iter().any(|candidate| {
-                            &candidate.id == vertex
-                                && candidate.native_ref.as_deref() == Some(member.as_str())
-                        })
-                    }
+                    (Some(member), Some(vertex)) => target.model.vertices.iter().any(|candidate| {
+                        &candidate.id == vertex
+                            && candidate.native_ref.as_deref() == Some(member.as_str())
+                    }),
                     _ => false,
                 }
         });
@@ -1991,16 +1995,11 @@ fn apply_native_edge_owners(
         let owner = match ownership.owner_coedge_index {
             None => -1,
             Some(index) => {
-                if let Some((ordinal, _)) = target
-                    .model
-                    .coedges
-                    .iter()
-                    .enumerate()
-                    .find(|(_, coedge)| {
+                if let Some((ordinal, _)) =
+                    target.model.coedges.iter().enumerate().find(|(_, coedge)| {
                         coedge.edge == edge.id
-                            && cadmpeg_asm::brep::records::neutral_record_index(
-                                coedge.id.as_str(),
-                            ) == Some(index)
+                            && cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+                                == Some(index)
                     })
                 {
                     native_record_index(coedge_start, ordinal)?

@@ -124,16 +124,23 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     }
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path =
-        match F3dCodec::write_preserved_bytes(input.ir, data, expected, input.ir.scope, input.limits, &mut bytes, &mut notes) {
-            Ok(path) => path,
-            Err(error) if super::synthesis::declines(&error) => {
-                return Ok(Preservation::PatchDeclined {
-                    reason: error.to_string(),
-                });
-            }
-            Err(error) => return Err(error),
-        };
+    let write_path = match F3dCodec::write_preserved_bytes(
+        input.ir,
+        data,
+        expected,
+        input.ir.scope,
+        input.limits,
+        &mut bytes,
+        &mut notes,
+    ) {
+        Ok(path) => path,
+        Err(error) if super::synthesis::declines(&error) => {
+            return Ok(Preservation::PatchDeclined {
+                reason: error.to_string(),
+            });
+        }
+        Err(error) => return Err(error),
+    };
     Ok(Preservation::Written {
         bytes,
         write_path,

@@ -47,12 +47,7 @@ fn archive_session_member_result_outlives_source_and_releases_archive_ownership(
     let body = &decoded.body;
     let payload = serde_json::to_vec(&(
         &decoded.ir,
-        (
-            &body.transfer,
-            &*body.coverage,
-            &body.losses,
-            &body.notes,
-        ),
+        (&body.transfer, &*body.coverage, &body.losses, &body.notes),
         &decoded.source_fidelity,
     ))
     .unwrap();

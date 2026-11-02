@@ -43,11 +43,9 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
             .map(|((x, y), z)| (x.clone(), y.clone(), z.clone()))
     };
     assert_eq!(
-        coordinates(native).as_ref().map(|(x, y, z)| (
-            x.as_str(),
-            y.as_str(),
-            z.as_str()
-        )),
+        coordinates(native)
+            .as_ref()
+            .map(|(x, y, z)| (x.as_str(), y.as_str(), z.as_str())),
         Some(("1.25", "-2", "3"))
     );
     let changed_document = document.replace("Vendor='opaque-extra'", "Vendor='current-extra'");
@@ -90,7 +88,10 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = crate::FcstdCodec
-        .decode(&mut Cursor::new(bytes.as_slice()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let output_properties = output
         .ir()

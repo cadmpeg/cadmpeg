@@ -1176,7 +1176,10 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
             ir.model.occurrences[index + 1].transform,
             Some(Transform::identity())
         );
-        let local = ir.model.occurrences[index + 3].transform.expect("placed").rows();
+        let local = ir.model.occurrences[index + 3]
+            .transform
+            .expect("placed")
+            .rows();
         for (row, expected) in local.iter().zip([30.0, 40.0, 50.0]) {
             assert!((row[3] - expected).abs() < 1e-9);
         }
@@ -1305,9 +1308,7 @@ fn component_path_chain_places_a_nested_target_in_a_mixed_reference() {
         .transform
         .expect("placed")
         .compose(ir.model.occurrences[3].transform.expect("placed"))
-        .and_then(|world| {
-            world.compose(ir.model.occurrences[6].transform.expect("placed"))
-        })
+        .and_then(|world| world.compose(ir.model.occurrences[6].transform.expect("placed")))
         .unwrap();
     assert!((world.rows()[0][3] - 90.0).abs() < 1e-9);
     assert_eq!(

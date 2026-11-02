@@ -49,11 +49,7 @@ pub fn linking_record(model: &Model, owner: &str) -> Option<(ArenaName, String)>
                 ArenaName::ALL
                     .iter()
                     .position(|arena| arena == &left.0)
-                    .cmp(
-                        &ArenaName::ALL
-                            .iter()
-                            .position(|arena| arena == &right.0),
-                    ),
+                    .cmp(&ArenaName::ALL.iter().position(|arena| arena == &right.0)),
             )
             .then(left.1.cmp(&right.1))
     });

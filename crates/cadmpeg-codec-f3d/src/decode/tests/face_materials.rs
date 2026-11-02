@@ -243,7 +243,9 @@ fn make_body_binding(
             entity_suffix_offset: asm_key_offset + 8,
             blob_name: "BREP.synthetic.smbh".into(),
             blob_name_offset: asm_key_offset + 32,
-            body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(row.to_owned())),
+            body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                row.to_owned(),
+            )),
         },
     )
     .unwrap()

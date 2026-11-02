@@ -28,8 +28,8 @@ use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::assemble::{
-    annotate, insert_unresolved_carrier_loss, neutral_model_is_admissible,
-    preserve_raw_payload, quintic_jet_pcurve,
+    annotate, insert_unresolved_carrier_loss, neutral_model_is_admissible, preserve_raw_payload,
+    quintic_jet_pcurve,
 };
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};

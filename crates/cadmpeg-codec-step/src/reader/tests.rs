@@ -660,8 +660,18 @@ fn retention_reports_every_deleted_carrier_category() {
     }
     for id in ["step:data:curve#83", "step:data:point#74"] {
         assert!(
-            decoded.ir().model.curves.iter().any(|curve| curve.id.as_str() == id)
-                || decoded.ir().model.points.iter().any(|point| point.id.as_str() == id),
+            decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .any(|curve| curve.id.as_str() == id)
+                || decoded
+                    .ir()
+                    .model
+                    .points
+                    .iter()
+                    .any(|point| point.id.as_str() == id),
             "unowned direct carrier {id} survives its opaque referrer"
         );
     }

@@ -95,7 +95,9 @@ pub(crate) fn operands<'a>(
         .and_then(|value| PositiveLength::new(value.get()))
         .ok_or(NativeReason::Distance)?;
     let spec = if form == 0 {
-        ChamferSpec::Distance { distance: cadmpeg_ir::Dimension::Literal(distance) }
+        ChamferSpec::Distance {
+            distance: cadmpeg_ir::Dimension::Literal(distance),
+        }
     } else {
         let Some(PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::FaceCollection,

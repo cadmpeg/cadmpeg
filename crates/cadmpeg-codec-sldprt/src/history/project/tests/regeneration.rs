@@ -166,7 +166,8 @@ fn sweep_then_sketch_owners(owners: usize) -> Vec<cadmpeg_ir::features::Feature>
         configurations: Vec::new(),
         features: native,
     };
-    let mut features = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let mut features =
+        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     features[0].evaluation.edit(|definition, _| {
         *definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::sheet_sections(

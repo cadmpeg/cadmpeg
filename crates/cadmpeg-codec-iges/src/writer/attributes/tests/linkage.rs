@@ -210,8 +210,7 @@ fn attribute_table_defaults_and_rows_emit_standalone_without_neutral_owners() {
     // emit standalone, so the suite links them at dangling record targets
     // and pins the standalone bytes.
     let dangling = || AttributeTarget::Record {
-        arena: cadmpeg_ir::document::ArenaName::parse("points")
-            .expect("registered points arena"),
+        arena: cadmpeg_ir::document::ArenaName::parse("points").expect("registered points arena"),
         id: "test:model:point#absent".into(),
     };
     for (name, value, native_ref) in [
@@ -220,11 +219,7 @@ fn attribute_table_defaults_and_rows_emit_standalone_without_neutral_owners() {
             "EDIT",
             definition.id(),
         ),
-        (
-            "iges.attribute_table.value.rows.0.0",
-            "ROW",
-            instance.id(),
-        ),
+        ("iges.attribute_table.value.rows.0.0", "ROW", instance.id()),
     ] {
         ir.model.attributes.push(SourceAttribute {
             id: AttributeId::mint(format!("test:model:attribute#{name}"))

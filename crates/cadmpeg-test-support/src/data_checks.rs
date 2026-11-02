@@ -136,10 +136,24 @@ pub fn source_attributes_findings(document: &Value) -> Vec<String> {
         "sldprt_active_partition_unresolved",
     ];
     const TRAILING_TOKENS: &[&str] = &[
-        "count", "len", "length", "size", "offset", "records", "rows", "runs", "spans",
-        "block", "blocks", "sections", "instances", "pairs",
+        "count",
+        "len",
+        "length",
+        "size",
+        "offset",
+        "records",
+        "rows",
+        "runs",
+        "spans",
+        "block",
+        "blocks",
+        "sections",
+        "instances",
+        "pairs",
     ];
-    let Some(attributes) = document.pointer("/source/attributes").and_then(Value::as_object)
+    let Some(attributes) = document
+        .pointer("/source/attributes")
+        .and_then(Value::as_object)
     else {
         return Vec::new();
     };
@@ -158,9 +172,10 @@ pub fn source_attributes_findings(document: &Value) -> Vec<String> {
             || lower.contains("fingerprint")
             || lower.contains("synthesized")
             || lower.contains("synthesised")
-            || lower.as_bytes().windows(4).any(|window| {
-                window[..3] == *b"sha" && window[3].is_ascii_digit()
-            })
+            || lower
+                .as_bytes()
+                .windows(4)
+                .any(|window| window[..3] == *b"sha" && window[3].is_ascii_digit())
             || lower
                 .split(['.', '_'])
                 .next_back()

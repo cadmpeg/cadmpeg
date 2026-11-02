@@ -1929,9 +1929,9 @@ mod tests {
             entity_suffix_offset: offset + 8,
             blob_name: "BREP.".into(),
             blob_name_offset: offset + 32,
-            body: Some(
-                cadmpeg_asm::brep::records::identity::NativeRowId::from(row.to_owned()),
-            ),
+            body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
+                row.to_owned(),
+            )),
             component_owner: Some(
                 crate::records::body_ownership::membership(&ownership_layout(
                     entity_suffix,

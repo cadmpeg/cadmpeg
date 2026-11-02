@@ -70,12 +70,10 @@ pub(super) fn project(
                 }
                 "display_jt_string_property_atoms" => {
                     if let Some(value) = fields.get("value").and_then(Value::as_str) {
-                        let Some(target) =
-                            cadmpeg_ir::attributes::AttributeTarget::record_for(
-                                &ir.model,
-                                record.id(),
-                            )
-                        else {
+                        let Some(target) = cadmpeg_ir::attributes::AttributeTarget::record_for(
+                            &ir.model,
+                            record.id(),
+                        ) else {
                             continue;
                         };
                         let attribute_id = cadmpeg_ir::ids::AttributeId::compose(

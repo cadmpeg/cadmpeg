@@ -600,7 +600,14 @@ pub(crate) fn bind_vertex_recipe_candidates(
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 bind_recipe_reference_candidates(
-                    reference, tags, Some(&scope_id), bodies, faces, edges, vertices, coedges,
+                    reference,
+                    tags,
+                    Some(&scope_id),
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
                 );
             }
         }
@@ -610,7 +617,14 @@ pub(crate) fn bind_vertex_recipe_candidates(
         for recipe in construction.rule.vertex_recipes_mut() {
             for reference in &mut recipe.recipe_references {
                 bind_recipe_reference_candidates(
-                    reference, tags, Some(&scope_id), bodies, faces, edges, vertices, coedges,
+                    reference,
+                    tags,
+                    Some(&scope_id),
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
                 );
             }
         }
@@ -1497,7 +1511,6 @@ pub(crate) fn bind_face_operand_candidates(
     vertices: &[cadmpeg_ir::topology::Vertex],
     coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
-
     let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
@@ -1527,7 +1540,13 @@ pub(crate) fn bind_face_operand_candidates(
                 && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
             if let Some(face) = crate::brep::link_neutral_id(
-                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+                &tag.target,
+                tag.target_coedge,
             )
             .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
             {
@@ -1601,7 +1620,13 @@ pub(crate) fn bind_edge_operand_candidates(
                 && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
             if let Some(face) = crate::brep::link_neutral_id(
-                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+                &tag.target,
+                tag.target_coedge,
             )
             .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
             {
@@ -1625,7 +1650,6 @@ pub(crate) fn edge_operand_candidate_faces(
     vertices: &[cadmpeg_ir::topology::Vertex],
     coedges: &[cadmpeg_ir::topology::Coedge],
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
-
     let mut faces = tags
         .iter()
         .filter(|tag| {
@@ -1635,7 +1659,13 @@ pub(crate) fn edge_operand_candidate_faces(
         })
         .filter_map(|tag| {
             crate::brep::link_neutral_id(
-                bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+                bodies,
+                faces,
+                edges,
+                vertices,
+                coedges,
+                &tag.target,
+                tag.target_coedge,
             )
             .and_then(|id| {
                 faces
@@ -4527,7 +4557,8 @@ fn unique_body_recipe_with_index<'a>(
     let start = usize::try_from(header_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
     let lower = u64::try_from(prologue_end).ok()?;
-    let first = recipes.partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < lower));
+    let first =
+        recipes.partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < lower));
     let Some(next_at) =
         records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)
     else {
@@ -4543,8 +4574,8 @@ fn unique_body_recipe_with_index<'a>(
         return Some(recipe);
     };
     let upper = u64::try_from(next_at).ok()?;
-    let matching =
-        &recipes[first..recipes.partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < upper))];
+    let matching = &recipes[first
+        ..recipes.partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < upper))];
     let [recipe] = matching else {
         return None;
     };
@@ -4788,7 +4819,6 @@ pub(crate) fn bind_body_recipe_operand_candidates(
     vertices: &[cadmpeg_ir::topology::Vertex],
     coedges: &[cadmpeg_ir::topology::Coedge],
 ) {
-
     let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
     for recipe in recipes {
         if let Some(existing) = recipes_by_id.get_mut(recipe.id.as_str()) {
@@ -4831,7 +4861,13 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                         || tag_selector == Some(tag.selector))
             }) {
                 if let Some(face) = crate::brep::link_neutral_id(
-                    bodies, faces, edges, vertices, coedges, &tag.target, tag.target_coedge,
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
+                    &tag.target,
+                    tag.target_coedge,
                 )
                 .and_then(|id| faces.iter().find(|face| face.id.as_str() == id))
                 {

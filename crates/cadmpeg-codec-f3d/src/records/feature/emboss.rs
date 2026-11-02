@@ -175,8 +175,7 @@ impl DesignEmbossConstruction {
         }
         // An unlocated scope (the wire/test-serde path) carries no frame
         // offsets, so the offset checks below are meaningless for it.
-        let (Some(start), Some(count)) =
-            (scope.byte_offset(), scope.reference_count_offset())
+        let (Some(start), Some(count)) = (scope.byte_offset(), scope.reference_count_offset())
         else {
             return true;
         };
@@ -196,9 +195,7 @@ impl DesignEmbossConstruction {
         if !fields
             .iter()
             .zip(relative_offsets)
-            .all(|(field, relative)| {
-                start.checked_add(u64_from_index(relative)) == field.offset
-            })
+            .all(|(field, relative)| start.checked_add(u64_from_index(relative)) == field.offset)
             || scope.reference_members().offsets().count() != scope.reference_members().len()
         {
             return false;

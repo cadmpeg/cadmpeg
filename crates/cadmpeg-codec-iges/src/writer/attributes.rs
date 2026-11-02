@@ -50,11 +50,7 @@ fn native_encoding_matches(
         })
 }
 
-fn owners(
-    ir: &CadIr,
-    fields: &fields::Fields<'_>,
-    targets: &Targets,
-) -> Option<Vec<usize>> {
+fn owners(ir: &CadIr, fields: &fields::Fields<'_>, targets: &Targets) -> Option<Vec<usize>> {
     if fields.has_native_values() {
         let mut owners = Vec::new();
         if let Some(native) = fields.native_value("owners") {
@@ -437,8 +433,7 @@ pub(super) fn append(
                                     &entity,
                                     |native| properties::encode(record, native, &targets),
                                     |native| {
-                                        self::owners(ir, native, &targets).as_ref()
-                                            == Some(&owners)
+                                        self::owners(ir, native, &targets).as_ref() == Some(&owners)
                                     },
                                 );
                                 append_owned(entities, entity, &owners, version)

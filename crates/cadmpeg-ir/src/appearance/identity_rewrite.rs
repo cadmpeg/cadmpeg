@@ -48,7 +48,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
             Self::Curve(id) => Self::Curve(id.rewrite_identities(ctx, map)?),
             Self::Point(id) => Self::Point(id.rewrite_identities(ctx, map)?),
             Self::Tessellation(id) => Self::Tessellation(map.identity(&id)?),
-            Self::TriangleGroup { tessellation, group } => Self::TriangleGroup {
+            Self::TriangleGroup {
+                tessellation,
+                group,
+            } => Self::TriangleGroup {
                 tessellation: tessellation.rewrite_identities(ctx, map)?,
                 group: group.rewrite_identities(ctx, map)?,
             },

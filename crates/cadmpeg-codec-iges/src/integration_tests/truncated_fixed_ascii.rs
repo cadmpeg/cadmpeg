@@ -684,7 +684,8 @@ fn a_finished_global_with_a_prohibited_delimiter_is_malformed_or_given_up_when_t
     let ended = start_and_global(global);
     assert!(is_global_malformed(&ended));
     let terminated = crate::test_support::test_cards::fixed_ascii_with_global(global);
-    let decoded = decode(&terminated).expect("terminated file decodes past the refused global part");
+    let decoded =
+        decode(&terminated).expect("terminated file decodes past the refused global part");
     let losses: Vec<_> = decoded
         .report()
         .losses
@@ -693,7 +694,11 @@ fn a_finished_global_with_a_prohibited_delimiter_is_malformed_or_given_up_when_t
         .collect();
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
-    assert!(losses[0].message.contains("iges.global_section"), "{}", losses[0].message);
+    assert!(
+        losses[0].message.contains("iges.global_section"),
+        "{}",
+        losses[0].message
+    );
 }
 
 #[test]
@@ -759,5 +764,3 @@ fn a_file_that_ends_inside_global_publishes_no_global_value() {
         1
     );
 }
-
-

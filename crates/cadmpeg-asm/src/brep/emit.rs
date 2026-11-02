@@ -4505,12 +4505,11 @@ pub(super) fn emit_vertices(
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
                                 source_namespace: namespace.clone(),
                                 record_index,
-                                owner:
-                                    crate::brep::records::identity::NativeRowId::row_id(
-                                        &namespace,
-                                        "vertex-ownership",
-                                        record_index,
-                                    ),
+                                owner: crate::brep::records::identity::NativeRowId::row_id(
+                                    &namespace,
+                                    "vertex-ownership",
+                                    record_index,
+                                ),
                                 leading_tolerances: [first, second],
                                 evaluated_slot: {
                                     let trailing = match r.chunk(9) {
@@ -4709,8 +4708,7 @@ pub(super) fn emit_edges(
                 tolerance,
             });
             if let Some((entity_revision, trailing_field)) = tolerant_tail {
-                let namespace =
-                    crate::brep::records::identity::NativeRecordNamespace::new(format);
+                let namespace = crate::brep::records::identity::NativeRecordNamespace::new(format);
                 let record_index = u32::try_from(r.index).map_err(|_| {
                     cadmpeg_core::CodecError::malformed(
                         "ASM native record index exceeds the u32 range",
@@ -4737,9 +4735,7 @@ pub(super) fn emit_edges(
                         "ASM native record index exceeds the u32 range",
                     )
                 })?,
-                owner_coedge_index: r
-                    .ref_at(7)
-                    .and_then(|owner| u32::try_from(owner).ok()),
+                owner_coedge_index: r.ref_at(7).and_then(|owner| u32::try_from(owner).ok()),
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
                 let record_index = u32::try_from(r.index).map_err(|_| {
@@ -5263,9 +5259,7 @@ pub fn emit_containers(
                                 )
                             })?,
                             owner: crate::brep::records::identity::NativeRowId::row_id(
-                                &crate::brep::records::identity::NativeRecordNamespace::new(
-                                    format,
-                                ),
+                                &crate::brep::records::identity::NativeRecordNamespace::new(format),
                                 "body-native-key",
                                 u32::try_from(r.index).map_err(|_| {
                                     cadmpeg_core::CodecError::malformed(

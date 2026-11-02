@@ -162,7 +162,11 @@ fn an_uncarried_native_edit_declines_the_retained_layout() {
         .arena_as::<DocumentFacts>("document")
         .expect("typed document facts")
         .to_vec();
-    assert_eq!(documents.len(), 1, "the minimal archive declares one document");
+    assert_eq!(
+        documents.len(),
+        1,
+        "the minimal archive declares one document"
+    );
     documents[0].program_version = Some("edited by the replay gate test".to_owned());
     ir.native
         .namespace_mut("fcstd")
@@ -172,13 +176,10 @@ fn an_uncarried_native_edit_declines_the_retained_layout() {
             &documents,
         )
         .expect("edited document facts");
-    let output = plan(&ir, Some(&fidelity), TargetRequest::Inherit)
-        .expect("an edited source still plans");
+    let output =
+        plan(&ir, Some(&fidelity), TargetRequest::Inherit).expect("an edited source still plans");
     assert!(
-        matches!(
-            output.report().write_path(),
-            WritePath::Synthesized { .. }
-        ),
+        matches!(output.report().write_path(), WritePath::Synthesized { .. }),
         "an uncarried native edit must decline the retained layout, got {:#?}",
         output.report()
     );
@@ -213,13 +214,10 @@ fn an_altered_archive_image_declines_the_retained_layout() {
     fidelity
         .mark_untyped(crate::fidelity::SOURCE_IMAGE, untyped)
         .expect("the altered image keeps its untyped classes");
-    let output = plan(&ir, Some(&fidelity), TargetRequest::Inherit)
-        .expect("an altered image still plans");
+    let output =
+        plan(&ir, Some(&fidelity), TargetRequest::Inherit).expect("an altered image still plans");
     assert!(
-        matches!(
-            output.report().write_path(),
-            WritePath::Synthesized { .. }
-        ),
+        matches!(output.report().write_path(), WritePath::Synthesized { .. }),
         "an altered archive image must decline the retained layout, got {:#?}",
         output.report()
     );

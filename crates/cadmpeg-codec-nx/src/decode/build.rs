@@ -106,7 +106,6 @@ type GeometryDecode = (
     Vec<UnknownRecord>,
 );
 
-
 /// Identity-only source association for a stream carrier row.
 fn carrier_source(
     stream: usize,
@@ -116,10 +115,8 @@ fn carrier_source(
     Ok(SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Nx,
-        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-            "nx:s{stream}:{kind}#{record}"
-        ))
-        .ok_or_else(|| CodecError::malformed("NX carrier source object id is blank"))?,
+        object_id: cadmpeg_core::text::NonBlankString::new(format!("nx:s{stream}:{kind}#{record}"))
+            .ok_or_else(|| CodecError::malformed("NX carrier source object id is blank"))?,
         instance_path: Vec::new(),
     })
 }
@@ -1518,7 +1515,6 @@ fn ordered_live_identity_contains(
         }
     }
 }
-
 
 pub(super) fn topology_body_node_ids(
     stream_index: usize,

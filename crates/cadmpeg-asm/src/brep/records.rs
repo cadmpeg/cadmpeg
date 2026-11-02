@@ -798,19 +798,17 @@ impl EdgeContinuity {
     /// The continuity and ownership rows decode from the same SAB edge record;
     /// the neutral edge's `native_ref` names the ownership row.
     #[must_use]
-    pub fn owns_native_ref(
-        &self,
-        native_ref: Option<&str>,
-        ownerships: &[EdgeOwnership],
-    ) -> bool {
+    pub fn owns_native_ref(&self, native_ref: Option<&str>, ownerships: &[EdgeOwnership]) -> bool {
         let Some(native_ref) = native_ref else {
             return false;
         };
         ownerships.iter().any(|ownership| {
             ownership.record_index == self.record_index
-                && ownership
-                    .source_namespace
-                    .matches("edge-ownership", ownership.record_index, native_ref)
+                && ownership.source_namespace.matches(
+                    "edge-ownership",
+                    ownership.record_index,
+                    native_ref,
+                )
         })
     }
 }
@@ -1358,6 +1356,10 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_containment, FaceContainment, "containment");
 cadmpeg_core::named_optional_field!(deserialize_face_key, String, "face_key");
 cadmpeg_core::named_optional_field!(deserialize_trailing, i64, "trailing");
-cadmpeg_core::named_optional_field!(deserialize_free_vertex, identity::NativeRowId, "free_vertex");
+cadmpeg_core::named_optional_field!(
+    deserialize_free_vertex,
+    identity::NativeRowId,
+    "free_vertex"
+);
 
 mod identity_rewrite;

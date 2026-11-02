@@ -117,9 +117,7 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect::<Vec<_>>(),
-        [
-            ("structure_member", "model.pvs")
-        ]
+        [("structure_member", "model.pvs")]
     );
 
     assert!(!result.report().geometry_transferred());

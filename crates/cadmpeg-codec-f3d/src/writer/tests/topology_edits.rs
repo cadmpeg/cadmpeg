@@ -62,14 +62,10 @@ fn generated_f3d_rewrites_body_transform() {
 
 #[test]
 fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
-    let namespace = cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-        crate::ids::ID_FORMAT,
-    );
-    let row = cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
-        &namespace,
-        "body-native-key",
-        1,
-    );
+    let namespace =
+        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT);
+    let row =
+        cadmpeg_asm::brep::records::identity::NativeRowId::row_id(&namespace, "body-native-key", 1);
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys
@@ -281,10 +277,9 @@ fn generated_f3d_rewrites_edge_native_metadata() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let owner = cadmpeg_asm::brep::records::neutral_record_index(
-        edited.model.coedges[0].id.as_str(),
-    )
-    .expect("decoded coedge carries a record index");
+    let owner =
+        cadmpeg_asm::brep::records::neutral_record_index(edited.model.coedges[0].id.as_str())
+            .expect("decoded coedge carries a record index");
     {
         let mut native = f3d_native_mut(&mut edited);
         native.edge_continuities[0].continuity = "tangent".into();
@@ -363,9 +358,7 @@ fn generated_f3d_rewrites_vertex_ownership() {
         .model
         .edges
         .iter()
-        .find(|edge| {
-            edge.native_ref.as_deref() == Some(owner.as_str())
-        })
+        .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
         .expect("the regenerated native owner names a held edge");
     let endpoint = if ownership.endpoint_index.map(|slot| slot.code()) == Some(0) {
         &edge.start

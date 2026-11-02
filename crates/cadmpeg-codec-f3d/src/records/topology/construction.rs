@@ -1245,14 +1245,14 @@ impl DesignConstructionOperandPath {
         self.frame.map(|frame| {
             frame.offset(
                 self.prefix_shift()
-                + if matches!(
-                    self.placement,
-                    DesignConstructionPathPlacement::Transform(_)
-                ) {
-                    163
-                } else {
-                    35
-                },
+                    + if matches!(
+                        self.placement,
+                        DesignConstructionPathPlacement::Transform(_)
+                    ) {
+                        163
+                    } else {
+                        35
+                    },
             )
         })
     }

@@ -84,7 +84,10 @@ impl FidelityDiff {
                     FidelitySection::Unrepresented,
                     left.unrepresented() != right.unrepresented(),
                 ),
-                (FidelitySection::DecodeDigest, left.decode_digest != right.decode_digest),
+                (
+                    FidelitySection::DecodeDigest,
+                    left.decode_digest != right.decode_digest,
+                ),
             ]
             .into_iter()
             .filter_map(|(section, changed)| changed.then_some(section))

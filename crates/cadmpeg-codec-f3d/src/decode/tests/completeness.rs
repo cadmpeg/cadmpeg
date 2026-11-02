@@ -531,9 +531,7 @@ fn thread_is_complete_only_with_every_field_and_a_proven_modeled_state() {
         )
         .expect("historical face selection")
     };
-    let thread = |face: FaceSelection,
-                  modeled: Option<bool>,
-                  pitch: Option<PositiveLength>| {
+    let thread = |face: FaceSelection, modeled: Option<bool>, pitch: Option<PositiveLength>| {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face,
             standard: NonBlankString::new("Profile".to_owned()),
@@ -580,7 +578,8 @@ fn a_shell_on_both_sides_needs_no_outward_direction() {
                 "f3d:test:face#1",
             )
             .unwrap()]),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).map(cadmpeg_ir::Dimension::Literal),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0)
+                .map(cadmpeg_ir::Dimension::Literal),
             outward,
             mode,
             join: None,

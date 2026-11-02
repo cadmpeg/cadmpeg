@@ -97,8 +97,8 @@ fn resolved_body_binding(
             blob_name: blob_name.into(),
             blob_name_offset: asm_key_offset + 32,
             body: Some(cadmpeg_asm::brep::records::identity::NativeRowId::from(
-            row.to_owned(),
-        )),
+                row.to_owned(),
+            )),
         },
     )
     .unwrap()
@@ -441,10 +441,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         "f3d:asm:body-native-key#2",
     );
     let bodies = [
-        unit_body(
-            "f3d:brep/first/brep:entity#1",
-            "f3d:asm:body-native-key#1",
-        ),
+        unit_body("f3d:brep/first/brep:entity#1", "f3d:asm:body-native-key#1"),
         unit_body(second_body.as_str(), "f3d:asm:body-native-key#2"),
     ];
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
@@ -1282,7 +1279,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
             target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
                 "f3d:asm:vertex-ownership#0".to_owned(),
             ),
-                    target_coedge: None,
+            target_coedge: None,
             record_index: 0,
             unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_037.0)
                 .unwrap(),
@@ -1483,9 +1480,8 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .find(|edge| edge.id == edge_id)
         .expect("linked edge")
         .native_ref = Some("f3d:asm:edge-ownership#0".to_owned());
-    let coedge_index =
-        cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
-            .expect("coedge source index");
+    let coedge_index = cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+        .expect("coedge source index");
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
         target: cadmpeg_asm::brep::records::identity::NativeRowId::from(
@@ -1553,9 +1549,8 @@ fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
         .find(|edge| edge.id == edge_id)
         .expect("linked edge")
         .native_ref = Some("f3d:asm:edge-ownership#0".to_owned());
-    let coedge_index =
-        cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
-            .expect("coedge source index");
+    let coedge_index = cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+        .expect("coedge source index");
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
         target: cadmpeg_asm::brep::records::identity::NativeRowId::from(

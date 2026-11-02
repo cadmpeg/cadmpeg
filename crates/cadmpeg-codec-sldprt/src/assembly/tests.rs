@@ -173,7 +173,9 @@ fn a_placement_is_the_transposed_rotation_and_a_translation_in_millimetres() {
     let projection = project(&ctx(), &tree()).expect("project");
     let nested = occurrence(&projection, "sldprt:assembly:occurrence#7-14");
     assert_eq!(
-        nested.transform.map(cadmpeg_ir::transform::Transform::affine_rows),
+        nested
+            .transform
+            .map(cadmpeg_ir::transform::Transform::affine_rows),
         Some([
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 0.0],

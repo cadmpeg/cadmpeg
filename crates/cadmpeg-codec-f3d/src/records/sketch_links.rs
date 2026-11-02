@@ -179,7 +179,11 @@ struct PersistentDesignLinkWire {
     /// Canonical native row carrying the targeted entity.
     target: cadmpeg_asm::brep::records::identity::NativeRowId,
     /// Source coedge record index for a coedge-owned link.
-    #[serde(default, deserialize_with = "deserialize_target_coedge", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_target_coedge",
+        skip_serializing_if = "Option::is_none"
+    )]
     target_coedge: Option<u32>,
     /// Fusion persistent design-entity id string, stable across regeneration.
     design_id: String,

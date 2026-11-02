@@ -582,7 +582,6 @@ impl Clone for DesignDimensionAnnotationFrame {
     }
 }
 
-
 fn annotation_metadata_length(entity_genesis: Option<u64>) -> u64 {
     if entity_genesis.is_some() {
         u64_from_index(annotation_genesis::LEN)
@@ -942,7 +941,6 @@ impl Serialize for AnnotationOperands<'_> {
         sequence.end()
     }
 }
-
 
 impl Serialize for DesignDimensionAnnotationFrame {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

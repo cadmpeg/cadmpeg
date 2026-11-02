@@ -452,11 +452,12 @@ impl Placement<'_> {
     }
 
     fn candidate_world(&self, i: usize) -> Result<Transform, CodecError> {
-        let (parent, local) = self
-            .candidates
-            .get(&i)
-            .copied()
-            .unwrap_or((self.parent(i)?, self.occurrence(i)?.transform.unwrap_or(Transform::identity())));
+        let (parent, local) = self.candidates.get(&i).copied().unwrap_or((
+            self.parent(i)?,
+            self.occurrence(i)?
+                .transform
+                .unwrap_or(Transform::identity()),
+        ));
         let parent = parent.map_or(Ok(Transform::identity()), |parent| {
             self.world(parent, false)
         })?;

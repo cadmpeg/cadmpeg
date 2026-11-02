@@ -1130,7 +1130,9 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
             None => FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::Native(properties[3].id()),
-                    radius: RadiusSpec::Constant { radius: cadmpeg_ir::Dimension::Literal(distance) },
+                    radius: RadiusSpec::Constant {
+                        radius: cadmpeg_ir::Dimension::Literal(distance),
+                    },
                     tangency_weight: None,
                 }),
             },
@@ -1142,7 +1144,9 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
                         source.id()
                     }),
                     spec: match form {
-                        0 => ChamferSpec::Distance { distance: cadmpeg_ir::Dimension::Literal(distance) },
+                        0 => ChamferSpec::Distance {
+                            distance: cadmpeg_ir::Dimension::Literal(distance),
+                        },
                         1 => ChamferSpec::Unresolved {
                             form: Some(
                                 cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle,

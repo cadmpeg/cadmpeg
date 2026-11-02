@@ -252,9 +252,8 @@ pub(super) fn validate_edge_ownership_edits(
                 .iter()
                 .find(|coedge| {
                     coedge.edge == edge.id
-                        && cadmpeg_asm::brep::records::neutral_record_index(
-                            coedge.id.as_str(),
-                        ) == Some(index)
+                        && cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
+                            == Some(index)
                 })
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -563,13 +562,11 @@ pub(super) fn validate_tolerant_vertex_edits(
                 "tolerant vertex {id} tail has no baseline vertex"
             )));
         };
-        let baseline_vertex = baseline_vertices
-            .get(*baseline_id)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "tolerant vertex {id} tail has no baseline vertex"
-                ))
-            })?;
+        let baseline_vertex = baseline_vertices.get(*baseline_id).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "tolerant vertex {id} tail has no baseline vertex"
+            ))
+        })?;
         if tolerance
             != baseline_vertex.tolerance.map_or(
                 if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Unset { .. }) {

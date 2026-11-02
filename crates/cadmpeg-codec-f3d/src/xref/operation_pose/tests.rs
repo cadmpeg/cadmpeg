@@ -449,8 +449,14 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
     let mut losses = Vec::new();
     project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap();
-    assert_eq!(ir.model.occurrences[0].transform, Some(Transform::identity()));
-    assert_eq!(ir.model.occurrences[1].transform, Some(Transform::identity()));
+    assert_eq!(
+        ir.model.occurrences[0].transform,
+        Some(Transform::identity())
+    );
+    assert_eq!(
+        ir.model.occurrences[1].transform,
+        Some(Transform::identity())
+    );
     assert!((ir.model.occurrences[2].transform.expect("placed").rows()[0][3] - 10.0).abs() < 1e-9);
     assert!(losses
         .iter()

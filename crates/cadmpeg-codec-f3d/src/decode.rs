@@ -3103,12 +3103,9 @@ impl<'a> F3dDecodeSession<'a> {
             .bodies
             .iter()
             .filter_map(|body| {
-                body.native_ref.as_ref().map(|native_ref| {
-                    (
-                        native_ref.clone(),
-                        body.id.clone(),
-                    )
-                })
+                body.native_ref
+                    .as_ref()
+                    .map(|native_ref| (native_ref.clone(), body.id.clone()))
             })
             .collect::<std::collections::BTreeMap<_, _>>();
         let local_sources = crate::design::components::LocalComponentSources {
@@ -3690,17 +3687,18 @@ fn decode_scanned_document<'a>(
                         body_selector,
                     );
 
-                    let Some(key) = part.asm.body_native_keys.iter().find(|key| {
-                        key.owns_native_ref(body.native_ref.as_deref())
-                    }) else {
+                    let Some(key) = part
+                        .asm
+                        .body_native_keys
+                        .iter()
+                        .find(|key| key.owns_native_ref(body.native_ref.as_deref()))
+                    else {
                         continue;
                     };
                     let visibility = crate::records::bodies::BodyVisibility::try_from(
                         crate::records::bodies::BodyVisibilityWire {
                             id,
-                            body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                                key.id(),
-                            ),
+                            body: cadmpeg_asm::brep::records::identity::NativeRowId::from(key.id()),
                             stream: visibility.stream.clone(),
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
@@ -5816,9 +5814,10 @@ pub(crate) fn apply_body_presentation_names(
                 continue;
             };
             if let Some(body) = binding.body.as_ref().and_then(|row| {
-                ir.model.bodies.iter_mut().find(|body| {
-                    body.native_ref.as_deref() == Some(row.as_str())
-                })
+                ir.model
+                    .bodies
+                    .iter_mut()
+                    .find(|body| body.native_ref.as_deref() == Some(row.as_str()))
             }) {
                 if body.name.is_none() {
                     body.name = Some(name.to_string());

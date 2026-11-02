@@ -272,15 +272,13 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
         ir.scope,
         input.limits,
         |ctx, root| {
-            let fresh =
-                cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, ctx, root).map_err(
-                    |failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        _ => CodecError::UnsupportedContent(
-                            "the retained IGES source image refused to decode".into(),
-                        ),
-                    },
-                )?;
+            let fresh = cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, ctx, root)
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    _ => CodecError::UnsupportedContent(
+                        "the retained IGES source image refused to decode".into(),
+                    ),
+                })?;
             crate::document_digest(fresh.ir())
         },
     );

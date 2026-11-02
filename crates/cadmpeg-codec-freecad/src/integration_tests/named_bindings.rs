@@ -33,11 +33,7 @@ fn named_constraint_recipe_bindings() {
                     }
                 })
                 .expect("dependency parameter");
-            let expected_tail: Option<&str> = if recipe == "N10a" {
-                Some(" / 2")
-            } else {
-                None
-            };
+            let expected_tail: Option<&str> = if recipe == "N10a" { Some(" / 2") } else { None };
             let parameter = parameters
                 .iter()
                 .find(|p| {
@@ -163,26 +159,15 @@ fn named_constraint_path_grammar_and_ambiguity() {
             .find(|p| p.name == "Constraint2")
             .expect("dimension parameter");
         if bound {
-            assert_eq!(
-                parameter.expression.dependencies().count(),
-                1,
-                "{paths:?}"
-            );
-            assert!(
-                parameter.expression.literal_text().is_none(),
-                "{paths:?}"
-            );
+            assert_eq!(parameter.expression.dependencies().count(), 1, "{paths:?}");
+            assert!(parameter.expression.literal_text().is_none(), "{paths:?}");
         } else {
             assert_eq!(
                 parameter.expression.literal_text().as_deref(),
                 Some("12 mm"),
                 "{paths:?}"
             );
-            assert_eq!(
-                parameter.expression.dependencies().count(),
-                0,
-                "{paths:?}"
-            );
+            assert_eq!(parameter.expression.dependencies().count(), 0, "{paths:?}");
         }
         assert_eq!(
             parameter.properties.contains_key("expression_native_ref"),

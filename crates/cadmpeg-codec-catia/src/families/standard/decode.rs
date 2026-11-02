@@ -55,8 +55,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, build_geometry_report, circle_parameter_range_from_surface_branch,
-    neutral_model_is_admissible, ordered_range, preserve_raw_payload,
-    rational_pcurve_arc, unwrap_angle, TypedCounts,
+    neutral_model_is_admissible, ordered_range, preserve_raw_payload, rational_pcurve_arc,
+    unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
 use crate::coverage::{self};

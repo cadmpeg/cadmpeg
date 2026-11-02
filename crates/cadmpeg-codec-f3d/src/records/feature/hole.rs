@@ -528,13 +528,11 @@ mod tests {
             let extent: super::DesignHoleExtent = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(serde_json::to_value(extent).unwrap(), value);
         }
-        let worded_without_offset = serde_json::json!({"leading_word": {"value": 2}, "extent_control": 0});
+        let worded_without_offset =
+            serde_json::json!({"leading_word": {"value": 2}, "extent_control": 0});
         let extent: super::DesignHoleExtent =
             serde_json::from_value(worded_without_offset.clone()).unwrap();
-        assert_eq!(
-            serde_json::to_value(extent).unwrap(),
-            worded_without_offset
-        );
+        assert_eq!(serde_json::to_value(extent).unwrap(), worded_without_offset);
         let directed = serde_json::json!({
             "extent_control": 0, "direction_control": {"value": 1, "offset": 7}
         });

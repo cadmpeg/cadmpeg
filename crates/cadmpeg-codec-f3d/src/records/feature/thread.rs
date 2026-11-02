@@ -236,9 +236,7 @@ impl Serialize for DesignThreadConstruction {
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
             10 + usize::from(trailing_reference.is_some())
-                + usize::from(
-                    trailing_reference.is_some_and(|(_, offset)| offset.is_some()),
-                ),
+                + usize::from(trailing_reference.is_some_and(|(_, offset)| offset.is_some())),
         )?;
         fields.serialize_field("form", &form)?;
         fields.serialize_field("designation", self.designation.as_str())?;
@@ -330,23 +328,24 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         let record_index = match value.trailing_reference_record_index {
             None => None,
             Some(value) => Some(
-                NonZeroU32::new(value)
-                    .ok_or("trailing_reference_record_index must be nonzero")?,
+                NonZeroU32::new(value).ok_or("trailing_reference_record_index must be nonzero")?,
             ),
         };
         let form = match (value.form, record_index) {
-            (DesignThreadFormWire::Compact, record_index) => DesignThreadForm::Compact(
-                record_index.map(|value| Sourced { value, offset: None }),
-            ),
-            (
-                DesignThreadFormWire::CompactExtended,
-                Some(record_index),
-            ) => DesignThreadForm::CompactExtended(Located {
-                value: record_index,
-                offset: value.trailing_reference_offset.ok_or(
-                    "compact_extended requires a trailing Hole reference offset",
-                )?,
-            }),
+            (DesignThreadFormWire::Compact, record_index) => {
+                DesignThreadForm::Compact(record_index.map(|value| Sourced {
+                    value,
+                    offset: None,
+                }))
+            }
+            (DesignThreadFormWire::CompactExtended, Some(record_index)) => {
+                DesignThreadForm::CompactExtended(Located {
+                    value: record_index,
+                    offset: value
+                        .trailing_reference_offset
+                        .ok_or("compact_extended requires a trailing Hole reference offset")?,
+                })
+            }
             (DesignThreadFormWire::CompactExtended, None) => {
                 return Err("compact_extended requires a trailing Hole reference".into());
             }

@@ -482,10 +482,9 @@ mod tests {
             vec![first.clone(), second.clone()]
         };
 
-        let namespace =
-            cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                cadmpeg_asm::asm_format!("generated"),
-            );
+        let namespace = cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            cadmpeg_asm::asm_format!("generated"),
+        );
         let first_key = cadmpeg_asm::brep::records::BodyNativeKey {
             source_namespace: namespace.clone(),
             record_index: 1,
@@ -515,7 +514,10 @@ mod tests {
                     crate::records::bodies::BodyVisibilityWire {
                         id: "f3d:generated:body-visibility#11".into(),
                         body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                            first.native_ref.clone().expect("first body links its key row"),
+                            first
+                                .native_ref
+                                .clone()
+                                .expect("first body links its key row"),
                         ),
                         stream: "generated/Design1/BulkStream.dat".into(),
                         byte_offset: 0,
@@ -530,7 +532,10 @@ mod tests {
                     crate::records::bodies::BodyVisibilityWire {
                         id: "f3d:generated:body-visibility#22".into(),
                         body: cadmpeg_asm::brep::records::identity::NativeRowId::from(
-                            second.native_ref.clone().expect("second body links its key row"),
+                            second
+                                .native_ref
+                                .clone()
+                                .expect("second body links its key row"),
                         ),
                         stream: "generated/Design1/BulkStream.dat".into(),
                         byte_offset: 0,

@@ -491,18 +491,16 @@ fn independent_body_keys_and_browser_suffixes_are_reminted_without_geometry_loss
         let mut ir = original.clone();
         {
             let bodies = ir.model.bodies.clone();
-            let namespace =
-                cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    cadmpeg_asm::asm_format!("f3d"),
-                );
+            let namespace = cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                cadmpeg_asm::asm_format!("f3d"),
+            );
             for ordinal in 0..bodies.len() {
                 if !missing_first || ordinal == 1 {
-                    let row_id =
-                        cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
-                            &namespace,
-                            "body-native-key",
-                            u32::try_from(ordinal).expect("ordinal"),
-                        );
+                    let row_id = cadmpeg_asm::brep::records::identity::NativeRowId::row_id(
+                        &namespace,
+                        "body-native-key",
+                        u32::try_from(ordinal).expect("ordinal"),
+                    );
                     ir.model.bodies[ordinal].native_ref = Some(row_id.to_string());
                 }
             }

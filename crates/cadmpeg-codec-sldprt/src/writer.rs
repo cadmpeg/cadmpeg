@@ -158,11 +158,8 @@ pub(super) fn write_semantic_at(
             }
         }
     }
-    let retained_partition = retained_partition(
-        &normalized,
-        source_scan.as_ref(),
-        native.as_ref(),
-    )?;
+    let retained_partition =
+        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_input_renames = if prepared_design {
         // These lanes were authored from the current document in this plan.
         // Keep their transient output buffers out of the CADIR native arena.

@@ -132,7 +132,10 @@ fn generic_tag_payload_accepts_both_equal_envelope_versions() {
             groups,
         );
         let asm = asm_with_face("f3d:test:face#1", 7);
-        assert_eq!(persistent_subentity_tags(&asm, &attribute).unwrap().len(), 1);
+        assert_eq!(
+            persistent_subentity_tags(&asm, &attribute).unwrap().len(),
+            1
+        );
         assert_eq!(
             persistent_subentity_tags(&asm, &attribute).unwrap()[0].design_references,
             [302]
@@ -157,7 +160,9 @@ fn generic_tag_payload_rejects_mixed_or_unsupported_envelope_versions() {
             groups.clone(),
         );
         let asm = asm_with_face("f3d:test:face#1", 7);
-        assert!(persistent_subentity_tags(&asm, &attribute).unwrap().is_empty());
+        assert!(persistent_subentity_tags(&asm, &attribute)
+            .unwrap()
+            .is_empty());
     }
 }
 
@@ -373,8 +378,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
     };
     let target = |index: u32| {
         cadmpeg_asm::brep::records::identity::NativeRowId::from(
-            keys
-                .iter()
+            keys.iter()
                 .find(|key| key.record_index == index)
                 .map(|key| key.id())
                 .expect("key row"),
@@ -790,11 +794,8 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
                 owner_coedge_index: None,
             };
             asm.edge_ownerships.push(ownership);
-            let row = NativeRowId::row_id(
-                &namespace,
-                "edge-ownership",
-                (ordinal + 1) * 100 + index,
-            );
+            let row =
+                NativeRowId::row_id(&namespace, "edge-ownership", (ordinal + 1) * 100 + index);
             asm.edges.push(cadmpeg_ir::topology::Edge {
                 native_ref: Some(row.as_str().to_owned()),
                 id: cadmpeg_ir::ids::EdgeId::mint(edge).unwrap(),
@@ -806,11 +807,10 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
             let link_target = if index < spec.linked_edges {
                 Some((row, None))
             } else if spec.coedge_links {
-                let coedge_index =
-                    cadmpeg_asm::brep::records::neutral_record_index(
-                        coedges[usize::try_from(index).unwrap()].as_str(),
-                    )
-                    .unwrap();
+                let coedge_index = cadmpeg_asm::brep::records::neutral_record_index(
+                    coedges[usize::try_from(index).unwrap()].as_str(),
+                )
+                .unwrap();
                 Some((row, Some(coedge_index)))
             } else {
                 None

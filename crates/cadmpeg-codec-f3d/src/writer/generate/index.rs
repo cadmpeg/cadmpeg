@@ -93,11 +93,7 @@ impl<'a> NativeGenerationIndex<'a> {
             edge_continuities: native
                 .edge_continuities
                 .iter()
-                .filter_map(|row| {
-                    row_owner
-                        .get(row.owner.as_str())
-                        .map(|edge| (*edge, row))
-                })
+                .filter_map(|row| row_owner.get(row.owner.as_str()).map(|edge| (*edge, row)))
                 .collect(),
             edge_ownerships: &native.edge_ownerships,
             face_sidedness: target
@@ -139,11 +135,7 @@ impl<'a> NativeGenerationIndex<'a> {
             tolerant_edges: native
                 .tolerant_edge_tails
                 .iter()
-                .filter_map(|row| {
-                    row_owner
-                        .get(row.owner.as_str())
-                        .map(|edge| (*edge, row))
-                })
+                .filter_map(|row| row_owner.get(row.owner.as_str()).map(|edge| (*edge, row)))
                 .collect(),
             tolerant_vertices: native
                 .tolerant_vertex_tails
@@ -157,11 +149,7 @@ impl<'a> NativeGenerationIndex<'a> {
             transform_hints: native
                 .transform_hints
                 .iter()
-                .filter_map(|row| {
-                    row_owner
-                        .get(row.owner.as_str())
-                        .map(|body| (*body, row))
-                })
+                .filter_map(|row| row_owner.get(row.owner.as_str()).map(|body| (*body, row)))
                 .collect(),
             vertex_ownerships: native
                 .vertex_ownerships

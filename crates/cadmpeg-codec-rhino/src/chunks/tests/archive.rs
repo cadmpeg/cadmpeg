@@ -598,8 +598,8 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .links
         .is_empty());
     assert!(result
-            .ir()
-            .native_unknowns("rhino")
+        .ir()
+        .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());
@@ -914,14 +914,14 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.points.len(), 1);
     assert!(result
-            .ir()
-            .native_unknowns("rhino")
+        .ir()
+        .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
         .is_empty());
     assert!(result
-            .ir()
-            .native_unknowns("rhino")
+        .ir()
+        .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());

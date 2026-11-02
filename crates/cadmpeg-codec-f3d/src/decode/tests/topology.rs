@@ -63,7 +63,9 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index.map(cadmpeg_asm::brep::records::EndpointSlot::code))
+            .map(|metadata| metadata
+                .endpoint_index
+                .map(cadmpeg_asm::brep::records::EndpointSlot::code))
             .collect::<Vec<_>>(),
         [Some(0), Some(1), Some(0)]
     );
@@ -239,9 +241,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert_eq!(f3d_native(result.ir()).vertex_ownerships.len(), 1);
-    assert!(f3d_native(result.ir()).vertex_ownerships[0]
-        .owner
-        .is_none());
+    assert!(f3d_native(result.ir()).vertex_ownerships[0].owner.is_none());
     let wire = &f3d_native(result.ir()).wire_topologies[0];
     assert!(wire.members.edges().is_empty());
     let member = wire.members.free_vertex().expect("wire vertex");

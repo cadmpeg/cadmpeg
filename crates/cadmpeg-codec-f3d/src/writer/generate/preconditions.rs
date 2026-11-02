@@ -1228,21 +1228,22 @@ pub(super) fn validate_source_less_design_links(
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
                 !edges.is_empty()
                     && edges.iter().all(|edge| {
-                        owners
-                            .get(edge.as_str())
-                            .is_some_and(|neutral| {
-                                shell.wire_edges().iter().any(|candidate| &candidate.as_str() == neutral)
-                            })
+                        owners.get(edge.as_str()).is_some_and(|neutral| {
+                            shell
+                                .wire_edges()
+                                .iter()
+                                .any(|candidate| &candidate.as_str() == neutral)
+                        })
                     })
             }
-            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => owners
-                .get(vertex.as_str())
-                .is_some_and(|neutral| {
+            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
+                owners.get(vertex.as_str()).is_some_and(|neutral| {
                     shell
                         .free_vertices()
                         .iter()
                         .any(|candidate| &candidate.as_str() == neutral)
-                }),
+                })
+            }
         };
         if !member_form_is_valid {
             return Err(CodecError::InvalidInput(format!(

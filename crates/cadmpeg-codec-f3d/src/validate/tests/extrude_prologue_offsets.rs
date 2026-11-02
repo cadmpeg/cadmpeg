@@ -20,7 +20,11 @@ fn plain_scope_starts_its_operation_at_24_or_28() {
     assert!(direct_extrude_operation_valid(Some(100), false, Some(124)));
     assert!(direct_extrude_operation_valid(Some(100), false, Some(128)));
     for operation in [122, 123, 125, 126, 127, 129] {
-        assert!(!direct_extrude_operation_valid(Some(100), false, Some(operation)));
+        assert!(!direct_extrude_operation_valid(
+            Some(100),
+            false,
+            Some(operation)
+        ));
     }
 }
 
@@ -55,7 +59,10 @@ fn plain_one_sided_scope(operation_offset: u64) -> DesignParameterScope {
                     side_extent_discriminator_offsets: Some([first_side, first_side + 13]),
                     first_side_target_ordinal: None,
                     extent: DesignExtrudeExtent::OneSidedDistance,
-                    direction_face_extend_offsets: Some([operation_offset + 4, operation_offset + 8]),
+                    direction_face_extend_offsets: Some([
+                        operation_offset + 4,
+                        operation_offset + 8,
+                    ]),
                     direction_reversed: false,
                     direction_reversed_offset: Some(operation_offset + 12),
                     solid_operation: true,
@@ -107,14 +114,26 @@ fn typed_scope_starts_its_operation_at_22_or_26() {
     assert!(direct_extrude_operation_valid(Some(100), true, Some(122)));
     assert!(direct_extrude_operation_valid(Some(100), true, Some(126)));
     for operation in [121, 123, 125, 127, 128] {
-        assert!(!direct_extrude_operation_valid(Some(100), true, Some(operation)));
+        assert!(!direct_extrude_operation_valid(
+            Some(100),
+            true,
+            Some(operation)
+        ));
     }
 }
 
 #[test]
 fn operation_offset_overflow_is_refused() {
-    assert!(!direct_extrude_operation_valid(Some(u64::MAX), false, Some(27)));
-    assert!(!direct_extrude_operation_valid(Some(u64::MAX), true, Some(21)));
+    assert!(!direct_extrude_operation_valid(
+        Some(u64::MAX),
+        false,
+        Some(27)
+    ));
+    assert!(!direct_extrude_operation_valid(
+        Some(u64::MAX),
+        true,
+        Some(21)
+    ));
 }
 
 #[test]

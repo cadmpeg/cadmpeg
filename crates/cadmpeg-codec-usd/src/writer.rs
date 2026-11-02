@@ -756,10 +756,9 @@ impl<'ir> Writer<'ir> {
         else {
             return None;
         };
-        let placed = child
-            .transform
-            .is_some_and(|transform| transform.affine_rows() != Transform::identity().affine_rows())
-            || child.visible.is_some();
+        let placed = child.transform.is_some_and(|transform| {
+            transform.affine_rows() != Transform::identity().affine_rows()
+        }) || child.visible.is_some();
         if placed || !self.children(child).is_empty() {
             return None;
         }

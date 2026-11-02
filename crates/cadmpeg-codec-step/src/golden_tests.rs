@@ -253,9 +253,8 @@ mod damaged {
     #[test]
     fn damaged_fixture_matches_builder() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let base =
-            std::fs::read(manifest.join(format!("tests/fixtures/{BASE}.p21")))
-                .expect("the base fixture is committed");
+        let base = std::fs::read(manifest.join(format!("tests/fixtures/{BASE}.p21")))
+            .expect("the base fixture is committed");
         let built = damaged_bytes(&base);
         let path = manifest.join(format!("tests/fixtures/{STEM}.p21"));
         if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
@@ -270,4 +269,3 @@ mod damaged {
         assert_eq!(committed, built, "the damaged fixture matches its builder");
     }
 }
-
