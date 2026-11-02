@@ -369,7 +369,10 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_pending_ir_entities("step_dependency_decode")?;
-    let mut dependencies = dependencies::decode(ctx, exchange, &mut session.ir)?;
+    let mut external_losses = Vec::new();
+    let externals = dependencies::external_references(exchange, &mut external_losses)?;
+    session.body.losses.append(&mut external_losses);
+    let mut dependencies = dependencies::decode(ctx, exchange, &mut session.ir, &externals)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
     session.charge_pending_ir_entities("step_topology_decode")?;
 
@@ -432,6 +435,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
         &mut session.admitted_ir_entities,
+        &externals,
     )?;
     session.charge_pending_ir_entities("step_tessellation_decode")?;
     let mut tessellation = tessellation::decode(

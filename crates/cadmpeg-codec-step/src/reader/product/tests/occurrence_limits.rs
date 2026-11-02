@@ -15,6 +15,11 @@ fn occurrence_output_truncates(existing: usize) {
         let index = crate::reader::index::CarrierIndex::from_ir(&ir);
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, ctx).unwrap();
         let mut admitted = 0;
+        let mut external_losses = Vec::new();
+        let externals =
+            crate::reader::dependencies::external_references(&exchange, &mut external_losses)
+                .expect("external references");
+        assert!(external_losses.is_empty());
         super::super::decode(
             &exchange,
             &geometry.value,
@@ -22,6 +27,7 @@ fn occurrence_output_truncates(existing: usize) {
             &mut ir,
             ctx,
             &mut admitted,
+            &externals,
         )
         .expect("initial assembly fits");
         ir.model
@@ -37,6 +43,7 @@ fn occurrence_output_truncates(existing: usize) {
                 &mut ir,
                 ctx,
                 &mut admitted,
+                &externals,
             )
             .expect("the occurrence limit truncates instead of refusing");
             assert!(outcome.losses.iter().any(|loss| {
@@ -140,6 +147,11 @@ fn deep_occurrence_paths_keep_depth_and_cycle_checks() {
         let index = crate::reader::index::CarrierIndex::from_ir(&ir);
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, ctx).unwrap();
         let mut admitted = 0;
+        let mut external_losses = Vec::new();
+        let externals =
+            crate::reader::dependencies::external_references(&exchange, &mut external_losses)
+                .expect("external references");
+        assert!(external_losses.is_empty());
         let outcome = super::super::decode(
             &exchange,
             &geometry.value,
@@ -147,6 +159,7 @@ fn deep_occurrence_paths_keep_depth_and_cycle_checks() {
             &mut ir,
             ctx,
             &mut admitted,
+            &externals,
         )
         .expect("the assembly expands");
         assert_eq!(ir.model.occurrences.len(), 101 + (1 << 11) - 2);
@@ -177,6 +190,11 @@ fn occurrence_paths_stop_at_the_session_depth_with_a_loss() {
         let index = crate::reader::index::CarrierIndex::from_ir(&ir);
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, ctx).unwrap();
         let mut admitted = 0;
+        let mut external_losses = Vec::new();
+        let externals =
+            crate::reader::dependencies::external_references(&exchange, &mut external_losses)
+                .expect("external references");
+        assert!(external_losses.is_empty());
         let outcome = super::super::decode(
             &exchange,
             &geometry.value,
@@ -184,6 +202,7 @@ fn occurrence_paths_stop_at_the_session_depth_with_a_loss() {
             &mut ir,
             ctx,
             &mut admitted,
+            &externals,
         )
         .expect("a deep assembly truncates instead of refusing");
         assert_eq!(ir.model.occurrences.len(), 4);
