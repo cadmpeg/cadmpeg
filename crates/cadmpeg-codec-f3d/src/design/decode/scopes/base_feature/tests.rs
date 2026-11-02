@@ -241,9 +241,17 @@ const BODY_TO_COMPONENT_OBJECT: &str = "56225BC7-69B7-446A-9AEA-6AA25BC7806E";
 /// by the owned Base Feature scope for record 51. The object's first counted
 /// reference sits where a one-body object stores its scope reference.
 fn owned_frames(bodies: &[(u32, u32)], scope_count: u32) -> (Vec<u8>, DesignParameterScope) {
+    owned_frames_with_prefix(bodies, scope_count, &[0; 10])
+}
+
+fn owned_frames_with_prefix(
+    bodies: &[(u32, u32)],
+    scope_count: u32,
+    prefix: &[u8],
+) -> (Vec<u8>, DesignParameterScope) {
     let mut bytes = Vec::new();
     crate::test_support::indexed_header(&mut bytes, *b"300", 50);
-    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(prefix);
     bytes.extend_from_slice(&u32::try_from(bodies.len()).unwrap().to_le_bytes());
     for (parameter, _) in bodies {
         push_owner_reference(&mut bytes, u64::from(*parameter));
@@ -347,4 +355,19 @@ fn owned_scope_requires_two_references_per_placed_body() {
     let types = owner_types(PASTE_OBJECT);
     let owners = timeline_body_owners(&bytes, &records, types.iter());
     assert!(exact_timeline_owned_base_feature(&bytes, &scope, owners[&51]).is_none());
+}
+
+#[test]
+fn timeline_object_admits_the_marked_count_prefix() {
+    for (prefix, owned) in [
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0][..], true),
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0][..], false),
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 9][..], false),
+    ] {
+        let (bytes, _) = owned_frames_with_prefix(&[(71, 61)], 2, prefix);
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let types = owner_types(BODY_TO_COMPONENT_OBJECT);
+        let owners = timeline_body_owners(&bytes, &records, types.iter());
+        assert_eq!(owners.contains_key(&51), owned, "{prefix:?}");
+    }
 }

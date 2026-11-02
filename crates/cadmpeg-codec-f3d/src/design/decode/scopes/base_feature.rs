@@ -675,6 +675,7 @@ use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
+use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
 use crate::layout::timeline_body_owner_prefix as owner_prefix;
 use crate::records::feature::scope;
 
@@ -793,15 +794,28 @@ fn parse_timeline_body_owner(
     record: u32,
 ) -> Option<(u32, TimelineBodyOwner)> {
     let start = *records.offsets(record).first()?;
-    if bytes.get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)? != [0; 10] {
+    let count_at = if bytes
+        .get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)?
+        == [0; 10]
+    {
+        start + owner_prefix::BODY_COUNT
+    } else if bytes
+        .get(start + owner_marked_prefix::ZERO_RUN_9..start + owner_marked_prefix::MARKER)?
+        == [0; 9]
+        && bytes.get(start + owner_marked_prefix::MARKER) == Some(&1)
+        && bytes
+            .get(start + owner_marked_prefix::ZERO_U32..start + owner_marked_prefix::BODY_COUNT)?
+            == [0; 4]
+    {
+        start + owner_marked_prefix::BODY_COUNT
+    } else {
         return None;
-    }
-    let body_count =
-        usize::try_from(View::u32_le_at(bytes, start + owner_prefix::BODY_COUNT)?).ok()?;
+    };
+    let body_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
     if body_count == 0 {
         return None;
     }
-    let mut cursor = start + owner_prefix::LEN;
+    let mut cursor = count_at + 4;
     for _ in 0..body_count {
         crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
     }
