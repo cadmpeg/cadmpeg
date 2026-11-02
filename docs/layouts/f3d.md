@@ -264,6 +264,24 @@ Parsed by:
 | 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
 
+## `draft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the primary indexed scope header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | stores ten zero bytes at offsets 11 through 20, u32 three at offset 21 |
+| 21 | 4 | `form` | `u32` | little | spec | u32 three at offset 21 · value `3` |
+| 25 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 25 |
+| 29 | 1 | `flipped` | `u8` | little | spec | the flipped Boolean at offset 29 |
+| 30 | 1 | `tangent_chain` | `u8` | little | spec | the tangent-chain Boolean at offset 30 |
+| 31 | 4 | `mode` | `u32` | little | spec | the mode u32 at offset 31 |
+| 35 | 11 | `angle_reference` | `bytes[11]` | little | spec | a marked reference to the first angle lane at offset 35 |
+| 46 | 11 | `opposite_angle_reference` | `bytes[11]` | little | spec | a marked reference to the second angle lane at offset 46 |
+
 ## `shell_class_369_261_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 271 B

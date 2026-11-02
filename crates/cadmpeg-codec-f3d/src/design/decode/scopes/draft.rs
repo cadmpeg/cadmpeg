@@ -2,14 +2,19 @@
 //! Exact draft operation scopes.
 
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
+use crate::layout::draft_operation_prefix as prefix;
+use crate::records::feature::direct_face::DesignDraftFlags;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
+
+const MODE_SINGLE_ANGLE: u32 = 1;
 
 pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
@@ -70,13 +75,54 @@ pub(super) fn exact_draft_operation_with_owners(
     if angle_ordinal != 0 || opposite_ordinal != 1 || opposite.get() != 0.0 {
         return None;
     }
+    let flags = draft_flags(
+        bytes,
+        scope,
+        angle_record_index,
+        opposite_angle_record_index,
+    )?;
     Some(DesignDraftOperation {
         angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
         angle_record_index,
         angle_offset,
         opposite_angle_record_index,
         opposite_angle_offset: opposite_offset,
+        flags,
     })
+}
+
+/// Read the prologue that names both angle lanes. A frame without this prologue
+/// states no flags; a frame with it admits only the single-angle mode.
+fn draft_flags(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    angle_record_index: u32,
+    opposite_angle_record_index: u32,
+) -> Option<Option<DesignDraftFlags>> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let at = |offset: usize| start.checked_add(offset);
+    let names_lanes = bytes.get(at(prefix::ZERO_RUN_10)?..at(prefix::FORM)?) == Some(&[0; 10])
+        && View::u32_le_at(bytes, at(prefix::FORM)?) == Some(prefix::FORM_VALUE)
+        && View::u32_le_at(bytes, at(prefix::CONSTANT_ONE)?) == Some(1)
+        && marked_record_reference(bytes, at(prefix::ANGLE_REFERENCE)?) == Some(angle_record_index)
+        && marked_record_reference(bytes, at(prefix::OPPOSITE_ANGLE_REFERENCE)?)
+            == Some(opposite_angle_record_index);
+    if !names_lanes {
+        return Some(None);
+    }
+    let flag = |offset| match bytes.get(start.checked_add(offset)?) {
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
+    };
+    let flipped = flag(prefix::FLIPPED)?;
+    let tangent_chain = flag(prefix::TANGENT_CHAIN)?;
+    (View::u32_le_at(bytes, at(prefix::MODE)?)? == MODE_SINGLE_ANGLE).then_some(Some(
+        DesignDraftFlags {
+            flipped,
+            tangent_chain,
+        },
+    ))
 }
 
 pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {

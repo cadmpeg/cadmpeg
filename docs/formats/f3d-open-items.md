@@ -1001,6 +1001,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
 
+### DR-203. Origin-plane identities outside Draft
+
+**Question.** Does a primary identity of `42`, `43`, or `44` name an origin plane in every feature when an ASM entity has the same number?
+
+**Known.** `f3d.md` §3.1 treats these identities in a `Draft` neutral-plane member as origin planes. Other features give historical candidates precedence. In a controlled `Draft` on the XY plane of a body above that plane, identity `42` has a candidate face that is not on the plane.
+
+**Need.** Controlled features of the other families that select an origin plane on bodies that do not touch it, and a selection that names a real ASM entity with one of these numbers.
+
+**Conflict.** The precedence that other families use selects a face that does not lie on the origin plane in the `Draft` controls.
+
+**Note.** No stored field separates an origin identity from an ASM identity with the same number.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?

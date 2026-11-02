@@ -302,6 +302,34 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `draft_operation_prefix` record.
+///
+/// Spec §3.1. Record length 57 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header.
+/// ```
+pub(crate) mod draft_operation_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `form` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FORM: usize = 21;
+    /// Stated value of `form` (`u32`). Spec §3.1.
+    pub(crate) const FORM_VALUE: u32 = 0x0000_0003;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 25;
+    /// Offset of `flipped` (`u8`). Spec §3.1.
+    pub(crate) const FLIPPED: usize = 29;
+    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_CHAIN: usize = 30;
+    /// Offset of `mode` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MODE: usize = 31;
+    /// Offset of `angle_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE: usize = 35;
+    /// Offset of `opposite_angle_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OPPOSITE_ANGLE_REFERENCE: usize = 46;
+}
+
 /// Byte offsets for the `shell_class_369_261_scope_frame` record.
 ///
 /// Spec §3.1. Record length 271 B.

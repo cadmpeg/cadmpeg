@@ -3147,7 +3147,34 @@ const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
-fn project_draft(
+/// Normal of the Design Geometry origin plane that a neutral-plane member names.
+///
+/// An origin-plane identity shares its number with an ASM entity, so its
+/// historical candidates describe unrelated topology.
+fn selected_origin_plane_normal(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<Vector3> {
+    let stream = native_stream(&scope.id)?;
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
+        return None;
+    };
+    let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+            && operand.record_index() == *member
+    }))?;
+    if selection.secondary().is_some() {
+        return None;
+    }
+    crate::history::selection::design_geometry_mirror_plane(selection.primary_identity)
+        .map(|plane| plane.normal)
+}
+
+pub(super) fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3158,6 +3185,9 @@ fn project_draft(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let construction = or_none!(scope.draft_operation());
+    let flipped = construction.flags.is_some_and(|flags| flags.flipped);
+    let pull_sign = if flipped { -1.0 } else { 1.0 };
+    let angle_outward = draft_outward(construction.angle.get());
     let faces = or_none!(single_operand_group(
         groups,
         scope,
@@ -3201,9 +3231,12 @@ fn project_draft(
                 selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
             {
                 let transform = or_none!(neutral_plane.work_plane_transform());
-                let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
-                    Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
-                ));
+                let pull_direction =
+                    or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+                        pull_sign * transform[0][2],
+                        pull_sign * transform[1][2],
+                        pull_sign * transform[2][2],
+                    )));
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
                         faces: project_draft_face_selection(
@@ -3226,7 +3259,39 @@ fn project_draft(
                         angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                             construction.angle.get(),
                         ))),
-                        outward: Some(draft_outward(construction.angle.get())),
+                        outward: Some(angle_outward),
+                    },
+                )));
+            }
+            if let Some(normal) =
+                selected_origin_plane_normal(scope, neutral_plane, entity_selection_operands)
+            {
+                let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+                    pull_sign * normal.x,
+                    pull_sign * normal.y,
+                    pull_sign * normal.z
+                )));
+                return Ok(Some(FeatureDefinition::Operation(
+                    FeatureOperation::Draft {
+                        faces: project_draft_face_selection(
+                            scope,
+                            faces,
+                            face_operands,
+                            histories,
+                        )?,
+                        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::FaceSelection::Native(
+                                neutral_plane.id.clone(),
+                            ),
+                            pull: Some(cadmpeg_ir::features::DraftPull {
+                                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                                plane: None,
+                            }),
+                        },
+                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                            construction.angle.get(),
+                        ))),
+                        outward: Some(angle_outward),
                     },
                 )));
             }
@@ -3246,7 +3311,7 @@ fn project_draft(
                 angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
                 ))),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward != flipped),
             }))
         }
         [neutral_plane] if member_of_scope(neutral_plane) => {
@@ -3264,7 +3329,7 @@ fn project_draft(
                 angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
                 ))),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward != flipped),
             }))
         }
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
@@ -3285,9 +3350,12 @@ fn project_draft(
                 _ => return Ok(None),
             };
             let transform = or_none!(pull_plane.work_plane_transform());
-            let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
-                Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
-            ));
+            let pull_direction =
+                or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+                    pull_sign * transform[0][2],
+                    pull_sign * transform[1][2],
+                    pull_sign * transform[2][2],
+                )));
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
@@ -3305,7 +3373,7 @@ fn project_draft(
                 angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
                 ))),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward),
             }))
         }
         _ => None,
