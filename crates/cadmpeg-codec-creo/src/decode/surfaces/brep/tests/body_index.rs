@@ -45,15 +45,15 @@ fn brep_body_indexes_preserve_service_values() {
 }
 
 #[test]
-fn compact_frame_component_requires_every_source_face_and_reports_refusal() {
+fn compact_frame_component_retains_proved_faces_and_reports_missing_faces() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.topology.face_components.push(
         crate::topology::FaceComponent::new_for_test(vec![5, 6], vec![10])
             .expect("connected source component"),
     );
-    let mut faces = BTreeMap::from([(5, Vec::new())]);
+    let faces = BTreeMap::from([(5, Vec::new())]);
     let mut losses = Vec::new();
-    super::super::retain_complete_compact_frame_components(&scan, &mut faces, &mut losses);
+    super::super::report_incomplete_compact_frame_components(&scan, &faces, &mut losses);
     assert!(faces.contains_key(&5));
     scan.planes
         .local_systems
@@ -66,12 +66,12 @@ fn compact_frame_component_requires_every_source_face_and_reports_refusal() {
             row_offset: 0,
             offset: 0,
         });
-    let mut complete = BTreeMap::from([(5, Vec::new()), (6, Vec::new())]);
-    super::super::retain_complete_compact_frame_components(&scan, &mut complete, &mut losses);
+    let complete = BTreeMap::from([(5, Vec::new()), (6, Vec::new())]);
+    super::super::report_incomplete_compact_frame_components(&scan, &complete, &mut losses);
     assert_eq!(complete.len(), 2);
     assert!(losses.is_empty());
-    super::super::retain_complete_compact_frame_components(&scan, &mut faces, &mut losses);
-    assert!(faces.is_empty());
+    super::super::report_incomplete_compact_frame_components(&scan, &faces, &mut losses);
+    assert!(faces.contains_key(&5));
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,

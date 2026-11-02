@@ -597,9 +597,9 @@ struct NeutralShellSpec {
     wire_curves: BTreeSet<u32>,
 }
 
-fn retain_complete_compact_frame_components(
+fn report_incomplete_compact_frame_components(
     scan: &ContainerScan,
-    eligible_faces: &mut BTreeMap<u32, Vec<&crate::topology::Loop>>,
+    eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     for component in &scan.topology.face_components {
@@ -615,13 +615,15 @@ fn retain_complete_compact_frame_components(
         {
             continue;
         }
-        for face in component.face_ids() {
-            if eligible_faces.remove(face).is_some() {
-                losses.push(crate::loss::CreoLossCode::BrepCompactFrameComponentUnresolved.note(
-                    format!("source face {face} retained as native: the connected component has unresolved source faces"),
-                ));
-            }
-        }
+        let missing: Vec<_> = component
+            .face_ids()
+            .iter()
+            .filter(|face| !eligible_faces.contains_key(face))
+            .copied()
+            .collect();
+        losses.push(crate::loss::CreoLossCode::BrepCompactFrameComponentUnresolved.note(
+            format!("source component has unresolved faces {missing:?}; its admitted face set is incomplete"),
+        ));
     }
 }
 
@@ -640,40 +642,39 @@ fn retain_complete_compact_frame_boundary_components(
         if !has_compact_frame {
             continue;
         }
-        let unresolved_curves: BTreeSet<_> = component
-            .face_ids()
-            .iter()
-            .filter_map(|face| eligible_faces.get(face))
-            .flatten()
-            .flat_map(|lp| lp.half_edges())
-            .map(|edge| edge.curve_id)
-            .filter(|curve_id| {
-                let curve = crate::decode::uniqueness::exactly_one(ir.model.curves.iter().filter(
-                    |curve| {
-                        crate::identity::matches_numbered_identity(
-                            curve.id.as_str(),
-                            "creo:visibgeom:curve#",
-                            *curve_id,
-                        )
-                    },
-                ));
-                !curve.is_some_and(|curve| {
-                    source_carriers
-                        .curve_geometry(curve)
-                        .solved()
-                        .is_some_and(|geometry| {
-                            !matches!(geometry, SolvedCurveGeometry::Unknown { .. })
-                        })
+        for face in component.face_ids() {
+            let Some(loops) = eligible_faces.get(face) else {
+                continue;
+            };
+            let unresolved_curves: BTreeSet<_> = loops
+                .iter()
+                .flat_map(|lp| lp.half_edges())
+                .map(|edge| edge.curve_id)
+                .filter(|curve_id| {
+                    let curve = crate::decode::uniqueness::exactly_one(
+                        ir.model.curves.iter().filter(|curve| {
+                            crate::identity::matches_numbered_identity(
+                                curve.id.as_str(),
+                                "creo:visibgeom:curve#",
+                                *curve_id,
+                            )
+                        }),
+                    );
+                    !curve.is_some_and(|curve| {
+                        source_carriers
+                            .curve_geometry(curve)
+                            .solved()
+                            .is_some_and(|geometry| {
+                                !matches!(geometry, SolvedCurveGeometry::Unknown { .. })
+                            })
+                    })
                 })
-            })
-            .collect();
-        if !unresolved_curves.is_empty() {
-            for face in component.face_ids() {
-                if eligible_faces.remove(face).is_some() {
-                    losses.push(crate::loss::CreoLossCode::BrepCompactFrameBoundaryUnresolved.note(
-                        format!("source face {face} retained as native: compact-frame component boundary curves {unresolved_curves:?} require unique solved carriers"),
-                    ));
-                }
+                .collect();
+            if !unresolved_curves.is_empty() {
+                eligible_faces.remove(face);
+                losses.push(crate::loss::CreoLossCode::BrepCompactFrameBoundaryUnresolved.note(
+                    format!("source face {face} retained as native: boundary curves {unresolved_curves:?} require unique solved carriers"),
+                ));
             }
         }
     }
@@ -2296,7 +2297,7 @@ pub(in super::super) fn transfer_native_brep(
         &refused_revolution_ranges,
         losses,
     );
-    retain_complete_compact_frame_components(scan, &mut eligible_faces, losses);
+    report_incomplete_compact_frame_components(scan, &eligible_faces, losses);
     diagnostics.admitted_face_count = eligible_faces.len();
     let BrepEligibleFaceIndexes {
         emitted_half_edges,
@@ -2516,7 +2517,7 @@ pub(in super::super) fn transfer_native_brep(
                         if unrelated {
                             range = pcurve_backed_periodic_conic_parameter_range(
                                 ctx,
-                                &geometry,
+                                &mut geometry,
                                 (*curve_id, faces),
                                 &native_pcurves,
                                 &ir.model.surfaces,

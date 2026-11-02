@@ -45,12 +45,12 @@ fn brep_component_topology_preserves_service_incidence() {
 }
 
 #[test]
-fn compact_component_requires_every_boundary_carrier() {
+fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scan = crate::test_support::empty_container_scan();
     scan.topology.face_components.push(
-        crate::topology::FaceComponent::new_for_test(vec![5, 6], vec![10])
+        crate::topology::FaceComponent::new_for_test(vec![5, 6, 7], vec![10, 11])
             .expect("connected faces"),
     );
     scan.planes
@@ -74,6 +74,13 @@ fn compact_component_requires_every_boundary_carrier() {
             )
         })
         .collect::<Vec<_>>();
+    let independent_loop = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(7),
+        vec![crate::topology::HalfEdgeId {
+            curve_id: 11,
+            side: crate::topology::Side::Zero,
+        }],
+    );
     for resolved in [false, true] {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.curves.push(Curve {
@@ -92,7 +99,23 @@ fn compact_component_requires_every_boundary_carrier() {
             source_object: None,
             parameter_range: None,
         });
-        let mut faces = BTreeMap::from([(5, vec![&loops[0]]), (6, vec![&loops[1]])]);
+        ir.model.curves.push(Curve {
+            id: cadmpeg_ir::ids::CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 11),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0).unit().expect("unit direction"),
+                )
+                .expect("line carrier"),
+            )),
+            source_object: None,
+            parameter_range: None,
+        });
+        let mut faces = BTreeMap::from([
+            (5, vec![&loops[0]]),
+            (6, vec![&loops[1]]),
+            (7, vec![&independent_loop]),
+        ]);
         let mut losses = Vec::new();
         super::super::retain_complete_compact_frame_boundary_components(
             &scan,
@@ -102,18 +125,16 @@ fn compact_component_requires_every_boundary_carrier() {
             &mut losses,
         );
         if resolved {
-            assert_eq!(faces.len(), 2);
+            assert_eq!(faces.len(), 3);
             assert!(losses.is_empty());
         } else {
-            assert!(faces.is_empty());
+            assert_eq!(faces.keys().copied().collect::<Vec<_>>(), [7]);
             assert_eq!(losses.len(), 2);
-            for (loss, face) in losses.iter().zip([5, 6]) {
+            for loss in &losses {
                 assert_eq!(
                     loss.code,
                     crate::loss::CreoLossCode::BrepCompactFrameBoundaryUnresolved.kind()
                 );
-                assert!(loss.message.contains(&format!("source face {face}")));
-                assert!(loss.message.contains("10"));
             }
         }
     }

@@ -1664,6 +1664,15 @@ unique.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
+A bounded inline cone stores angular and axial limits `u0, v0, u1, v1`,
+two XYZ extent corners, an optional `f7 <reference_ci>`, `e3`, a complete
+rotation frame, a positive half-angle, and `e3`. The angular interval spans
+at most one turn and the axial interval is non-negative. The frame columns
+define the radial reference, transverse direction, and axis. The final three
+frame slots define the apex. For parameter `v`, the section radius is
+`v * tan(half_angle)`. The extent corners lie within the parameter rectangle's
+model-space bounds and match its axial extrema.
+
 A positional `geom_type = 25` body can terminate with one positive-DICT
 `half_angle` scalar immediately followed by the structural body-close byte.
 The scalar has precedence over scalar candidates beginning inside its payload;
@@ -2078,8 +2087,9 @@ An angular-stream plane rotation stores nine row-major direction slots and
 three origin slots through the angular stream defined in §4.1.1. At least one
 direction literal uses `00` or a scalar opener in `19..df`. A direction
 repeat ends within the nine direction slots. Origin repeats inherit the
-preceding direction or origin scalar. One matrix column agrees component by component
-with a signed model-X or model-Z basis vector within `1e-9`. For columns
+preceding direction or origin scalar. A rotation without an envelope witness
+has one matrix column that agrees component by component with a signed model-X
+or model-Z basis vector within `1e-9`. For columns
 `U`, `V`, and `N`, each squared norm differs from one by at most `1e-9`,
 each pairwise dot product has magnitude at most `1e-9`, and
 `(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
@@ -2097,11 +2107,7 @@ have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
 column one; for a production, `first` is its first parameter direction and
 `second` is the plane normal crossed with `first`. When a production admits the
 body and the rotation reproduces the envelope while the production's chart does
-not, the rotation replaces the production's reading if the two origins differ
-by more than `1e-9` scaled by the larger of one and the two components'
-magnitudes. When the origins agree, only the matrix
-orientation is disputed: the production's reading is kept and the
-`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+not, the rotation replaces the production's reading. When both charts
 reproduce the envelope with different origin, first direction, or normal
 (components within the same scaled `1e-9`), neither is chosen: the plane keeps
 no local-system frame and one loss is recorded; the generic
@@ -2690,7 +2696,7 @@ at a token boundary. `12` retains its positive pi/2 value. The stream uses the
 bounded preceding-scalar repeats and signed first-coordinate explicit values.
 Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
 <tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
-and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
+`33 B C` gives `bc B C C C C C C`, and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
 `1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
 `3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
 replaces the literal's low IEEE byte with `low`; the literal is an angle or one

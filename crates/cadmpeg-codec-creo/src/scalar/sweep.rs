@@ -63,16 +63,29 @@ pub(crate) fn run(
         image[1..].copy_from_slice(view.take(7)?);
         return Some((View::f64_be_at(&image, 0)?, 1, cursor + 8));
     }
-    if matches!(token, 0x1a | 0x1b) {
+    if matches!(token, 0x1a | 0x1b | 0x33) {
         let mut image = [0; 8];
-        image[0] = 0x3c;
+        image[0] = if token == 0x33 { 0xbc } else { 0x3c };
         image[1] = view.u8()?;
         image[2] = view.u8()?;
-        if token == 0x1a {
+        if matches!(token, 0x1a | 0x33) {
             let fill = image[2];
             image[3..].fill(fill);
         }
         return Some((View::f64_be_at(&image, 0)?, 1, cursor + 3));
     }
     decode_stateful_scalar_run(body, cursor, previous, cache, StatefulScalarKind::Pcurve)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negative_short_literal_fills_the_remaining_ieee_bytes() {
+        let (value, count, end) = run(&[0x33, 0xf0, 0xff], 0, None, &ScalarCache::default())
+            .expect("negative short angular scalar");
+        assert_eq!(value.to_bits(), 0xbcf0_ffff_ffff_ffff);
+        assert_eq!((count, end), (1, 3));
+    }
 }

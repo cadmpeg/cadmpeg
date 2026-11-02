@@ -19,6 +19,74 @@ use cadmpeg_ir::scalar::PositiveLength;
 mod positional;
 
 #[test]
+fn bounded_rotation_reads_angular_literals_in_angular_slots() {
+    fn scalar(value: f64) -> Vec<u8> {
+        let bytes = value.to_be_bytes();
+        let mut encoded = vec![if value < 0.0 { 0x46 } else { 0x2d }];
+        encoded.extend_from_slice(&bytes[1..]);
+        encoded
+    }
+    let mut body = vec![0x18];
+    body.extend(scalar(30.0));
+    body.push(0x12);
+    body.extend(scalar(50.0));
+    for value in [5.0, 20.0, -70.0, 10.0, 25.0, -50.0] {
+        body.extend(scalar(value));
+    }
+    let (bounds, corners, consumed) =
+        super::bounded_rotation_envelope(&body, &scalar::ScalarCache::default())
+            .expect("bounded rotation envelope");
+    for (actual, expected) in bounds
+        .into_iter()
+        .zip([0.0, 30.0, std::f64::consts::FRAC_PI_2, 50.0])
+    {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+    for (actual, expected) in corners
+        .into_iter()
+        .zip([5.0, 20.0, -70.0, 10.0, 25.0, -50.0])
+    {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+    assert_eq!(consumed, body.len());
+}
+
+#[test]
+fn bounded_rotation_retains_parameter_chart() {
+    let slots = cadmpeg_ir::units::FiniteVector::new([
+        0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 10.0, 20.0, -100.0,
+    ])
+    .expect("finite frame");
+    let frame = super::bounded_rotation_cylinder_frame(
+        [0.0, 30.0, std::f64::consts::FRAC_PI_2, 50.0],
+        [5.0, 20.0, -70.0, 10.0, 25.0, -50.0],
+        slots,
+        5.0,
+    )
+    .expect("bounded cylinder frame");
+    for (actual, expected) in frame.frame().origin().into_iter().zip([10.0, 20.0, -100.0]) {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+    for (actual, expected) in frame
+        .frame()
+        .ref_direction()
+        .into_iter()
+        .zip([0.0, 1.0, 0.0])
+    {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+    let bounds = frame.parameter_bounds().expect("bounded chart");
+    for (actual, expected) in
+        bounds
+            .into_iter()
+            .flatten()
+            .zip([0.0, std::f64::consts::FRAC_PI_2, 30.0, 50.0])
+    {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+}
+
+#[test]
 fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
     let mut body = vec![0x18];
     body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);

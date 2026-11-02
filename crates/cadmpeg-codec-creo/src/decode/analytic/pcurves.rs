@@ -2347,7 +2347,7 @@ pub(in crate::decode) fn bounded_cylinder_circle_parameter_range(
 
 pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: &CurveGeometry,
+    geometry: &mut CurveGeometry,
     incidence: (u32, [u32; 2]),
     candidates: &NativePcurveCandidates,
     surfaces: &[Surface],
@@ -2381,7 +2381,38 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
             selected = Some(candidate);
         }
     }
-    Ok(selected)
+    let Some([first, last]) = selected else {
+        return Ok(None);
+    };
+    let start = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx, geometry, first,
+        ))?
+    )?);
+    let start = require_some!(finite_model_point([start.x, start.y, start.z]));
+    let [Some(first_point), Some(last_point)] = points.map(finite_model_point) else {
+        return Ok(None);
+    };
+    match [
+        model_points_agree(start, first_point),
+        model_points_agree(start, last_point),
+    ] {
+        [true, _] => Ok(Some([first, last])),
+        [false, true] => {
+            match geometry {
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+                    circle.reverse_parameterization();
+                }
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => {
+                    ellipse.reverse_parameterization();
+                }
+                _ => return Ok(None),
+            }
+            let start = (-last).rem_euclid(std::f64::consts::TAU);
+            Ok(Some([start, start + (last - first)]))
+        }
+        [false, false] => Ok(None),
+    }
 }
 
 fn oriented_native_pcurve_endpoints(

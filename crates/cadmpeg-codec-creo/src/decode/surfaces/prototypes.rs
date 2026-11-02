@@ -558,7 +558,13 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 }
             }
             SupportedPrototype::Cone(_) => {
-                let Some(frame) = crate::surface::prototype_cone_frame(record) else {
+                let Some(frame) = crate::surface::prototype_cone_frame(record).or_else(|| {
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        .filter(|parameter| parameter.offset == row.offset)
+                        .and_then(|parameter| {
+                            crate::surface::revolution::named_cone_frame(parameter, record)
+                        })
+                }) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(super::apex_cone(

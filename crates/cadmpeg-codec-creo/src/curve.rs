@@ -7022,10 +7022,116 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
                 result.push(row);
             }
         }
+        loop {
+            let mut added = Vec::new();
+            let mut neighbors = BTreeMap::<u32, Option<CurveTopologyRow>>::new();
+            let mut incoming = BTreeMap::<(NonZeroU32, u32), usize>::new();
+            for row in result
+                .iter()
+                .filter(|row| row.namespace_start == namespace_start)
+            {
+                let Some(topology) = payload.get(row.start..row.end).and_then(|bytes| {
+                    parse_topology_row(bytes, row.start, row.suffix_start, row.suffix)
+                }) else {
+                    continue;
+                };
+                for side in 0..2 {
+                    if let Some(face) = topology.faces[side] {
+                        *incoming
+                            .entry((face, topology.next_edges[side]))
+                            .or_default() += 1;
+                    }
+                }
+                match neighbors.entry(topology.id) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        entry.insert(None);
+                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(topology));
+                    }
+                }
+            }
+            for &(start, end, anchored) in &segments {
+                if !anchored || result.iter().any(|row| row.start == start) {
+                    continue;
+                }
+                if let Some(row) = framed_segment_with_topology(
+                    payload,
+                    namespace_start,
+                    (start, end),
+                    &neighbors,
+                    &incoming,
+                ) {
+                    added.push(row);
+                }
+            }
+            if added.is_empty() {
+                break;
+            }
+            result.extend(added);
+        }
     }
     result.as_mut_slice().sort_by_key(|left| left.start);
     result.dedup_by_key(|row| row.start);
     result
+}
+
+fn framed_segment_with_topology(
+    payload: &[u8],
+    namespace_start: usize,
+    (start, end): (usize, usize),
+    neighbors: &BTreeMap<u32, Option<CurveTopologyRow>>,
+    incoming: &BTreeMap<(NonZeroU32, u32), usize>,
+) -> Option<FramedRow> {
+    let segment = payload.get(start..end)?;
+    let prefix = topology_prefix_fields(segment, 0)?;
+    if neighbors.contains_key(&prefix.id) {
+        return None;
+    }
+    let mut matching = Vec::new();
+    for close in segment
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, byte)| (*byte == psb::token::COMPOUND_CLOSE).then_some(offset))
+    {
+        let row_end = close + 1;
+        if !complete_curve_row_linkage(&segment[row_end..]) {
+            continue;
+        }
+        let Some(suffixes) = topology_suffix_candidates(&segment[..row_end]) else {
+            continue;
+        };
+        for suffix in suffixes.into_iter().flatten() {
+            if suffix.start < prefix.end {
+                continue;
+            }
+            let valid = (0..2).all(|side| {
+                let Some(face) = suffix.faces[side] else {
+                    return false;
+                };
+                let target = suffix.next_edges[side];
+                let unique_target = neighbors
+                    .get(&target)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|row| row.faces.contains(&Some(face)));
+                unique_target && incoming.get(&(face, prefix.id)) == Some(&1)
+            });
+            if valid {
+                matching.push(FramedRow {
+                    namespace_start,
+                    start,
+                    end: start + row_end,
+                    suffix_start: suffix.start,
+                    suffix: suffix.stored_references(),
+                    reference_geometry: suffix.reference_geometry,
+                });
+            }
+        }
+    }
+    let [row] = matching.as_slice() else {
+        return None;
+    };
+    Some(*row)
 }
 
 fn framed_segment_with_face_ids(
