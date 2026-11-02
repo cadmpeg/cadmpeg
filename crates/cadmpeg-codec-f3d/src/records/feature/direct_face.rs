@@ -167,7 +167,7 @@ pub(crate) struct DesignDraftOperation {
 mod identity_rewrite;
 
 #[cfg(test)]
-mod shell_wall_slot_wire_tests {
+mod tests {
     use super::{DesignShellOperation, DesignShellOutsideWall, DesignShellWallSlots};
 
     fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
