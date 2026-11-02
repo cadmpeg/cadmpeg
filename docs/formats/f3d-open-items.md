@@ -1020,3 +1020,15 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The empty-path control remains native. The target role binds the external placement independently of this control's meaning.
+
+### DR-174. Ellipse-extrusion support chart and solved cache
+
+**Question.** How does the neutral model retain an ellipse-extrusion support and its solved surface cache when each has a different U parameterization?
+
+**Known.** `asm.md` §6.4 "A pcurve in a procedural support slot" and `asm.md` §6.6 "The compact layout above" define the native ellipse-angle U coordinate and the rational surface-cache parameterization. A support pcurve uses the construction chart. The decoder retains that native pcurve and the owning curve's solved 3D carrier. It leaves the support surface unbound and reports `geometry.procedural-support-chart-unresolved`.
+
+**Need.** A neutral representation that retains both parameterizations and the cache fit contract, or an exact map from the construction chart to the cache chart.
+
+**Conflict.** `cad-ir.md` applies a procedural carrier's solved cache at the construction parameters. Rational conic arcs agree with the analytic ellipse in position and use different parameters between arc endpoints.
+
+**Note.** ASM GC-40 records the corresponding neutral-model question for a revolved conic.
