@@ -198,10 +198,8 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("the directory section parses");
-    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::Iges,
-        &ctx,
-    );
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     let parameters =
         crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut parts)
             .expect("the parameter section assembles");

@@ -132,7 +132,9 @@ impl Serialize for NativeCard<'_> {
         }
         let section = match self.line {
             ScannedLine::Card { section, .. } => Some(*section),
-            ScannedLine::GivenUp { .. } | ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => None,
+            ScannedLine::GivenUp { .. }
+            | ScannedLine::Trailing(_)
+            | ScannedLine::DroppedFinal(_) => None,
         };
         Wire {
             id: CardId(
@@ -2615,40 +2617,41 @@ pub(crate) fn store(
             .iter()
             .filter(|entry| !given_up_fields.contains_key(&entry.sequence)),
         |entry| {
-        Ok(NativeDisplayAttributes {
-            id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
-            source_entity: format!("iges:entity:directory#{}", entry.sequence),
-            visible: entry.status.is_visible(),
-            line_font: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.line_font,
-                ReferenceKind::LineFont,
-                "line-font",
-            ),
-            level: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.level,
-                ReferenceKind::Level,
-                "definition-levels",
-            ),
-            view: entry.view,
-            line_weight_number: entry.line_weight,
-            line_weight_mm: global.length_context().and_then(|context| {
-                entry
-                    .line_weight
-                    .and_then(|number| context.line_weight_mm(number))
-            }),
-            color: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.color,
-                ReferenceKind::Color,
-                "color",
-            ),
-        })
-    })?;
+            Ok(NativeDisplayAttributes {
+                id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                visible: entry.status.is_visible(),
+                line_font: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.line_font,
+                    ReferenceKind::LineFont,
+                    "line-font",
+                ),
+                level: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.level,
+                    ReferenceKind::Level,
+                    "definition-levels",
+                ),
+                view: entry.view,
+                line_weight_number: entry.line_weight,
+                line_weight_mm: global.length_context().and_then(|context| {
+                    entry
+                        .line_weight
+                        .and_then(|number| context.line_weight_mm(number))
+                }),
+                color: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.color,
+                    ReferenceKind::Color,
+                    "color",
+                ),
+            })
+        },
+    )?;
     let line_fonts = collect_native_items(
         directory
             .iter()
@@ -3382,9 +3385,7 @@ pub(crate) fn store(
                                         &[0],
                                     )
                                 })
-                                .map(|sequence| {
-                                    format!("iges:product:connect-point#D{sequence}")
-                                })
+                                .map(|sequence| format!("iges:product:connect-point#D{sequence}"))
                         })
                         .collect::<Vec<_>>()
                 } else {
@@ -3455,9 +3456,7 @@ pub(crate) fn store(
                                     &[0],
                                 )
                             })
-                            .map(|sequence| {
-                                format!("iges:product:connect-point#D{sequence}")
-                            })
+                            .map(|sequence| format!("iges:product:connect-point#D{sequence}"))
                     })
                     .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
@@ -3540,12 +3539,8 @@ pub(crate) fn store(
                     .and_then(|sequence| {
                         let target = entries.get(&sequence)?;
                         match target.entity_type {
-                            320 => Some(format!(
-                                "iges:product:network-definition#D{sequence}"
-                            )),
-                            420 => Some(format!(
-                                "iges:product:network-instance#D{sequence}"
-                            )),
+                            320 => Some(format!("iges:product:network-definition#D{sequence}")),
+                            420 => Some(format!("iges:product:network-instance#D{sequence}")),
                             _ => None,
                         }
                     }),

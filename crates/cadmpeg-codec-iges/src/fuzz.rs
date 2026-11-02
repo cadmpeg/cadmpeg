@@ -36,7 +36,8 @@ pub fn directory(data: &[u8]) {
 pub fn parameters(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    let Ok((ctx, root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {
         return;
     };
@@ -49,11 +50,10 @@ pub fn parameters(data: &[u8]) {
     let Ok(directory) = crate::directory::parse(&scan, global.global_table(), &ctx) else {
         return;
     };
-    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::Iges,
-        &ctx,
-    );
-    let _probe = crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut output);
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
+    let _probe =
+        crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut output);
 }
 
 #[cfg(test)]

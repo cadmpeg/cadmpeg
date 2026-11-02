@@ -120,9 +120,15 @@ fn binary_late_transform_value_fault_gives_up_only_its_value_part_and_drops_the_
         serde_json::to_value(&native.arenas()["transformations"]).unwrap(),
         transformations
     );
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
 
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
@@ -300,11 +306,23 @@ fn recovered_peer(original: Vec<u8>, bytes: &[u8], recovery: &Recovery<'_>) {
         serde_json::to_value(&native.arenas()["transformations"]).unwrap(),
         serde_json::Value::Array(transformations)
     );
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), failures);

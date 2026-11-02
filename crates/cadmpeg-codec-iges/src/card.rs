@@ -164,7 +164,10 @@ pub(crate) enum ScannedLine {
 impl ScannedLine {
     pub(crate) fn physical(&self) -> &PhysicalLine {
         match self {
-            Self::Card { line, .. } | Self::GivenUp { line, .. } | Self::Trailing(line) | Self::DroppedFinal(line) => line,
+            Self::Card { line, .. }
+            | Self::GivenUp { line, .. }
+            | Self::Trailing(line)
+            | Self::DroppedFinal(line) => line,
         }
     }
 }

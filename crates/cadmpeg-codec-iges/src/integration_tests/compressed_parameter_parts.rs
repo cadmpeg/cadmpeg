@@ -57,11 +57,23 @@ fn compressed_parameter_type_failure_has_one_actual_data_home_and_an_unchanged_p
         assert_eq!(native.arenas()[arena].len(), 1);
         assert_eq!(native.arenas()[arena][0], old.arenas()[arena][1]);
     }
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), 1);

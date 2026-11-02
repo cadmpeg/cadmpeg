@@ -506,13 +506,11 @@ pub(crate) fn parse_with_keys(
     for pair in pairs.by_ref() {
         ctx.charge_entities(1, "iges_directory_entries")?;
         let sequence = semantic_key(pair[0].0)?;
-        let entry = parse_pair(sequence, pair[0].1, pair[1].1, global_table).map_err(
-            |defect| {
-                CodecError::malformed(format_args!(
-                    "IGES Directory Entry record D{sequence} is unreadable: {defect}"
-                ))
-            },
-        )?;
+        let entry = parse_pair(sequence, pair[0].1, pair[1].1, global_table).map_err(|defect| {
+            CodecError::malformed(format_args!(
+                "IGES Directory Entry record D{sequence} is unreadable: {defect}"
+            ))
+        })?;
         entries.push(entry);
     }
     if let Some(unpaired) = pairs.remainder().first() {

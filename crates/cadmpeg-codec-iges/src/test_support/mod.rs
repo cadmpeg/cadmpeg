@@ -211,17 +211,18 @@ pub(crate) fn retained_fixed_ascii(
         .data()
         .expect("exact source bytes retained");
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("retained source fits the service policy");
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("retained source fits the service policy");
     let scan = crate::card::scan_source(root).expect("retained Fixed ASCII source scans");
     let (global, _) = crate::global::parse(&scan).expect("retained global parses");
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .expect("retained directory parses");
-    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::Iges,
-        &ctx,
-    );
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
     crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut output)
         .expect("retained parameters assemble")
 }
