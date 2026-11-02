@@ -650,6 +650,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),

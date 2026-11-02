@@ -5,6 +5,7 @@ mod acceptance;
 mod aggregates;
 mod boundaries;
 mod compare;
+mod cone_apex_rings;
 mod cones;
 mod cube;
 mod cylinders;

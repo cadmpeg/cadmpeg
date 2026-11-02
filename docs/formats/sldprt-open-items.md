@@ -44,9 +44,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### BC-10. FIN-link withholding
 
-**Question.** Which native field distinguishes a FIN backward link that names no reciprocal same-loop forward link from a valid ring closure?
+**Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
 
-**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN backward link names no reciprocal same-loop forward link; the ring stays unwalked (#517).
+**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
 
 **Need.** We must know the link grammar that walks such a ring.
 
@@ -58,21 +58,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the native admission record that places such an edge on its carrier.
 
-### BC-12. Stored face-sense against coedge parity
-
-**Question.** Which native field decides the face sense when the stored sense contradicts the shared-edge coedge parity?
-
-**Known.** The decoder keeps each face's stored sense and reports the disagreement through `TopologyFaceSenseConflict` (#504). `sldprt.md` §7.1 gives the three-reversal neutral sense composition and states that coedge markers do not constrain face senses. The native rule for the disagreement awaits a specimen.
-
-**Need.** We must know the native rule that resolves the disagreement.
-
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses
 
 **Question.** Where are the authoritative chart and terminator replacements when an intersection composite references an absent witness record?
 
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. The referenced terminators select the unique chart stride with the least endpoint displacement and replace the approximate chart endpoints. A complete width-4 support-UV record supplies the two solved pcurve caches. An absent or structurally inconsistent optional support-UV record does not invalidate the curve. Tolerance-bounded inversion constructs its pcurves on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance.
+**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. The referenced terminators select the unique chart stride with the least endpoint displacement and replace the approximate chart endpoints. A complete width-4 support-UV record supplies the two solved pcurve caches. An absent or structurally inconsistent optional support-UV record does not invalidate the curve. Tolerance-bounded inversion constructs its pcurves on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance. A `00 85` wrapper that names a composite without a chart bounds the intersection of the composite's supports between the wrapper's stored points (`sldprt.md` §7.3).
 
 **Need.** We must locate an authoritative replacement when the referenced chart or terminator record is absent.
 
@@ -126,7 +118,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-11. Compact curve marker exceptions
 
-**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs along the curve parameter?
+**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs against the curve parameter?
 
 **Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" defines the marker rule. A circle edge between a cylinder face and a planar face can have marker `0x2b` while its display tessellation runs along the curve parameter. The specification defines no second field that overrides the marker.
 
@@ -848,6 +840,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** The part decode of such a document gives no body. The streams are not in embedded documents (`sldprt.md` §11.4). Assembly features (cuts, holes) and the cached geometry of mate faces are the candidates.
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
+
+### EV-25. Turn sense of a partial revolution
+
+**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
+
+**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
+
+**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
+
+**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
+
+**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
 ### EV-24. Bytes after the last top-level object
 

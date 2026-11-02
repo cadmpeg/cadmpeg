@@ -466,6 +466,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 982,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1607,6 +1608,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 968,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

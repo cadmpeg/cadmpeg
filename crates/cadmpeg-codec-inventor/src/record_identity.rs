@@ -88,6 +88,14 @@ impl<T> Located<T> {
     }
 }
 
+#[cfg(test)]
+impl<T> Located<T> {
+    /// Change the payload of a test fixture in place.
+    pub(crate) fn edit(&mut self, change: impl FnOnce(&mut T)) {
+        change(&mut self.payload);
+    }
+}
+
 pub(crate) fn push_record<T>(
     ctx: &DecodeContext<'_>,
     records: &mut Vec<Located<T>>,

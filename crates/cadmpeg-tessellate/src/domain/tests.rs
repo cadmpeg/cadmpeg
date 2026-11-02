@@ -93,3 +93,17 @@ fn a_clockwise_ring_around_a_whole_torus_cell_is_the_outer_loop() {
     let outer: Vec<_> = found[0].outer.iter().map(|node| node.uv).collect();
     assert!((signed_area(&outer) / 2.0 - TAU * TAU).abs() < 1e-9);
 }
+
+#[test]
+fn a_pole_at_the_seam_uses_the_boundary_parameter() {
+    let ring = Ring {
+        nodes: nodes(&[[0.0, -30.0], [0.0, 0.0], [-TAU, 0.0], [-TAU, -30.0]]),
+        closure: [-TAU, 0.0],
+    };
+    let mut frame = cylinder();
+    frame.poles.push(([0.0, -30.0 - 1e-14], None));
+    let found = regions(vec![ring], &frame).unwrap();
+    let outer = &found[0].outer;
+    assert_eq!(outer[0].uv, outer[outer.len() - 1].uv);
+    assert_eq!(outer[outer.len() - 2].uv, outer[outer.len() - 3].uv);
+}

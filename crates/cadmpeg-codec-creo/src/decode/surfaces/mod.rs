@@ -87,6 +87,7 @@ pub(super) struct NativeSurfaceNamespaces<'a> {
     nonvisible: BTreeSet<u32>,
     /// The first active-datum cylinder that carries each identifier.
     active_datum: BTreeMap<u32, &'a crate::datum::DatumCylinder>,
+    active_planes: BTreeMap<u32, &'a crate::datum::boundary_planes::BoundaryPlane>,
 }
 
 impl<'a> NativeSurfaceNamespaces<'a> {
@@ -95,7 +96,22 @@ impl<'a> NativeSurfaceNamespaces<'a> {
         for cylinder in &scan.planes.datum_cylinders {
             active_datum.entry(cylinder.id).or_insert(cylinder);
         }
+        let active_planes = scan
+            .planes
+            .datum_boundary_planes
+            .iter()
+            .filter(|plane| {
+                plane.admitted(
+                    &scan.planes.datum_boundary_planes,
+                    &scan.surfaces.rows,
+                    &scan.surfaces.nonvisible_rows,
+                    &scan.planes.datum_cylinders,
+                )
+            })
+            .map(|plane| (plane.row.id, plane))
+            .collect();
         Self {
+            active_planes,
             visible: UniqueById::new(&scan.surfaces.rows, |row| row.id),
             nonvisible: scan
                 .surfaces
@@ -111,7 +127,8 @@ impl<'a> NativeSurfaceNamespaces<'a> {
         select_native_surface_namespace(
             self.visible.contains(surface_id),
             self.nonvisible.contains(&surface_id),
-            self.active_datum.contains_key(&surface_id),
+            self.active_datum.contains_key(&surface_id)
+                || self.active_planes.contains_key(&surface_id),
         )
     }
 
@@ -139,6 +156,13 @@ impl<'a> NativeSurfaceNamespaces<'a> {
         surface_id: u32,
     ) -> Option<&'a crate::surface::SurfaceRow> {
         self.visible.get(surface_id)
+    }
+
+    pub(super) fn active_plane(
+        &self,
+        surface_id: u32,
+    ) -> Option<&'a crate::datum::boundary_planes::BoundaryPlane> {
+        self.active_planes.get(&surface_id).copied()
     }
 
     /// Return the first active-datum cylinder that carries the identifier.

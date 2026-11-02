@@ -11,15 +11,10 @@ use cadmpeg_ir::{
 };
 
 use super::super::{
-    angle_parameter, boolean_properties, enum16, feature_result, references, resolve_property,
-    slot_property, FeatureFamily, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
-    PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
+    boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
+    PmDcFeatureLabel, ProjectionIndex,
 };
-use super::{SWEEP_MODE_TYPE, SWEEP_ORIENTATION_TYPE, SWEEP_SCALING_TYPE};
-use crate::pmdc::type_id_string;
-use cadmpeg_ir::features::{
-    LoftGuidance, LoftSection, SolidSweepOperation, SweepSection, SweepShape,
-};
+use cadmpeg_ir::features::{LoftGuidance, LoftSection};
 
 pub(super) mod evidence;
 
@@ -34,21 +29,13 @@ pub(in crate::feature) fn project(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let operation = match family {
-        FeatureFamily::Sweep => {
-            if references(
-                source,
-                family.output_slot(source),
-                PmDcFeatureReferenceFamily::ObjectCollection,
-                index,
-            )?
-            .references()
-            .len()
-                != 1
-            {
+        FeatureFamily::Sweep => match super::sweep::project(source, label, index) {
+            Ok(operation) => operation,
+            Err(reason) => {
+                losses.push(reason.note());
                 return None;
             }
-            sweep(source, label, index)?
-        }
+        },
         FeatureFamily::Loft => match loft(source, label, index) {
             Ok(operation) => operation,
             Err(reason) => {
@@ -62,9 +49,11 @@ pub(in crate::feature) fn project(
         Some(Ok(value)) => value,
         Some(Err(error)) => return Some(Err(error)),
         None => {
-            if matches!(family, FeatureFamily::Loft) {
-                losses.push(NativeReason::ResultIdentity.note());
-            }
+            losses.push(if matches!(family, FeatureFamily::Sweep) {
+                super::sweep::NativeReason::ResultIdentity.note()
+            } else {
+                NativeReason::ResultIdentity.note()
+            });
             return None;
         }
     };
@@ -98,89 +87,6 @@ pub(in crate::feature) fn project(
         },
         result,
     )))
-}
-
-fn sweep(
-    source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
-    index: &ProjectionIndex<'_>,
-) -> Option<FeatureOperation> {
-    if !only_slots(source, &[0, 1, 2, 3, 4, 7, 8, 9, 10, 15])
-        || enum16(source, 2, PmDcFeatureEnumFamily::PartOperation, index)? != 1
-        || enum16(source, 4, PmDcFeatureEnumFamily::Extent, index)? != 3
-        || !zero_control(slot_property(source, 8, index)?, SWEEP_MODE_TYPE, 3)
-        || !zero_control(slot_property(source, 9, index)?, SWEEP_ORIENTATION_TYPE, 2)
-        || !zero_control(slot_property(source, 10, index)?, SWEEP_SCALING_TYPE, 2)
-        || angle_parameter(source, 3, index)?.get() != 0.0
-    {
-        return None;
-    }
-    let token = source.identity.segment_token.as_str();
-    let boundary = references(source, 0, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
-    let [selection] = boundary.references() else {
-        return None;
-    };
-    let section = resolve_property(token, selection.index(), index)?;
-    let PmDcFeaturePropertyKind::ProfileSelection {
-        entity_link,
-        value: 0,
-    } = section.kind
-    else {
-        return None;
-    };
-    let sketches = participant_sketches(source, label, index);
-    let mut circles = sketches.iter().filter_map(|(ordinal, sketch)| {
-        index
-            .profiles
-            .circle(token, *ordinal, sketch, entity_link.record_ordinal()?)
-    });
-    let (profile, radius, name) = circles.next()?;
-    if circles.next().is_some() {
-        return None;
-    }
-    let path_property = slot_property(source, 1, index)?;
-    let PmDcFeaturePropertyKind::ProfileSelection {
-        entity_link,
-        value: 0,
-    } = path_property.kind
-    else {
-        return None;
-    };
-    let path = index.profiles.selected_path(
-        token,
-        entity_link.record_ordinal()?,
-        path_property.id(),
-        &sketches,
-    )?;
-    evidence::sweep(
-        index.result_model?,
-        source.header.source_index,
-        radius,
-        name,
-        &path.names,
-        path.endpoints,
-    )?;
-    // The selected wire is the complete primary path. No further tangent
-    // expansion is requested. Keep its stored face partitions without cleanup.
-    Some(FeatureOperation::Sweep {
-        shape: SweepShape::Solid {
-            op: SolidSweepOperation::NewBody,
-            section: SweepSection::Profile(profile),
-            sections: Vec::new(),
-        },
-        path: Some(path.reference),
-        orientation: None,
-        transition: None,
-        transformation: None,
-        path_tangent: false,
-        linearize: false,
-        twist: None,
-        path_extent: None,
-        guide_rail: None,
-        taper: None,
-        scale: None,
-        allow_multi_profile_faces: None,
-    })
 }
 
 fn loft(
@@ -274,7 +180,7 @@ fn loft(
     })
 }
 
-fn participant_sketches<'a>(
+pub(super) fn participant_sketches<'a>(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &'a ProjectionIndex<'a>,
@@ -295,18 +201,13 @@ fn participant_sketches<'a>(
         .collect()
 }
 
-fn only_slots(source: &PmDcFeature, slots: &[usize]) -> bool {
-    source
-        .properties
-        .references()
-        .iter()
-        .enumerate()
-        .all(|(slot, reference)| reference.index() == 0 || slots.contains(&slot))
-}
-
-fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16], expected_type: i16) -> bool {
-    property.identity.type_id.as_str() == type_id_string(type_id)
-        && matches!(property.kind, PmDcFeaturePropertyKind::Enumeration { family: PmDcFeatureEnumFamily::Auxiliary, type_value, value: 0 } if type_value == expected_type)
+pub(super) fn zero_control(
+    property: &crate::feature::PmDcFeatureProperty,
+    type_id: [u8; 16],
+    expected_type: i16,
+) -> bool {
+    property.identity.type_id.as_str() == crate::pmdc::type_id_string(type_id)
+        && matches!(property.kind, crate::feature::PmDcFeaturePropertyKind::Enumeration { family: crate::feature::PmDcFeatureEnumFamily::Auxiliary, type_value, value: 0 } if type_value == expected_type)
 }
 
 #[cfg(test)]

@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-rep records of the `UsdGeom` intrinsic primitives (spec §11.5), in
-//! scene units.
+//! scene units, so that a primitive becomes a B-rep body through the same
+//! import as a `BrepArray` prim.
 //!
 //! A solid of revolution comes from a profile in `(ρ, z)` that runs from the
 //! axis at the bottom to the axis at the top: each segment is a face, each
 //! profile point off the axis a circle edge, and each face that is not a disc
 //! has a seam at `θ = 0`.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::BTreeMap;
 
 use super::{
-    AnalyticCurve, AnalyticSurface, Brep, CurveKind, EdgeRecord, FaceRecord, Frame, LoopRecord,
-    OrientedEdgeRecord, ShellRecord, SolidRecord, SurfaceKind, DEFAULT_TOLERANCE,
+    AnalyticCurve, AnalyticSurface, Brep, Catalog, CurveKind, EdgeRecord, FaceRecord, Frame,
+    LoopRecord, OrientedEdgeRecord, ShellRecord, SolidRecord, SurfaceKind, DEFAULT_TOLERANCE,
 };
 
 const X: [f64; 3] = [1.0, 0.0, 0.0];
@@ -82,6 +84,7 @@ fn frame(position: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Frame {
 /// Records under construction.
 struct Records {
     brep: Brep,
+    next_face: i64,
 }
 
 impl Records {
@@ -89,8 +92,11 @@ impl Records {
         Self {
             brep: Brep {
                 tolerance: DEFAULT_TOLERANCE,
+                angle_scale: 1.0,
+                valid: true,
                 ..Brep::default()
             },
+            next_face: 0,
         }
     }
 
@@ -100,11 +106,13 @@ impl Records {
     }
 
     fn edge(&mut self, vertices: [usize; 2], curve: AnalyticCurve, range: [f64; 2]) -> usize {
-        self.brep.curves.push(curve);
+        self.brep.analytic_curves.push(curve);
         self.brep.edges.push(EdgeRecord {
             vertices,
-            curve: self.brep.curves.len() - 1,
+            curve: Some((Catalog::Analytic, self.brep.analytic_curves.len() - 1)),
             range,
+            same_sense: true,
+            tolerance: None,
         });
         self.brep.edges.len() - 1
     }
@@ -124,7 +132,7 @@ impl Records {
     }
 
     fn face(&mut self, loops: &[Vec<(usize, bool)>], surface: AnalyticSurface) -> usize {
-        self.brep.surfaces.push(surface);
+        self.brep.analytic_surfaces.push(surface);
         let mut indices = Vec::new();
         for uses in loops {
             let mut oriented = Vec::new();
@@ -132,19 +140,24 @@ impl Records {
                 self.brep.oriented_edges.push(OrientedEdgeRecord {
                     edge: *edge,
                     orientation: *orientation,
+                    pcurve: None,
                 });
                 oriented.push(self.brep.oriented_edges.len() - 1);
             }
             self.brep.loops.push(LoopRecord {
                 oriented_edges: oriented,
+                vertex: None,
             });
             indices.push(self.brep.loops.len() - 1);
         }
         let id = self.brep.faces.len();
         self.brep.faces.push(FaceRecord {
             loops: indices,
-            surface: self.brep.surfaces.len() - 1,
+            surface: (Catalog::Analytic, self.brep.analytic_surfaces.len() - 1),
+            same_sense: true,
+            id: self.next_face,
         });
+        self.next_face += 1;
         id
     }
 
@@ -162,10 +175,14 @@ impl Records {
             *point = axis.rotate(*point);
         }
         for frame in brep
-            .curves
+            .analytic_curves
             .iter_mut()
             .map(|curve| &mut curve.frame)
-            .chain(brep.surfaces.iter_mut().map(|surface| &mut surface.frame))
+            .chain(
+                brep.analytic_surfaces
+                    .iter_mut()
+                    .map(|surface| &mut surface.frame),
+            )
         {
             frame.position = axis.rotate(frame.position);
             frame.axis = axis.rotate(frame.axis);
@@ -221,6 +238,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                     kind: SurfaceKind::Plane,
                     frame: frame([0.0, 0.0, z_a], normal, X),
                     params: Vec::new(),
+                    profile: None,
                 },
             );
             continue;
@@ -239,6 +257,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                         kind: SurfaceKind::Cylinder,
                         frame: frame([0.0; 3], Z, X),
                         params: vec![rho_a],
+                        profile: None,
                     }
                 } else {
                     // The cone opens towards its larger radius.
@@ -249,11 +268,12 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                     } else {
                         [0.0, 0.0, -1.0]
                     };
-                    let semi_angle = ((rho_a - rho_b).abs() / (z_a - z_b).abs()).atan();
+                    let semi_angle = ((rho_a - rho_b).abs() / (z_a - z_b).abs()).portable_atan();
                     AnalyticSurface {
                         kind: SurfaceKind::Cone,
                         frame: frame([0.0, 0.0, z_wide], direction, X),
                         params: vec![rho_wide, semi_angle],
+                        profile: None,
                     }
                 };
                 (seam, surface)
@@ -263,7 +283,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                 let (from, to) = (sub(point(a), center), sub(point(b), center));
                 let radius = length(from);
                 let normal = unit(cross(from, to));
-                let sweep = dot(unit(from), unit(to)).clamp(-1.0, 1.0).acos();
+                let sweep = dot(unit(from), unit(to)).clamp(-1.0, 1.0).portable_acos();
                 let seam = records.edge(
                     [start, end],
                     AnalyticCurve {
@@ -277,6 +297,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                     kind: SurfaceKind::Sphere,
                     frame: frame(center, Z, X),
                     params: vec![radius],
+                    profile: None,
                 };
                 (seam, surface)
             }
@@ -308,6 +329,7 @@ pub(crate) fn sphere(radius: f64) -> Brep {
             kind: SurfaceKind::Sphere,
             frame: frame([0.0; 3], Z, X),
             params: vec![radius],
+            profile: None,
         },
     );
     records.finish(true, Axis::Z)
@@ -346,6 +368,7 @@ fn polyhedron(points: &[[f64; 3]], faces: &[(Vec<usize>, [f64; 3])], closed: boo
                 kind: SurfaceKind::Plane,
                 frame: frame(center, *normal, reference),
                 params: Vec::new(),
+                profile: None,
             },
         );
     }

@@ -56,6 +56,8 @@ pub(crate) struct DesignBodyRecipeOperand {
     /// Complete boundary-face set of the resolved body in its input state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) resolved_body_face_slots: Vec<i64>,
+    /// Identity of the indexed record immediately following this operand.
+    next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.
     next_byte_offset: Option<u64>,
 }
@@ -87,6 +89,7 @@ impl Clone for DesignBodyRecipeOperand {
             resolved_body_state_id: self.resolved_body_state_id,
             resolved_body_slot: self.resolved_body_slot,
             resolved_body_face_slots: self.resolved_body_face_slots.clone(),
+            next_record_index: self.next_record_index,
             next_byte_offset: self.next_byte_offset,
         }
     }
@@ -121,10 +124,17 @@ impl DesignBodyRecipeOperand {
                 return Err("references contain an invalid identity or offset".into());
             }
         }
+        if draft
+            .next_record_index
+            .checked_sub(draft.record_index)
+            .is_some_and(|delta| delta < 4)
+        {
+            return Err("next_record_index names a record of the operand prologue".into());
+        }
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            4,
+            3,
             u64::try_from(draft.references.len())
                 .ok()
                 .and_then(|count| count.checked_mul(12))
@@ -149,6 +159,7 @@ impl DesignBodyRecipeOperand {
             resolved_body_state_id: draft.resolved_body_state_id,
             resolved_body_slot: draft.resolved_body_slot,
             resolved_body_face_slots: draft.resolved_body_face_slots,
+            next_record_index: draft.next_record_index,
             next_byte_offset: Some(draft.next_byte_offset),
         };
         if value.nested_record_index() != draft.nested_record_index {
@@ -238,7 +249,7 @@ impl DesignBodyRecipeOperand {
             .map(|frame| frame.offset(26 + u64_from_index(self.references.len()) * 12))
     }
     pub(crate) fn next_record_index(&self) -> u32 {
-        self.record_index + 4
+        self.next_record_index
     }
     pub(crate) fn next_byte_offset(&self) -> Option<u64> {
         self.next_byte_offset
@@ -464,6 +475,7 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
             resolved_body_state_id: wire.resolved_body_state_id,
             resolved_body_slot: wire.resolved_body_slot,
             resolved_body_face_slots: wire.resolved_body_face_slots,
+            next_record_index: wire.next_record_index,
             next_byte_offset: None,
         })
     }

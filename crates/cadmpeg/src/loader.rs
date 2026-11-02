@@ -17,7 +17,7 @@ use crate::application::artifact_store;
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::ApplicationError;
 
-mod companions;
+pub(crate) mod companions;
 
 /// Restates a detection failure with the flag that overrides it.
 ///

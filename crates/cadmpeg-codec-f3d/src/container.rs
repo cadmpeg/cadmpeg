@@ -472,6 +472,8 @@ pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
+    #[cfg(test)]
+    crate::test_support::scan_counts::record(root);
     let source_image = root.window();
     let archive = Arc::new(ArchiveSnapshot::new(ctx, root)?);
     let defer_members = archive.entry("Manifest.dat").is_none()

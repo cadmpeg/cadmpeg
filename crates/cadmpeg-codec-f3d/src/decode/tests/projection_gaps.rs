@@ -535,6 +535,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                     trailing_transforms: Vec::new(),
                     trailing_dual_transforms: Vec::new(),
                     trailing_flags: Vec::new(),
+                    closing_flag: false,
                 },
             )
             .expect("source construction frame"),

@@ -21,6 +21,7 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
@@ -379,6 +380,14 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
+                let construction = exact_move_face_operation(bytes, &records, &scope);
+                if let scope::DesignScopePayloadMut::MoveFace(slot)
+                | scope::DesignScopePayloadMut::DeplacerFace(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            {
                 let construction = exact_scale_operation(bytes, &records, &scope, &stream_types)?;
                 if let scope::DesignScopePayloadMut::Scale(slot)
                 | scope::DesignScopePayloadMut::Massstab(slot) = scope.payload_mut()
@@ -470,7 +479,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thread_construction(bytes, &scope);
+                let construction = exact_thread_construction(bytes, &scope, parameter_owners);
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -990,6 +999,24 @@ pub(super) fn parameter_scope_candidate_headers(
     Ok(headers)
 }
 
+/// Whether a reference table counted at `count_at`, holding `count` entries of
+/// `stride` bytes, ends exactly at `end`. The scan reads a count at every
+/// offset, so most counts are arbitrary bytes: one whose table would not fit
+/// the address space (on a 32-bit target `count * stride` overflows for any
+/// large value) is not this table, and must not end the whole scope parse.
+pub(super) fn reference_table_ends_at(
+    count_at: usize,
+    count: usize,
+    stride: usize,
+    end: usize,
+) -> bool {
+    count != 0
+        && count
+            .checked_mul(stride)
+            .and_then(|length| count_at.checked_add(4)?.checked_add(length))
+            == Some(end)
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1327,12 +1354,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-            if count == 0
-                || count_at
-                    .checked_add(4)?
-                    .checked_add(count.checked_mul(stride)?)?
-                    != reference_table_end
-            {
+            if !reference_table_ends_at(count_at, count, stride, reference_table_end) {
                 continue;
             }
             let first = count_at.checked_add(4)?;
@@ -1774,6 +1796,15 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
         && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
+/// Largest repeated lane value of a named-scope lane block with a nonempty
+/// label: the high byte of the three descending 16-bit field targets. An empty
+/// label takes only the values zero and one with class word 252, because that
+/// tail is also the 78-byte fixed tail.
+const NAMED_LANE_VALUE_MAX: u64 = 0xff;
+/// Three-digit dynamic class numbers admitted for the two equal class words of
+/// a named-scope lane block.
+const NAMED_LANE_CLASS_WORDS: std::ops::RangeInclusive<u32> = 100..=999;
+
 fn named_parameter_scope_tail_is_valid(
     bytes: &[u8],
     kind_end: usize,
@@ -1797,18 +1828,21 @@ fn named_parameter_scope_tail_is_valid(
         let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
         let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
         let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
+        let class_word = View::u32_le_at(bytes, marker + 16)?;
         Some(
             bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
                 && bytes.get(marker) == Some(&1)
                 && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && matches!(first_lane_value, 0 | 1)
+                && ((first_lane_value <= 1 && class_word == 0xfc)
+                    || (label_code_units > 0
+                        && first_lane_value <= NAMED_LANE_VALUE_MAX
+                        && NAMED_LANE_CLASS_WORDS.contains(&class_word)))
                 && second_lane_value == first_lane_value
                 && third_lane_value == first_lane_value
                 && bytes.get(marker + 10..marker + 12)? == [0; 2]
                 && View::u32_le_at(bytes, marker + 12)? > 0
-                && View::u32_le_at(bytes, marker + 16)? == 0xfc
                 && View::f64_le_at(bytes, marker + 20)?.is_finite()
-                && View::u32_le_at(bytes, marker + 28)? == 0xfc
+                && View::u32_le_at(bytes, marker + 28)? == class_word
                 && bytes.get(marker + 32) == Some(&1)
                 && bytes
                     .get(marker + 33)

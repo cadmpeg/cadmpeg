@@ -669,3 +669,35 @@ fn borrowed_scaling_refuses_nesting_and_matches_owned_scaling() {
     }
     ctx.finish_session().expect("shared scaling session");
 }
+
+#[test]
+fn surface_cache_fit_scales_with_its_poles_and_refuses_overflow() {
+    let mut surface = scaling_surface(1.0, false);
+    let SolvedSurfaceGeometry::Nurbs(cache) = &mut surface else {
+        panic!("NURBS");
+    };
+    cache.set_cache_fit_tolerance(Some(
+        crate::geometry::FitTolerance::try_new(0.125).expect("fit"),
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let scaled = surface
+        .scaled(&ctx, scale(2.0))
+        .expect("admission")
+        .expect("scale");
+    let SolvedSurfaceGeometry::Nurbs(cache) = scaled else {
+        panic!("NURBS");
+    };
+    assert_eq!(cache.cache_fit_tolerance().expect("fit").get(), 0.25);
+    let SolvedSurfaceGeometry::Nurbs(cache) = &mut surface else {
+        panic!("NURBS");
+    };
+    cache.set_cache_fit_tolerance(Some(
+        crate::geometry::FitTolerance::try_new(f64::MAX).expect("fit"),
+    ));
+    assert_eq!(
+        surface.scaled(&ctx, scale(2.0)).expect("admission"),
+        Err(super::ScaleRefusal::Field(
+            "cache_fit_tolerance must be finite"
+        ))
+    );
+}

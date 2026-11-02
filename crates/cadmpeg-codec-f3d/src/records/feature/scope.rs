@@ -145,6 +145,11 @@ cadmpeg_core::named_optional_field!(
     "extrude_profile"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_extrude_native_profiles,
+    Vec<DesignSketchProfileOperand>,
+    "extrude_native_profiles"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_extrude_prologue,
     DesignExtrudePrologue,
     "extrude_prologue"
@@ -554,6 +559,8 @@ design_feature_kinds! {
         SymetrieMiroir => "Symétrie miroir": Option<DesignMirrorConstruction>,
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
+        MoveFace => "MoveFace": Option<DesignMoveOperation>,
+        DeplacerFace => "DéplacerFace": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
         Shell => "Shell": Option<DesignShellOperation>,
@@ -1233,6 +1240,7 @@ fn extrude_scope_is_absent(extrude: Option<&DesignExtrudeScope>) -> bool {
             extrude.extrude_prologue.is_none()
                 && extrude.fixed_extrude_parameters.is_none()
                 && extrude.extrude_profile.is_none()
+                && extrude.extrude_native_profiles.is_none()
         }
     }
 }
@@ -1289,6 +1297,13 @@ pub(crate) struct DesignExtrudeScope {
         deserialize_with = "deserialize_extrude_profile"
     )]
     pub(crate) extrude_profile: Option<DesignSketchProfileOperand>,
+    /// Multiple Sketch-profile operands retained with their independent selections.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extrude_native_profiles"
+    )]
+    pub(crate) extrude_native_profiles: Option<Vec<DesignSketchProfileOperand>>,
 }
 
 /// Sweep construction and its independently decoded profile operand.
@@ -1670,6 +1685,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Align => DesignScopePayload::Align(wire.align_envelope.take()),
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
+            DesignFeatureKind::MoveFace => DesignScopePayload::MoveFace(wire.move_operation.take()),
+            DesignFeatureKind::DeplacerFace => {
+                DesignScopePayload::DeplacerFace(wire.move_operation.take())
+            }
             DesignFeatureKind::OffsetFaces => {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
                     None => None,
@@ -2138,7 +2157,11 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken);
             }
             DesignScopePayload::Align(value) => wire.align_envelope = value,
-            DesignScopePayload::Move(value) => wire.move_operation = value,
+            DesignScopePayload::Move(value)
+            | DesignScopePayload::MoveFace(value)
+            | DesignScopePayload::DeplacerFace(value) => {
+                wire.move_operation = value;
+            }
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value;
             }
@@ -2718,7 +2741,9 @@ impl DesignParameterScope {
 
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
-            DesignScopePayload::Move(value) => value.as_ref(),
+            DesignScopePayload::Move(value)
+            | DesignScopePayload::MoveFace(value)
+            | DesignScopePayload::DeplacerFace(value) => value.as_ref(),
             _ => None,
         }
     }
@@ -3026,6 +3051,11 @@ impl DesignParameterScope {
     pub(crate) fn extrude_profile(&self) -> Option<&DesignSketchProfileOperand> {
         self.extrude()
             .and_then(|extrude| extrude.extrude_profile.as_ref())
+    }
+
+    pub(crate) fn extrude_native_profiles(&self) -> Option<&[DesignSketchProfileOperand]> {
+        self.extrude()
+            .and_then(|extrude| extrude.extrude_native_profiles.as_deref())
     }
 
     #[cfg(test)]

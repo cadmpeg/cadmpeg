@@ -675,8 +675,9 @@ Named prototype fields describe the first surface instance. Within a complete
 counted `srf_array` frame, the immediately preceding row is the first instance
 when it has the prototype's family. When the immediately preceding row has a
 different family, or when the prototype occurs before the first row header, the
-following same-family row is the first instance. Positional row bodies carry
-the per-instance values for subsequent instances.
+following same-family row is the first instance. The first instance retains
+its named chart origin and signed basis through carrier reconstruction.
+Positional row bodies carry the per-instance values for subsequent instances.
 
 A later positional `geom_type = 0x28` row replays its `splsrf` prototype
 positionally. The row and prototype must be in one complete counted `srf_array`
@@ -697,7 +698,7 @@ same non-rational, non-periodic clamped bicubic interpolation constructor as
 the first instance. It does not by itself bind a pcurve, trim, face, or neutral
 B-rep component.
 
-In the ND layout, a complete plane, cylinder, or torus prototype `local_sys` and family parameters define the first instance carrier. Slots 0 through 2 contain the first support direction. Slots 6 through 8 contain the second support direction. A torus prototype also admits slots 3 through 5 as a candidate second support direction. Exactly one admitted candidate has the same scale as the first direction and is orthogonal to it. Slots 9 through 11 contain the origin. The bounded scalar body encodes its declared slots sequentially; no byte may be skipped between slot encodings. Each positional plane origin slot uses its row-lane scalar form when the prefix defines one. Other slot-9 prefixes use the signed first-coordinate lane defined for tabulated-cylinder directrix points; other slot-10 and slot-11 prefixes use the corresponding second-coordinate lane. The first-coordinate lane's `4a` form stores a negative coordinate in seven bytes: `c0` is the implicit first IEEE-754 byte, the six bytes after `4a` are bytes one through six, and the low byte is zero. The normalized cross product of the two orthogonal, equal-scale support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. Terminal `00 0c 98` in a positional plane support frame also occupies one zero origin slot. The same byte triple separates the two bound pairs in a cylinder outline; its meaning is fixed by the enclosing record grammar. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder uses that axis and reference direction and requires one positive finite `radius`. A zero torus `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin. A complete tagged radius trailer on the first associated type-26 row overrides the prototype `radius1` and `radius2` for that instance; the prototype local system remains the placement source, and an overridden `radius1 = 0` selects a sphere.
+In the ND layout, a complete plane, cylinder, or torus prototype `local_sys` and family parameters define the first instance carrier. In the sequential support-triple production, slots 0 through 2 contain the first support direction. Slots 6 through 8 contain the second support direction. A torus prototype also admits slots 3 through 5 as a candidate second support direction. Exactly one admitted candidate has the same scale as the first direction and is orthogonal to it. Slots 9 through 11 contain the origin. The bounded scalar body encodes its declared slots sequentially; no byte may be skipped between slot encodings. Origin scalar literals outside the compact-image and rotation-matrix productions use their row-lane form when the prefix defines one. Other slot-9 prefixes use the signed first-coordinate lane defined for tabulated-cylinder directrix points; other slot-10 and slot-11 prefixes use the corresponding second-coordinate lane. The first-coordinate lane's `4a` form stores a negative coordinate in seven bytes: `c0` is the implicit first IEEE-754 byte, the six bytes after `4a` are bytes one through six, and the low byte is zero. The normalized cross product of the two orthogonal, equal-scale support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. Terminal `00 0c 98` in a positional plane support frame also occupies one zero origin slot. The same byte triple separates the two bound pairs in a cylinder outline; its meaning is fixed by the enclosing record grammar. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder uses that axis and reference direction and requires one positive finite `radius`. A zero torus `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin. A complete tagged radius trailer on the first associated type-26 row overrides the prototype `radius1` and `radius2` for that instance; the prototype local system remains the placement source, and an overridden `radius1 = 0` selects a sphere.
 For a generic positional plane support body, the slot-position coordinate lanes
 are the primary interpretation. If that 12-slot parse does not satisfy the
 finite equal-scale orthogonality invariant, the same bounded body is replayed
@@ -707,7 +708,17 @@ parameter/normal frame consumes the complete body. A missing primary parse, a
 compact or specialized prefix, or multiple valid replays does not select a
 lane and leaves the local system unresolved.
 
-Within a named prototype `local_sys`, `e7 <count>` advances over `count`
+A plane, cylinder, cone, or torus prototype can store a complete signed
+axis-permutation matrix inside its bounded `local_sys f9 04 03` field.
+This body uses the compact rotation production in §3.4. The following named
+field bounds the frame. A cylinder prototype also admits a complete general
+orthonormal rotation matrix in the pcurve and cylinder-rotation scalar stream.
+Its first nine slots are row-major direction values, its final three slots
+are the origin, and the columns are the radial reference, transverse direction,
+and signed axis. The complete field has twelve finite slots and an optional
+terminal `e1` null marker. Its unique positive `radius` completes the carrier.
+
+Within a sequential support-triple named prototype `local_sys`, `e7 <count>` advances over `count`
 inherited scalar slots. The count is a positive compact integer, must not cross
 the declared array extent, and does not assign values to those slots. Scalar
 decoding resumes at the first slot after the inherited interval.
@@ -839,6 +850,63 @@ defines the model-Z axis direction, the sign of the radial difference defines
 the model-X reference direction, and the absolute half-difference is the
 radius. The absolute signed length is the bounded axial length.
 
+A quarter-turn positional cylinder stores two scalar bounds, the angular
+upper-bound token `12`, and seven further scalars. The two leading values are
+angular lower bound zero and axial lower bound. The seven values are axial
+upper bound and two XYZ envelope corners. These values use the signed
+first-coordinate lane with stateful `e4` through `e6` repeats and explicit
+`18` zero slots. Compact literals `0e`, `0f`, and `10` encode positive one
+half, positive one, and negative one. Repeat state continues across `12`;
+a repeat must fit its bounded group. An optional `f7 <canonical-reference>` follows the corners,
+then `e3` closes the envelope.
+
+The next compound contains a complete compact rotation body as defined in
+§3.4, one positive finite radius in the inline surface-suffix scalar lane,
+and `e3`. Stored matrix rows zero and two are the radial parameter
+directions `U` and `V`. Their cross product `U × V` is the directed
+cylinder axis. The origin is the axis point. The axial corner interval equals the interval
+obtained by mapping the two stored axial bounds through that frame. Each
+transverse corner interval spans one radius and has the axis point at one
+endpoint. Its other endpoint is the corresponding component of
+`origin + radius * (U + V)`.
+Exactly one complete frame-and-radius boundary defines this form.
+The absolute axial-bound difference is the positive bounded length.
+`SMT_THICKNESS` is the model parameter for sheet thickness.
+
+For a first instance, the envelope ends at the following named prototype
+header. The prototype supplies the complete signed frame and radius. Its
+matrix column zero defines `U`, column two defines the directed axis, and
+`axis × U` defines `V`. The same envelope equalities apply. A coaxial circular boundary has constant
+axial parameter. Its endpoint angles lie in the stored angular interval;
+the arc between those angles inside that interval is its bounded circle
+interval. The interval runs from the edge's start vertex to its end vertex.
+Adjacent cylinder domains that qualify the same edge agree on that
+interval. Endpoint pairs on an adjacent plane constrain its circular
+pcurve at those endpoints. The complete circle projected through that
+plane's frame defines the pcurve between them.
+
+A positive-lower-bound bend envelope stores two angular-stream scalars,
+then `12`, then seven angular-stream scalars. The first pair is angular lower
+bound `u0` and axial lower bound `v0`. The seven values are axial upper bound
+`v1` and two XYZ envelope corners. The angular stream is defined in §4.1.1.
+`0 < u0 < pi/2`, and `v0` differs from `v1`. Repeat state continues across
+`12`, and each repeat fits its two-slot or seven-slot group. One optional
+`f7 <canonical-reference>` follows the corners. The angular lower bound is an explicit literal; a leading `0f`, `10`, `12`,
+`18`, or `e4` to `e7` control token opens the standard cylinder envelope
+instead.
+
+The following compound supplies the complete compact rotation and positive
+radius through the quarter-turn compound grammar. A first-instance named
+cylinder prototype supplies its complete frame and radius fields. The inline
+and named basis mappings follow the quarter-turn production. Both radial
+vectors and the axial vector are signed model-basis vectors. The parameter rectangle is `[u0, pi/2] × [min(v0, v1), max(v0, v1)]`.
+Each stored XYZ coordinate interval agrees with the corresponding extremum
+interval of its four mapped corners within `1e-9 * scale`. The scale is the
+maximum of one, the radius, and the absolute origin and stored corner
+coordinates. The positive axial length is `abs(v1 - v0)`.
+This envelope also supplies the angular and axial bounds for a coaxial
+circular boundary.
+
 A signed axis-aligned positional cylinder begins `11`, one nonzero signed
 axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
 All seven fields after `13` use the positional surface-row scalar lane. The
@@ -934,6 +1002,58 @@ origin and use the first tabulated-cylinder coordinate lane, including its
 signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
+
+A bounded rotation-matrix cylinder stores four parameter bounds in the order
+`u0`, `v0`, `u1`, `v1`, followed by two XYZ envelope corners. Both parameter
+intervals have increasing finite bounds. The ten scalars use the signed
+first-coordinate lane and the compact rotation scalar forms in §4.1.
+`18` is zero, and `e4`, `e5`, and `e6` repeat the preceding scalar one, two,
+and three times. Repetition carries across the four parameter bounds and
+across the six corner coordinates; each group must be complete.
+
+In the bounded cylinder-rotation stream, `19 <tail7>` reconstructs IEEE-754
+bytes `3c <tail7>`, and `32 <tail7>` reconstructs `bc <tail7>`. Each literal
+occupies one finite scalar slot and supplies the value used by following
+repeats. A bounded named cylinder placement pairs either literal with its
+complete ten-slot envelope. A named ten-slot envelope ends at its following
+`e0 00 srf_prim_ptr(cylinder) 00` named-prototype marker.
+
+An `e3` closes a positional envelope. Twelve finite scalar slots follow in
+row-major order: a right-handed orthonormal rotation matrix and three origin
+coordinates. The matrix columns are the radial reference, transverse
+direction, and signed axis. The direction and origin slots share the compact
+scalar stream; repetition carries across their boundary. One positive radius
+and `e3` complete the body.
+
+An active-datum first cylinder stores the envelope before its named cylinder
+prototype. The unique prototype between that row header and the next row
+header supplies the complete `local_sys f9 04 03` matrix and unique positive
+`radius`. The row and prototype belong to one complete counted surface array.
+Its named frame and a later positional frame use the same placement gate.
+
+Within that complete counted array, a later positional rotation-matrix body
+belongs to the unique preceding cylinder prototype with a complete named
+rotation field and positive radius. Its envelope and matrix use the same
+signed coordinate stream and corner constraints.
+
+The axis has one coordinate equal to `+1` or `-1` and two zero coordinates.
+Each radial corner coordinate lies between
+the stored origin coordinate minus and plus the radius. The axial corner
+pair equals the origin plus the signed axis times each axial parameter bound,
+in either order. The origin, axis, reference direction, radius, and axial
+span define the instance carrier. Complete scalar consumption and all corner
+conditions are required together.
+
+A named or inline cylinder whose rotation matrix uses `19` or `32` tokens is
+read by two productions: the coordinate-axis production above and the
+complete-rotation production, which admits a rotation whose columns are
+exactly orthogonal and whose axis may tilt by a sub-unit amount, provided the
+angular parameter interval and the corners agree with the carrier. A frame
+either production admits is admitted, and the complete-rotation frame wins
+when both do. A frame neither admits is refused, and each production that
+recognized the body records its own loss. An inline body that the
+complete-rotation production refuses is still given to the coordinate-axis
+production.
 
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
@@ -1550,6 +1670,38 @@ The scalar has precedence over scalar candidates beginning inside its payload;
 the following close byte is not part of the scalar. The bounded body transfers
 the value and source offset as `cone_half_angle_override`.
 
+An ND visible class-917 envelope-only cylinder or ring-torus replay stores
+exactly ten angular stream scalars: `u0, v0, u1, v1`, followed by XYZ minima
+and XYZ maxima. The first-instance prototype and replay belong to one complete
+counted `srf_array`, have the same surface family and feature identifier, and
+occur in that order. Exactly one prototype association qualifies. Its complete
+first-instance carrier supplies the signed axis, reference direction, origin,
+and radii. Both directions are signed model basis vectors. A ring torus has
+major radius greater than the magnitude of its minor radius. The parameter
+bounds are ordered. Angular bounds lie in `[-2*pi, 2*pi]` and span at most one
+turn; the cylinder's second parameter is linear. The complete parameter
+rectangle's six model-space extrema equal the stored XYZ extrema. Endpoints and
+contained multiples of pi/2 supply those extrema for the signed-basis cylinder
+and ring torus. The replay retains the complete first-instance carrier when
+this equality holds.
+
+An analytic circular-sweep boundary production has a class-917 owner, one
+unique complete angular paired path with at least three samples, and a
+constant-coordinate cylinder or torus chart. The constant coordinate agrees
+through the complete sample sequence. This analytic chart defines the circle;
+both carriers are planes, cylinders, or tori, and the circle satisfies their
+complete analytic equations. A plane contains the circle center and has a
+parallel normal. A cylinder is coaxial with the circle and has the same radius.
+A torus contains a parallel ring whose radial and axial offsets satisfy the
+tube-radius equation, or a meridian whose center lies on the major circle and
+whose radius equals the tube radius. Every corresponding model-space sample
+lies on that circle, and both chart images agree. Qualifying charts define the
+same oriented circle. The ordered intermediate samples select exactly one
+circle-axis direction and one arc from the edge's start vertex to its end
+vertex, with a span of at most one turn. All intermediate angles increase
+strictly inside that interval. A plane chart for this boundary is the circle's
+exact projection into the plane frame, with the same parameter interval.
+
 ### 3.3 Torus and sphere representation
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
@@ -1621,6 +1773,36 @@ second is a nonzero signed minor radius; its magnitude is the analytic minor
 radius. The five-coordinate envelope independently satisfies the two-radius
 equation below. The local system and both radius scalars consume the remainder
 of the bounded body.
+
+A bounded type-24 rotation carrier starts with ten stateful scalars:
+`u0, v0, u1, v1, x0, y0, z0, x1, y1, z1`. The first four scalars are
+its two angular and two axial limits. The last six scalars are its two
+model-space extent corners. A terminal `f7 <reference_ci>` follows the ten
+slots when the envelope carries a reference. A positive angular span is at
+most one full turn, and the two axial limits differ.
+An explicit parameter literal in an angular slot retains its angular value
+when the complete inline rotation prefix is present.
+
+The inline form continues with `e3`, one complete rotation frame, one positive
+radius scalar, and `e3`. The named form places the same complete frame in
+`local_sys` and its positive scalar in `radius` in the unique cylinder
+prototype between this row and the next row of the complete counted surface
+array. The named prototype starts at `e0 00 srf_prim_ptr(cylinder) 00`
+after the complete envelope. A named `local_sys` field has the `f9 04 03` array prefix. Its exact
+trailer is empty or `e1`. The radius field's exact trailer is empty, `e1`, or
+`f1 f7 0e`. The signed control-only matrix form requires a direction repeat;
+the floating matrix form uses the grammar in §3.4. A floating inline frame's
+`19` or `32` direction token identifies its rotation production. A control-only
+inline image establishes this bounded rotation production when its complete
+frame, radius, parameter limits, and extent witnesses agree. Other
+control-only inline images use their support-frame productions.
+
+With frame columns `U`, `V`, and `N`, origin `O`, and radius `r`, the chart
+is `O + r * (U * cos(u) + V * sin(u)) + N * v`. Each stored extent interval
+lies inside the coordinate extrema of this chart over the stored limits.
+A coordinate parallel to `N` has the same stored and computed endpoints.
+The axial span supplies the carrier length. The source frame, radius,
+parameter limits, and extent witnesses form one complete carrier.
 
 A compact type-24 cylinder envelope has a model-space Y axis. Its direct form
 is `14 <y0> <scalar> <y1> <x-center> <y0> <z0> <x-edge> <y1> <z1>`.
@@ -1826,40 +2008,142 @@ A standard positional envelope is exactly ten contiguous scalar slots: four
 two-dimensional domain bounds followed by two model-space corner triples. A
 leading-compact envelope is `0e` followed by exactly nine contiguous scalar
 slots: three prefix values followed by the two corner triples. Each layout
-consumes its complete compound-bounded body. A compact envelope can instead be
+consumes its complete compound-bounded body. A standard envelope can end with
+`f7 0c` after its ten scalar slots. That terminal reference occupies no scalar
+slot and does not change the scalar language. A compact envelope can instead be
 the unique terminal nine-slot scalar frame after a nonempty structural prefix.
 Bytes outside these layouts do not form a plane envelope.
 
-`local_sys` has twelve scalar slots. Plane rows use three storage forms.
-Compact and specialized plane-support bodies expand their direction values into
-three support triples.
+A standard positional envelope admits a complete surface-row literal production
+and a bounded stateful production. In the literal production, `0f` is zero
+and `e4` is positive one. A complete literal production supplies the envelope
+when the stateful production cannot consume its ten slots. A leading `e4`
+therefore admits a literal positive unit. A four-unit stateful domain prefix
+also admits the literal production; this includes four initial `0f` bytes.
+When the stateful envelope conflicts with an available local frame, a literal
+envelope that agrees with that frame supplies the coordinates. For an
+axis-aligned frame, both corner coordinates on its normal axis equal the
+frame origin coordinate. For an inclined frame, the four mapped UV corners
+have the stored XYZ bounding-box extrema. An envelope without a complete
+frame can establish one held-coordinate plane from its corner relations.
+The selected values and tokens supply native records and carrier placement.
+
+In the stateful production, `18` is zero, `0f` is positive one, `10` is negative one, and
+`0e` within the scalar stream is positive one half. `e4`, `e5`, and `e6` repeat
+the preceding scalar one, two, and three times. The first scalar is a literal.
+Every literal replaces the preceding value. Repeats carry across domain-bound
+and corner-coordinate boundaries but cannot exceed the complete declared
+extent. Explicit scalars use the signed first-coordinate lane, including
+positive `2d`, negative `46`, and the positive DICT exponent lattice at every
+slot. The leading-compact and structural-prefix terminal nine-slot frames retain the
+surface-row literal grammar and its compact positive-half literal. Their
+structural prefixes are not scalar values.
+
+Across 53 local files, 347 complete standard envelopes agree with the stateful
+reading, and zero disagree; 89 retained envelopes remain unresolved. The
+literal-control alternative gives 80 agreements and 267 disagreements. The
+four-initial-`0f` compatibility prefix has zero occurrences in these files.
+
+`local_sys` has twelve scalar slots. Plane rows use the following storage forms.
+Specialized support-frame bodies expand their direction values into three
+support triples.
 
 A compact rotation body stores a row-major 3x3 rotation matrix followed by
 three model-space origin coordinates.
 In the nine direction slots, `0f` is positive one, `10` is negative one, and
 `18` is zero. `e4`, `e5`, and `e6` repeat the preceding scalar one, two, and
 three additional times. At least one repeat occurs in the direction matrix.
+Origin literals also include `0e` positive one half.
+The complete compact rotation production takes precedence over specialized
+support images with the same control-only direction stream.
 A repeat requires a preceding scalar and must end within slot eleven. It can
 cross the matrix/origin boundary. The expanded body has exactly twelve finite
 slots and consumes its complete field boundary.
+
+In a compact rotation, a terminal direction-slot `e7 <count>` repeats the
+preceding zero through the remaining direction and origin slots. The count
+is a positive canonical reference integer. The run completes exactly twelve slots at the field boundary. This counted zero-run production precedes the sequential
+support-triple production's inherited-slot reading.
 
 Each matrix column is a signed model basis vector. Column zero is the first
 parameter direction, column one is the second parameter direction, and column
 two is the plane normal. The normal equals the cross product of the first two
 columns. Slots nine through eleven are the parameter-chart origin. Origin
-scalars use the positional row lane, then the corresponding first- or
-second-coordinate lane when that row lane does not define the prefix.
+scalars use the signed first-coordinate lane at all three positions, including
+positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
 
+An angular-stream plane rotation stores nine row-major direction slots and
+three origin slots through the angular stream defined in §4.1.1. At least one
+direction literal uses `00` or a scalar opener in `19..df`. A direction
+repeat ends within the nine direction slots. Origin repeats inherit the
+preceding direction or origin scalar. One matrix column agrees component by component
+with a signed model-X or model-Z basis vector within `1e-9`. For columns
+`U`, `V`, and `N`, each squared norm differs from one by at most `1e-9`,
+each pairwise dot product has magnitude at most `1e-9`, and
+`(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
+parameter reference direction, and column two defines the plane normal.
+The final three finite slots define the chart origin. The complete bounded
+field contains exactly twelve slots.
+
+The plane's envelope arbitrates between this rotation and the plane
+support-frame productions. The envelope opens with ten angular-stream scalars
+`u0, v0, u1, v1`, XYZ minima, and XYZ maxima; later linkage bytes are not read.
+A reading reproduces the envelope when its four chart corners
+`origin + u * first + v * second`, for `u` in `{u0, u1}` and `v` in `{v0, v1}`,
+have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
+`max(1, |stored|)`. For this rotation `first` is column zero and `second` is
+column one; for a production, `first` is its first parameter direction and
+`second` is the plane normal crossed with `first`. When a production admits the
+body and the rotation reproduces the envelope while the production's chart does
+not, the rotation replaces the production's reading if the two origins differ
+by more than `1e-9` scaled by the larger of one and the two components'
+magnitudes. When the origins agree, only the matrix
+orientation is disputed: the production's reading is kept and the
+`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+reproduce the envelope with different origin, first direction, or normal
+(components within the same scaled `1e-9`), neither is chosen: the plane keeps
+no local-system frame and one loss is recorded; the generic
+unresolved-local-system loss is not added for the same row and offset. When no
+production admits the body, a complete rotation is read without an envelope
+check. A body that no production admits and whose rotation fails the
+complete-field admission yields no frame, and one loss attributes it.
+
+A complete positional compact rotation frame can end with
+`e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`
+closes the frame. The following reference occupies the linkage field after
+that close. Its complete canonical identifier ends at the compound boundary.
+The scalar frame and linkage retain their separate byte extents.
+
+A floating rotation body has the same row-major matrix and three origin
+slots. Its nine direction slots contain at least one `19 <tail7>` or
+`32 <tail7>` scalar. These scalars reconstruct the big-endian IEEE-754 binary64
+images `3c <tail7>` and `bc <tail7>`, respectively. The other direction tokens
+are `0f`, `10`, `18`, and `e4..e6`. Direction repeats end within the ninth
+slot. The matrix columns are unit vectors, are mutually orthogonal, and have
+positive handedness. Each origin slot uses the signed first-coordinate lane,
+with `19` and `32` carrying the same floating meaning. The short origin forms
+`1b b1 b2` and `34 b1 b2` reconstruct `3c b1 b2 00 00 00 00 00` and
+`bc b1 b2 00 00 00 00 00`. The complete body consumes twelve finite slots
+at its field boundary. Column zero is the chart reference direction, column
+one is the second chart direction, and column two is its normal or axis.
+
+An `ActDatums` plane row with boundary type `00` and a nonzero
+`next_geom_ptr` belongs to the material surface chain. Its complete local
+system defines its own chart. The row and parameter body have unique source
+identities. Its successor is a unique visible surface with the same `feat_id`.
+The plane identifier remains in the `ActDatums` namespace.
+
 A generic direct-normal body stores a parameter
-direction, an exact zero-rank triple, and a stored plane normal. A generic
+direction, an exact zero-rank triple, and a stored plane normal. A generic zero-rank
 coordinate-first body starts with a coordinate scalar, not one of the control
 openers `0e`, `0f`, `10`, or `18`, and contains an `18` zero-slot prefix at a
 scalar-token boundary. Its slots 0 through 8 store the first three rows of a
 3x3 matrix in row-major order. In that form, columns zero, one, and two are
-the parameter direction, zero rank, and stored plane normal. All three forms
-use the same origin slots.
+the parameter direction, zero rank, and stored plane normal. The complete
+rigid-matrix production stores a full right-handed matrix. These forms use the
+same origin slots.
 
 ```text
 support-triple form:
@@ -1877,11 +2161,11 @@ slots 0, 3, 6    parameter direction column
 slots 1, 4, 7    zero-rank column
 slots 2, 5, 8    plane-normal column
 
-both forms:
+all forms:
 slots 9..11   support-frame origin
 ```
 
-In a coordinate-first matrix body, the zero-rank column is exactly zero. The
+In a generic zero-rank coordinate-first matrix body, the middle column is exactly zero. The
 parameter and normal columns are finite, nonzero, equal-scale, and
 orthogonal. Normalize those two stored columns to obtain the plane chart. A
 body that does not meet these conditions does not establish a matrix chart.
@@ -1932,28 +2216,66 @@ first component of each support triple. In coordinate-first matrix storage, it
 is the first matrix column. `18` immediately before a complete coordinate
 token occupies one zero slot; the coordinate begins the next slot.
 
-Every twelve-slot local-system production must consume its complete body. A
-terminal `e1` after a complete frame is a null row-tail marker and is not a
-scalar slot. If any other bytes remain, none of the twelve slot positions is
-assigned a numeric value.
+Every twelve-slot local-system production consumes its complete bounded body.
+For a positional plane row, the local-system compound close is the `e3`
+immediately after a complete admitted twelve-slot frame, including its defined
+terminal marker. An `e3` inside a scalar payload is data. A terminal `e1` after
+a complete frame is a null row-tail marker and occupies zero scalar slots.
 
 In the coordinate-first matrix form, an `18` at a scalar-token boundary before
 the next decodable coordinate occupies one zero slot. A terminal `18` occupies
-one zero slot. The `18 e5` direction macro and the other compact support
-macros are support-triple forms, not matrix rows.
+one zero slot. The compact support images expand under their complete support-triple
+production. They do not select the generic zero-rank matrix production.
 
 The seven-byte compact image `A 18 e5 B 18 e5 C`, where each of `A`, `B`,
 and `C` is `0f` or `10`, names a model-Z plane-normal frame. In a positional
 plane row, it expands to a direct-normal frame with the model-X parameter direction, a
 zero middle triple, and the model-Z normal. `A = 0f` selects positive model X
 and `A = 10` selects negative model X. `C = 0f` selects positive model Z
-and `C = 10` selects negative model Z. `B` does not change either direction.
+and `C = 10` selects negative model Z. `B = A * C` under those signed-unit
+values; another middle sign does not establish this compact frame.
+
+The compact diagonal image's middle-sign relation holds in 410 images across
+53 files, with zero failures and zero unevaluable images.
 
 The positional plane image `18 e4 A 18 0f 18 C 18 e4` has opposite signed unit
 tokens `A` and `C`. `A` selects the model-X normal and `C` selects the model-Z
 parameter direction: `0f` is positive and `10` is negative. Its support-triple
 form contains that parameter direction, a zero middle triple, and positive
-model Y. Its three following scalars are the origin coordinates.
+model Y. Its following origin production supplies exactly three coordinates.
+
+In a compact plane origin, `18` is zero, `0f` is positive one, `10` is
+negative one, and `0e` is positive one half. `e4`, `e5`, and `e6` repeat the
+preceding stored scalar one, two, and three times. The preceding value carries
+from the direction production into the origin. It is `C` for the model-Z
+image and zero for the model-X and model-Y images. Each subsequent literal
+replaces that preceding value. A repeat cannot cross the three-coordinate
+origin boundary. Other literals use the signed first-coordinate lane at every origin coordinate.
+
+The positional plane Y-rotation production stores these rows before its origin:
+
+```text
+[a, 0, b]
+[0, s, 0]
+[c, 0, d]
+```
+
+The zero components are literal `18` bytes. The middle row is `18 0f 18` for
+`s = +1` or `18 10 18` for `s = -1`. The four other direction components are
+nonzero explicit scalars with openers `41`, `45`, `71`, or `b9` in their
+signed coordinate lanes. Other DICT direction forms belong to the generic
+support-frame production. The compact paired
+`4e` component in slot 6 and compact negated `50` component in slot 8 belong
+to the generic support-frame production. Unit, orthogonal direction columns
+establish the Y-rotation prefix before its origin is read. All three matrix columns are finite unit
+vectors, mutually orthogonal, and right-handed. The first column is the
+parameter direction and the third column is the plane normal. The middle row
+is a signed unit row. The origin production supplies
+three coordinates. Its literals use the signed first-coordinate lane, including positive `2d`, negative
+`46`, and the positive DICT exponent lattice. Origin repeat tokens retain the
+preceding scalar value, initially `d`. The complete production must consume
+exactly twelve scalar slots and its bounded body. An invalid rotation,
+incomplete origin, or trailing bytes do not establish a plane frame.
 
 The zero-origin compact plane body `18 e4 0f e4 18 e5 0f 18 e6` expands to
 rotation rows `[0, 0, 1]`, `[1, 0, 0]`, and `[0, 1, 0]`, followed by origin
@@ -2008,7 +2330,8 @@ An auxiliary-corner positional plane body has a three-byte prefix, one
 seven-byte scalar, an eight-byte control payload, and a terminal frame of seven
 contiguous scalars. The first terminal scalar is auxiliary. The remaining six
 are two XYZ corners and use the same unique-held-coordinate plane rule.
-An `f7 0c`-terminated auxiliary-corner form stores a final contiguous frame of
+Outside the complete ten-slot standard envelope production, an
+`f7 0c`-terminated auxiliary-corner form stores a final contiguous frame of
 seven through ten scalars immediately before that terminator. The terminal
 seven slots consist of one auxiliary scalar followed by two XYZ corners.
 Earlier slots and control fields do not participate in the corner coordinates.
@@ -2213,14 +2536,41 @@ the complete body.
 
 ### 4.1 Pcurve endpoints
 
+A plane envelope defines domain bounds and model-space corners. The plane
+parameter chart comes from its complete local system. An unresolved local
+system leaves the parameter chart unresolved, including when the envelope
+establishes a geometric plane.
+
 A direct curve body consisting of exactly eight scalar slots and no references
-has this layout. A scalar token occupies one slot. A standalone `12` occupies
-one zero-valued slot. The exact wrapper `d7 e8 03 <scalar> 1e` occupies one
-held-scalar slot; the wrapper bytes do not add parameter values. No other
-unclaimed byte is permitted. All eight values are finite parameter coordinates
-in the corresponding face spaces. The
-parameter row and its uniquely identified topology row have the same raw
-`type_byte`; a same-identifier row of another type does not bind the body.
+has the layout below. In its stateful scalar language, `18` is zero, `12` is
+positive pi/2, `0f` is positive one, `10` is negative one, and `0e` is
+positive one half. `e4`, `e5`, and `e6` repeat the preceding scalar one,
+two, and three times. `e7 <count>` repeats it a positive compact-integer
+number of times. The count occupies no scalar slot.
+The first value is a literal; no value is inherited from another record.
+A repeat cannot exceed the remaining slots. Explicit coordinates use the signed
+first-coordinate lane, including positive eight-byte `2d`, negative eight-byte
+`46`, and the positive DICT exponent lattice. Every literal replaces the
+preceding value. The complete bounded body supplies exactly eight finite values.
+
+A named prototype `crv_pnt_arr f9 02 04` uses the same stateful eight-slot
+scalar stream and endpoint order. Its complete eighth value ends at the owned
+array boundary or the next `e0` named-field boundary. An `e0` inside an explicit
+scalar payload is data. No partial slot or trailing scalar belongs to this
+array.
+
+A positional eight-slot endpoint body with a token-boundary `1a` literal or
+`00 04 <low>` replacement uses the angular scalar stream in §4.1.1. A
+complete standard stateful endpoint body has precedence. The angular body
+contains exactly eight finite slots and consumes its complete boundary.
+Its full-width literal openers are `19`, `28`, `2d`, `32`, and `46`.
+The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
+a token boundary. It occupies one held scalar slot and retains the row-lane
+literal grammar; wrapper bytes are not parameter values. A payload byte sequence
+inside another scalar does not select this production. No unclaimed byte is
+permitted in either complete production. The parameter row and its uniquely
+identified topology row have the same raw `type_byte`; a same-identifier row
+of another type does not bind the body.
 
 | Slots  | Meaning                            |
 | ------ | ---------------------------------- |
@@ -2239,9 +2589,13 @@ topology fields make the prototype ambiguous.
 The named prototype's `crv_pnt_dir` array stores the two half-edge direction
 flags. A unique named prototype topology record supplies a rowless edge when a
 positional or prototype topology suffix references its `crv_id` as `E0` or
-`E1`. The decoder promotes that record to the half-edge graph only when the
-prototype, its topology record, its direction array, and both face references
-are unique in the enclosing model namespace. A named prototype that is not
+`E1`. That record forms a half-edge graph row when the prototype, its
+topology record, its direction array, and both face references are unique in
+the enclosing model namespace. The face-reference roster contains visible
+and non-visible surface-row identifiers and the `geom_id` values of complete
+active-datum cylinder rows with admitted carriers and unique identifiers.
+The active-datum row binds its identifier to its feature owner and signed
+carrier frame. A named prototype that is not
 referenced as a successor remains schema data.
 
 ### 4.1.1 Legacy ASCII curve topology and endpoints
@@ -2274,6 +2628,16 @@ same `F0`/`F1` faces as the topology row. A complete legacy curve namespace
 uses the same half-edge successor, vertex-orbit, face-loop, and carrier
 admission rules as the binary `crv_array` namespace.
 
+The angular literal tokens in an endpoint chart are `11` positive pi,
+`12` positive pi/2, `13` positive 2*pi, `14` positive 3*pi/2, `15` negative
+pi, and `16` negative pi/2. The form `00 <literal> <low-byte>` replaces the
+last byte of that literal's big-endian IEEE-754 image. Its literal selector
+also admits `0e` positive one half, `0f` positive one, and `10` negative one.
+A complete eight-slot endpoint body with a token-boundary `19 <tail7>`
+also admits the floating `19`, `32`, `1b`, and `34` coordinate forms in
+§3.4. The first scalar is explicit, and repeats remain bounded by eight slots.
+The same endpoint production occupies a complete counted two-row chart body.
+
 A binary canonical two-chart body opens `fc <count>`, where `<count>` is a
 compact integer of at least two. Exactly `count` sample rows follow. Each row
 contains four finite scalars in this order:
@@ -2288,25 +2652,103 @@ pointwise-corresponding pcurve samples. A later row in the same `crv_array`
 namespace with the same nonzero `feat_id` and raw `type_byte` replays the unique
 canonical sample count without the `fc <count>` prefix. The canonical or
 replay body is complete only when exactly `4 * count` scalar slots consume its
-bounded parameter body. It has no trailing parameter-bound scalars. Multiple
-canonical counts for one feature and raw type
-make an unprefixed replay ambiguous.
+bounded parameter body. It has no trailing parameter-bound scalars. Exactly one canonical count for the feature and raw type must complete the
+unprefixed replay body.
 
-Each chart's first coordinate uses the first tabulated-cylinder directrix
-coordinate lane. In this bounded curve grammar, `32 <tail7>` is an eight-byte
-positive sub-unit first-coordinate scalar that reconstructs IEEE-754 bytes
-`3f <tail7>`. Its second coordinate uses the second directrix coordinate lane.
-The positive-DICT lattice extends through prefixes `4b..a3` in this grammar;
-the prefix and six-byte tail reconstruct by the positive-DICT rule. A bare
-`18` occupies one zero slot in either coordinate. The chart pair
+Each chart sample at one index describes the same spatial point. All sample
+indices belong to the stored curve.
+
+The pcurve and cylinder-rotation scalar streams define `11` as positive pi
+and `13` as positive two pi. The three-byte form `00 K B`, with
+`K` in `0e`, `0f`, `10`, `11`, `12`, or `13`, replaces the low IEEE-754 byte
+of the corresponding constant with `B`. Those constants are positive one
+half, positive one, negative one, positive pi, positive pi/2, and positive
+two pi. The three-byte scalar `1b X Y` reconstructs IEEE-754 bytes
+`3c X Y 00 00 00 00 00`; `34 X Y` reconstructs
+`bc X Y 00 00 00 00 00`. These forms occupy one scalar slot and replace
+the preceding value used by subsequent repeats. Cylinder-rotation repeats
+use `e4`, `e5`, and `e6`; pcurve streams also admit the counted `e7` form.
+
+The scalar stream uses the direct eight-slot pcurve literals and bounded
+repeats, including `12` positive pi/2 and `e7 <count>`. The first scalar is
+a literal. In complete direct, replay, and counted pcurve bodies, explicit
+`2d` is positive and explicit `46` is negative in both chart-coordinate slots.
+The other explicit coordinates use the signed first-coordinate lane.
+A repeat carries across chart and sample boundaries but cannot exceed
+`4 * count` slots. In the legacy two-chart production, either chart's first
+coordinate slot defines `32 <tail7>`
+as an additional eight-byte positive sub-unit scalar that reconstructs
+IEEE-754 bytes `3f <tail7>`. The `fc 05` circle production is separate and
+does not declare five sample rows. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
 by sweep coordinate. Other surface families use their stored surface chart.
 
+An angular two-chart scalar stream contains at least one standalone angle
+literal from `11 = pi`, `13 = 2*pi`, `14 = 3*pi/2`, `15 = -pi`, or `16 = -pi/2`
+at a token boundary. `12` retains its positive pi/2 value. The stream uses the
+bounded preceding-scalar repeats and signed first-coordinate explicit values.
+Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
+<tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
+and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
+`1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
+`3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
+replaces the literal's low IEEE byte with `low`; the literal is an angle or one
+of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
+`3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
+repeats. A two-row counted or count-bound replay body that completes the floating
+eight-slot endpoint production uses that production. Other frames that complete
+the legacy two-chart production use that production. The angular alternative requires complete scalar consumption, the
+exact declared sample extent, and an additional angle literal. These conditions
+select the scalar production for every sample in the frame.
+
+A curve with raw type `01` and owner class `911` Hole defines an axial
+boundary line from one complete direct eight-slot chart frame or a counted
+two-row chart frame. Both incident cylinders have the same owner, equal
+radii, parallel axes, and one axis line. Each owned source envelope passes
+the bounded rotation placement gate. Each angular interval is shorter than
+one turn. Both endpoint paths lie within their axial and angular bounds.
+Each path's full unwrapped angular travel stays within the angular
+agreement tolerance, and its arc travel stays within the positional
+agreement tolerance. The endpoints select one angular
+boundary in each cylinder. The two boundaries have opposing inward radial
+tangents and define the same generator line. Both chart paths align with the
+solved edge endpoints. The stored boundaries define the line carrier.
+
+A curve with raw type `00` and owner class `911` Hole defines a directed
+circular interval from one complete paired sample record with at least three
+samples.
+The record's incident face pair equals the curve row's incident pair. One
+face is a plane and the other is a cylinder. The cylinder has one same-owner
+bounded carrier in its selected visible or active-datum namespace. Each
+visible plane local system with either face identifier has a complete frame.
+Both chart images agree at every sample. The analytic circle lies on both
+surfaces and contains every mapped point. The first and last samples align
+with the solved edge endpoints. The interior samples advance strictly inside
+exactly one directed circular interval. That interval supplies the edge's
+oriented circle and parameter range. The cap pcurve is the circle's complete
+projection through the admitted plane chart.
+
+A type-two named `crv_pnt_arr f9 <count> 04` stores the angular stream in
+`count` four-scalar rows, with `count >= 2`. Its bounded body ends at the
+following type-one `crv_hdr_geom_ptr[0]` field. Its unique prototype topology
+supplies both face identifiers. The first and final rows give the endpoints;
+all intermediate rows retain their corresponding chart samples. The array
+count, both face references, complete field boundary, and angular scalar
+production must all be defined.
+
+The angular chart construction uses two independently defined, complete
+incident-face frames for its model-space constraints. Every corresponding model-space point is finite, and the two
+images agree through the complete path. The unique native curve-topology row
+binds the first and final points to the two half-edge start vertices. Direction
+bytes `01 f6` preserve endpoint order; `f6 01` reverse it. Each directed
+endpoint satisfies every admitted analytic carrier incident to its vertex
+orbit.
+
 Every available face chart is evaluated at every sample. When both face
-surfaces are available, corresponding model-space points must agree. A missing
-face surface does not erase a complete path in the available face chart; that
-path supplies one-sided, non-authoritative endpoint evidence. Two agreeing
+surfaces are available, corresponding model-space points must agree. In the legacy production, a missing face surface leaves a complete path
+in the available face chart; that path supplies one-sided, non-authoritative
+endpoint evidence. Two agreeing
 complete paths supply authoritative endpoint evidence. A nonperiodic spline
 sample marginally outside its stored parameter interval is evaluated with the
 polynomial of the adjacent boundary knot span. It is not clamped or rejected.
@@ -2457,7 +2899,17 @@ semantics.
 
 ## 5. Topology and section records
 
-Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
+A planar face can have one strictly convex polygon perimeter of typed line
+edges and disjoint two-edge circular hole loops. Each circle loop has two
+distinct circle carriers with one center, radius, and axis parallel to the
+plane normal. Its closed native pcurve paths have diametrically opposite
+endpoints. Every polygon edge places all other polygon vertices strictly on
+its interior side. Every circle center lies farther than its radius from each
+polygon edge, and every center pair is farther apart than the sum of their
+radii. These conditions establish the polygon as the outer loop and each
+circle as an inner loop.
+
+Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths or proved planar-cap parameter paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 
 Use the following order to select a body count:
 
@@ -4284,6 +4736,44 @@ parameter interval. Off-axis centers, unequal local radii, apex or pole points,
 nonpositive cone ratios, ambiguous torus branches, and misaligned frames do not
 define this pcurve.
 
+A partial stored cylinder domain selects a circular edge interval when the
+circle has the same axis line and radius, both endpoint heights agree and
+lie inside the axial limits, both endpoint angles have unique lifts inside
+the angular limits, and the angular midpoint maps onto the circle. All
+incident partial domains select the same directed arc. A full-turn domain
+leaves arc selection to the boundary chart. The edge starts at angle zero
+in its oriented circle frame and ends at the selected positive angular span.
+An agreeing native endpoint pair witnesses the complete projected circle
+pcurve with that interval.
+
+Two partial cylinder domains define a shared straight generator when their
+axis lines and radii agree and exactly one angular boundary of each domain
+contains both edge vertices. A direct eight-slot endpoint chart or a counted
+two-row chart supplies two complete parameter paths. At least one path has
+exactly constant `u` and distinct axial endpoints. Each full path stays inside
+its stored domain, maps to the same ordered vertex pair, and has angular
+travel within the angular tolerance and radius-scaled positional tolerance.
+The constant-`u` path fixes the line origin and the cylinder axis fixes its
+direction. The oriented edge interval spans its two vertices.
+
+A complete plane chart maps solved boundary vertices to cap parameters.
+For a two-circle loop, these parameters match both proved circle intervals,
+the two segments meet in traversal order, and all vertices lie in the cap
+plane. Each present native endpoint path agrees with the projected endpoint
+pair in either orientation. Two antipodal endpoints, two half-turn intervals,
+and opposite arc midpoints define one complete circular boundary.
+
+A planar cap with one strictly convex polygon and disjoint circular holes
+has one exterior loop. Its polygon edges have line carriers. Each circular
+hole has two distinct circle edges with the same center, radius, and axis
+line. Their chart endpoints are antipodal. When either edge has a stored circle
+interval, both edges have complete intervals whose endpoints match the chart
+endpoints. Each interval spans pi, and their interval midpoints lie on opposite
+halves. A cap loop projected from solved vertices requires this complete
+interval proof. Each closed disk
+lies strictly inside every polygon edge, and each pair of disks is strictly
+separate. The polygon precedes its interior loops.
+
 When a native circular edge with no native pcurve candidate is a sphere or
 torus meridian, its plane contains the surface axis. A sphere meridian is a
 great circle centered at the sphere center. Its oriented plane normal and the
@@ -5311,10 +5801,13 @@ invalid neutral dependency order.
 
 The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates over the normalized parameter `t` from zero through one. `theta` is in degrees. Constant positive `r` with affine `theta(t)` and affine `z(t)` is a circular helix: its angular travel divided by 360 is the signed revolution count, `z(1) - z(0)` is its signed axial rise, and `theta(0)` is its start angle. The source curve-equation entity retains its native placement axis as source data.
 
-A curve-equation entity carries its placement in `local_sys f9 <dimensions> <count> <body>`. The scalar body is bounded by the following named field and uses the stateful local-system lane; it is part of the equation entity rather than a reference to a separate coordinate-system entity. For `f9 04 03`, twelve explicit slots have the same support-frame layout as a plane local system: slots 0 through 2 are the first radial direction, slots 3 through 5 are the zero rank marker, slots 6 through 8 are the second radial direction, and slots 9 through 11 are the origin. The explicit slot language includes the `18 e5` basis-vector triple and the standalone-zero forms defined for plane local systems. Orthogonal equal-scale nonzero radial directions define the unit axis by their normalized cross product. The cylindrical coordinates map through this frame as `origin + u*r*cos(theta) + v*r*sin(theta) + axis*z`. When this frame is complete and the program is a circular helix, the curve-equation feature transfers as a neutral `Helix` with the frame-derived axis origin and direction, source radius, signed axial rise per revolution, revolution count, start angle, and clockwise sense. An incomplete frame retains `HelixNativeAxis` and its native axis reference.
+A curve-equation entity carries its placement in `local_sys f9 <dimensions> <count> <body>`. The scalar body is bounded by the following named field and uses the stateful local-system lane; it is part of the equation entity rather than a reference to a separate coordinate-system entity. For `f9 04 03`, twelve explicit slots form four stored triples: slots 0 through 2 are the first radial direction, slots 3 through 5 are the zero rank marker, slots 6 through 8 are the second radial direction, and slots 9 through 11 are the origin. The explicit slot language includes the `18 e5` basis-vector triple and the standalone-zero forms defined for feature-definition local systems. Orthogonal equal-scale nonzero radial directions define the unit axis by their normalized cross product. The cylindrical coordinates map through this frame as `origin + u*r*cos(theta) + v*r*sin(theta) + axis*z`. When this frame is complete and the program is a circular helix, the curve-equation feature transfers as a neutral `Helix` with the frame-derived axis origin and direction, source radius, signed axial rise per revolution, revolution count, start angle, and clockwise sense. An incomplete frame retains `HelixNativeAxis` and its native axis reference.
 
-Curve-equation rows use the shared rank-two local-system image defined for
-plane rows.
+The curve-equation body `18 e4 0f e4 18 e5 0f 18 e6` expands to
+`[0, 1, 0]`, `[0, 0, 0]`, `[1, 0, 0]`, and origin `[0, 0, 0]`.
+The enclosing curve-equation entity selects this explicit support-frame
+language. Surface plane rows and named analytic prototypes select their
+compact rotation language through their enclosing record identity.
 
 A sweep operation requires an independently unique join to its section before section placement can supply operation geometry. `ActDatums` is one placement substrate; its absence does not authorize a default axis or imply that the saved section has no frame. A complete saved section-plane equation and eligible typed model-plane reference can instead place the section. An extrusion uses the placed section normal as its sweep line; its operation extent and side state separately select the oriented side. A revolution additionally requires an independently established in-plane centerline or an exact external linear-geometry reference. The nested `gsec3d_ptr.ref_planes` section-entity identifier is reference metadata, not a revolution-axis selector. The bounded internal-centerline path requires complete segment and variable tables and exactly one nondegenerate line whose resolved endpoints have section coordinate `u=0`; both endpoints are placed through the owned section frame. A resolved frame without a unique operation-to-section join leaves the operation profile unresolved. Missing or ambiguous axis evidence remains unresolved unless a separately guarded generated-carrier rule supplies it. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved carrier in an `ent_tab` profile or a closed point-incidence fallback profile defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside the resolved profile do not generate surfaces.
 

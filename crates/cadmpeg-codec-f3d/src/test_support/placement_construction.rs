@@ -65,3 +65,57 @@ pub(crate) fn metadata(
     }
     bytes
 }
+
+pub(crate) fn modern_frame(version: u32, identity: bool) -> Vec<u8> {
+    use cadmpeg_ir::native::bytes::NativeBytes;
+    let fixture: serde_json::Value = serde_json::from_str(FRAMES[0]).unwrap();
+    let raw: NativeBytes<Vec<u8>> =
+        serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
+    let native: crate::records::placement_construction::DesignPlacementConstruction =
+        serde_json::from_value(fixture["native"].clone()).unwrap();
+    let relative = |offset: u64| usize::try_from(offset - native.byte_offset).unwrap();
+    let mut bytes = raw.into_inner();
+    let arc = relative(
+        native
+            .fields
+            .arc_length_for_periodic_face
+            .as_ref()
+            .unwrap()
+            .offset,
+    );
+    if version == 16 {
+        bytes.splice(arc..arc + 8, [0]);
+    } else {
+        bytes[relative(native.fields.use_u_direction.as_ref().unwrap().offset)] = 0;
+    }
+    if identity {
+        let marker = relative(native.fields.identity.as_ref().unwrap().offset)
+            - if version == 16 { 7 } else { 0 };
+        bytes[marker] = 1;
+        bytes.drain(marker + 1..marker + 129);
+    }
+    bytes
+}
+
+pub(crate) fn modern_placements(
+) -> Vec<crate::records::placement_construction::DesignPlacementConstruction> {
+    let mut result = Vec::new();
+    crate::test_support::with_decode_context(|ctx| {
+        for version in [15, 16] {
+            for identity in [false, true] {
+                let bytes = modern_frame(version, identity);
+                result.push(
+                    crate::design::decode::placement_construction::decode_frame(
+                        ctx,
+                        "f3d:Design/BulkStream.dat:design-placement-construction#0".into(),
+                        cadmpeg_core::decode::View::over_retained(&bytes),
+                        version,
+                    )
+                    .unwrap()
+                    .unwrap(),
+                );
+            }
+        }
+    });
+    result
+}

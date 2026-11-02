@@ -373,6 +373,24 @@ pub(crate) fn neutral_assembly_group_joint_id(
     )
 }
 
+pub(crate) fn feature_input_edge_slot(
+    feature: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    edge: &cadmpeg_ir::ids::HistoricalEdgeId,
+) -> Option<i64> {
+    let prefix = feature_input_prefix(feature, previous_state_id);
+    let (_, key) = edge.as_str().split_once('#')?;
+    let slot = key
+        .strip_prefix(prefix.as_str())?
+        .strip_prefix(':')?
+        .parse::<i64>()
+        .ok()
+        .filter(|slot| *slot >= 0)?;
+    history_input_edge_id(&prefix, slot)
+        .eq(edge)
+        .then_some(slot)
+}
+
 /// The history-input state of `feature_id` relative to `previous_state_id`.
 pub(crate) fn feature_input_topology_id(
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -1098,6 +1116,39 @@ mod tests {
             super::history_input_edge_id(&prefix, 9).as_str(),
             "f3d:history-input:edge#7:a:b%20c:-3:9"
         );
+    }
+
+    #[test]
+    fn history_input_edge_slots_use_the_feature_and_state_key() {
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").unwrap();
+        let edge = super::history_input_edge_id(&super::feature_input_prefix(&feature, 7), 17);
+        assert_eq!(super::feature_input_edge_slot(&feature, 7, &edge), Some(17));
+        assert_eq!(super::feature_input_edge_slot(&feature, 8, &edge), None);
+        let other = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#other").unwrap();
+        assert_eq!(super::feature_input_edge_slot(&other, 7, &edge), None);
+        let escaped = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
+        let edge = super::history_input_edge_id(&super::feature_input_prefix(&escaped, -3), 17);
+        assert_eq!(
+            super::feature_input_edge_slot(&escaped, -3, &edge),
+            Some(17)
+        );
+    }
+
+    #[test]
+    fn history_input_edge_slots_refuse_truncated_or_incompatible_keys() {
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").unwrap();
+        for key in [
+            "f3d:history-input:edge#6:fillet:7",
+            "f3d:history-input:edge#6:fillet:7:",
+            "f3d:history-input:edge#6:fillet:7:17:18",
+            "f3d:history-input:edge#6:fillet:7:-1",
+            "f3d:history-input:edge#6:fillet:7:017",
+            "f3d:brep:entity#6:fillet:7:17",
+            "f3d:history-input:edge#17",
+        ] {
+            let edge = cadmpeg_ir::ids::HistoricalEdgeId::mint(key).unwrap();
+            assert_eq!(super::feature_input_edge_slot(&feature, 7, &edge), None);
+        }
     }
 
     #[test]

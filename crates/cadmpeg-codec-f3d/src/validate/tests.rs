@@ -26,18 +26,23 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+mod act_document_root;
 mod arithmetic;
 mod body_ownership;
 mod component_insert;
 mod component_occurrences;
 mod construction_group;
 mod construction_identity;
+mod copy_paste_bodies;
 mod edge_identity;
 mod edge_treatment_vertex;
 mod entity_bindings;
 mod extrude_extent;
 mod extrude_group;
 mod extrude_member;
+mod extrude_omitted_offset;
+mod extrude_operation_state;
+mod extrude_prologue_offsets;
 mod face_boundary;
 mod face_group;
 mod face_group_members;
@@ -656,6 +661,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: role_offset + 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -845,6 +851,7 @@ fn validation_checks_generic_sweep_group_carriers() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_062,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1461,6 +1468,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                     opaque_scalar: 0.5,
                     opaque_scalar_offset: 472,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1579,6 +1587,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_063,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1738,6 +1747,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

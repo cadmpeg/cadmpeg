@@ -4,6 +4,7 @@
 use super::nurbs_pcurve_parameter_domain;
 use crate::features::FiniteVector3;
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+use crate::math::portable::Portable;
 use crate::math::{Point2, Vector3};
 use crate::scalar::FiniteReal;
 
@@ -43,7 +44,7 @@ pub(super) fn clamped_nurbs_pcurve_endpoint_frames(
     for index in 1..points.count() {
         let point = points.point_at(index)?;
         let tangent = Point2::new(point.u - start.u, point.v - start.v);
-        if tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
+        if tangent.u.portable_hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
             start_tangent = Some(tangent);
             break;
         }
@@ -53,7 +54,7 @@ pub(super) fn clamped_nurbs_pcurve_endpoint_frames(
     for index in (0..last).rev() {
         let point = points.point_at(index)?;
         let tangent = Point2::new(end.u - point.u, end.v - point.v);
-        if tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
+        if tangent.u.portable_hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
             end_tangent = Some(tangent);
             break;
         }
@@ -70,8 +71,8 @@ pub(super) fn fitted_nurbs_offset_candidate(
     for ordinal in 0..2 {
         let (source_point, source_tangent) = source[ordinal];
         let (result_point, result_tangent) = result[ordinal];
-        let source_length = source_tangent.u.hypot(source_tangent.v);
-        let result_length = result_tangent.u.hypot(result_tangent.v);
+        let source_length = source_tangent.u.portable_hypot(source_tangent.v);
+        let result_length = result_tangent.u.portable_hypot(result_tangent.v);
         if source_length <= EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12
             || result_length <= EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12
         {

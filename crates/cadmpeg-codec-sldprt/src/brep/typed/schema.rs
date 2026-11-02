@@ -130,9 +130,37 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
     }
 }
 
+/// An edited type header of any class (spec §4.1): its node type and the
+/// offset just past its closing `Z`, where the class's first record follows
+/// without a tag of its own.
+pub(super) fn edited_header(bytes: &[u8], at: usize) -> Option<(u16, usize)> {
+    let node_type = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    let mut cursor = Cursor {
+        bytes,
+        at: at.checked_add(header::FIELD_COUNT)?,
+    };
+    let current_fields = usize::from(cursor.byte()?);
+    if current_fields == 255 {
+        return None;
+    }
+    let mut current = 0;
+    loop {
+        match cursor.byte()? {
+            b'Z' => return (current == current_fields).then_some((node_type, cursor.at)),
+            b'C' if current < current_fields => current += 1,
+            b'D' => {}
+            b'I' | b'A' if current < current_fields => {
+                cursor.field()?;
+                current += 1;
+            }
+            _ => return None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{edited_payload, Class};
+    use super::{edited_header, edited_payload, Class};
 
     fn copied(tag: u8, count: u8) -> Vec<u8> {
         let mut bytes = vec![0, tag, count];
@@ -146,6 +174,22 @@ mod tests {
         bytes.extend(name);
         bytes.extend([0, 82]);
         bytes.extend(elements.to_be_bytes());
+    }
+
+    #[test]
+    fn an_edited_header_of_any_class_ends_after_its_terminator() {
+        // A class `edited_payload` does not type, with one appended field.
+        let mut bytes = copied(0x26, 11);
+        bytes[2] = 12;
+        bytes.pop();
+        bytes.push(b'A');
+        pointer(&mut bytes, b"intersection_data", 1);
+        bytes.push(b'Z');
+        assert_eq!(edited_payload(&bytes, 0), None);
+        assert_eq!(edited_header(&bytes, 0), Some((0x26, bytes.len())));
+        // A field count the program does not reach is not a header.
+        bytes[2] = 13;
+        assert_eq!(edited_header(&bytes, 0), None);
     }
 
     #[test]

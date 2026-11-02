@@ -286,6 +286,28 @@ pub(crate) struct ResolvedGlobal {
     declaration: VersionDeclaration,
 }
 
+#[derive(Debug)]
+pub(crate) enum GlobalRecord {
+    Resolved(Box<ResolvedGlobal>),
+    Unfinished,
+}
+
+impl GlobalRecord {
+    pub(crate) fn summary_notes(&self) -> Vec<String> {
+        match self {
+            Self::Resolved(global) => global.summary_notes(),
+            Self::Unfinished => Vec::new(),
+        }
+    }
+
+    pub(crate) fn length_context(&self) -> Option<ProjectedGlobal> {
+        match self {
+            Self::Resolved(global) => global.length_context(),
+            Self::Unfinished => None,
+        }
+    }
+}
+
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProjectedGlobal {
@@ -760,6 +782,19 @@ fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
     bytes
 }
 
+enum RawOutcome {
+    Closed(RawGlobal),
+    Open(CodecError),
+}
+
+fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
+    let bytes = global_bytes(scan);
+    if bytes.is_empty() {
+        return Ok(RawOutcome::Open(malformed("section is missing")));
+    }
+    parse_raw_with(&bytes, |_, frame| Ok(frame.window_value(&bytes))).map(RawOutcome::Closed)
+}
+
 fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     let bytes = global_bytes(scan);
     parse_raw_with(&bytes, |_, frame| Ok(frame.window_value(&bytes)))
@@ -907,6 +942,24 @@ pub(crate) fn given_up() -> (ResolvedGlobal, Vec<LossNote>) {
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
     Ok(resolve_unparted(parse_raw(scan)?, GlobalForm::Ascii))
+}
+
+/// Whether the Global record ends before the Directory Entry section.
+pub(crate) enum GlobalParse {
+    Resolved,
+    Unfinished(CodecError),
+}
+
+/// Whether the Global record is finished. An unfinished record, whose record
+/// delimiter the file never reaches, carries the truncation error.
+pub(crate) fn parse_if_complete(scan: &CardScan) -> Result<GlobalParse, CodecError> {
+    match parse_outcome(scan)? {
+        RawOutcome::Open(error) => Ok(GlobalParse::Unfinished(error)),
+        RawOutcome::Closed(raw) => match raw.unframed {
+            Some(unframed) => Ok(GlobalParse::Unfinished(unframed.error)),
+            None => Ok(GlobalParse::Resolved),
+        },
+    }
 }
 
 #[cfg(test)]

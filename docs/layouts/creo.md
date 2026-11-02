@@ -95,7 +95,7 @@ Cross-checked against code:
 
 Spec §4.1 · layout: ordered slots (no stated byte offsets) · size: not stated
 
-A scalar token occupies one slot and a standalone `12` occupies one zero-valued slot; no other unclaimed byte is permitted. All eight values are finite parameter coordinates in the corresponding face spaces. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size.
+The stateful scalar stream expands literals and bounded repeats into eight slots. A standalone `12` occupies one slot with value positive pi/2. All eight values are finite parameter coordinates in the corresponding face spaces. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size.
 
 | # | Slot | Type | Endian | Src | Meaning |
 | -: | ---- | ---- | ------ | --- | ------- |
@@ -112,7 +112,7 @@ Cross-checked against code:
 
 Spec §3.4 · layout: ordered slots (no stated byte offsets) · size: not stated
 
-Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames, and by coordinate-system records. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size.
+This record describes the support-triple production of a twelve-slot local system. Other local-system productions use their enclosing record grammar. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size.
 
 | # | Slot | Type | Endian | Src | Meaning |
 | -: | ---- | ---- | ------ | --- | ------- |

@@ -53,8 +53,23 @@ pub(crate) enum InventorLossCode {
     /// Sketch curves carry entity flags whose construction meaning is
     /// unresolved.
     SketchConstructionUnresolved,
+    /// A distance dimension measured to an axis line stores twice the distance
+    /// between its operands; the dimension stays native.
+    SketchAxisDistanceNative,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
+    /// A sketch entity retains unresolved curve construction operands.
+    SketchCurveNative,
+    /// A listed sketch member has unresolved record and curve semantics.
+    SketchMemberNative,
+    /// A spline-point relation retains unresolved locus and parameter roles.
+    SketchSplinePointNative,
+    /// A spline entity retains its source curve pending exact operands.
+    SketchSplineCurveNative,
+    /// An ellipse retains its directed trim operands natively.
+    SketchEllipseCurveNative,
+    /// A midpoint relation retains unresolved curve locus semantics.
+    SketchMidpointCurveNative,
     /// Profile-body records do not decode, so the profiles that select them
     /// stay native.
     FeatureProfileBodyUndecoded,
@@ -93,8 +108,16 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsRetained,
     /// Projected sheet-metal relief and transition forms remain in native style records.
     FeatureSheetMetalStyleFormsNative,
+    /// An attached plate stays native; the note names the first refused admission check.
+    FeatureSheetMetalPlateRefused,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
+    /// `DeleteFace` Boolean construction roles remain unresolved.
+    FeatureDeleteFaceOperandsNative,
+    /// Fillet construction operands remain native.
+    FeatureFilletOperandsNative,
+    /// Chamfer construction operands remain native.
+    FeatureChamferOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
@@ -127,6 +150,10 @@ pub(crate) enum InventorLossCode {
     FeatureDerivedSourceNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
+    /// Tagging selection effects remain native.
+    FeatureTaggingNative,
+    /// Stored-body composite selections retain unresolved construction controls.
+    FeatureCompositeOperandsNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -202,7 +229,14 @@ impl InventorLossCode {
         Self::FeatureRecordMalformed,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
+        Self::SketchAxisDistanceNative,
         Self::SketchPairedAssociationUnprojected,
+        Self::SketchCurveNative,
+        Self::SketchMemberNative,
+        Self::SketchSplinePointNative,
+        Self::SketchSplineCurveNative,
+        Self::SketchEllipseCurveNative,
+        Self::SketchMidpointCurveNative,
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
@@ -221,7 +255,11 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
+        Self::FeatureSheetMetalPlateRefused,
         Self::FeatureRevolveOperandsNative,
+        Self::FeatureDeleteFaceOperandsNative,
+        Self::FeatureFilletOperandsNative,
+        Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureBodySelectionNative,
@@ -238,6 +276,8 @@ impl InventorLossCode {
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedTaggingNative,
+        Self::FeatureTaggingNative,
+        Self::FeatureCompositeOperandsNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -286,7 +326,14 @@ impl InventorLossCode {
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
+            Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
+            Self::SketchCurveNative => "sketch.curve-native",
+            Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchSplinePointNative => "sketch.spline-point-native",
+            Self::SketchSplineCurveNative => "sketch.spline-curve-native",
+            Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
+            Self::SketchMidpointCurveNative => "sketch.midpoint-curve-native",
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureRectangularPatternOperandsNative => {
@@ -319,11 +366,15 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
+            Self::FeatureFilletOperandsNative => "feature.fillet-operands-native",
+            Self::FeatureChamferOperandsNative => "feature.chamfer-operands-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
+            Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
@@ -336,6 +387,8 @@ impl InventorLossCode {
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
+            Self::FeatureTaggingNative => "feature.tagging-native",
+            Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -416,11 +469,15 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureSheetMetalPlateRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
+            | Self::FeatureFilletOperandsNative
+            | Self::FeatureChamferOperandsNative
             | Self::FeatureRevolveOperandsNative
+            | Self::FeatureDeleteFaceOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
@@ -432,10 +489,19 @@ impl InventorLossCode {
             | Self::FeatureSurfaceLoftSectionsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
+            | Self::SketchAxisDistanceNative
             | Self::SketchPairedAssociationUnprojected
+            | Self::SketchCurveNative
+            | Self::SketchMemberNative
+            | Self::SketchSplinePointNative
+            | Self::SketchSplineCurveNative
+            | Self::SketchEllipseCurveNative
+            | Self::SketchMidpointCurveNative
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedTaggingNative
+            | Self::FeatureCompositeOperandsNative
+            | Self::FeatureTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -678,7 +744,14 @@ mod tests {
                 "feature.record-malformed",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
+                "sketch.axis-distance-native",
                 "sketch.paired-association-unprojected",
+                "sketch.curve-native",
+                "sketch.member-native",
+                "sketch.spline-point-native",
+                "sketch.spline-curve-native",
+                "sketch.ellipse-curve-native",
+                "sketch.midpoint-curve-native",
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
@@ -697,7 +770,11 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
+                "feature.sheet-metal-plate-refused",
                 "feature.revolve-operands-native",
+                "feature.delete-face-operands-native",
+                "feature.fillet-operands-native",
+                "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
                 "feature.body-selection-native",
@@ -714,6 +791,8 @@ mod tests {
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-tagging-native",
+                "feature.tagging-native",
+                "feature.composite-operands-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",

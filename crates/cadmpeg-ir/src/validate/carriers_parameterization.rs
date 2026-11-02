@@ -949,38 +949,12 @@ pub(super) fn check_parameter_domains(
                         && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
-                        .is_some_and(|domain| {
-                            let [lower, upper] = domain.endpoints();
-                            if nurbs.periodic() {
-                                let period = upper - lower;
-                                let tolerance = EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9.max(
-                                    period.abs()
-                                        * EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
-                                );
-                                let edge_span = end - start;
-                                let allowed = period + tolerance;
-                                if edge_span.is_finite() && allowed.is_finite() {
-                                    edge_span <= allowed
-                                } else if start >= end {
-                                    true
-                                } else {
-                                    crate::topology::IncreasingParameterInterval::new([start, end])
-                                        .is_some_and(|edge| {
-                                            edge.scaled_span()
-                                                .quotient(domain.scaled_span())
-                                                .is_ok_and(|ratio| {
-                                                    ratio.get()
-                                                        <= 1.0
-                                                            + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
-                                                })
-                                        })
-                                }
-                            } else {
-                                parameter_in_domain(start, [lower, upper])
-                                    && parameter_in_domain(end, [lower, upper])
-                            }
-                        });
+                    valid &= nurbs_range_in_domain(
+                        nurbs,
+                        start,
+                        end,
+                        EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12,
+                    );
                 }
                 _ => {}
             }
@@ -1003,23 +977,33 @@ pub(super) fn check_parameter_domains(
     for coedge in &ir.model.coedges {
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();
-            let geometry = curves.get(use_curve.curve.as_str()).copied();
-            let mut valid = geometry.is_some();
-            if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = geometry {
-                valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
-                    .map(crate::topology::IncreasingParameterInterval::endpoints)
-                    .is_some_and(|domain| {
-                        parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
-                    });
-            }
-            if !valid {
-                super::record_finding(
+            match curves.get(use_curve.curve.as_str()).copied() {
+                None => super::record_finding(
                     findings,
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge use-curve range is outside its carrier domain"),
-                );
+                    format_args!("coedge use-curve names no curve carrier"),
+                ),
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)))
+                    if !nurbs_range_in_domain(
+                        nurbs,
+                        start,
+                        end,
+                        EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
+                    ) =>
+                {
+                    super::record_finding(
+                        findings,
+                        Check::ParameterDomain,
+                        Severity::Error,
+                        Some(coedge.id.as_str()),
+                        format_args!(
+                            "coedge use-curve range [{start}, {end}] is outside its carrier domain"
+                        ),
+                    );
+                }
+                Some(_) => {}
             }
         }
         for use_ in &coedge.pcurves {
@@ -1101,6 +1085,46 @@ fn periodic_pcurve_range_in_domain(start: f64, end: f64, domain: [f64; 2]) -> bo
                     ratio.get() <= 1.0 + EPS_CARRIERS_PARAMETERIZATION_PERIODIC_PCURVE_SPAN
                 })
         })
+}
+
+/// Whether a parameter range lies in a NURBS carrier's knot domain.
+///
+/// A periodic carrier admits any range no wider than one period, so a range
+/// that crosses the seam is valid. A non-periodic carrier admits each end
+/// within `relative_tolerance` of the domain width.
+fn nurbs_range_in_domain(
+    nurbs: &crate::geometry::nurbs::NurbsCurve,
+    start: f64,
+    end: f64,
+    relative_tolerance: f64,
+) -> bool {
+    crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(|domain| {
+        let [lower, upper] = domain.endpoints();
+        if !nurbs.periodic() {
+            return crate::math::parameter_in_domain(start, [lower, upper], relative_tolerance)
+                && crate::math::parameter_in_domain(end, [lower, upper], relative_tolerance);
+        }
+        let period = upper - lower;
+        let tolerance = EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+            .max(period.abs() * EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9);
+        let span = end - start;
+        let allowed = period + tolerance;
+        if span.is_finite() && allowed.is_finite() {
+            span <= allowed
+        } else if start >= end {
+            true
+        } else {
+            crate::topology::IncreasingParameterInterval::new([start, end]).is_some_and(|range| {
+                range
+                    .scaled_span()
+                    .quotient(domain.scaled_span())
+                    .is_ok_and(|ratio| {
+                        ratio.get()
+                            <= 1.0 + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+                    })
+            })
+        }
+    })
 }
 
 fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
