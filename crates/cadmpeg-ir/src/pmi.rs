@@ -12,6 +12,8 @@ use crate::ids::{
 };
 use crate::transform::Transform;
 
+pub mod zones;
+
 /// A model object qualified by an annotation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -160,6 +162,10 @@ pub enum DimensionKind {
     Diameter,
     /// Radius.
     Radius,
+    /// Diameter of a spherical feature.
+    SphericalDiameter,
+    /// Radius of a spherical feature.
+    SphericalRadius,
     /// Source-defined dimensional subtype.
     Other(String),
 }
@@ -358,6 +364,7 @@ pub struct PmiDimension {
     kind: DimensionKind,
     nominal: Option<PmiValue>,
     tolerance: Option<DimensionTolerance>,
+    modifiers: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -380,6 +387,9 @@ struct PmiDimensionWire {
         deserialize_with = "deserialize_tolerance"
     )]
     tolerance: Option<DimensionTolerance>,
+    /// Source-defined dimensional modifiers, such as auxiliary or statistical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    modifiers: Vec<String>,
 }
 
 impl PmiDimension {
@@ -394,6 +404,7 @@ impl PmiDimension {
             kind,
             nominal,
             tolerance,
+            modifiers: Vec::new(),
         })
     }
 
@@ -407,7 +418,9 @@ impl PmiDimension {
             DimensionKind::Size
             | DimensionKind::Location
             | DimensionKind::Diameter
-            | DimensionKind::Radius => Some(PmiQuantity::Length),
+            | DimensionKind::Radius
+            | DimensionKind::SphericalDiameter
+            | DimensionKind::SphericalRadius => Some(PmiQuantity::Length),
             DimensionKind::Other(_) => nominal.map(|value| value.quantity),
         };
         if nominal.is_some_and(|value| Some(value.quantity) != expected) {
@@ -440,6 +453,24 @@ impl PmiDimension {
     #[must_use]
     pub fn kind(&self) -> &DimensionKind {
         &self.kind
+    }
+
+    /// Dimensional modifiers in canonical source spelling.
+    pub fn modifiers(&self) -> &[String] {
+        &self.modifiers
+    }
+
+    /// Attach distinct, nonblank dimensional modifiers.
+    pub fn with_modifiers(mut self, modifiers: Vec<String>) -> Result<Self, String> {
+        let mut seen = std::collections::BTreeSet::new();
+        if modifiers
+            .iter()
+            .any(|modifier| modifier.trim().is_empty() || !seen.insert(modifier))
+        {
+            return Err("dimension modifiers must be distinct and nonblank".into());
+        }
+        self.modifiers = modifiers;
+        Ok(self)
     }
 
     /// Nominal quantity, when supplied.
@@ -510,7 +541,7 @@ impl TryFrom<PmiDimensionWire> for PmiDimension {
     type Error = String;
 
     fn try_from(value: PmiDimensionWire) -> Result<Self, Self::Error> {
-        Self::new(value.dimension, value.nominal, value.tolerance)
+        Self::new(value.dimension, value.nominal, value.tolerance)?.with_modifiers(value.modifiers)
     }
 }
 
@@ -587,6 +618,9 @@ pub enum PmiDefinition {
         /// Source-defined geometric-tolerance modifiers.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         modifiers: Vec<String>,
+        /// Tolerance-zone size, form, and projected extent constraints.
+        #[serde(default, skip_serializing_if = "zones::ToleranceConstraints::is_empty")]
+        constraints: zones::ToleranceConstraints,
     },
     /// Size or location dimension with optional plus/minus limits.
     Dimension(PmiDimension),
@@ -1070,6 +1104,7 @@ mod tests {
                 defined_area_second_unit: None,
                 datum_system: Some(dimension_id),
                 modifiers: Vec::new(),
+                constraints: super::zones::ToleranceConstraints::default(),
             },
         });
 
@@ -1210,6 +1245,33 @@ mod tests {
         let reference =
             serde_json::from_value::<super::DatumReference>(wire).expect("one is a precedence");
         assert_eq!(reference.precedence.get(), 1);
+    }
+
+    #[test]
+    fn dimensional_modifiers_are_distinct_nonblank_and_serialized() {
+        let dimension = || {
+            PmiDimension::new(
+                DimensionKind::SphericalRadius,
+                Some(PmiValue::new(2.0, PmiQuantity::Length).expect("length")),
+                None,
+            )
+            .expect("dimension")
+        };
+        for invalid in [
+            vec![String::new()],
+            vec!["auxiliary".into(), "auxiliary".into()],
+        ] {
+            assert!(dimension().with_modifiers(invalid).is_err());
+        }
+        let dimension = dimension()
+            .with_modifiers(vec!["auxiliary".into()])
+            .expect("modifier");
+        let wire = serde_json::to_value(&dimension).expect("serialize dimension");
+        assert_eq!(wire["modifiers"], serde_json::json!(["auxiliary"]));
+        assert_eq!(
+            serde_json::from_value::<PmiDimension>(wire).expect("read dimension"),
+            dimension
+        );
     }
 }
 

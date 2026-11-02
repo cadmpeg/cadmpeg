@@ -1273,6 +1273,7 @@ fn project_with_topology(
                     defined_area_second_unit,
                     datum_system,
                     modifiers: tolerance_modifiers(entity),
+                    constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
                 },
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
@@ -1457,6 +1458,7 @@ fn project_lower_profile_tier(
             defined_area_second_unit: None,
             datum_system: None,
             modifiers: vec!["composite_lower_tier".into()],
+            constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
         },
     }))
 }

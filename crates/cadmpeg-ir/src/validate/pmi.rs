@@ -31,7 +31,16 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
     let products = typed_identities!(product_definitions);
     let occurrences = typed_identities!(occurrences);
     for annotation in &ir.model.pmi {
-        for target in &annotation.targets {
+        let zone_targets = match &annotation.definition {
+            PmiDefinition::GeometricTolerance { constraints, .. } => constraints
+                .zones
+                .iter()
+                .flat_map(|zone| &zone.projections)
+                .flat_map(crate::pmi::zones::ToleranceProjection::targets)
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
+        for target in annotation.targets.iter().chain(zone_targets) {
             let resolved = match target {
                 PmiTarget::Body { body } => bodies.contains(body.as_str()),
                 PmiTarget::Face { face } => faces.contains(face.as_str()),
@@ -70,7 +79,34 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            PmiDefinition::GeometricTolerance { datum_system, .. } => {
+            PmiDefinition::GeometricTolerance {
+                datum_system,
+                magnitude,
+                modifiers,
+                constraints,
+                ..
+            } => {
+                let invalid_maximum = constraints.maximum.is_some_and(|maximum| {
+                    maximum.get() <= magnitude.get().value.get()
+                        || !modifiers.iter().any(|modifier| {
+                            matches!(
+                                modifier.as_str(),
+                                "maximum_material_requirement" | "least_material_requirement"
+                            )
+                        })
+                });
+                if (!constraints.is_empty()
+                    && magnitude.get().quantity != crate::pmi::PmiQuantity::Length)
+                    || invalid_maximum
+                {
+                    record_finding(
+                        findings,
+                        Check::Pmi,
+                        crate::report::Severity::Error,
+                        Some(annotation.id.as_str()),
+                        format_args!("inconsistent geometric tolerance-zone constraints"),
+                    );
+                }
                 if let Some(id) = datum_system {
                     if !matches!(
                         definitions.get(id.as_str()).copied(),

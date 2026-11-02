@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
-    PmiQuantity, PmiTarget,
+    PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -4478,7 +4478,16 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            for target in &annotation.targets {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { constraints, .. } => constraints
+                    .zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            for target in annotation.targets.iter().chain(zone_targets) {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
@@ -4724,14 +4733,17 @@ impl<'a> Builder<'a> {
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
-                        }
+                        DimensionKind::Diameter
+                        | DimensionKind::Radius
+                        | DimensionKind::SphericalDiameter
+                        | DimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
                         DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
                     };
                     let characteristic_name = match dimension {
                         DimensionKind::Diameter => "diameter",
                         DimensionKind::Radius => "radius",
+                        DimensionKind::SphericalDiameter => "spherical diameter",
+                        DimensionKind::SphericalRadius => "spherical radius",
                         _ => name,
                     };
                     let parameters = match dimension {
@@ -4744,7 +4756,8 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    let items = if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance
+                    let mut items = if let Some(DimensionTolerance::Limits { lower, upper }) =
+                        tolerance
                     {
                         let mut items = Vec::new();
                         if let Some(value) = nominal {
@@ -4763,6 +4776,24 @@ impl<'a> Builder<'a> {
                             .into_iter()
                             .collect()
                     };
+                    let mut secondary_modifiers = Vec::new();
+                    for modifier in relation.modifiers() {
+                        let item = self.emitter.emit(
+                            "DESCRIPTIVE_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", string(modifier)),
+                        );
+                        if matches!(modifier.as_str(), "auxiliary" | "theoretical") {
+                            items.push(item);
+                        } else {
+                            secondary_modifiers.push(item);
+                        }
+                    }
+                    if !secondary_modifiers.is_empty() {
+                        items.push(self.emitter.emit(
+                            "COMPOUND_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", refs(&secondary_modifiers)),
+                        ));
+                    }
                     if !items.is_empty() {
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
@@ -4817,7 +4848,14 @@ impl<'a> Builder<'a> {
                     defined_area_second_unit,
                     datum_system,
                     modifiers,
+                    constraints,
                 } => {
+                    if constraints.zones.iter().flat_map(|zone| &zone.projections)
+                        .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                        .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
+                    {
+                        continue;
+                    }
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
                         GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
@@ -4860,6 +4898,8 @@ impl<'a> Builder<'a> {
                         && modifiers.is_empty()
                         && defined_unit.is_none()
                         && area_unit.is_none()
+                        && constraints.displacement.is_none()
+                        && constraints.maximum.is_none()
                     {
                         self.emitter.emit(
                             entity,
@@ -4901,11 +4941,71 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
+                        if let Some(displacement) = constraints.displacement {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                displacement.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!("UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE({value})"));
+                        }
+                        if let Some(maximum) = constraints.maximum {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                maximum.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE({value})"
+                            ));
+                        }
                         parts.push(format!("{entity}()"));
+                        parts.sort();
                         self.emitter
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
+                    for zone in &constraints.zones {
+                        let form = self
+                            .emitter
+                            .emit("TOLERANCE_ZONE_FORM", &string(zone.form.as_str()));
+                        let zone_ref = self.emitter.emit(
+                            "TOLERANCE_ZONE",
+                            &format!("'','',{pds},.F.,({tolerance_ref}),{form}"),
+                        );
+                        for projection in &zone.projections {
+                            let aspect = |target: &PmiTarget| match target {
+                                PmiTarget::ShapeAspect { source_id } => {
+                                    aspects.get(source_id.as_str()).copied()
+                                }
+                                _ => None,
+                            };
+                            let Some(end) = aspect(&projection.end) else {
+                                continue;
+                            };
+                            let boundaries = projection
+                                .boundaries
+                                .iter()
+                                .filter_map(aspect)
+                                .collect::<Vec<_>>();
+                            let length = self.emit_pmi_measure(PmiValue::from_parts(
+                                projection.length.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            let mut args =
+                                format!("{zone_ref},{},{end},{length}", refs(&boundaries));
+                            let entity = if let Some(offset) = projection.offset {
+                                let offset = self.emit_pmi_measure(PmiValue::from_parts(
+                                    offset.magnitude(),
+                                    PmiQuantity::Length,
+                                ));
+                                args.push(',');
+                                args.push_str(&offset.to_string());
+                                "PROJECTED_ZONE_DEFINITION_WITH_OFFSET"
+                            } else {
+                                "PROJECTED_ZONE_DEFINITION"
+                            };
+                            self.emitter.emit(entity, &args);
+                        }
+                    }
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::Datum { .. }
