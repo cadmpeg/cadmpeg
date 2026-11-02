@@ -119,6 +119,7 @@
         "colliders": "omitted",
         "configurations": "dropped",
         "curves": "written",
+        "declared_measures": "omitted",
         "drawings": "dropped",
         "edges": "written",
         "faces": "written",
@@ -1006,7 +1007,7 @@
     "notes": [],
     "synthesis_cause": {
       "cause": "patch_declined",
-      "reason": "unsupported writer content: current uncarried typed records require FCStd graph regeneration"
+      "reason": "unsupported writer content: the typed property has no independent projection"
     },
     "write_path": {
       "fidelity": {
