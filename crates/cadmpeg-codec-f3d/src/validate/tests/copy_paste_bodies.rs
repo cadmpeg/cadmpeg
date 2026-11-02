@@ -16,12 +16,10 @@ fn binding(entity_suffix: u32, ordinal: u32) -> DesignBodyBinding {
         "stream": "Design/BulkStream.dat",
         "pair_count": 4,
         "pair_ordinal": ordinal,
+        "map_ordinal": 0,
         "asm_body_key": ordinal,
-        "asm_body_key_offset": 1000 + 100 * ordinal,
         "entity_suffix": entity_suffix,
-        "entity_suffix_offset": 1008 + 100 * ordinal,
         "blob_name": "BREP.synthetic.smb",
-        "blob_name_offset": 1050 + 100 * ordinal,
         "body": format!("f3d:brep/synthetic.smb/brep:entity#{ordinal}"),
     }))
     .unwrap()

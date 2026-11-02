@@ -147,11 +147,8 @@ fn archive_session_changed_allowance_decision_reexecutes_member() {
     let session = F3dCodec.open_archive(&ctx, view).unwrap();
     let mut member = session.decode_member("leaf.f3d").unwrap();
     let budget_arena = DecodeArena::new();
-    let budget = DecodeContext::new(
-        &budget_arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
+    let (budget, _budget_view) =
+        DecodeContext::from_root_bytes(&bytes, &budget_arena, &policy).unwrap();
     let task_arena = DecodeArena::new();
     let task = budget.checkpoint().resume(&task_arena);
     let available = task.retained_allowance();
