@@ -582,6 +582,38 @@ fn compact_plane_rotation_expands_repeats_and_preserves_all_axis_signs() {
 }
 
 #[test]
+fn compact_plane_rotation_origins_read_tiny_magnitude_literals() {
+    let rotation = [0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f];
+    for (literal, bits) in [
+        (&[0x1a, 0x7f, 0xff][..], 0x3c7f_ffff_ffff_ffff_u64),
+        (&[0x1b, 0xf0, 0x00][..], 0x3cf0_0000_0000_0000),
+        (&[0x20, 0x4a, 0x10][..], 0x3d4a_1000_0000_0000),
+        (&[0x33, 0x7f, 0xff][..], 0xbc7f_ffff_ffff_ffff),
+        (&[0x34, 0xe8, 0x00][..], 0xbce8_0000_0000_0000),
+        (&[0x39, 0x08, 0x00][..], 0xbd08_0000_0000_0000),
+        (
+            &[0x3c, 0x35, 0x79, 0x8e, 0xc0, 0x00, 0x00, 0x06][..],
+            0xbe35_798e_c000_0006,
+        ),
+        (&[0x00, 0x04, 0xfe][..], 0x3fef_ffff_ffff_fffe),
+    ] {
+        let body = [&rotation[..], literal, &[0x18, 0x2f, 0x24, 0x00]].concat();
+        let slots = super::decode_compact_plane_rotation(&body, &ScalarCache::default())
+            .expect("compact rotation")
+            .expect("complete origin")
+            .get();
+        assert_eq!(slots[9].to_bits(), bits);
+        assert_eq!(&slots[10..], &[0.0, 10.0]);
+    }
+    let undefined = [&rotation[..], &[0x00, 0x05, 0xfe, 0x18, 0x2f, 0x24, 0x00]].concat();
+    assert!(
+        super::decode_compact_plane_rotation(&undefined, &ScalarCache::default())
+            .expect("compact rotation")
+            .is_err()
+    );
+}
+
+#[test]
 fn compact_plane_rotation_origins_share_signed_literals_and_repeat_state() {
     let mut body = vec![0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f];
     body.extend([

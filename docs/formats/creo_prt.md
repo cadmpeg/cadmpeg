@@ -2076,6 +2076,23 @@ positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
 
+The stateful plane scalar lane, which the compact rotation origin, the
+stateful standard envelope, and the support-frame origins share, also defines
+these tiny-magnitude literals. A three-byte form `<prefix> XX YY`
+reconstructs a double from `(byte0, XX, fill...)`.
+
+| Prefix | `byte0` | Fill                  |
+| ------ | ------- | --------------------- |
+| `1a`   | `3C`    | `YY` repeated 6 times |
+| `1b`   | `3C`    | `YY 00 00 00 00 00`   |
+| `20`   | `3D`    | `YY 00 00 00 00 00`   |
+| `33`   | `BC`    | `YY` repeated 6 times |
+| `34`   | `BC`    | `YY 00 00 00 00 00`   |
+| `39`   | `BD`    | `YY 00 00 00 00 00`   |
+
+`3c <tail7>` reconstructs `be <tail7>`. `00 04 <low>` reconstructs
+`3f ef ff ff ff ff ff <low>`, as in the angular stream (§4.1.1).
+
 An angular-stream plane rotation stores nine row-major direction slots and
 three origin slots through the angular stream defined in §4.1.1. At least one
 direction literal uses `00` or a scalar opener in `19..df`. A direction
