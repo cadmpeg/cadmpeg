@@ -164,6 +164,16 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
             .iter()
             .any(|occurrence| occurrence.native_ref.as_deref() == Some(property.owner.as_str()))
     {
+        // The product projection reads the link graph into occurrences:
+        // prototype, transform, array and membership. Those properties are
+        // consumed where the owner projects into the product graph, as
+        // `Placement` and `Group` are elsewhere.
+        if matches!(
+            property.name.as_str(),
+            "LinkPlacement" | "PlacementList" | "ElementList"
+        ) {
+            return true;
+        }
         return crate::property_policy::has_neutral_form(&property.name);
     }
     false
