@@ -442,11 +442,31 @@ fn decode_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<Decoded, CodecError> {
+    // The required root has no owning part yet, so a part-scoped expansion
+    // refusal would stay fused and the session close would re-raise it.
+    // Acknowledge it here through the part runner, then report the root
+    // as unsupported: without its root member there is no document.
+    let opened = match ctx.run_part(|| archive::open_root(ctx, root)) {
+        Err(fatal) => return Err(fatal),
+        Ok(Ok(opened)) => opened,
+        Ok(Err(error)) => match &error {
+            CodecError::ResourceLimit(limit)
+                if limit.scope == cadmpeg_core::decode::LimitScope::Part
+                    && limit.dimension
+                        == cadmpeg_core::decode::ResourceDimension::DecompressedBytes =>
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "STEP ZIP root member cannot be expanded under the caller allowance: {limit}"
+                )));
+            }
+            _ => return Err(error),
+        },
+    };
     let archive::OpenedRoot {
         archive,
         view: root_view,
         data_start: _,
-    } = archive::open_root(ctx, root)?;
+    } = opened;
     let stream = cadmpeg_ir::StreamName::try_from(archive::ROOT_NAME.to_owned())
         .map_err(|_| CodecError::malformed("STEP ZIP root stream name is empty"))?;
     let (exchange, diagnostics, parts) = parse::parts::parse(root_view, ctx, Some(stream))?;
