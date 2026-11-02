@@ -37,9 +37,10 @@ fn repro_body_binding_accepts_anonymous_stream_and_blob() {
     let original = serde_json::json!({
         "id":"f3d:PLANTED_SOURCE/Design1/BulkStream.dat:design-body-binding#16",
         "stream":"PLANTED_SOURCE/Design1/BulkStream.dat", "pair_count":1,
-        "pair_ordinal":0, "asm_body_key":1, "asm_body_key_offset":16,
-        "entity_suffix":7, "entity_suffix_offset":24,
-        "blob_name":"BREP.PLANTED_FILE.smb", "blob_name_offset":32,
+        "pair_ordinal":0, "asm_body_key":1,
+        "entity_suffix":7,
+        "blob_name":"BREP.PLANTED_FILE.smb",
+        "map_ordinal":0,
         "body":null
     });
     let mut original = original;
@@ -70,9 +71,10 @@ fn repro_xref_stream_keeps_occurrence_and_member_joins() {
     let mut original = serde_json::json!({
         "id":"f3d:xref/PLANTED_CONTEXT/occurrence-7/PLANTED_SOURCE/Design1/BulkStream.dat:design-body-binding#16",
         "stream":"PLANTED_SOURCE/Design1/BulkStream.dat", "pair_count":1,
-        "pair_ordinal":0, "asm_body_key":1, "asm_body_key_offset":16,
-        "entity_suffix":7, "entity_suffix_offset":24,
-        "blob_name":"BREP.PLANTED_FILE.smb", "blob_name_offset":32
+        "pair_ordinal":0, "asm_body_key":1,
+        "entity_suffix":7,
+        "blob_name":"BREP.PLANTED_FILE.smb",
+        "map_ordinal":0
     });
     let _: crate::records::bodies::DesignBodyBinding =
         serde_json::from_value(original.clone()).unwrap();
