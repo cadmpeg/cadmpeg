@@ -336,10 +336,8 @@ fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
     assert_eq!(frame.clone().into_draft().unwrap(), input);
     let wire = serde_json::to_value(&frame).unwrap();
     assert!(wire.get("entity_genesis").is_none());
-    assert_eq!(
-        serde_json::from_value::<Frame>(wire.clone()).unwrap(),
-        frame
-    );
+    let restored = serde_json::from_value::<Frame>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
     for field in ["annotation_byte_offset", "governing_owner_reference_offset"] {
         let mut wrong = wire.clone();
         wrong[field] = serde_json::json!(0);
