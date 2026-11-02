@@ -2174,7 +2174,7 @@ In a direct-normal body, the zero-rank triple is exactly zero. The parameter
 direction and stored normal are finite, nonzero, equal-scale, and orthogonal.
 Normalize both triples to obtain the plane chart. Use the stored normal as the
 plane normal; do not replace it with a cross product.
-When the stored frame and its z-mirrored parameter-direction and normal branch
+When a direct-normal frame and its z-mirrored parameter-direction and normal branch
 define distinct planes, complete direct, prototype, and two-chart pcurve
 endpoint pairs are equivalent branch witnesses. Admit the unique branch whose
 chart endpoints lie on the adjacent face carrier. No compatible or multiple
