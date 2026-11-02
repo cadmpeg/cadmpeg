@@ -761,6 +761,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The decoder admits the flag bytes and does not project them.
 
+### DR-222. `MoveFace` and `OffsetFaces` selections that the transition leaves open
+
+**Question.** Which faces does a `MoveFace` or `OffsetFaces` group select when its transition deletes a face, updates a face without a plane or cylinder row, or moves more faces than the group has distinct members?
+
+**Known.** The specification states the selection from the surface rows of the transition when no selected face can be missing from the moved set. A selected face can leave the moved set by deletion, and a selected face on a cone, sphere, torus, or spline surface has no row to compare. A face tangent to a selected face moves with it, so a larger moved set holds unselected faces. Each group member is a bounded-face recipe.
+
+**Need.** The mapping from a bounded-face member recipe to the face it selects, or a surface comparison for the other surface forms.
+
+**Conflict.** None.
+
+**Note.** Keep the group as the native selection.
+
 ### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?

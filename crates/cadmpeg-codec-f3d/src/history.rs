@@ -24,6 +24,7 @@ pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod loop_index;
+mod move_face;
 mod output_chain;
 mod recipe_index;
 mod reference_edge;
@@ -3028,11 +3029,13 @@ pub(crate) fn bind_feature_face_selections(
             let Some(history) = histories.get(history) else {
                 break 'feature_edit;
             };
-            let Some(transition) = history
-                .states()
-                .get(state)
-                .and_then(|state| state.transition.as_ref())
-            else {
+            let (Some(selection_state_row), Some(selection_previous_row)) = (
+                history.states().get(state),
+                history.states().get(selection_previous),
+            ) else {
+                break 'feature_edit;
+            };
+            let Some(transition) = selection_state_row.transition.as_ref() else {
                 break 'feature_edit;
             };
             match definition {
@@ -3110,14 +3113,20 @@ pub(crate) fn bind_feature_face_selections(
                     }
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
+                    cadmpeg_ir::features::FeatureOperation::MoveFace { faces, motion },
                 ) => {
-                    selection::bind_face_selection(
+                    move_face::bind_move_face_selection(
                         faces,
+                        motion,
+                        feature_id,
                         scope,
                         groups,
-                        operands,
-                        &transition.topology.faces.updated,
+                        &move_face::MoveFaceStates {
+                            histories,
+                            history,
+                            state: selection_state_row,
+                            previous: selection_previous_row,
+                        },
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -3228,7 +3237,14 @@ fn face_selection_state<'a>(
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     let (history, state, previous) =
         unique_history_state_pair(histories, state_id, previous_state_id)?;
-    if state.transition.as_ref()?.previous_state_id != Some(previous_state_id) {
+    let spans_transitions = matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
+        )
+    );
+    if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+    {
         return None;
     }
     let (history_index, state_index) = history_state_indexes(histories, history, state)?;

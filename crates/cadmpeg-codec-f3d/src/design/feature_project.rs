@@ -1260,13 +1260,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         crate::records::feature::scope::DesignFeatureKind::MoveFace
                             | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                     ) {
-                        project_move_face(scope, construction_groups, face_operands)?
-                            .unwrap_or_else(|| {
-                                FeatureDefinition::Operation(FeatureOperation::Native {
-                                    kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
-                                })
+                        project_move_face(scope, construction_groups)?.unwrap_or_else(|| {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
                             })
+                        })
                     } else if matches!(
                         scope.kind(),
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
@@ -3703,16 +3702,12 @@ pub(super) fn project_offset_faces(
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return Ok(None),
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
-        faces
-    } else {
-        let group = or_none!(single_operand_group(
-            groups,
-            scope,
-            DesignOperandRole::ROLE_0X10
-        ));
-        cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
-    };
+    let faces =
+        if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
+            cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
+        } else {
+            or_none!(direct_face_selection(scope, operands))
+        };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveFace {
             faces,
@@ -8107,7 +8102,6 @@ fn project_split_face(
 fn project_move_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FaceMotion, FaceSelection, FeatureDefinition, FeatureDirection3, FeatureOperation,
@@ -8143,20 +8137,9 @@ fn project_move_face(
     );
     let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(translation));
     let distance = or_none!(cadmpeg_ir::scalar::Length::new(translation.norm()));
-    let faces = resolved_historical_face_group(
-        scope,
-        scope.previous_history_state_id(),
-        group,
-        face_operands,
-    )
-    .map_or_else(
-        || resolved_face_group(group, face_operands),
-        |face| Ok(Some(face)),
-    )?
-    .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveFace {
-            faces,
+            faces: FaceSelection::Native(group.id.clone()),
             motion: FaceMotion::Translate {
                 direction: FeatureDirection3::from(direction),
                 distance,
