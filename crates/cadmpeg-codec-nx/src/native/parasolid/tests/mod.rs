@@ -105,7 +105,7 @@ use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::entity_references::EntityReferences;
 use crate::parasolid::name_references::NameReferences;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use crate::records::group::GroupSelector;
 use std::num::NonZeroU32;
 
@@ -119,7 +119,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -342,7 +342,7 @@ fn structured_value_families_match_only_their_declared_field_codes() {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -417,7 +417,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(field_names_xmt),
@@ -559,7 +559,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(25),
@@ -805,7 +805,7 @@ fn topology_attribute_class_uses_resolve_type_80_definitions_by_xmt() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 80,
-        name: crate::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string())
+        name: cadmpeg_core::printable::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string())
             .unwrap(),
         type_id: std::num::NonZeroU32::new(9000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
@@ -890,7 +890,7 @@ fn topology_attribute_class_uses_follow_type_81_owner_references() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
         identifier_inflated_offset: 10,
-        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,

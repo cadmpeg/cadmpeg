@@ -30,7 +30,7 @@ pub(crate) mod unicode_value;
 
 pub(crate) mod counted_values;
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;

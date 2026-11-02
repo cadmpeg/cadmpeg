@@ -4,7 +4,8 @@
 use serde::ser::SerializeSeq;
 use serde::Serialize;
 
-pub(crate) struct IterWire<I>(pub(crate) I);
+/// A serializable sequence over a cloneable iterator.
+pub struct IterWire<I>(pub I);
 
 impl<I> Serialize for IterWire<I>
 where

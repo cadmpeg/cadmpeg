@@ -3,7 +3,7 @@
 
 use super::group::GroupReferenceStatus;
 use super::region::RegionFields;
-use crate::iter_wire::IterWire;
+use cadmpeg_core::iter_wire::IterWire;
 use crate::records::group::GroupSelector;
 use serde::Serialize;
 

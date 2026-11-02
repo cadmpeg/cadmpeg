@@ -4,7 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::FeatureConstructionMember;
-use crate::iter_wire::IterWire;
+use cadmpeg_core::iter_wire::IterWire;
 use crate::om::branch_items::BranchItems;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};

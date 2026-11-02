@@ -4,7 +4,7 @@
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::iter_wire::IterWire;
+use cadmpeg_core::iter_wire::IterWire;
 use crate::om::nonempty::NonEmpty;
 
 /// Two independent admitted lists with equal nonzero cardinality.

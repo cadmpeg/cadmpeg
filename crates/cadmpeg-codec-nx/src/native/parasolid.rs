@@ -31,7 +31,7 @@ mod entity51_wire;
 use crate::parasolid::counted_values::CountedValues;
 use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
 use crate::parasolid::unicode_value::UnicodeValue;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use entity51_wire::Entity51Wire;
 pub(super) mod named_fields;
 use named_fields::NamedField;
@@ -2175,7 +2175,7 @@ pub(super) fn parasolid_attribute_definitions(
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
         for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
             let name = definition.name.as_str().to_owned();
-            let name = crate::printable_string::PrintableString::new(name)
+            let name = cadmpeg_core::printable::PrintableString::new(name)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             let id = parasolid_record_id(
                 stream_ordinal,
@@ -2515,7 +2515,7 @@ pub(super) fn parasolid_entity_value_records(
                 record.offset,
             );
             let text = record.value.as_str().to_owned();
-            let value = crate::printable_string::PrintableString::new(text)
+            let value = cadmpeg_core::printable::PrintableString::new(text)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};

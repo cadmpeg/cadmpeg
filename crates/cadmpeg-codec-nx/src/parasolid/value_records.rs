@@ -5,7 +5,7 @@ use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::parasolid::counted_values::{BorrowedValues, CountedValues};
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};

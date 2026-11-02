@@ -95,10 +95,8 @@ mod evaluation;
 mod framing;
 mod geometry;
 mod grouping;
-mod immutable_text;
 mod inspect;
 mod intersection;
-mod iter_wire;
 mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.
@@ -110,7 +108,6 @@ mod om;
 mod om_tokens;
 mod parasolid;
 mod payload_text;
-mod printable_string;
 mod records;
 mod scan_notes;
 mod topology;

@@ -1,8 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty printable ASCII values shared by parsed and retained records.
 
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for String {}
+    impl Sealed for &str {}
+}
+
+/// Immutable borrowed or owned text storage for a checked string.
+pub trait ImmutableText: sealed::Sealed + AsRef<str> {}
+impl ImmutableText for String {}
+impl ImmutableText for &str {}
+
+/// A nonempty value of printable ASCII bytes, space included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PrintableString<S>(S);
+pub struct PrintableString<S>(S);
 
 const NOT_PRINTABLE: &str = "value: must be nonempty printable ASCII";
 
@@ -13,20 +25,28 @@ fn printable(bytes: &[u8]) -> bool {
             .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
 }
 
-impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
-    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
+impl<S: ImmutableText> PrintableString<S> {
+    /// Admit text that is nonempty printable ASCII.
+    ///
+    /// # Errors
+    ///
+    /// Returns a static message when the text is empty or holds another byte.
+    pub fn new(value: S) -> Result<Self, &'static str> {
         if !printable(value.as_ref().as_bytes()) {
             return Err(NOT_PRINTABLE);
         }
         Ok(Self(value))
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    /// The checked text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
         self.0.as_ref()
     }
 
-    #[cfg(test)]
-    pub(crate) fn into_inner(self) -> S {
+    /// The checked storage.
+    #[must_use]
+    pub fn into_inner(self) -> S {
         self.0
     }
 }
@@ -34,7 +54,11 @@ impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
 impl<'a> PrintableString<&'a str> {
     /// Admit raw bytes. The check stops at the first byte that is not
     /// printable ASCII, so it never reads past the end of a printable run.
-    pub(crate) fn from_bytes(bytes: &'a [u8]) -> Result<Self, &'static str> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a static message when the bytes are empty or hold another byte.
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, &'static str> {
         if !printable(bytes) {
             return Err(NOT_PRINTABLE);
         }
@@ -43,12 +67,14 @@ impl<'a> PrintableString<&'a str> {
             .map_err(|_| NOT_PRINTABLE)
     }
 
-    pub(crate) fn into_owned(self) -> PrintableString<String> {
+    /// Copy the checked text into owned storage.
+    #[must_use]
+    pub fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PrintableString<S> {
+impl<S: ImmutableText> serde::Serialize for PrintableString<S> {
     fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         serializer.serialize_str(self.as_str())
     }

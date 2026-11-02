@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::reference_index::FeatureReferenceToken;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 const PREFIX: &[u8] = &crate::layout::named_construction_target_prefix::MAGIC_VALUE;
 const NAME_PREFIX: &[u8] = &crate::layout::named_construction_name_prefix::MAGIC_VALUE;
