@@ -167,6 +167,9 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
+    /// A Hole placed by distances from two reference edges retains those
+    /// distances natively; its placement is the carrier point.
+    HoleReferenceDimensionsNative,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -497,6 +500,7 @@ impl F3dLossCode {
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
         Self::HolePlacementUnproven,
+        Self::HoleReferenceDimensionsNative,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -701,6 +705,7 @@ impl F3dLossCode {
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
+            Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
@@ -923,6 +928,7 @@ impl F3dLossCode {
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1093,6 +1099,7 @@ impl F3dLossCode {
             | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1329,6 +1336,7 @@ mod tests {
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-placement-unproven",
+                "feature.hole-reference-dimensions-native",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
