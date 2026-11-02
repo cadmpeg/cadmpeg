@@ -312,7 +312,7 @@ name = "design_parameter_legacy_287_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
-anchor = "Class tag `287` uses the compact-owned parameter prefix"
+anchor = "Class tag `287` can use the compact-owned parameter prefix"
 size = 45
 note = "Offsets are relative to the class-287 parameter header through the compact expression length. The variable expression is followed by the exact five-byte trailer 00 00 00 00 00 or 00 00 00 01 00."
 

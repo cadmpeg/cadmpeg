@@ -237,3 +237,25 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     assert_eq!(unparsed.stream, stream);
     assert_eq!(unparsed.count, 3);
 }
+
+#[test]
+fn class_287_frame_outside_the_compact_form_reads_as_a_wide_owned_parameter() {
+    let mut frame = parameter_record(Some(0x106), "360 deg", "AlongAngle", Some("deg"), "d1", 6.0);
+    frame[4..7].copy_from_slice(b"287");
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    frame[31..35].copy_from_slice(&1u32.to_le_bytes());
+    frame.splice(22..22, [0; 4]);
+    let expression_end = 50 + 4 + 2 * "360 deg".len();
+    frame.splice(expression_end..expression_end, [0; 2]);
+    let parameter = parse_design_parameter_record(&frame).expect("wide owned class-287 parameter");
+    assert_eq!(parameter.class_tag.as_str(), "287");
+    assert_eq!(parameter.owner_record_index(), Some(0x106));
+    assert_eq!(parameter.source_kind(), "AlongAngle");
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|field| (field.value.code(), field.offset)),
+        Some((6, 26))
+    );
+}
