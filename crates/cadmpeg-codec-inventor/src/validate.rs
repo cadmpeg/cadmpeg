@@ -2101,6 +2101,13 @@ fn validate_features(
                     Some((*parameter, design.value.as_ref()?))
                 },
                 |reference| {
+                    let ordinal = reference.record_ordinal()?;
+                    let parameter = feature_parameters.get(&(token, ordinal))?.as_ref()?;
+                    let native = parameter.id();
+                    let design = parameter_values.get(native.as_str())?.as_ref()?;
+                    Some(design.id.clone())
+                },
+                |reference| {
                     revolve_dimensions
                         .get(&(token, reference.record_ordinal()?))?
                         .as_ref()

@@ -146,8 +146,8 @@ fn thread_validation_accepts_metric_and_inch_coarse_and_fine_and_rejects_forged_
             "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
         }))?);
         let mut feature = serde_json::to_value(annotation(data.pm_dc_features[0].id()))?;
-        feature["definition"]["diameter"] = serde_json::json!(diameter_mm);
-        feature["definition"]["pitch"] = serde_json::json!(pitch_mm);
+        feature["definition"]["diameter"] = serde_json::json!({"kind": "literal", "value": diameter_mm});
+        feature["definition"]["pitch"] = serde_json::json!({"kind": "literal", "value": pitch_mm});
         feature["definition"]["standard"] = serde_json::json!(standard);
         feature["definition"]["designation"] = serde_json::json!(designation);
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -158,8 +158,8 @@ fn thread_validation_accepts_metric_and_inch_coarse_and_fine_and_rejects_forged_
         crate::validate::validate_features(&ctx, &ir, &data, &mut findings)?;
         assert!(findings.is_empty(), "{findings:?}");
         for (field, invalid) in [
-            ("diameter", serde_json::json!(diameter_mm * 2.0)),
-            ("pitch", serde_json::json!(pitch_mm * 2.0)),
+            ("diameter", serde_json::json!({"kind": "literal", "value": diameter_mm * 2.0})),
+            ("pitch", serde_json::json!({"kind": "literal", "value": pitch_mm * 2.0})),
             ("standard", serde_json::json!("other")),
             ("designation", serde_json::json!("other")),
             ("modeled", serde_json::json!(true)),
