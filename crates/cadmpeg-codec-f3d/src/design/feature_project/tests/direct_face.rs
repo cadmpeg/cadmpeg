@@ -28,7 +28,9 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 thickness_offset: 0,
             });
         }
-        DesignScopePayloadMut::Shell(slot) => {
+        DesignScopePayloadMut::Shell(slot)
+        | DesignScopePayloadMut::Schale(slot)
+        | DesignScopePayloadMut::Vaciado(slot) => {
             *slot = Some(DesignShellOperation {
                 thickness: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
@@ -457,4 +459,24 @@ fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
         panic!("expected a face move");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn vaciado_projects_like_shell() {
+    let scope = scope(DesignFeatureKind::Vaciado);
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let FeatureOperation::Shell {
+        bodies,
+        removed_faces,
+        ..
+    } = projected_operation(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ))
+    else {
+        panic!("expected a shell from Vaciado");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
+    assert_eq!(bodies, None);
 }

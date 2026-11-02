@@ -251,6 +251,40 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 }
 
 #[test]
+fn dispatcher_projects_plano_de_obra_frame() {
+    let mut referenced = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::PlanoDeObra,
+        10,
+    );
+    referenced.with_work_plane_transform(
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+    );
+    referenced.with_work_plane_reference(11);
+
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[referenced];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if frame.origin() == Point3::new(0.0, 0.0, 0.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
+    ));
+}
+
+#[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
     use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};
     use cadmpeg_ir::features::VertexSelection;
