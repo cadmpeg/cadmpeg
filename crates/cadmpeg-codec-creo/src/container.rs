@@ -356,6 +356,7 @@ pub(crate) struct ContainerScan<'a> {
 }
 
 /// Native model name and its source position.
+#[derive(Clone)]
 pub(crate) struct ModelName {
     pub(crate) name: String,
     pub(crate) offset: usize,
@@ -373,9 +374,10 @@ pub(crate) struct FramingScan<'a> {
     pub(crate) data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
     pub(crate) version_line: String,
-    /// Native root model filename or name from `CMNM` or a binary
-    /// `model_name` field.
+    /// Native root model name from a binary `model_name` field or `CMNM`.
     pub(crate) model_name: Option<ModelName>,
+    /// Common name from a unique `CMNM` header record.
+    pub(crate) common_name: Option<ModelName>,
     /// Enumerated sections in file order.
     pub(crate) sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
@@ -2684,7 +2686,7 @@ pub(crate) fn scan_bytes<'a>(
     }
 
     let version_line = line_at(&data, 0);
-    let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
+    let common_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2713,6 +2715,10 @@ pub(crate) fn scan_bytes<'a>(
         let scopes = legacy_scope_ranges(&data, framing, &sections);
         framing.persistence = legacy::scan(&data, scopes)?;
     }
+    let mut model_name = legacy_ascii
+        .is_some()
+        .then(|| common_name.clone())
+        .flatten();
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii
             .as_ref()
@@ -2756,6 +2762,9 @@ pub(crate) fn scan_bytes<'a>(
         if let Some((name, offset)) = native_model_name(sections) {
             model_name = Some(ModelName { name, offset });
         }
+    }
+    if model_name.is_none() {
+        model_name.clone_from(&common_name);
     }
     let legacy_ascii = layout.legacy_ascii();
     let legacy_geometry = legacy_ascii
@@ -3078,6 +3087,7 @@ pub(crate) fn scan_bytes<'a>(
             data,
             version_line,
             model_name,
+            common_name,
             sections: retained_sections,
             expanded_sections,
             expansion_losses,

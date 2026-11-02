@@ -23,27 +23,29 @@ Later generations use a table of contents followed by named binary sections.
 #<SectionName>\n <payload>
 ```
 
-The header record `#- CMNM <hhh><name>` stores the native model filename. The
-three ASCII hexadecimal digits give the filename byte length. Trailing ASCII
-spaces pad the counted field. A unique nonempty `.prt` filename supplies the
-current relation model name after removing that padding and suffix.
+The header record `#- CMNM <hhh><name>` stores the model's common name. The
+three ASCII hexadecimal digits give the name byte length. Trailing ASCII
+spaces pad the counted field.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
-those bytes is not part of the name. A repeated or malformed `CMNM` record does
-not establish identity.
+those bytes is not part of the name. A common name is free text. It can be the
+model filename, such as `widget.prt`, or a descriptive title, such as
+`MOUNTING PLATE 40 MM`. A repeated or malformed `CMNM` record establishes no
+common name.
 
-Binary model-data sections can store the same identity in the named field
+Binary model-data sections store the model name in the named field
 `e0 0a model_name\0`. Its value is a NUL-terminated UTF-8 string. One leading
 `f1` framing byte may precede the string and is not part of the value. The
-single-byte `e1` value is null and does not establish identity. When no unique
-`CMNM` record establishes identity, the first nonempty, non-control-valued
-`model_name` field in section order is the root model name. A missing valid
-value leaves model identity undefined. This field already contains the relation
-model name; the `CMNM` filename form supplies it after its `.prt` suffix is
-removed.
+single-byte `e1` value is null. Outside the legacy ASCII layout, the first
+nonempty, non-control-valued `model_name` field in section order is the root
+model name. When no such field exists, a unique `CMNM` common name is the root
+model name. A missing valid value leaves model identity undefined. The relation
+model name is the root model name with a trailing `.prt` removed; a root model
+name that contains any other `.` defines no relation model name.
 
-Legacy ASCII sections can repeat `model_name` in separate scopes. A nonempty
-value other than the `NULL` placeholder in source order is the root source
-identity. Other scoped values remain separate model references. Relation
+Legacy ASCII sections can repeat `model_name` in separate scopes. In the legacy
+ASCII layout, a unique `CMNM` common name is the root model name. Without one,
+a nonempty value other than the `NULL` placeholder in source order is the root
+source identity. Other scoped values remain separate model references. Relation
 evaluation uses the stricter unique-root resolver and does not use this
 fallback when those references conflict.
 
