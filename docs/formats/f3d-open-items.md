@@ -1085,6 +1085,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
 
+### DR-241. Byte 29 of a 262-byte zero-body Base Feature frame
+
+**Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
+
+**Known.** `f3d.md` §3.1 "In the 262-byte zero-body form" defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope.
+
+**Need.** Frames of this form that differ only in byte 29.
+
+**Conflict.** None.
+
+**Note.** Two other public frames of this form store zero at offset 29.
+
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
 **Question.** How do ownerless fixed scalar lanes assign radius laws to several role-`0x0000000800000000` Fillet groups?
