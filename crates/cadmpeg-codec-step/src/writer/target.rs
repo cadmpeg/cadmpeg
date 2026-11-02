@@ -117,6 +117,7 @@ fn coverage(schema: StepSchema) -> ArenaDispositions {
         presentation_documents: Dropped,
         view_presentations: Dropped,
         tessellations: ap242(schema.supports_tessellation()),
+        point_clouds: Omitted,
         appearances: Written,
         appearance_bindings: Written,
         attributes: Dropped,

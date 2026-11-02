@@ -75,6 +75,7 @@ impl ExportLossCode {
             | EntityKind::DeclaredMeasure => LossTaxonomy::MetadataNotTransferred,
             EntityKind::SemanticAnnotation | EntityKind::PmiAnnotation => LossTaxonomy::PmiOmitted,
             EntityKind::Tessellation => LossTaxonomy::TessellationOmitted,
+            EntityKind::PointCloud => LossTaxonomy::PointCloudOmitted,
             EntityKind::Appearance | EntityKind::AppearanceBinding => {
                 LossTaxonomy::MaterialNotTransferred
             }
