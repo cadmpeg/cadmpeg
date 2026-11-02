@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-105. Hole Extents To
-
-**Question.** Which extent controls and face operands define an Extents To hole?
-
-**Known.** To and Through All both store a non-distance depth with the name `SavedHoleDepthInNonDistanceExtentsCase`. Control `1` with that property, no `HoleDepth`, and only start-face operands defines Through All.
-
-**Need.** A file with a To-face hole.
-
-**Conflict.** None.
-
-**Note.** A Distance hole that reaches a face does not define the To-face form.
-
 ### DR-106. Hole extent leading word
 
 **Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
@@ -820,6 +808,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** Keep the operand proofs for these groups.
+
+### DR-243. Face of an Extents To Hole
+
+**Question.** Which face does the member of an Extents To Hole's role-`0x0000000500000000` group name?
+
+**Known.** The member is a `face` recipe operand that follows the group in the scope reference table. In the controls, its candidate lanes name the bottom face of the plate, which is where the hole ends. The start-face `bounded_face` operands of the same scopes name that bottom face too, although the hole starts on the top face.
+
+**Need.** Controls that end the hole on a side face, on a face of another body, and with an offset from the face.
+
+**Conflict.** None.
+
+**Note.** Keep the group as the native face selection.
 
 ### DR-124. Partial-curve operands in profile selections
 
