@@ -732,10 +732,18 @@ pub(crate) struct DesignConstructionOperandGroupFrameWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     trailing_flags: Vec<DesignConstructionOperandFlag>,
     opaque_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_opaque_index_offset"
+    )]
     opaque_index_offset: Option<u64>,
     opaque_scalar: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_opaque_scalar_offset"
+    )]
     opaque_scalar_offset: Option<u64>,
     pub(crate) variant: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -2203,6 +2211,14 @@ cadmpeg_core::named_optional_field!(
     deserialize_second_related_identity,
     u64,
     "second_related_identity"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_opaque_index_offset, u64, "opaque_index_offset");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_opaque_scalar_offset,
+    u64,
+    "opaque_scalar_offset"
 );
 
 #[cfg(test)]
