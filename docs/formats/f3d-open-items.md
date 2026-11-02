@@ -1013,6 +1013,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The public FHCS frame selects points with persistent identities `117` and `119`.
 
+### DR-240. Presentation frame whose label states another value
+
+**Question.** Which dimension does a direct presentation frame govern when its label states a value that differs from the first following dimension owner's parameter?
+
+**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. The decoder retains the native dimensional constraint when the owner has two frames, and when the operand measurement differs from the parameter.
+
+**Need.** Files with the direct two-operand frame form that create a dimension, delete or replace it, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
+
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
 **Question.** How do ownerless fixed scalar lanes assign radius laws to several role-`0x0000000800000000` Fillet groups?
