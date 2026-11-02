@@ -202,25 +202,33 @@ pub(super) fn decode(
             }
         }
     }
-    for attribute in &ir.model.attributes {
-        if let cadmpeg_ir::attributes::AttributeTarget::Point(point) = &attribute.target {
-            if let Some(id) = step_id(point.as_str()) {
-                referenced_validation_points.insert(id);
-            }
-        }
-    }
+    let dropped: BTreeSet<u64> = ir
+        .model
+        .points
+        .iter()
+        .filter_map(|point| {
+            let id = step_id(point.id.as_str())?;
+            (validation_points.contains(&id) && !referenced_validation_points.contains(&id))
+                .then_some(id)
+        })
+        .collect();
     ir.model.points.retain(|point| {
-        let Some(id) = point
-            .id
-            .as_str()
-            .rsplit('#')
-            .next()
-            .and_then(|id| id.parse::<u64>().ok())
-        else {
+        // A point whose identity names no entity is not a validation point.
+        let Some(id) = step_id(point.id.as_str()) else {
             return true;
         };
-        !validation_points.contains(&id) || referenced_validation_points.contains(&id)
+        !dropped.contains(&id)
     });
+    if !dropped.is_empty() {
+        ir.model.attributes.retain(|attribute| {
+            match &attribute.target {
+                cadmpeg_ir::attributes::AttributeTarget::Point(point) => {
+                    step_id(point.as_str()).is_none_or(|id| !dropped.contains(&id))
+                }
+                _ => true,
+            }
+        });
+    }
     Ok(StageOutcome {
         value: (),
         claims: typed,
