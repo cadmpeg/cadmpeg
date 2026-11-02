@@ -785,6 +785,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the group as the native selection.
 
+### DR-223. `Shell` removed faces that the transition leaves open
+
+**Question.** Which faces does a `Shell` removed-face group select when a face that its transition updates or deletes has no plane or cylinder row, when the changed faces without a wall outnumber the group's distinct members, or when the shell stores unequal or skin walls?
+
+**Known.** The specification states the removed faces from the walls of the transition when every changed face has a row to compare. A face on a cone, sphere, torus, or spline surface has no row. A kept face whose wall merges with another face, or a removed face with an unrelated face at the wall offset, changes the count. Each group member is a bounded-face recipe.
+
+**Need.** The mapping from a bounded-face member recipe to the face it selects, or a wall comparison for the other surface forms.
+
+**Conflict.** None.
+
+**Note.** Keep the group as the native selection.
+
 ### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?

@@ -21,6 +21,7 @@ mod planes;
 mod recipe_projection;
 mod recipes;
 mod selections;
+mod shell;
 mod state_pairs;
 mod state_visits;
 mod surface_stitch;
