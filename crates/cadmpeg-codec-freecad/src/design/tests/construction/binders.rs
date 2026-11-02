@@ -133,13 +133,16 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             ),
             "{name} expected native {kind}, got {actual:?}"
         );
-        crate::design::tests::assert_native_retention(result, 1);
-        assert_eq!(non_placement_losses(result.report()).len(), 1);
-        assert!(non_placement_losses(result.report()).iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        // The shared Source box carries no Placement, so its primitive frame
+        // stays unresolved beside the native-kind retention, as in
+        // part_scale's Native scale. Malformed carriers add their own
+        // unreadable payload losses, which the helper also pins exactly.
+        crate::design::tests::assert_native_retention_with_known_losses(
+            result,
+            1,
+            "feature.primitive-placement-unresolved",
+            1,
+        );
     }
 
     let shape_absent = decode(&document(Some(("ShapeBind", "TraceSupport", ""))));
