@@ -58,6 +58,24 @@ impl<'a> Field<'a> {
         Self { name, kind }
     }
 }
+/// The XT pointer at `at` and its width in bytes: a short pointer up to
+/// `0x7fff`, else a negated magnitude and a quotient (`sldprt.md` §4).
+pub(crate) fn xt_pointer(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
+    let r = View::u16_be_at(bytes, at)?;
+    if r == 0 {
+        return None;
+    }
+    if r <= i16::MAX.cast_unsigned() {
+        return Some((u32::from(r), 2));
+    }
+    let magnitude = u32::from((!r).checked_add(1)?);
+    let quotient = u32::from(View::u16_be_at(bytes, at.checked_add(2)?)?);
+    if quotient == 0 || quotient > 32767 || magnitude > 32767 {
+        return None;
+    }
+    Some((quotient.checked_mul(32767)?.checked_add(magnitude)?, 4))
+}
+
 struct Cursor<'a> {
     bytes: &'a [u8],
     at: usize,
@@ -84,19 +102,9 @@ impl<'a> Cursor<'a> {
         n.is_finite().then_some(n)
     }
     fn reference(&mut self) -> Option<u32> {
-        let r = self.short()?;
-        if r == 0 {
-            return None;
-        }
-        if r <= i16::MAX.cast_unsigned() {
-            return Some(u32::from(r));
-        }
-        let magnitude = u32::from((!r).checked_add(1)?);
-        let quotient = u32::from(self.short()?);
-        if quotient == 0 || quotient > 32767 || magnitude > 32767 {
-            return None;
-        }
-        quotient.checked_mul(32767)?.checked_add(magnitude)
+        let (reference, width) = xt_pointer(self.bytes, self.at)?;
+        self.at = self.at.checked_add(width)?;
+        Some(reference)
     }
     fn string(&mut self) -> Option<&'a str> {
         let count = usize::from(self.byte()?);

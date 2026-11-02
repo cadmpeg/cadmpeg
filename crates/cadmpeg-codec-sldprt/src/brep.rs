@@ -56,6 +56,28 @@ mod typed;
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 const LEN_TO_MM: f64 = 1000.0;
 
+fn record_starts(bytes: &[u8], offset: usize, tag: u8) -> impl Iterator<Item = usize> {
+    let at = offset
+        .checked_add(2)
+        .filter(|end| bytes.get(offset..*end) == Some(&[0, tag]));
+    let prefixed = at
+        .filter(|at| bytes.get(*at) == Some(&0xff))
+        .and_then(|at| at.checked_add(1));
+    [prefixed, at].into_iter().flatten()
+}
+
+fn native_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
+    let mut refs = [0; N];
+    for reference in &mut refs {
+        *reference = cadmpeg_parasolid::pointer::read_at(bytes, at)?;
+    }
+    Some(refs)
+}
+
+fn word_at(bytes: &[u8], at: usize) -> Option<u32> {
+    View::u16_be_at(bytes, at).map(u32::from)
+}
+
 pub(crate) mod feature_source;
 pub(crate) mod graph;
 
@@ -230,7 +252,7 @@ pub(crate) enum Carrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CurveCarrier {
-    attr: u16,
+    attr: u32,
     offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
@@ -251,7 +273,7 @@ impl CurveCarrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SurfaceCarrier {
-    attr: u16,
+    attr: u32,
     offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: SurfaceGeometry,
@@ -298,7 +320,7 @@ fn parse_carrier_at_marker(
     body: &[u8],
     off: usize,
     tt: u8,
-    attr: u16,
+    attr: u32,
     n: usize,
     marker_at: usize,
 ) -> Option<Carrier> {
@@ -318,11 +340,11 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    let reversed = match body.get(marker_at) {
-        Some(&MARKER_REVERSED) => Some(true),
-        Some(&MARKER_AGAINST_UNLINKED_EDGES) => Some(false),
-        _ => None,
-    };
+    let reversed = Some(match body.get(marker_at) {
+        Some(&MARKER_REVERSED) => true,
+        Some(&MARKER_AGAINST_UNLINKED_EDGES) => false,
+        _ => return None,
+    });
     decode_carrier_values(tt, vals, attr, (off, end), reversed)
 }
 
@@ -337,16 +359,29 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tt = *body.get(off.checked_add(1)?)?;
     let n = analytic_value_count(tt)?;
 
-    // The optional 0xff after the tag shifts the fixed header by one byte.
-    let tag_end = off.checked_add(2)?;
-    let has_ff = body.get(tag_end) == Some(&0xff);
-    let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let attr = View::u16_be_at(body, hdr)?;
-    let mut candidates = analytic_marker_candidates(body, hdr)?
-        .into_iter()
-        .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
-    let carrier = candidates.next()?;
-    candidates.next().is_none().then_some(carrier)
+    let mut candidates = Vec::new();
+    for hdr in record_starts(body, off, tt) {
+        let parsed = (|| {
+            let mut at = hdr;
+            let attr = cadmpeg_parasolid::pointer::read_at(body, &mut at)?;
+            (attr > 1).then_some(())?;
+            View::u32_be_at(body, at)?;
+            at += 4;
+            native_refs::<5>(body, &mut at)?;
+            parse_carrier_at_marker(body, off, tt, attr, n, at)
+        })();
+        candidates.extend(parsed);
+        if let Some(attr) = word_at(body, hdr).filter(|attr| *attr > 1 && *attr <= 0x7fff) {
+            for marker in analytic_marker_candidates(body, hdr)? {
+                if marker != hdr + analytic::MARKER {
+                    candidates.extend(parse_carrier_at_marker(body, off, tt, attr, n, marker));
+                }
+            }
+        }
+    }
+    let mut iter = candidates.into_iter();
+    let first = iter.next()?;
+    iter.next().is_none().then_some(first)
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
@@ -354,7 +389,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
 fn decode_carrier_values(
     tt: u8,
     v: &[f64],
-    attr: u16,
+    attr: u32,
     (offset, end): (usize, usize),
     reversed: Option<bool>,
 ) -> Option<Carrier> {
@@ -450,6 +485,7 @@ fn decode_carrier_values(
     Some(g)
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::index::scan_carriers;
@@ -492,6 +528,16 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
+    }
+
+    #[test]
+    fn largest_short_carrier_identity_keeps_the_node_id_aligned() {
+        let bytes = compact_carrier(tag::LINE, 0x7fff, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let Carrier::Curve(carrier) = parse_carrier(&bytes, 0).unwrap() else {
+            panic!("expected LINE");
+        };
+        assert_eq!(carrier.attr, 0x7fff);
+        assert_eq!(carrier.end, bytes.len());
     }
 
     #[test]

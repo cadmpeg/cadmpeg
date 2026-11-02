@@ -20,17 +20,18 @@ use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
 use crate::layout::bspline_curve_descriptor as curve_desc;
 use crate::layout::bspline_surface_descriptor as surf_desc;
+use crate::layout::parasolid_b_curve_short as b_curve;
 
 #[derive(Debug, Default)]
 struct Arrays {
-    f64s: HashMap<u16, Vec<f64>>,
-    u16s: HashMap<u16, Vec<u16>>,
-    compact: HashMap<u16, Vec<CompactArray>>,
+    f64s: HashMap<u32, Vec<f64>>,
+    u16s: HashMap<u32, Vec<u16>>,
+    compact: HashMap<u32, Vec<CompactArray>>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct CompactArray {
-    offset: usize,
+    values_at: usize,
     count: usize,
 }
 
@@ -51,9 +52,9 @@ struct CurveDescriptor {
     /// two-dimensional curve (`dimension` 3: `u·w v·w w`) from a polynomial
     /// model-space one with the same `dimension`.
     rational: bool,
-    control_attr: u16,
-    multiplicity_attr: u16,
-    knot_attr: u16,
+    control_attr: u32,
+    multiplicity_attr: u32,
+    knot_attr: u32,
 }
 
 impl CurveDescriptor {
@@ -71,7 +72,8 @@ impl CurveDescriptor {
 
 #[derive(Debug, Clone, Copy)]
 struct SurfaceDescriptor {
-    attr: u16,
+    end: usize,
+    attr: u32,
     u_periodic: bool,
     v_periodic: bool,
     u_degree: u32,
@@ -82,12 +84,9 @@ struct SurfaceDescriptor {
     v_knot_count: usize,
     rational: bool,
     dimension: usize,
-    refs: [u16; 5],
+    refs: [u32; 5],
 }
 
-// The body after the tag and optional envelope marker is fixed-width. It
-// contains the attribute plus the complete NURBS_SURF definition and the
-// five terminal array references.
 const MAX_ARRAY_VALUES: usize = 1_000_000;
 
 fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
@@ -98,19 +97,15 @@ fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
     }
 }
 
-fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescriptor> {
-    if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
-        return None;
-    }
-    let mut p = off + 2;
-    if bytes.get(p) == Some(&0xff) {
-        p += 1;
-    }
+fn parse_surface_descriptor_at(bytes: &[u8], payload: usize) -> Option<SurfaceDescriptor> {
+    let p = payload;
+    let mut fields = p + surf_desc::ATTR;
+    let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut fields)?;
+    let p = fields.checked_sub(2)?;
     let end = p.checked_add(surf_desc::LEN)?;
     if end > bytes.len() {
         return None;
     }
-    let attr = View::u16_be_at(bytes, p + surf_desc::ATTR)?;
     let u_periodic = logical_byte(bytes, p + surf_desc::U_PERIODIC)?;
     let v_periodic = logical_byte(bytes, p + surf_desc::V_PERIODIC)?;
     let u_degree = View::u16_be_at(bytes, p + surf_desc::U_DEGREE).map(u32::from)?;
@@ -139,13 +134,8 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     let _v_closed = logical_byte(bytes, p + surf_desc::V_CLOSED)?;
     let _surface_form = *bytes.get(p + surf_desc::SURFACE_FORM)?;
     let dimension = View::u16_be_at(bytes, p + surf_desc::VERTEX_DIM).map(usize::from)?;
-    let refs = [
-        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS)?,
-        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 2)?,
-        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 4)?,
-        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 6)?,
-        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 8)?,
-    ];
+    let mut refs_end = p + surf_desc::ARRAY_REFS;
+    let refs = super::native_refs::<5>(bytes, &mut refs_end)?;
 
     if attr <= 1
         || u_degree == 0
@@ -162,6 +152,7 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     }
 
     Some(SurfaceDescriptor {
+        end: refs_end,
         attr,
         u_periodic,
         v_periodic,
@@ -177,11 +168,68 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     })
 }
 
+fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescriptor> {
+    let mut candidates = super::record_starts(bytes, off, 0x7e)
+        .filter_map(|p| parse_surface_descriptor_at(bytes, p));
+    let first = candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+
 pub(super) fn surface_descriptor_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
-    parse_surface_descriptor(bytes, offset)?;
-    let body = offset.checked_add(2)?;
-    let body = body.checked_add(usize::from(bytes.get(body) == Some(&0xff)))?;
-    body.checked_add(surf_desc::LEN)
+    Some(parse_surface_descriptor(bytes, offset)?.end)
+}
+
+pub(super) fn curve_prefix_end(bytes: &[u8], off: usize) -> Option<usize> {
+    match *bytes.get(off + 1)? {
+        tag @ (0x7c | 0x86) => super::record_starts(bytes, off, tag)
+            .filter_map(|p| {
+                let attr = native_attr(bytes, p)?;
+                let (descriptor, end) = if tag == 0x86 {
+                    tripled_b_curve_nurbs(bytes, p).or_else(|| bare_b_curve_nurbs(bytes, p))?
+                } else {
+                    bare_b_curve_nurbs(bytes, p)?
+                };
+                (attr > 1 && descriptor > 1).then_some(end)
+            })
+            .min(),
+        0x88 => super::record_starts(bytes, off, 0x88)
+            .filter_map(|p| parse_curve_descriptor(bytes, p).map(|(_, _, end)| end))
+            .min(),
+        _ => None,
+    }
+}
+
+pub(super) fn referenced_array_attrs(bytes: &[u8]) -> HashSet<u32> {
+    let mut attrs = HashSet::new();
+    for descriptor in scan_curve_descriptors(bytes, |_| true).into_values() {
+        attrs.extend([
+            descriptor.control_attr,
+            descriptor.multiplicity_attr,
+            descriptor.knot_attr,
+        ]);
+    }
+    for descriptor in scan_surface_descriptors(bytes).into_values() {
+        attrs.extend(descriptor.refs);
+    }
+    attrs
+}
+
+pub(super) fn array_record_end(bytes: &[u8], off: usize, attrs: &HashSet<u32>) -> Option<usize> {
+    let tag = *bytes.get(off + 1)?;
+    let width = match tag {
+        0x2d | 0x80 => 8,
+        0x7f => 2,
+        _ => return None,
+    };
+    let p = array_body(bytes, off, tag)?;
+    let (count, attr, data) = array_header(bytes, p)?;
+    (count <= MAX_ARRAY_VALUES && attrs.contains(&attr) && attr > 1).then_some(())?;
+    let count = cadmpeg_core::decode::bounded_len(
+        cadmpeg_core::decode::u64_from_index(count),
+        width,
+        bytes.len().checked_sub(data)?,
+    )?;
+    data.checked_add(count.checked_mul(width)?)
 }
 
 fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
@@ -198,24 +246,67 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     Some(p)
 }
 
+fn array_header(bytes: &[u8], p: usize) -> Option<(usize, u32, usize)> {
+    let count = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32)?;
+    let mut at = p + arr_hdr::ATTR;
+    let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    Some((count, attr, at))
+}
+
+fn native_attr(bytes: &[u8], mut at: usize) -> Option<u32> {
+    cadmpeg_parasolid::pointer::read_at(bytes, &mut at)
+}
+
+fn wrapper_fields(bytes: &[u8], p: usize) -> Option<(u32, u32, usize)> {
+    let mut at = p;
+    let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    View::u32_be_at(bytes, at)?;
+    at += 4;
+    super::native_refs::<5>(bytes, &mut at)?;
+    matches!(bytes.get(at), Some(0x2b | 0x2d)).then_some(())?;
+    at += b_curve::NURBS - b_curve::SENSE;
+    let descriptor = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    Some((attr, descriptor, at))
+}
+
+fn wrapper_start<T>(
+    bytes: &[u8],
+    off: usize,
+    tag: u8,
+    descriptors: &HashMap<u32, T>,
+) -> Option<usize> {
+    let mut candidates = super::record_starts(bytes, off, tag).filter(|p| {
+        wrapper_fields(bytes, *p)
+            .is_some_and(|(_, descriptor, _)| descriptors.contains_key(&descriptor))
+    });
+    if let Some(first) = candidates.next() {
+        return candidates.next().is_none().then_some(first);
+    }
+    let mut p = off.checked_add(2)?;
+    if bytes.get(p) == Some(&0xff) {
+        p += 1;
+    }
+    (super::word_at(bytes, p)? <= 0x7fff).then_some(p)
+}
+
 fn scan_arrays(
     bytes: &[u8],
-    referenced_attrs: Option<&HashSet<u16>>,
-    compact_attrs: Option<&HashSet<u16>>,
+    referenced_attrs: Option<&HashSet<u32>>,
+    compact_attrs: Option<&HashSet<u32>>,
 ) -> Arrays {
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         if bytes.get(off) == Some(&0) {
             let count = usize::from(bytes[off + compact_arr::COUNT]);
             if count > 0 {
-                if let Some(attr) = View::u16_be_at(bytes, off + compact_arr::ATTR)
+                let mut values_at = off + compact_arr::ATTR;
+                if let Some(attr) = cadmpeg_parasolid::pointer::read_at(bytes, &mut values_at)
                     .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
                 {
-                    arrays
-                        .compact
-                        .entry(attr)
-                        .or_default()
-                        .push(CompactArray { offset: off, count });
+                    arrays.compact.entry(attr).or_default().push(CompactArray {
+                        count,
+                        values_at,
+                    });
                 }
             }
         }
@@ -226,10 +317,7 @@ fn scan_arrays(
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32) else {
-            continue;
-        };
-        let Some(attr) = View::u16_be_at(bytes, p + arr_hdr::ATTR) else {
+        let Some((count, attr, values_at)) = array_header(bytes, p) else {
             continue;
         };
         if attr <= 1
@@ -238,7 +326,6 @@ fn scan_arrays(
         {
             continue;
         }
-        let values_at = p + arr_hdr::LEN;
         if tag == 0x7f {
             if count
                 .checked_mul(2)
@@ -284,136 +371,203 @@ fn scan_arrays(
     arrays
 }
 
-fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>> {
-    let mut candidates = Vec::new();
-    if let Some(values) = arrays.f64s.get(&attr) {
-        candidates.push(values.clone());
-    }
-    for compact in arrays.compact.get(&attr).into_iter().flatten() {
-        if compact
-            .count
-            .checked_mul(8)
-            .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
-            .is_none_or(|end| end > bytes.len())
-        {
-            continue;
-        }
-        let Some(values) = (0..compact.count)
-            .map(|index| View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        if !candidates.contains(&values) {
-            candidates.push(values);
-        }
-    }
-    candidates
+/// The f64 arrays that `attr` can name, in scan order, repeats included.
+fn f64_array_candidates<'b>(
+    bytes: &'b [u8],
+    arrays: &'b Arrays,
+    attr: u32,
+) -> impl Iterator<Item = Vec<f64>> + 'b {
+    arrays.f64s.get(&attr).cloned().into_iter().chain(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .filter_map(move |compact| {
+                compact
+                    .count
+                    .checked_mul(8)
+                    .and_then(|size| compact.values_at.checked_add(size))
+                    .filter(|&end| end <= bytes.len())?;
+                (0..compact.count)
+                    .map(|index| View::f64_be_at(bytes, compact.values_at + index * 8))
+                    .collect::<Option<Vec<_>>>()
+            }),
+    )
 }
 
-fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>> {
-    let mut candidates = Vec::new();
-    if let Some(values) = arrays.u16s.get(&attr) {
-        candidates.push(values.clone());
-    }
-    for compact in arrays.compact.get(&attr).into_iter().flatten() {
-        if compact
-            .count
-            .checked_mul(2)
-            .and_then(|size| compact.offset.checked_add(compact_arr::LEN + size))
-            .is_none_or(|end| end > bytes.len())
-        {
-            continue;
-        }
-        let Some(values) = (0..compact.count)
-            .map(|index| View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        if !candidates.contains(&values) {
-            candidates.push(values);
-        }
-    }
-    candidates
+/// The u16 arrays that `attr` can name, in scan order, repeats included.
+fn u16_array_candidates<'b>(
+    bytes: &'b [u8],
+    arrays: &'b Arrays,
+    attr: u32,
+) -> impl Iterator<Item = Vec<u16>> + 'b {
+    arrays.u16s.get(&attr).cloned().into_iter().chain(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .filter_map(move |compact| {
+                compact
+                    .count
+                    .checked_mul(2)
+                    .and_then(|size| compact.values_at.checked_add(size))
+                    .filter(|&end| end <= bytes.len())?;
+                (0..compact.count)
+                    .map(|index| View::u16_be_at(bytes, compact.values_at + index * 2))
+                    .collect::<Option<Vec<_>>>()
+            }),
+    )
 }
 
-fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u16, count: usize) -> Option<Vec<f64>> {
-    let mut candidates = compact_f64_arrays(bytes, arrays, attr)
-        .into_iter()
-        .filter(|values| values.len() == count);
+fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u32, count: usize) -> Option<Vec<f64>> {
+    let mut candidates =
+        f64_array_candidates(bytes, arrays, attr).filter(|values| values.len() == count);
     let selected = candidates.next()?;
     candidates
         .all(|candidate| candidate == selected)
         .then_some(selected)
 }
 
-fn scan_curve_descriptors(
+fn descriptor_refs<const N: usize>(
     bytes: &[u8],
-    kind: fn(&CurveDescriptor) -> bool,
-) -> HashMap<u16, CurveDescriptor> {
-    let mut out = HashMap::new();
-    for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
-            continue;
-        }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p + curve_desc::ATTR) else {
-            continue;
-        };
-        let Some(degree) = View::u16_be_at(bytes, p + curve_desc::DEGREE).map(u32::from) else {
-            continue;
-        };
-        let Some(control_count) =
-            View::u32_be_at(bytes, p + curve_desc::CONTROL_COUNT).map(index_from_u32)
-        else {
-            continue;
-        };
-        let Some(dimension) = View::u16_be_at(bytes, p + curve_desc::DIMENSION).map(usize::from)
-        else {
-            continue;
-        };
-        let Some(control_attr) = View::u16_be_at(bytes, p + curve_desc::CONTROL_ATTR) else {
-            continue;
-        };
-        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + curve_desc::MULTIPLICITY_ATTR)
-        else {
-            continue;
-        };
-        let Some(knot_attr) = View::u16_be_at(bytes, p + curve_desc::KNOT_ATTR) else {
-            continue;
-        };
-        if attr <= 1 || !(2..=4).contains(&dimension) || control_count == 0 {
-            continue;
-        }
-        let descriptor = CurveDescriptor {
+    base: usize,
+    offsets: [usize; N],
+) -> Option<([u32; N], usize)> {
+    let mut references = [0; N];
+    let mut extra = 0;
+    let mut at = base;
+    for (reference, offset) in references.iter_mut().zip(offsets) {
+        at = base.checked_add(offset)?.checked_add(extra)?;
+        let start = at;
+        *reference = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+        extra = extra.checked_add(at.checked_sub(start)?.checked_sub(2)?)?;
+    }
+    Some((references, at))
+}
+
+fn parse_curve_descriptor(bytes: &[u8], p: usize) -> Option<(u32, CurveDescriptor, usize)> {
+    let mut at = p + curve_desc::ATTR;
+    let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    let p = at.checked_sub(2)?;
+    let degree = View::u16_be_at(bytes, p + curve_desc::DEGREE).map(u32::from)?;
+    let control_count =
+        View::u32_be_at(bytes, p + curve_desc::CONTROL_COUNT).map(index_from_u32)?;
+    let dimension = View::u16_be_at(bytes, p + curve_desc::DIMENSION).map(usize::from)?;
+    let ([control_attr, multiplicity_attr, knot_attr], at) = descriptor_refs(
+        bytes,
+        p,
+        [
+            curve_desc::CONTROL_ATTR,
+            curve_desc::MULTIPLICITY_ATTR,
+            curve_desc::KNOT_ATTR,
+        ],
+    )?;
+    (attr > 1 && (2..=4).contains(&dimension) && control_count > 0).then_some(())?;
+    Some((
+        attr,
+        CurveDescriptor {
             degree,
-            periodic: bytes.get(p + curve_desc::PERIODIC) == Some(&1),
+            periodic: logical_byte(bytes, p + curve_desc::PERIODIC)?,
             control_count,
             dimension,
-            rational: bytes.get(p + curve_desc::RATIONAL) == Some(&1),
+            rational: logical_byte(bytes, p + curve_desc::RATIONAL)?,
             control_attr,
             multiplicity_attr,
             knot_attr,
-        };
-        if kind(&descriptor) {
-            out.entry(attr).or_insert(descriptor);
+        },
+        at,
+    ))
+}
+
+fn scan_curve_descriptors(
+    bytes: &[u8],
+    kind: fn(&CurveDescriptor) -> bool,
+) -> HashMap<u32, CurveDescriptor> {
+    let mut out = HashMap::new();
+    for (off, _) in bytes.windows(2).enumerate() {
+        for p in super::record_starts(bytes, off, 0x88) {
+            if let Some((attr, descriptor, _)) = parse_curve_descriptor(bytes, p) {
+                if kind(&descriptor) {
+                    out.entry(attr).or_insert(descriptor);
+                }
+            }
         }
     }
     out
 }
 
+fn curve_descriptor_link(
+    bytes: &[u8],
+    attr_at: usize,
+    descriptors: &HashMap<u32, CurveDescriptor>,
+) -> Option<(u32, usize)> {
+    // The tripled frame checks five cell flags, so it goes first: a tripled
+    // record can also read as a bare one.
+    if let Some((nurbs, end)) =
+        tripled_b_curve_nurbs(bytes, attr_at).or_else(|| bare_b_curve_nurbs(bytes, attr_at))
+    {
+        return descriptors.contains_key(&nurbs).then_some((nurbs, end));
+    }
+    let mut start = attr_at;
+    cadmpeg_parasolid::pointer::read_at(bytes, &mut start)?;
+    start = start.checked_add(4)?;
+    let limit = attr_at
+        .checked_add(b_curve::LEN - 1)?
+        .min(bytes.len().checked_sub(1).map_or(0, |end| end));
+    (start..limit)
+        .filter_map(|at| super::word_at(bytes, at).map(|reference| (at, reference)))
+        .find_map(|(at, reference)| {
+            descriptors
+                .contains_key(&reference)
+                .then_some(reference)
+                .zip(at.checked_add(2))
+        })
+}
+
 fn curve_descriptor<'a>(
     bytes: &[u8],
     attr_at: usize,
-    descriptors: &'a HashMap<u16, CurveDescriptor>,
+    descriptors: &'a HashMap<u32, CurveDescriptor>,
 ) -> Option<&'a CurveDescriptor> {
-    (attr_at + 2..(attr_at + 24).min(bytes.len().checked_sub(1).map_or(0, |end| end)))
-        .filter_map(|at| View::u16_be_at(bytes, at))
-        .find_map(|reference| descriptors.get(&reference))
+    curve_descriptor_link(bytes, attr_at, descriptors)
+        .and_then(|(reference, _)| descriptors.get(&reference))
+}
+
+/// The `B_CURVE` pointers between its node identifier and its sense byte.
+const B_CURVE_POINTERS: usize = (b_curve::SENSE - b_curve::ATTRIBUTES) / std::mem::size_of::<u16>();
+/// Bytes a tripled pointer cell adds to a short pointer (`sldprt.md` §4.3).
+const TRIPLED_CELL_EXTRA: usize = 1;
+/// The flag byte that ends a tripled pointer cell (`sldprt.md` §4.3).
+const TRIPLED_CELL_FLAG: u8 = 1;
+
+fn bare_b_curve_nurbs(bytes: &[u8], attr_at: usize) -> Option<(u32, usize)> {
+    wrapper_fields(bytes, attr_at).map(|(_, descriptor, end)| (descriptor, end))
+}
+
+/// The `nurbs` pointer of the tripled `B_CURVE` whose attribute is at
+/// `attr_at` and the end of that pointer, when the record frames: five
+/// `[hi][lo][01]` cells, then the sense byte and the `nurbs` cell.
+fn tripled_b_curve_nurbs(bytes: &[u8], attr_at: usize) -> Option<(u32, usize)> {
+    let mut first = attr_at;
+    cadmpeg_parasolid::pointer::read_at(bytes, &mut first)?;
+    View::u32_be_at(bytes, first)?;
+    first = first.checked_add(4)?;
+    let cell = 2 + TRIPLED_CELL_EXTRA;
+    for index in 0..B_CURVE_POINTERS {
+        let flag_at = first.checked_add(index * cell + 2)?;
+        if bytes.get(flag_at) != Some(&TRIPLED_CELL_FLAG) {
+            return None;
+        }
+    }
+    let sense_at = first.checked_add(B_CURVE_POINTERS * cell)?;
+    if !matches!(bytes.get(sense_at), Some(b'+' | b'-')) {
+        return None;
+    }
+    let nurbs_at = sense_at.checked_add(1)?;
+    let nurbs = View::u16_be_at(bytes, nurbs_at)?;
+    Some((u32::from(nurbs), nurbs_at.checked_add(2)?))
 }
 
 /// Expand a compressed knot vector by its per-value multiplicities, refusing
@@ -465,7 +619,7 @@ fn multiplicity_sum(values: &[u16]) -> Option<usize> {
         .try_fold(0usize, |sum, &value| sum.checked_add(usize::from(value)))
 }
 
-fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
+fn array_span(bytes: &[u8], tag: u8, attr: u32) -> Option<(usize, usize)> {
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
@@ -473,14 +627,14 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
         let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32) else {
             continue;
         };
-        if View::u16_be_at(bytes, p + arr_hdr::ATTR) == Some(attr) {
-            return Some((p + arr_hdr::LEN, count));
+        if array_header(bytes, p).map(|(_, attr, _)| attr) == Some(attr) {
+            return Some((array_header(bytes, p)?.2, count));
         }
     }
     None
 }
 
-fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySpan> {
+fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u32) -> Vec<ArraySpan> {
     let mut spans = Vec::new();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
@@ -491,16 +645,18 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
         else {
             continue;
         };
-        if count <= MAX_ARRAY_VALUES && View::u16_be_at(bytes, p + arr_hdr::ATTR) == Some(attr) {
+        if count <= MAX_ARRAY_VALUES
+            && array_header(bytes, p).map(|(_, attr, _)| attr) == Some(attr)
+        {
             spans.push(ArraySpan {
-                start: p + arr_hdr::LEN,
+                start: array_header(bytes, p).map_or(p + arr_hdr::LEN, |(_, _, at)| at),
                 count,
             });
         }
     }
     for array in arrays.compact.get(&attr).into_iter().flatten() {
         spans.push(ArraySpan {
-            start: array.offset + compact_arr::LEN,
+            start: array.values_at,
             count: array.count,
         });
     }
@@ -532,7 +688,7 @@ fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
 fn unique_control_span(
     bytes: &[u8],
     arrays: &Arrays,
-    attr: u16,
+    attr: u32,
     old_values: &[f64],
 ) -> Option<ArraySpan> {
     let mut spans = array_spans(bytes, arrays, 0x2d, attr);
@@ -559,7 +715,7 @@ fn unique_control_span(
 fn unique_surface_knot_span(
     bytes: &[u8],
     arrays: &Arrays,
-    (knot_attr, multiplicity_attr): (u16, u16),
+    (knot_attr, multiplicity_attr): (u32, u32),
     declared_count: usize,
     old_values: &[f64],
     old_multiplicities: &[usize],
@@ -618,7 +774,7 @@ fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<(
     Some(())
 }
 
-fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Option<()> {
+fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u32, values: &[f64]) -> Option<()> {
     let (start, count) = array_span(bytes, tag, attr)?;
     if count != values.len() {
         return None;
@@ -777,7 +933,10 @@ pub(crate) fn patch_nurbs_surface(
     let Some(descriptor_at) = p.checked_add(17) else {
         return Ok(None);
     };
-    let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
+    let Some(descriptor_attr) = wrapper_fields(bytes, p)
+        .map(|(_, descriptor, _)| descriptor)
+        .or_else(|| super::word_at(bytes, descriptor_at))
+    else {
         return Ok(None);
     };
     let Some(descriptor) = descriptors.get(&descriptor_attr) else {
@@ -842,7 +1001,7 @@ pub(crate) fn patch_nurbs_surface(
 pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
-) -> HashMap<u16, CurveCarrier> {
+) -> HashMap<u32, CurveCarrier> {
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::spatial);
     let referenced_attrs = descriptors
         .values()
@@ -860,11 +1019,10 @@ pub(crate) fn scan_curve_carriers(
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
             continue;
         }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
+        let Some(p) = wrapper_start(bytes, off, 134, &descriptors) else {
+            continue;
+        };
+        let Some(attr) = native_attr(bytes, p) else {
             continue;
         };
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
@@ -955,7 +1113,7 @@ pub(crate) fn scan_curve_carriers(
 
 /// Two-dimensional `00 86` B-curves by `attr`, in stored support parameters
 /// (spec §7.6).
-pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u16, PcurveNurbs> {
+pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
     let mut out = HashMap::new();
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::planar);
     if descriptors.is_empty() {
@@ -976,11 +1134,10 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u16, PcurveNurbs> {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
             continue;
         }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
+        let Some(p) = wrapper_start(bytes, off, 134, &descriptors) else {
+            continue;
+        };
+        let Some(attr) = native_attr(bytes, p) else {
             continue;
         };
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
@@ -1033,7 +1190,7 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u16, PcurveNurbs> {
     out
 }
 
-fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u16, SurfaceDescriptor> {
+fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u32, SurfaceDescriptor> {
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
@@ -1052,17 +1209,22 @@ fn surface_knot_arrays<'a>(
     multiplicities: &'a [u16],
     declared_count: usize,
 ) -> Option<(&'a [f64], &'a [u16])> {
-    if declared_count == 0 || unique.len() != multiplicities.len() || unique.len() < declared_count
-    {
+    if unique.len() != multiplicities.len() {
         return None;
     }
-    (multiplicities[..declared_count]
-        .iter()
-        .all(|&value| value != 0)
-        && multiplicities[declared_count..]
-            .iter()
-            .all(|&value| value == 0))
-    .then_some((&unique[..declared_count], &multiplicities[..declared_count]))
+    let declared = declared_multiplicities(multiplicities, declared_count)?;
+    Some((unique.get(..declared_count)?, declared))
+}
+
+/// The first `declared_count` multiplicities, when each is non-zero and every
+/// later one is zero.
+fn declared_multiplicities(multiplicities: &[u16], declared_count: usize) -> Option<&[u16]> {
+    if declared_count == 0 {
+        return None;
+    }
+    let (declared, rest) = multiplicities.split_at_checked(declared_count)?;
+    (declared.iter().all(|&value| value != 0) && rest.iter().all(|&value| value == 0))
+        .then_some(declared)
 }
 
 #[derive(PartialEq)]
@@ -1071,41 +1233,59 @@ struct SurfaceKnotValues {
     multiplicities: Vec<u16>,
 }
 
+/// The valid multiplicities of one array length: none, one, or more than one.
+enum Multiplicities {
+    One(Vec<u16>),
+    Many,
+}
+
 fn surface_knot_values(
     bytes: &[u8],
     arrays: &Arrays,
-    knot_attr: u16,
-    multiplicity_attr: u16,
+    knot_attr: u32,
+    multiplicity_attr: u32,
     declared_count: usize,
 ) -> Option<SurfaceKnotValues> {
-    let mut resolved = Vec::<SurfaceKnotValues>::new();
-    let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
-    for multiplicities in compact_u16_arrays(bytes, arrays, multiplicity_attr) {
-        multiplicities_by_count
-            .entry(multiplicities.len())
-            .or_default()
-            .push(multiplicities);
-    }
-    for unique in compact_f64_arrays(bytes, arrays, knot_attr) {
-        let Some(multiplicity_candidates) = multiplicities_by_count.get(&unique.len()) else {
+    // The knots resolve only when every candidate pair agrees, so a second
+    // distinct pair ends the search. The valid multiplicities of a length do
+    // not depend on the knot values.
+    let mut by_count = HashMap::<usize, Multiplicities>::new();
+    for multiplicities in u16_array_candidates(bytes, arrays, multiplicity_attr) {
+        let Some(valid) = declared_multiplicities(&multiplicities, declared_count) else {
             continue;
         };
-        for multiplicities in multiplicity_candidates {
-            let Some((unique, multiplicities)) =
-                surface_knot_arrays(&unique, multiplicities, declared_count)
-            else {
-                continue;
-            };
-            let candidate = SurfaceKnotValues {
-                unique: unique.to_vec(),
-                multiplicities: multiplicities.to_vec(),
-            };
-            if !resolved.contains(&candidate) {
-                resolved.push(candidate);
+        let valid = valid.to_vec();
+        match by_count.get(&multiplicities.len()) {
+            None => {
+                by_count.insert(multiplicities.len(), Multiplicities::One(valid));
+            }
+            Some(Multiplicities::One(first)) if *first == valid => {}
+            Some(_) => {
+                by_count.insert(multiplicities.len(), Multiplicities::Many);
             }
         }
     }
-    (resolved.len() == 1).then(|| resolved.pop()).flatten()
+    let mut resolved = None::<SurfaceKnotValues>;
+    for unique in f64_array_candidates(bytes, arrays, knot_attr) {
+        let multiplicities = match by_count.get(&unique.len()) {
+            None => continue,
+            Some(Multiplicities::Many) => return None,
+            Some(Multiplicities::One(multiplicities)) => multiplicities,
+        };
+        let Some(unique) = unique.get(..declared_count) else {
+            continue;
+        };
+        let candidate = SurfaceKnotValues {
+            unique: unique.to_vec(),
+            multiplicities: multiplicities.clone(),
+        };
+        match &resolved {
+            None => resolved = Some(candidate),
+            Some(first) if *first == candidate => {}
+            Some(_) => return None,
+        }
+    }
+    resolved
 }
 
 /// Every compact NURBS surface carrier in `bytes`, keyed by attribute id.
@@ -1114,7 +1294,7 @@ fn surface_knot_values(
 pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
-) -> HashMap<u16, SurfaceCarrier> {
+) -> HashMap<u32, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
         .values()
@@ -1126,17 +1306,19 @@ pub(crate) fn scan_surface_carriers(
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
             continue;
         }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
+        let Some(p) = wrapper_start(bytes, off, 124, &descriptors) else {
+            continue;
+        };
+        let Some(attr) = native_attr(bytes, p) else {
             continue;
         };
         let Some(descriptor_at) = p.checked_add(17) else {
             continue;
         };
-        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
+        let Some(descriptor_attr) = wrapper_fields(bytes, p)
+            .map(|(_, descriptor, _)| descriptor)
+            .or_else(|| super::word_at(bytes, descriptor_at))
+        else {
             continue;
         };
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {
@@ -1295,14 +1477,168 @@ pub(crate) fn scan_surface_carriers(
     out
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::{
-        expanded_knots, scan_arrays, scan_curve_carriers, scan_surface_carriers, unique_knots,
-        unique_surface_knot_span, Arrays,
+        curve_descriptor, curve_descriptor_link, expanded_knots, scan_arrays, scan_curve_carriers,
+        scan_curve_descriptors, scan_surface_carriers, surface_knot_values, unique_knots,
+        unique_surface_knot_span, Arrays, CurveDescriptor,
     };
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+    /// A `00 86` record with attribute 10, node identifier 90 and `fields`
+    /// after it; then descriptors 40, 90 and 256 (each with its own carrier).
+    fn b_curve_with_descriptors(fields: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0x00, 0x86];
+        bytes.extend_from_slice(&10_u16.to_be_bytes());
+        bytes.extend_from_slice(&90_u32.to_be_bytes());
+        bytes.extend_from_slice(fields);
+        for (wrapper, descriptor) in [(100, 40), (120, 90), (140, 256)] {
+            bytes.extend(crate::test_support::parasolid::nurbs_curve_carrier(
+                wrapper, descriptor,
+            ));
+        }
+        bytes
+    }
+
+    fn be16s(values: &[u16]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_be_bytes())
+            .collect()
+    }
+
+    fn link(fields: &[u8]) -> Option<(u32, usize)> {
+        let bytes = b_curve_with_descriptors(fields);
+        let descriptors = scan_curve_descriptors(&bytes, CurveDescriptor::spatial);
+        curve_descriptor_link(&bytes, 2, &descriptors)
+    }
+
+    /// `copies` compact knot arrays `[0, 1]` under attribute 0x1234 and as
+    /// many compact multiplicity arrays `[2, 2]` under attribute 0x1235.
+    fn repeated_compact_knots(copies: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..copies {
+            bytes.extend_from_slice(&[0, 2, 0x12, 0x34]);
+            bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+            bytes.extend_from_slice(&1.0_f64.to_be_bytes());
+            bytes.extend_from_slice(&[0, 2, 0x12, 0x35]);
+            bytes.extend(be16s(&[2, 2]));
+        }
+        bytes
+    }
+
+    #[test]
+    fn repeated_compact_knot_arrays_resolve_once() {
+        let bytes = repeated_compact_knots(20_000);
+        let attrs = [0x1234, 0x1235].into_iter().collect();
+        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        assert_eq!(arrays.compact.get(&0x1234).map(Vec::len), Some(20_000));
+        let resolved =
+            surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).expect("one knot pair");
+        assert_eq!(resolved.unique, [0.0, 1.0]);
+        assert_eq!(resolved.multiplicities, [2, 2]);
+    }
+
+    #[test]
+    fn two_distinct_multiplicities_of_one_length_resolve_no_knots() {
+        let mut bytes = vec![0, 2, 0x12, 0x35];
+        bytes.extend(be16s(&[1, 3]));
+        bytes.extend(repeated_compact_knots(3));
+        let attrs = [0x1234, 0x1235].into_iter().collect();
+        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        assert!(surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).is_none());
+    }
+
+    #[test]
+    fn wide_compact_knot_candidates_preserve_repeats_and_ambiguity() {
+        fn pair(knot: u32, multiplicity: u32, values: &[u16]) -> Vec<u8> {
+            let mut bytes = 2_u16.to_be_bytes().to_vec();
+            pointer(&mut bytes, knot);
+            for value in [0.0_f64, 1.0] {
+                bytes.extend(value.to_be_bytes());
+            }
+            bytes.extend(2_u16.to_be_bytes());
+            pointer(&mut bytes, multiplicity);
+            bytes.extend(be16s(values));
+            bytes
+        }
+        for knot in [0x7fff, 0x8000, 0x1_0000] {
+            let multiplicity = knot + 1;
+            let mut bytes = Vec::new();
+            for _ in 0..3 {
+                bytes.extend(pair(knot, multiplicity, &[2, 2]));
+            }
+            let attrs = [knot, multiplicity].into_iter().collect();
+            let arrays = scan_arrays(&bytes, None, Some(&attrs));
+            assert_eq!(arrays.compact.get(&knot).map(Vec::len), Some(3));
+            let resolved = surface_knot_values(&bytes, &arrays, knot, multiplicity, 2)
+                .expect("one wide knot pair");
+            assert_eq!(resolved.unique, [0.0, 1.0]);
+            assert_eq!(resolved.multiplicities, [2, 2]);
+            bytes.extend(pair(knot, multiplicity, &[1, 3]));
+            let arrays = scan_arrays(&bytes, None, Some(&attrs));
+            assert!(surface_knot_values(&bytes, &arrays, knot, multiplicity, 2).is_none());
+        }
+    }
+
+    #[test]
+    fn a_b_curve_takes_its_descriptor_from_its_nurbs_pointer() {
+        // The node identifier's low half and the owner both name descriptor 90.
+        let mut fields = be16s(&[1, 90, 12, 13, 1]);
+        fields.push(b'+');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 19)));
+        let bytes = b_curve_with_descriptors(&fields);
+        let descriptors = scan_curve_descriptors(&bytes, CurveDescriptor::spatial);
+        assert_eq!(
+            curve_descriptor(&bytes, 2, &descriptors).map(|descriptor| descriptor.control_attr),
+            Some(41)
+        );
+    }
+
+    #[test]
+    fn a_wide_pointer_shifts_the_sense_byte_and_the_nurbs_pointer() {
+        // The owner names descriptor 90, which the search would take.
+        let mut fields = be16s(&[1, 90, 0xfffe, 2, 12, 1]);
+        fields.push(b'-');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 21)));
+    }
+
+    #[test]
+    fn a_tripled_b_curve_takes_its_nurbs_cell_after_its_sense_byte() {
+        // The fourth cell's low byte reads as a sense byte at +16, and the
+        // two bytes at +17 name descriptor 256.
+        let mut fields = Vec::new();
+        for pointer in [1_u16, 12, 13, 0x2b, 1] {
+            fields.extend(pointer.to_be_bytes());
+            fields.push(1);
+        }
+        fields.push(b'+');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 24)));
+    }
+
+    #[test]
+    fn a_framed_b_curve_whose_nurbs_pointer_names_no_descriptor_links_none() {
+        // The pointers `00 01 00 12` hold `01 00`, descriptor 256, across two
+        // fields; the NURBS pointer 77 names no descriptor.
+        let mut fields = be16s(&[1, 18, 13, 14, 1]);
+        fields.push(b'+');
+        fields.extend(be16s(&[77, 1]));
+        assert_eq!(link(&fields), None);
+    }
+
+    #[test]
+    fn a_b_curve_without_a_sense_byte_never_reads_its_node_identifier() {
+        let mut fields = be16s(&[2, 40, 12, 13, 1]);
+        fields.extend(be16s(&[0, 1]));
+        assert_eq!(link(&fields).map(|(attr, _)| attr), Some(40));
+    }
 
     #[test]
     fn spline_arrays_materialize_each_identity_once() {
@@ -1410,5 +1746,109 @@ mod tests {
             unique_surface_knot_span(&[], &Arrays::default(), (2, 3), 1, &[0.0], &[1]),
             None
         );
+    }
+
+    fn pointer(out: &mut Vec<u8>, value: u32) {
+        if value <= 0x7fff {
+            out.extend(u16::try_from(value).unwrap().to_be_bytes());
+        } else {
+            let low = u16::try_from(value & 0x7fff).unwrap();
+            out.extend((0x8000 | low).to_be_bytes());
+            out.extend(u16::try_from(value >> 15).unwrap().to_be_bytes());
+        }
+    }
+
+    #[test]
+    fn wide_b_curve_resolves_its_nurbs_pointer_without_selecting_other_fields() {
+        let mut descriptors =
+            scan_curve_descriptors(&b_curve_with_descriptors(&[]), CurveDescriptor::spatial);
+        let descriptor = descriptors.remove(&90).unwrap();
+        descriptors.insert(0x1_0000, descriptor);
+        for own in [0x7fff, 0x8000, 0xffff, 0x1_0000] {
+            for nurbs in [0x1_0000, 0x1_0001] {
+                let mut bytes = Vec::new();
+                pointer(&mut bytes, own);
+                bytes.extend(0x0028_0028_u32.to_be_bytes());
+                for reference in [1, 40, 1, 1, 1] {
+                    pointer(&mut bytes, reference);
+                }
+                bytes.push(b'+');
+                pointer(&mut bytes, nurbs);
+                let expected = (nurbs == 0x1_0000).then_some((nurbs, bytes.len()));
+                assert_eq!(curve_descriptor_link(&bytes, 0, &descriptors), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn tripled_b_curve_with_wide_identity_reads_its_nurbs_cell() {
+        let descriptors =
+            scan_curve_descriptors(&b_curve_with_descriptors(&[]), CurveDescriptor::spatial);
+        for own in [0x7fff, 0x8000, 0x1_0000] {
+            let mut bytes = Vec::new();
+            pointer(&mut bytes, own);
+            bytes.extend(0x005a_005a_u32.to_be_bytes());
+            for reference in [1_u16, 12, 13, 0x2b, 1] {
+                bytes.extend(reference.to_be_bytes());
+                bytes.push(1);
+            }
+            bytes.push(b'+');
+            bytes.extend(40_u16.to_be_bytes());
+            assert_eq!(
+                curve_descriptor_link(&bytes, 0, &descriptors),
+                Some((40, bytes.len()))
+            );
+        }
+    }
+
+    #[test]
+    fn wide_spline_references_select_the_control_and_knot_arrays() {
+        let mut bytes = vec![0, 0x86, 0xff];
+        pointer(&mut bytes, 0xffff);
+        bytes.extend(1_u32.to_be_bytes());
+        for _ in 0..5 {
+            pointer(&mut bytes, 1);
+        }
+        bytes.push(b'+');
+        pointer(&mut bytes, 0x1_0000);
+        pointer(&mut bytes, 1);
+        bytes.extend([0, 0x88, 0xff]);
+        pointer(&mut bytes, 0x1_0000);
+        bytes.extend(1_u16.to_be_bytes());
+        bytes.extend(2_u32.to_be_bytes());
+        bytes.extend(3_u16.to_be_bytes());
+        bytes.extend(2_u32.to_be_bytes());
+        bytes.extend([0, 0, 0, 0, 1]);
+        for reference in [0x1_0001, 0x1_0002, 0x1_0003] {
+            pointer(&mut bytes, reference);
+        }
+        for (tag, attr, values) in [
+            (0x2d, 0x1_0001, &[0.0_f64, 0.0, 0.0, 0.001, 0.0, 0.0][..]),
+            (0x80, 0x1_0003, &[0.0, 1.0][..]),
+        ] {
+            bytes.extend([0, tag]);
+            bytes.extend(u32::try_from(values.len()).unwrap().to_be_bytes());
+            pointer(&mut bytes, attr);
+            for value in values {
+                bytes.extend(value.to_be_bytes());
+            }
+        }
+        bytes.extend([0, 0x7f]);
+        bytes.extend(2_u32.to_be_bytes());
+        pointer(&mut bytes, 0x1_0002);
+        bytes.extend([0, 2, 0, 2]);
+        let mut refusals = Vec::new();
+        let curves = super::scan_curve_carriers(&bytes, &mut refusals);
+        assert!(refusals.is_empty());
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[&0xffff].geometry.solved() else {
+            panic!("NURBS carrier");
+        };
+        assert_eq!(curve.degree(), 1);
+        let NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
+            panic!("polynomial poles");
+        };
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].get().x, 0.0);
+        assert_eq!(points[1].get().x, 1.0);
     }
 }

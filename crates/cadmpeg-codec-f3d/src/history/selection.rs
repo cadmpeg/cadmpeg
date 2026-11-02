@@ -317,6 +317,17 @@ pub(super) fn bind_face_selection(
     {
         return;
     }
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
+        if let Some(resolved) = crate::design::face_resolve::resolved_historical_face_group(
+            scope,
+            scope.previous_history_state_id(),
+            group,
+            operands,
+        ) {
+            *selection = resolved;
+        }
+        return;
+    }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             scope,
@@ -1521,9 +1532,9 @@ pub(super) fn unique_mirror_plane_candidate(
 }
 
 #[derive(Clone)]
-pub(super) struct HistoricalMirrorPlane {
+pub(crate) struct HistoricalMirrorPlane {
     pub(super) origin: cadmpeg_ir::math::Point3,
-    pub(super) normal: cadmpeg_ir::math::Vector3,
+    pub(crate) normal: cadmpeg_ir::math::Vector3,
 }
 
 /// Resolve the three built-in Design Geometry origin planes.
@@ -1532,7 +1543,7 @@ pub(super) struct HistoricalMirrorPlane {
 /// is admitted here only after both the primary and persistent history lookups
 /// have found no candidate, so a topology identity with the same value keeps
 /// the normal historical-resolution path.
-pub(super) fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirrorPlane> {
+pub(crate) fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirrorPlane> {
     let normal = match primary_identity {
         42 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         43 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),

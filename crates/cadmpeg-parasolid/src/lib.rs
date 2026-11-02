@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared Parasolid stream identity and header primitives.
+//! Shared Parasolid stream identity, header, and pointer primitives.
 //!
 //! Parasolid is an embedded modelling-kernel layer in both NX and SLDPRT.
 //! This crate owns the `parasolid:` dialect rows and the schema-token grammar
@@ -8,6 +8,9 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
+
+/// Variable-width native node pointers.
+pub mod pointer;
 
 include!("registry_ids.rs");
 

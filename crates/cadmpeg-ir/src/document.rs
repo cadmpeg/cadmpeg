@@ -140,6 +140,7 @@ macro_rules! classified_arena_registry {
             articulations: crate::physics::Articulation, model, "Articulation arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             physics_scenes: crate::physics::PhysicsScene, model, "Physics scene arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             solver_settings: crate::physics::solver::SolverSettings, model, "Solver settings arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            declared_measures: crate::declared_measures::DeclaredMeasure, model, "Declared measure arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
         }
     };
 }
@@ -562,6 +563,34 @@ macro_rules! declare_model {
                 None
             }
 
+            pub(crate) fn repro_graph(&self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'_>, CodecError> {
+                use crate::schema::EntitySchema;
+                let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
+                let mut found = false;
+                $(found |= self.$field.iter().any(|entity| roots.contains(entity.identity()));)*
+                let mut graph = crate::repro::selection::Graph::default();
+                $(for entity in &self.$field {
+                    graph.add(stringify!($field), entity.identity());
+                })*
+                graph.index();
+                if !found { return Ok(graph); }
+                $(for entity in &self.$field {
+                    graph.references(entity)?;
+                })*
+                Ok(graph)
+            }
+
+            pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
+                use crate::schema::EntitySchema;
+                let mut selected = Self::default();
+                $(selected.$field = self.$field.iter()
+                    .filter(|entity| ids.contains(entity.identity())).cloned().collect();)*
+                selected.feature_regeneration_parents.0 = self.feature_regeneration_parents.0.iter()
+                    .filter(|(child, parent)| ids.contains(child.as_str()) && ids.contains(parent.as_str()))
+                    .map(|(child, parent)| (child.clone(), parent.clone())).collect();
+                selected
+            }
+
             /// Total number of admitted neutral entities across all arenas.
             pub fn entity_count(&self) -> usize {
                 0 $(+ self.$field.len())*
@@ -761,7 +790,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "10";
+pub const IR_VERSION: &str = "11";
 
 /// The current IR wire version. Every value writes [`IR_VERSION`].
 /// Deserialization refuses any other version.
@@ -1511,6 +1540,10 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// Every populated neutral arena belongs to a class held by [`Self::scope`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadIr {
+    /// Closed fragment of a larger document.
+    pub fragment: bool,
+    /// Metadata for a reproducible fragment.
+    pub repro: Option<Box<crate::repro::BundleMetadata>>,
     /// Source-container metadata.
     pub source: Option<SourceMeta>,
     /// Document-wide tolerances.
@@ -1536,6 +1569,10 @@ pub struct ScopeViolation {
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    fragment: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repro: Option<&'a crate::repro::BundleMetadata>,
     ir_version: IrVersion,
     /// Classes held by the document.
     scope: ContentScope,
@@ -1550,6 +1587,10 @@ struct CadIrWriteWire<'a> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CadIrReadWire {
+    #[serde(default, deserialize_with = "deserialize_fragment")]
+    fragment: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_repro")]
+    repro: Option<Box<crate::repro::BundleMetadata>>,
     #[serde(
         default,
         rename = "ir_version",
@@ -1571,6 +1612,8 @@ impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
         CadIrWriteWire {
+            fragment: self.fragment,
+            repro: self.repro.as_deref(),
             ir_version: IrVersion,
             scope: self.scope,
             source: self.source.as_ref(),
@@ -1598,6 +1641,8 @@ impl TryFrom<CadIrReadWire> for CadIr {
 
     fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
         let ir = Self {
+            fragment: wire.fragment.unwrap_or(false),
+            repro: wire.repro,
             source: wire.source,
             tolerances: wire.tolerances,
             model: wire.model,
@@ -1793,6 +1838,8 @@ impl CadIr {
     /// have classified source metadata use [`Self::decoded`].
     pub fn empty() -> Self {
         Self {
+            fragment: false,
+            repro: None,
             source: None,
             tolerances: Tolerances::default(),
             model: Model::default(),
@@ -1806,6 +1853,8 @@ impl CadIr {
     /// The codec must declare its delivered scope before computing a digest.
     pub fn decoded(source: SourceMeta) -> Self {
         Self {
+            fragment: false,
+            repro: None,
             source: Some(source),
             tolerances: Tolerances::default(),
             model: Model::default(),
@@ -1924,6 +1973,12 @@ impl SourceMeta {
         }
     }
 
+    pub(crate) fn repro_header(&self) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(self.format()),
+            attributes: BTreeMap::new(),
+        }
+    }
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
     pub fn classified(
@@ -1973,3 +2028,11 @@ cadmpeg_core::named_optional_field!(deserialize_ir_version, IrVersion, "ir_versi
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_fragment, bool, "fragment");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_repro,
+    Box<crate::repro::BundleMetadata>,
+    "repro"
+);

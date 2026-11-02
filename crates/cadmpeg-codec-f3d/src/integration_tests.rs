@@ -19,6 +19,7 @@ mod pcurve_uv_offset;
 mod placement_history;
 mod procedural_support;
 mod product_owners;
+mod profile_region_selection;
 mod root_product;
 mod sketch_regions;
 mod work_planes;
@@ -243,6 +244,35 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_valid(&round_trip);
+}
+
+#[test]
+fn f3z_pipeline_merges_three_levels_of_occurrences() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let inner = f3d_without_brep(
+        "assembly-design",
+        "inner.f3d",
+        &[("component.f3d", XREF_ROLE)],
+    );
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("inner.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let merged = decode(f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("inner.f3d", inner.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    ));
+    let scope = format!("xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
+    let expected = format!("f3d:{scope}{scope}{scope}");
+    assert_eq!(merged.ir().model.bodies.len(), 1);
+    assert!(merged.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with(&expected));
+    assert_valid(&merged);
 }
 
 #[test]

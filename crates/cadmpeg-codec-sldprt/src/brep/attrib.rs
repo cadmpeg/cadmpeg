@@ -48,7 +48,7 @@ const FACE_ID_LOCAL: usize = 4;
 #[derive(Debug, Clone)]
 pub(super) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
-    pub(super) face_attr: u16,
+    pub(super) face_attr: u32,
     pub(super) identity: Option<super::PersistentFaceIdentity>,
 }
 
@@ -63,7 +63,7 @@ pub(crate) struct FaceAtom {
 #[derive(Debug, Clone)]
 pub(crate) struct BodyModifier {
     /// Attribute id of the body carrying the attribute.
-    pub(super) body_attr: u16,
+    pub(super) body_attr: u32,
     /// Native source identity of the last modifying history feature.
     pub(crate) feature_source_id: FeatureSourceId,
     /// Emitted body identity, resolved once the graph retains its bodies.
@@ -80,9 +80,9 @@ fn record_body(buf: &[u8], off: usize, tag: u8) -> Option<usize> {
 }
 
 /// Stream-local attribute definitions with unique names or withheld conflicts.
-type DefinitionTable = HashMap<u16, Option<String>>;
+type DefinitionTable = HashMap<u32, Option<String>>;
 
-fn consistent_insert<T: PartialEq>(found: &mut HashMap<u16, Option<T>>, node: u16, value: T) {
+fn consistent_insert<T: PartialEq>(found: &mut HashMap<u32, Option<T>>, node: u32, value: T) {
     match found.entry(node) {
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(Some(value));
@@ -99,16 +99,17 @@ fn consistent_insert<T: PartialEq>(found: &mut HashMap<u16, Option<T>>, node: u1
     }
 }
 
-fn short_index(buf: &[u8], at: usize) -> Option<u16> {
-    View::u16_be_at(buf, at).filter(|node| *node > 1 && *node <= i16::MAX.unsigned_abs())
+fn short_index(buf: &[u8], at: usize) -> Option<u32> {
+    super::word_at(buf, at).filter(|node| *node > 1 && *node <= u32::from(i16::MAX.unsigned_abs()))
 }
 
-fn definition_frame(buf: &[u8], p: usize) -> Option<(u16, Vec<u8>)> {
+fn definition_frame(buf: &[u8], p: usize) -> Option<(u32, Vec<u8>)> {
     let identifier = short_index(buf, p + attr_def::IDENTIFIER)?;
     if [attr_def::NEXT_DEFINITION, attr_def::FIELD_NAMES]
         .into_iter()
         .any(|offset| {
-            View::u16_be_at(buf, p + offset).is_none_or(|index| index > i16::MAX.unsigned_abs())
+            super::word_at(buf, p + offset)
+                .is_none_or(|index| index > u32::from(i16::MAX.unsigned_abs()))
         })
     {
         return None;
@@ -130,7 +131,7 @@ struct NamedDefinition {
     fields: Vec<u8>,
 }
 
-fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<NamedDefinition>> {
+fn definition_candidates(buf: &[u8]) -> HashMap<u32, Option<NamedDefinition>> {
     let mut names = HashMap::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x4f) else {
@@ -171,8 +172,8 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<NamedDefinition>> {
             consistent_insert(&mut definitions, node, frame);
         } else if short_index(buf, p + attr_def::IDENTIFIER)
             .is_some_and(|identifier| names.contains_key(&identifier))
-            && View::u16_be_at(buf, p + attr_def::NEXT_DEFINITION)
-                .is_some_and(|next| next <= i16::MAX.unsigned_abs())
+            && super::word_at(buf, p + attr_def::NEXT_DEFINITION)
+                .is_some_and(|next| next <= u32::from(i16::MAX.unsigned_abs()))
             && View::u32_be_at(buf, p + attr_def::FIELD_COUNT).is_some_and(|count| {
                 u64::from(count) <= cadmpeg_core::decode::u64_from_index(buf.len() - p)
             })
@@ -207,7 +208,7 @@ pub(super) fn definition_table(buf: &[u8]) -> DefinitionTable {
 
 /// Map definition-record node ids to the two supported native attribute
 /// families whose payload consumers are implemented here.
-fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
+fn definitions(buf: &[u8]) -> HashMap<u32, &'static str> {
     let mut supported = HashMap::new();
     for (node, family) in definition_candidates(buf) {
         let Some(family) = family else {
@@ -225,19 +226,13 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
 }
 
 /// Read integer payload lists keyed by their node id.
-fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
-    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
+fn integer_lists(buf: &[u8]) -> HashMap<u32, Vec<u32>> {
+    let mut found = HashMap::<u32, Option<Vec<u32>>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x52) else {
             continue;
         };
-        let Some(count) = View::u32_be_at(buf, p) else {
-            continue;
-        };
-        let Some(node) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
-            continue;
-        };
-        let Some(data) = p.checked_add(6) else {
+        let Some((count, node, data)) = super::entity::integer_values_header(buf, p) else {
             continue;
         };
         let Some(available) = buf.len().checked_sub(data) else {
@@ -287,7 +282,7 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
 fn named_integer_payload<'a>(
     buf: &[u8],
     p: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
+    lists: &'a HashMap<u32, Vec<u32>>,
     fields: &[u8],
 ) -> Option<&'a [u32]> {
     let count = u32::try_from(fields.len()).ok()?;
@@ -301,12 +296,12 @@ fn named_integer_payload<'a>(
     let end = start.checked_add(fields.len().checked_mul(2)?)?;
     buf.get(p..end)?;
     for at in (p + attr_refs::OWNER..end).step_by(2) {
-        if View::u16_be_at(buf, at).is_none_or(|node| node > i16::MAX.unsigned_abs()) {
+        if super::word_at(buf, at).is_none_or(|node| node > u32::from(i16::MAX.unsigned_abs())) {
             return None;
         }
     }
     let field = fields.iter().position(|kind| *kind == 1)?;
-    let node = View::u16_be_at(buf, start + field * 2)?;
+    let node = super::word_at(buf, start + field * 2)?;
     lists.get(&node).map(Vec::as_slice)
 }
 
@@ -319,7 +314,7 @@ struct FacePayload<'a> {
 fn face_payload<'a>(
     buf: &[u8],
     p: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
+    lists: &'a HashMap<u32, Vec<u32>>,
 ) -> Option<FacePayload<'a>> {
     named_integer_payload(buf, p, lists, FACE_FIELDS)
         .filter(|values| {
@@ -339,21 +334,21 @@ pub(super) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
         return Vec::new();
     }
     let lists = integer_lists(buf);
-    let mut found = HashMap::<u16, Option<RawFaceAtom>>::new();
+    let mut found = HashMap::<u32, Option<RawFaceAtom>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
+        if super::word_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
             continue;
         }
-        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
+        let Some(definition) = super::word_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(FACE_ID) {
             continue;
         }
-        let Some(face_attr) = View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID) else {
+        let Some(face_attr) = super::word_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID) else {
             continue;
         };
         if face_attr <= 1 {
@@ -408,18 +403,18 @@ pub(crate) struct NativeIdentity<T> {
     pub(crate) values: Vec<u32>,
 }
 
-fn scan_identity_payloads(buf: &[u8], family: &str, fields: &[u8]) -> Vec<(u16, Vec<u32>)> {
+fn scan_identity_payloads(buf: &[u8], family: &str, fields: &[u8]) -> Vec<(u32, Vec<u32>)> {
     let definitions = definitions(buf);
     let lists = integer_lists(buf);
-    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
+    let mut found = HashMap::<u32, Option<Vec<u32>>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
+        if super::word_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
             continue;
         }
-        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
+        let Some(definition) = super::word_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(family) {
@@ -453,15 +448,15 @@ fn scan_identity_payloads(buf: &[u8], family: &str, fields: &[u8]) -> Vec<(u16, 
     out
 }
 
-pub(super) fn scan_face_payloads(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
+pub(super) fn scan_face_payloads(buf: &[u8]) -> Vec<(u32, Vec<u32>)> {
     scan_identity_payloads(buf, FACE_ID, FACE_FIELDS)
 }
 
-pub(super) fn scan_body_payloads(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
+pub(super) fn scan_body_payloads(buf: &[u8]) -> Vec<(u32, Vec<u32>)> {
     scan_identity_payloads(buf, BODY_ID, BODY_FIELDS)
 }
 
-pub(super) fn unique_payloads(payloads: Vec<(u16, Vec<u32>)>) -> Vec<(u16, Vec<u32>)> {
+pub(super) fn unique_payloads(payloads: Vec<(u32, Vec<u32>)>) -> Vec<(u32, Vec<u32>)> {
     let mut found = HashMap::new();
     for (owner, values) in payloads {
         consistent_insert(&mut found, owner, values);
@@ -481,22 +476,22 @@ pub(super) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         return Vec::new();
     }
     let lists = integer_lists(buf);
-    let mut found = HashMap::<u16, Option<BodyModifier>>::new();
+    let mut found = HashMap::<u32, Option<BodyModifier>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
+        if super::word_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
             continue;
         }
-        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
+        let Some(definition) = super::word_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(LAST_BODY_MODIFIER) {
             continue;
         }
         let Some(body_attr) =
-            View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID).filter(|attr| *attr > 1)
+            super::word_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID).filter(|attr| *attr > 1)
         else {
             continue;
         };
@@ -608,7 +603,7 @@ mod tests {
             assert!(scan(&bytes).is_empty());
             assert_eq!(
                 super::scan_face_payloads(&bytes),
-                vec![(owner, payload.to_vec())]
+                vec![(u32::from(owner), payload.to_vec())]
             );
         }
     }

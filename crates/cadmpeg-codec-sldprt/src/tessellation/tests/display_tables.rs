@@ -226,6 +226,66 @@ fn display_table_channel_bytes_refuse_retained_limit_before_copy() {
 }
 
 #[test]
+fn rejected_candidate_tables_charge_no_channel_bytes() {
+    // Each candidate opens with a strip descriptor whose data runs to one
+    // shared descriptor of another kind, so the candidates overlap.
+    const CANDIDATES: usize = 64;
+    const SPAN: usize = 64 * 1024;
+    let mut payload = table();
+    let candidates_at = payload.len();
+    let terminator_at = candidates_at + CANDIDATES * 16 + SPAN;
+    for index in 0..CANDIDATES {
+        let data = candidates_at + index * 16 + 16;
+        let count = u32::try_from((terminator_at - data) / 4).expect("count fits u32");
+        payload.extend(descriptor(4, 8, count, &[]));
+    }
+    payload.resize(terminator_at, 0);
+    payload.extend(descriptor(4, 9, 0, &[]));
+    payload.extend(table());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+    let tables = parse_table_sequence(&ctx, &payload, 0, payload.len())
+        .expect("rejected candidates stay within the retained budget")
+        .expect("table sequence");
+    assert_eq!(tables.len(), 2);
+}
+
+#[test]
+fn an_inconsistent_auxiliary_lane_rejects_the_table_before_its_charge() {
+    // At the smallest retained budget that admits the root, any charge fails.
+    let consistent = table();
+    // The stored list-c value disagrees with the strip; every descriptor
+    // still matches.
+    let mut inconsistent = table();
+    let list_c_value = 20 + 52 + 52 + 32 + 16;
+    inconsistent[list_c_value..list_c_value + 4].copy_from_slice(&5_u32.to_le_bytes());
+    let arena = DecodeArena::new();
+    let policy = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        policy
+    };
+    let (mut low, mut high) = (0_u64, 1024 * 1024);
+    while low < high {
+        let cap = low + (high - low) / 2;
+        if DecodeContext::from_root_bytes(&consistent, &arena, &policy(cap)).is_ok() {
+            high = cap;
+        } else {
+            low = cap + 1;
+        }
+    }
+    let root_only = policy(low);
+    let (ctx, _) = DecodeContext::from_root_bytes(&consistent, &arena, &root_only).expect("root");
+    assert!(parse_table(&ctx, &consistent, 0).is_err());
+    let (ctx, _) = DecodeContext::from_root_bytes(&inconsistent, &arena, &root_only).expect("root");
+    assert!(parse_table(&ctx, &inconsistent, 0)
+        .expect("an inconsistent table is a probe miss")
+        .is_none());
+}
+
+#[test]
 fn display_table_sequence_collects_consecutive_tables() {
     let mut payload = table();
     payload.extend(table());

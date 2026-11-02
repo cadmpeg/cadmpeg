@@ -281,6 +281,23 @@ pub(crate) struct ParameterRecord {
     pub(crate) value_at: usize,
 }
 
+/// The classes whose object writes a sketch feature's `sgSketch`.
+const PROFILE_FAMILY: [&str; 3] = [
+    "moProfileFeature_c",
+    "moOriginProfileFeature_c",
+    "moSketchBlockDef_c",
+];
+
+/// A sketch's profile body: the compressed body of its `sgSketch` tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProfileBody {
+    /// Where the body's nested stream starts: its u32 `B`.
+    pub(crate) stream: usize,
+    /// Where the tag of the innermost profile-family object that holds the
+    /// body starts.
+    pub(crate) owner: usize,
+}
+
 /// The reader over one stream.
 pub(crate) struct Reader<'b> {
     /// The stream (`r.b`).
@@ -307,6 +324,12 @@ pub(crate) struct Reader<'b> {
     pub(crate) depth: usize,
     /// The flag position of a favourite handle followed by a view block (`FAVFLAG`).
     pub(crate) favflag: Option<usize>,
+    /// The objects being read, outermost first: class and tag position.
+    pub(crate) open: Vec<(Arc<str>, usize)>,
+    /// Where each profile-family object read ends, by its tag position.
+    pub(crate) ends: HashMap<usize, usize>,
+    /// The sketch profile bodies read.
+    pub(crate) profile_bodies: Vec<ProfileBody>,
 }
 
 /// Reader state saved before a speculative read.
@@ -321,6 +344,9 @@ pub(crate) struct Snapshot {
     st: super::rules::State,
     favflag: Option<usize>,
     depth: usize,
+    open: Vec<(Arc<str>, usize)>,
+    ends: HashMap<usize, usize>,
+    profile_bodies: Vec<ProfileBody>,
 }
 
 impl<'b> Reader<'b> {
@@ -347,6 +373,9 @@ impl<'b> Reader<'b> {
             parameters: Vec::new(),
             depth: 0,
             favflag: None,
+            open: Vec::new(),
+            ends: HashMap::new(),
+            profile_bodies: Vec::new(),
         }
     }
 
@@ -363,6 +392,9 @@ impl<'b> Reader<'b> {
             st: self.st.clone(),
             favflag: self.favflag,
             depth: self.depth,
+            open: self.open.clone(),
+            ends: self.ends.clone(),
+            profile_bodies: self.profile_bodies.clone(),
         }
     }
 
@@ -378,6 +410,9 @@ impl<'b> Reader<'b> {
         self.st = snapshot.st;
         self.favflag = snapshot.favflag;
         self.depth = snapshot.depth;
+        self.open = snapshot.open;
+        self.ends = snapshot.ends;
+        self.profile_bodies = snapshot.profile_bodies;
     }
 
     fn take<const N: usize>(&mut self) -> Res<[u8; N]> {
@@ -593,10 +628,15 @@ impl<'b> Reader<'b> {
             .depth
             .checked_add(1)
             .ok_or_else(|| bad("archive object depth overflows"))?;
+        self.open.push((class.clone(), at));
         let value = rule(self);
+        self.open.pop();
         drop(guard);
         self.depth -= 1;
         let value = value?;
+        if PROFILE_FAMILY.contains(&&*class) {
+            self.ends.insert(at, self.p);
+        }
         let retained = retained_value_bytes(&value)?;
         self.ctx
             .retain_bytes(retained, "retain SLDPRT CArchive object value")
@@ -611,6 +651,19 @@ impl<'b> Reader<'b> {
             return Err(bad(format!("{} where an object was expected", v.kind())));
         }
         Ok(v)
+    }
+
+    /// Record the profile body whose nested stream starts at `stream`, held by
+    /// the innermost open profile-family object.
+    pub(crate) fn note_profile_body(&mut self, stream: usize) {
+        if let Some(&(_, owner)) = self
+            .open
+            .iter()
+            .rev()
+            .find(|(class, _)| PROFILE_FAMILY.contains(&&**class))
+        {
+            self.profile_bodies.push(ProfileBody { stream, owner });
+        }
     }
 
     /// The class of the most recently opened object.

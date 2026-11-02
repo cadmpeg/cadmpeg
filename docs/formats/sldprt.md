@@ -1037,7 +1037,7 @@ when any current feature is stale; this coarse flag does not preserve exact
 per-feature recompute state. `swConfigurationFlags` and
 `swConfigurationAlternateName` are configuration-manifest metadata.
 
-Keywords `Feature` elements use the `Type` attribute as their operation-family token. All feature instances with the same exact `Type` token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances carrying that token. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
+Keywords `Feature` elements use the `Type` attribute as their operation-family token. Feature instances with the same exact `Type` token and the same class token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances that carry that `Type` token and its class token. Instances with one `Type` token can carry different class tokens: a `Boss-Extrude` instance's name record can carry the repeated class token of `moICE_c`. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
 
 Sketch relations use named scalar records with reference cells at fixed scalar-record slots. Point references use `d6 80`, `b2 81`, `cc 80`, `52 81`, `7b 83`, `7c bc`, or `dd 81`; line references use `e1 80`, `86 83`, `87 bc`, or `e7 81`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `b2 81` cells carry a point-point distance; their u16 addresses are zero-based ordinals over the coordinate-bearing point and constrained-point markers in the owning feature, in marker order. Two `dd 81` cells carry a point-point distance over the same coordinate-point roster. Two `e7 81` cells carry a line-line distance over the solver-line roster defined below. A `dd 81` cell followed by an `e7 81` cell carries a point-line distance. Two `52 81` or two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. An `sgCircleDim` declaration followed by one `cc 80`, `fe 83`, `b6 8a`, `9d 92`, or `69 bd` cell carries a diameter dimension. A relation declaration owns the first following scalar within 128 bytes in the same feature interval when its operand signature matches. A scalar claimed by zero or multiple declarations remains native. Adjacent scalar records can continue an anchored relation only within the same feature interval, with the same operands, and without an intervening relation declaration; after a complete relation, an adjacent driving scalar starts a new instance with the anchored family. A display-role scalar names an existing dimension owned by the same sketch when no driving relation or earlier display-only relation claims that dimension. The relation family supplies the dimension unit independently of the display scalar value. Scalar records with the same owning sketch, relation family, and ordered operand sequence belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter. An operandless driving scalar separated from its display records by another complete relation belongs to the unique unresolved relation with the same owning sketch and dimension name, unless the dimension's display states the other unit than the relation's family: a display with an angular unit is an angle, and another dimension display is a length.
 
@@ -1819,6 +1819,8 @@ An `sgSketch` object writes, in order:
 | 38 zero bytes when the second list is empty; when the sketch holds slots, eighteen zero bytes and then its slot map (and after the map, or after the zero bytes alone in a sketch without slots, a little-endian u32, a little-endian u32 count and that many objects: `moSketchChain_c` objects or handles): an MFC `CMap` written as a little-endian u32 next free key, a little-endian u32 count and that many pairs of a little-endian u32 key and an `sgSlot_c` object, followed by zero bytes; an empty map writes the next free key and a count of `0`, and the tail follows at once. An `sgSlot_c` writes a little-endian u32, a little-endian u32 identifier (its key plus one), a 72-byte record head (above; a little-endian u32 at +17, `0` to `3`, not tied to the slot's kind) and six handle objects. The six-handle form holds from `swVersion` 11000; a file of 10000 differs |
 | little-endian u32 `3` (or `7`; a sketch with a block list has the form below); a flag byte, `0` when a compressed body (below) follows in place of it; little-endian u32 `0`; a little-endian u16 count *c* and *c* face or edge references; when *c* is non-zero, little-endian u32 `4`, u32 `16`, u32 `1`, a u32 count and that many u32 identifiers; little-endian u32 `0` (absent after a reference list when the leading u32 is `7`); u32 `100000`, u16 `0`, — or u32 `100000` + *G* (the u32 `0` before it is also absent after a reference list whose leading u32 is `3`), a little-endian u16 group count *G* and *G* groups, each a `moOneContour_c` object, a little-endian u16 count and that many `moBBoxCenterData_c` objects (here u32 `1`, four f64, u32 `1`, a u16 identifier, a u16 and eighteen bytes), a u16 and a u32 identifier, the identifiers being `100000` to `100000` + *G* − 1 in some order — an object pointer (null, or a handle), and an object pointer to the `moCompRefPlane_c` object that names the sketch plane |
 
+The compressed body after the u32 `3` (or `7`) and zero flag byte of an `sgSketch` object's last row is the sketch's profile body. The compressed bodies after an in-context group's support reference are snapshots of that support. The profile body of a profile feature is the one in the `sgSketch` object that the feature writes, or in the sketch tail it writes after an `sgSketch` reference.
+
 A relation writes eight zero bytes, little-endian i32 `-1`, sixteen zero bytes (seventeen in files of `swVersion` 18000 and above), a little-endian u32 relation type, a little-endian u32, a little-endian u16 (`0`, or `2` in some) and a little-endian u32 (`0xfffe`, or a small index `0`, `1`, `2`, … in type `47`), then its operand handles, written in place. A relation with two operands then writes six zero bytes, a little-endian u16 (`0`, or `3` in some), two `ff ff ff ff` and 24 zero bytes.
 
 A *polygon* or *circular pattern* entry (relation group 7) writes a little-endian u32 identifier, a little-endian u32 count *n* (sides, or instances), ten bytes, a little-endian u16 written twice (*n* for a polygon; for a circular pattern a count that is not always *n*), the centre as three little-endian f64, two line handles, a little-endian u16, the handle of the construction circle, a little-endian u32, the handle of the centre point, u16 `1` and u32 `0`; a placeholder handle (slot `0x777f`, i32 `-2`) is followed by u32 `0`. A polygon then writes u16 `0`; a pattern writes its instance-count dimension, an `sgCircularPattCntDim`. A *linear pattern* writes one entry per direction (relation group 5): a little-endian u32 identifier, a little-endian u32 instance total, eighteen bytes holding the direction's count *n1* and the other's *n2* twice, the direction as three little-endian f64 (a unit vector), two line handles (each placeholder followed by u32 `0`), a little-endian u16 (`1` with real handles), eight zero bytes — or, for a direction taken from a line, u32 `1` (`01 00 01 00` in some), a `moLineRef_w`, its handle block (absent when the reference is a sketch entity's, whose tail holds it), u32 `0` (eight zero bytes in some), seven f64 and seven zero bytes (three or one in some; and in some a zero byte, a second `moLineRef_w` with its block, u32 `0` and seven f64 come first) — its `sgLinearPattCntDim`, the spacing as a little-endian f64 and u16 `1`. The relations after such a group bind the members: for a polygon, *m* relations of type `57` between consecutive sides, each followed by 20 bytes (u16 `0`, the previous, next and own vertex index as u16, u32 `1`, u32 `1`, u32 `0`). Types `4` and `5` take one line operand and type `9` two operands. A relation with three operands (type `13`, symmetric) then writes six zero bytes. A two-operand relation on a spline (type `9`, flags `0x10002`) writes, after its operands, little-endian u32 `0` and a `suObArray` of two entries, an `sgDimEntityHelpData_c` (a little-endian f64, a curve parameter, then u32 `0`) and a null pointer, before its suffix. A `swVersion` 19000 two-operand suffix ends with one more i32 `-1`.
@@ -2195,18 +2197,11 @@ own site, never a partition with its deltas. A partition that carries geometry
 is the result of the features that follow the import, and its LocalBodies are then that
 import's input, not the part.
 
-**Tolerance slots.** A plain stream can store real values in the FACE, EDGE and vertex-use
-tolerance slots (§4): faces `1e-8` or `0.0`, edges and vertices `2e-8` to `2.8e-4` m. It can
-instead store the null-real sentinel, as every partition does.
-
-A plain stream frames its records on the null-real sentinel, on `0.0`, or on a value in
+**Tolerance slots.** FACE, EDGE and vertex-use tolerance slots (§4) hold the null-real
+sentinel or a real value. FACE permits `0.0` and valued tolerances in partition and plain
+streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 `[1e-12, 1e-2]` m. A two-byte big-endian integer pair read as one f64 is a NORMAL value near
 1e-302, below that range.
-
-Partition and deltas streams frame records only on the sentinel.
-
-In every stream, a FACE or EDGE header frames only on a tolerance slot that holds the sentinel,
-`0.0`, or a value in that range.
 
 ---
 
@@ -2236,7 +2231,7 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
 BODY, SHELL, FACE, and REGION. Their node pointers use one big-endian u16 for
-values `0` through `0x7ffe`. A larger pointer uses two big-endian u16 values:
+values `0` through `0x7fff`. A larger pointer uses two big-endian u16 values:
 the first has its high bit set and carries the low fifteen bits, and the
 second carries the remaining high bits. The decoded value is
 `(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
@@ -2257,6 +2252,9 @@ fin, previous, next, curve, next-on-curve, previous-on-curve, and owner.
 The complete VERTEX has five pointers before tolerance and its owner pointer
 after tolerance. A bare POINT stores its transmit index at body +0 and node ID at body +2.
 POINT has exactly four pointers before its coordinate vector.
+A node tag or stream boundary after the coordinate vector delimits a
+complete POINT when a wide index beginning with `ff` also frames a
+first-of-type prefix.
 Coordinate bytes do not extend that pointer list. Coordinates are finite
 big-endian f64 values in metres, with no format magnitude limit. A deltas
 POINT in the tripled form has no bare-pointer fallback.
@@ -2301,19 +2299,19 @@ companion deltas retain historical versions.
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
 The fixed body offsets above hold only while every pointer in the record is
-below `0x7fff`. A bare compact record stores its `attr` and every reference in
+at most `0x7fff`. A bare compact record stores its `attr` and every reference in
 the same variable-width pointer form as the XT ownership nodes, and so does a
 compact analytic carrier (§7.1). The `sequence`, the tolerance and the marker
 keep their widths, and each wide pointer moves the fields after it by two
 bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
 (attr 62078), FACE records whose own attr is in the 4-byte form, and
-narrow-attr FACE records carrying a pointer past `0x7ffe`. The deltas forms of
-§4.3 keep their fixed `[hi][lo][01]` cells.
+narrow-attr FACE records carrying a pointer past `0x7fff`. The deltas forms of
+§4.3 keep their fixed three-byte cells.
 
-A record key is the u16 `attr`, so a pointer past `0xffff` has no key:
-a compact record that holds one does not frame, and a typed node whose own
-`attr` is past `0xffff` is neither framed nor counted. A framed FACE record
-that no decoded face carries is the loss `topology.face-records-unread`.
+A record key is the decoded stream-local `attr` in the 31-bit pointer domain.
+A wide record key and a wide reference use the same encoding. The optional
+first-of-type `ff` precedes the record key. A wide record key can also start
+with byte `ff`. The complete record fields determine the framing. Complete analytic carriers, bounded-curve records, spline wrapper headers, curve and surface descriptors, and their referenced value arrays form enclosing node scopes. Their node IDs, references, and scalar payloads belong to that node. A byte pair equal to a node tag inside a field retains its field meaning.
 
 ### 4.1 XT ownership nodes
 
@@ -2392,7 +2390,10 @@ byte:
 [attribute_chain, body, next_region, previous_region, shell_head]  type
 ```
 
-The type byte is `S` for a solid region or `V` for a void region. Each typed
+The type byte is `S` for a solid region or `V` for a void region. A void region
+that owns no face has its boundary in the shell of the neighbouring region, and
+transfers no neutral region when its body also has a solid region or a region
+that owns a face. Each typed
 ownership relation is accepted only when FACE → SHELL → REGION → BODY closes,
 the SHELL and REGION links agree, and each BODY region chain has reciprocal
 next/previous links terminating in a null-like value. The stored BODY
@@ -2430,6 +2431,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                                             |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                                     |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                                                  |
+| `00 86`                | tripled     | none     | five ref triples at body +6, sense byte at body +21, NURBS cell `[hi][lo][00]` at body +22, data cell at body +25 |
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
@@ -2475,15 +2477,19 @@ identity. A LOOP belongs to the FACE named by its owning-FACE pointer.
 
 Top-level entity families include `00 4f` KEY nodes, `00 50` ATTRIB_DEF nodes,
 `00 51` ATTRIBUTE nodes, `00 52` INT_VALUES nodes, `00 53` REAL_VALUES
-nodes, and `00 54` CHAR_VALUES nodes. A `00 51` header is
+nodes, and `00 54` CHAR_VALUES nodes.
+
+ATTRIBUTE and value-array indices use the node pointer encoding of §4. The offsets below describe short pointers.
+
+A `00 51` header is
 `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`.
 
 Every node id and pointer in these records — a bare ATTRIBUTE's `attr`, `disc`
 and slots, a KEY, ATTRIB_DEF or INT_VALUES node id, and a REAL_VALUES `attr` —
-takes the variable-width pointer form of §4: past `0x7ffe` it is 4 bytes, and
+takes the variable-width pointer form of §4: past `0x7fff` it is 4 bytes, and
 each wide field moves the fields after it by two bytes. The counts, `seq` and
 the values keep their widths, so the u16 offsets in this section hold only
-while every pointer is below `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
+while every pointer is at most `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
 attr 48 319), following an ATTRIBUTE whose last slots are wide. The
 prefixed (deltas) ATTRIBUTE keeps its fixed header cells and `[01][hi][lo]`
 slots.
@@ -2510,11 +2516,14 @@ The header fields have these meanings:
 
 A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
 A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
-and that many printable ASCII bytes. The ATTRIB_DEF `identifier` pointer
-selects that KEY in the same stream. Adjacency does not bind a name to a
-definition. The instance's `disc` resolves to the definition by transmit
-index. Low-index system definitions can have no KEY name. Conflicting KEY
-names or definition identities do not supply a named family.
+and that many printable ASCII bytes. A `00 54` CHAR_VALUES node carries the
+same u32 byte length and u16 transmit index, followed by that many bytes. No
+record starts inside the length, index or text of either node. The
+ATTRIB_DEF `identifier` pointer selects that KEY in the same stream.
+Adjacency does not bind a name to a definition. The instance's `disc`
+resolves to the definition by transmit index. Low-index system definitions
+can have no KEY name. Conflicting KEY names or definition identities do not
+supply a named family.
 
 A definition is named by its `identifier`; one whose `identifier` names no
 framed KEY takes the KEY immediately before it. The KEY need not follow its
@@ -2657,9 +2666,9 @@ leave the body-history relation unresolved. A resolved relation adds that
 body to the named feature's output bodies without fabricating a body or
 replacing an explicit body scope.
 
-The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. A typed node candidate whose reference fields leave the u16 transmit-index space lies inside another record and claims no class. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
+The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
 
-An INT_VALUES node has a six-byte prefix: its element count is u32 BE at body +0
+An INT_VALUES node has a six-byte prefix in the short-index form: its element count is u32 BE at body +0
 and its transmit index is u16 BE at body +4. Exactly that many u32 BE values
 follow at body +6. The count determines the complete payload extent; values
 that contain node-tag byte patterns remain integer data. The extent ends at
@@ -2730,7 +2739,7 @@ Stream-scope support-geometry carriers encoding untrimmed surface/curve placemen
 00 TT  [ff]?  attr u16 BE  ordinal u32 BE  refs u16 BE[5]  marker u8 (0x2b|0x2d)  values f64 BE[n]
 ```
 
-The partition form uses the five adjacent u16 references shown above; its marker is at `hdr + 16`, where `hdr` is the attr offset after `00 TT` and the optional `ff`. The attr and the references are pointers (§4): past `0x7ffe` each takes the 4-byte form, and the marker moves two bytes later for each one. A deltas compact analytic record uses five `[hi][lo][01]` reference triples instead:
+The partition form uses the five adjacent u16 references shown above; its marker is at `hdr + 16`, where `hdr` is the attr offset after `00 TT` and the optional `ff`. The attr and the references are pointers (§4): past `0x7fff` each takes the 4-byte form, and the marker moves two bytes later for each one. A deltas compact analytic record uses five `[hi][lo][01]` reference triples instead:
 
 ```
 00 TT [ff]? attr u16 BE ordinal u32 BE refs [hi][lo][01][5] marker u8 (0x2b|0x2d) values f64 BE[n]
@@ -2780,9 +2789,9 @@ The compact form has a nonzero count. The descriptor reference role selects its 
 
 For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store `[x*w, y*w, z*w, w]` per pole. Surface control grids use native index `u*n_v + v`. A trailing zero-multiplicity array entry is not part of the knot vector; its paired f64 slot is physically present but ignored.
 
-Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
+Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
-An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
+An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m (`1e-5` mm), and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
 A bounded wrapper whose endpoint evaluations match its vertices has its two source parameters as the edge's parameter range. A line source stores signed distance parameters in metres along its unit direction. The neutral line uses millimetres and multiplies these parameters by 1000. Other analytic parameters and NURBS parameters retain their stored values, except that a circle or ellipse interval may be stored on any equivalent angular branch, such as `[-1.47, 0]` for an arc ending at the seam from below; the neutral interval moves by whole turns to start within `[0, 2π)`. The wrapper interval follows source-curve orientation. The neutral interval is ascending. An end matches a vertex when it lies within that vertex's bound: the linear resolution, or the vertex's stored tolerance when it is a tolerant vertex (§7.6) and stores more. When the endpoint evaluations match the edge's ordered vertices in the opposite order, the neutral edge reverses its canonical vertices and every incident coedge sense; an edge shorter than its vertices' bounds matches both ways and takes the order whose worse end is nearer, and a closed edge, whose one vertex matches both ways equally, keeps its stored order. If neither order matches, the neutral edge has no parameter range.
 
@@ -2920,7 +2929,7 @@ The bounded curve's stored start and end points are the support evaluated throug
 
 A tolerant edge's neutral curve is the parametric curve on the support of its canonical fin's bounded SP_CURVE, else its partner fin's, over the bounded interval; a fin curve on a swept or spun construction is taken after one on any other support, and the edge runs from that interval's low end. A tolerant ring edge, with no vertex, seams at the low end; its bounded SP_CURVE's two stored end points lie within 1e-5 mm of each other. The curve is lifted from a fin to the edge, so it is derived rather than stored, and the edge carries its stored tolerance. A vertex whose bare vertex-use stores a value greater than zero in its tolerance slot is a tolerant vertex and carries that value, converted to millimetres, as its tolerance; the tripled vertex-use form is read with none.
 
-An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. An SP_CURVE whose support no emitted face carries stays opaque, though such an edge still runs from the domain's low end.
+An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. The support surface is an independent referenced node; a FACE can use another surface.
 
 An SP_CURVE is not admitted, and its edges keep an opaque curve, when an edge that names it has no vertex pair, has an end further than 1e-5 mm from its vertex, or has ends that fit in both orders (one vertex on a closed curve, which leaves the direction undetermined), or when a tolerant edge reaches it through a fin, whose vertices are promised only to the edge's tolerance. 
 
@@ -3095,3 +3104,7 @@ The placement is relative to the assembly model that contains the `swReference`.
 ### 11.4 Embedded components
 
 `ImportedComp/<name>` sections, and sections whose names end in `.sldprt` or `.sldasm` (ASCII case-insensitive), are complete embedded documents of the container of §1. An embedded document can be an assembly. The Parasolid streams of an embedded document belong to that document, not to the assembly document.
+
+### 11.5 Virtual components
+
+A virtual component (`swIsVirtualComponent="YES"`) has its document stored in the assembly document that places it. The document of a virtual component model has a file stem `<name>^<assembly>`, where `<assembly>` is the stem of the assembly document that holds the section. Its section is `VirtualComp/<name>-sldprt`, where `<name>` matches without ASCII case. The section holds a complete part document of the container of §1, with the partition of each of that document's configurations. The Parasolid streams of the section belong only to the virtual component's document. A virtual component of a sub-assembly is stored in the sub-assembly's document.

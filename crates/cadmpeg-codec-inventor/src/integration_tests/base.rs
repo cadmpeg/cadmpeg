@@ -475,7 +475,8 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
             &keys,
             &mut valid_model
         )
-        .expect("valid Base projection"),
+        .expect("valid Base projection")
+        .transferred,
         2
     );
     let target_id = document
@@ -503,7 +504,8 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
             &keys,
             &mut ir.model
         )
-        .expect("ambiguous Base projection"),
+        .expect("ambiguous Base projection")
+        .transferred,
         0
     );
     assert!(ir.model.feature_result_topologies.is_empty());

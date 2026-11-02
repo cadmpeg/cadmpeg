@@ -113,6 +113,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             outward: false,
             thickness_offset,
             outward_offset: Some(21),
+            wall_slots: None,
         })) if thickness.get() == 0.25 && thickness_offset == Some(u64_from_index(scalar_start + 40))
     ));
 

@@ -34,6 +34,7 @@ use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
 use crate::layout::construction_operand_affine_transform_frame as trailing_affine;
+use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
@@ -812,6 +813,7 @@ pub(crate) fn decode_face_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        seen.insert((stream, group.scope_record_index, group.record_index));
         let Some(scope) = scope_index.get(&(stream, group.scope_record_index)) else {
             continue;
         };
@@ -2205,6 +2207,37 @@ pub(crate) fn fillet_edge_and_face_groups<'a>(
         .then_some([*first, *second])
 }
 
+/// Whether fixed scalar laws leave several construction groups without a pairing.
+pub(crate) fn fixed_fillet_assignment_is_unresolved(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> bool {
+    let Some(fixed) = scope.fixed_fillet_parameters() else {
+        return false;
+    };
+    let stream = native_stream(&scope.id);
+    let scope_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == stream && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    scope_groups.len() > 1
+        && scope_groups.len() != fixed.groups.len()
+        && !(fixed.groups.len() == 1 && fillet_edge_and_face_groups(&scope_groups).is_some())
+}
+
+pub(crate) fn fixed_fillet_assignment_losses(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    scopes.iter().filter(|scope| fixed_fillet_assignment_is_unresolved(scope, groups))
+        .map(|scope| crate::loss::F3dLossCode::FeatureFixedFilletAssignmentNative.note(format!(
+            "scope {} retains its fixed Fillet scalar lanes and operand groups because their radius assignment is unresolved", scope.id
+        )))
+        .collect()
+}
+
 pub(crate) fn decode_fillet_radius_groups(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3129,26 +3162,32 @@ fn parse_construction_operand_path(
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandPath> {
+    let start = usize::try_from(header.byte_offset?).ok()?;
     let header_offset = header.byte_offset?;
-    let start = usize::try_from(header_offset).ok()?;
-    if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
-        return None;
-    }
-    let entity_ref = View::u64_le_at(bytes, start + 22)?;
-    let entity_ref_offset = u64::try_from(start + 22).ok()?;
-    let (placement, mut cursor) = if bytes.get(start + 30..start + 33)? == [0; 3] {
-        let transform = rigid_transform_at(bytes, start + 33)?;
-        if bytes.get(start + 161) != Some(&0) {
+    let entity_at =
+        if bytes.get(start + 11..start + 21)? == [0; 10] && bytes.get(start + 21) == Some(&1) {
+            start + 22
+        } else if extended_construction_path_prefix(bytes, start)? {
+            start + extended_path::ENTITY_REFERENCE
+        } else {
+            return None;
+        };
+    let entity_ref = View::u64_le_at(bytes, entity_at)?;
+    let entity_ref_offset = u64::try_from(entity_at).ok()?;
+    let placement_at = entity_at + 8;
+    let (placement, mut cursor) = if bytes.get(placement_at..placement_at + 3)? == [0; 3] {
+        let transform = rigid_transform_at(bytes, placement_at + 3)?;
+        if bytes.get(placement_at + 131) != Some(&0) {
             return None;
         }
         (
             crate::records::topology::construction::DesignConstructionPathPlacement::Transform(
                 transform,
             ),
-            start + 162,
+            placement_at + 132,
         )
     } else {
-        let variant = match bytes.get(start + 30..start + 34)? {
+        let variant = match bytes.get(placement_at..placement_at + 4)? {
             [0, 0, variant @ (0 | 1), 0] => *variant != 0,
             _ => return None,
         };
@@ -3156,7 +3195,7 @@ fn parse_construction_operand_path(
             crate::records::topology::construction::DesignConstructionPathPlacement::Compact(
                 variant,
             ),
-            start + 34,
+            placement_at + 4,
         )
     };
     let (scope_record_index, scope_record_index_offset) =
@@ -3199,6 +3238,25 @@ fn parse_construction_operand_path(
         },
     )
     .ok()
+}
+
+fn extended_construction_path_prefix(bytes: &[u8], start: usize) -> Option<bool> {
+    let zero_run = start + extended_path::ZERO_RUN;
+    let trailing_zero_run = start + extended_path::TRAILING_ZERO_RUN;
+    Some(
+        bytes
+            .get(zero_run..start + extended_path::PREFIX_VALUE)?
+            .iter()
+            .all(|byte| *byte == 0)
+            && View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?
+                == extended_path::PREFIX_VALUE_VALUE
+            && bytes
+                .get(trailing_zero_run..start + extended_path::ENTITY_MARKER)?
+                .iter()
+                .all(|byte| *byte == 0)
+            && *bytes.get(start + extended_path::ENTITY_MARKER)?
+                == extended_path::ENTITY_MARKER_VALUE,
+    )
 }
 
 fn parse_construction_operand_transform(
@@ -4198,7 +4256,6 @@ pub(super) fn parse_entity_selection_frame(
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
         && identity_at.checked_add(45)? == next_at
-        && next_record_index == record_index.checked_add(4)?
     {
         let curve_secondary_identity_offset = identity_at.checked_add(21)?;
         let primary_identity_offset = identity_at.checked_add(29)?;

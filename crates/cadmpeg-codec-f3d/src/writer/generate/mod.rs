@@ -285,5 +285,6 @@ fn coverage(
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
+        declared_measures: Omitted,
     }
 }

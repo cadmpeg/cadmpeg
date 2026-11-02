@@ -580,7 +580,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// `BaseFlange` scopes projected with their stored thickness copy because
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
-    pub(crate) hole_extent_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) hole_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -632,7 +632,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         sheet_metal_settings,
         ..
     } = inputs;
-    let mut hole_extent_losses = Vec::new();
+    let mut hole_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -879,7 +879,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => {
-                    project_hole(scope, &parameters, face_operands, &mut hole_extent_losses)?
+                    project_hole(scope, &parameters, face_operands, &mut hole_losses)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Split) => {
@@ -1696,7 +1696,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         parameters,
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
-        hole_extent_losses,
+        hole_losses,
     })
 }
 
@@ -2258,6 +2258,15 @@ fn project_fillet_arm(
         edge_treatments::{FilletGroup, RadiusSpec},
         EdgeSelection, FeatureDefinition, FeatureOperation,
     };
+
+    if parameters.is_empty()
+        && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+            scope,
+            inputs.construction_groups,
+        )
+    {
+        return native_scope_definition(scope, parameters);
+    }
 
     if parameters.is_empty() {
         if let Some(definition) = project_full_round_fillet(
@@ -3135,6 +3144,41 @@ const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
+fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
+    if flipped {
+        Vector3::new(0.0 - normal.x, 0.0 - normal.y, 0.0 - normal.z)
+    } else {
+        normal
+    }
+}
+
+/// Normal of the Design Geometry origin plane that a neutral-plane member names.
+///
+/// An origin-plane identity shares its number with an ASM entity, so its
+/// historical candidates describe unrelated topology.
+fn selected_origin_plane_normal(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<Vector3> {
+    let stream = native_stream(&scope.id)?;
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
+        return None;
+    };
+    let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+            && operand.record_index() == *member
+    }))?;
+    if selection.secondary().is_some() {
+        return None;
+    }
+    crate::history::selection::design_geometry_mirror_plane(selection.primary_identity)
+        .map(|plane| plane.normal)
+}
+
 fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
@@ -3146,6 +3190,8 @@ fn project_draft(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let construction = or_none!(scope.draft_operation());
+    let flipped = construction.flags.is_some_and(|flags| flags.flipped);
+    let angle_outward = draft_outward(construction.angle.get());
     let faces = or_none!(single_operand_group(
         groups,
         scope,
@@ -3190,7 +3236,10 @@ fn project_draft(
             {
                 let transform = or_none!(neutral_plane.work_plane_transform());
                 let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
-                    Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
+                    draft_pull_vector(
+                        Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                        flipped,
+                    )
                 ));
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
@@ -3219,6 +3268,37 @@ fn project_draft(
                     },
                 )));
             }
+            if let Some(normal) =
+                selected_origin_plane_normal(scope, neutral_plane, entity_selection_operands)
+            {
+                let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
+                    draft_pull_vector(normal, flipped)
+                ));
+                return Ok(Some(FeatureDefinition::Operation(
+                    FeatureOperation::Draft {
+                        faces: project_draft_face_selection(
+                            scope,
+                            faces,
+                            face_operands,
+                            histories,
+                        )?,
+                        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::FaceSelection::Native(
+                                neutral_plane.id.clone(),
+                            ),
+                            pull: Some(cadmpeg_ir::features::DraftPull {
+                                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                                plane: None,
+                            }),
+                        },
+                        angle: (Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                            construction.angle.get(),
+                        ))))
+                        .map(Into::into),
+                        outward: Some(angle_outward),
+                    },
+                )));
+            }
             let neutral_plane = selected_historical_face_selection(
                 scope,
                 neutral_plane,
@@ -3236,7 +3316,7 @@ fn project_draft(
                     construction.angle.get(),
                 ))))
                 .map(Into::into),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward != flipped),
             }))
         }
         [neutral_plane] if member_of_scope(neutral_plane) => {
@@ -3255,7 +3335,7 @@ fn project_draft(
                     construction.angle.get(),
                 ))))
                 .map(Into::into),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward != flipped),
             }))
         }
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
@@ -3277,7 +3357,10 @@ fn project_draft(
             };
             let transform = or_none!(pull_plane.work_plane_transform());
             let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
-                Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
+                draft_pull_vector(
+                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                    flipped,
+                )
             ));
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
@@ -3297,7 +3380,7 @@ fn project_draft(
                     construction.angle.get(),
                 ))))
                 .map(Into::into),
-                outward: Some(draft_outward(construction.angle.get())),
+                outward: Some(angle_outward),
             }))
         }
         _ => None,
@@ -3687,19 +3770,30 @@ pub(super) fn project_shell(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let (crate::records::feature::scope::DesignScopePayload::Shell(Some(
-        crate::records::feature::direct_face::DesignShellOperation {
-            thickness, outward, ..
-        },
-    ))
-    | crate::records::feature::scope::DesignScopePayload::Schale(Some(
-        crate::records::feature::direct_face::DesignShellOperation {
-            thickness, outward, ..
-        },
-    ))) = &scope.payload()
+    let (crate::records::feature::scope::DesignScopePayload::Shell(Some(operation))
+    | crate::records::feature::scope::DesignScopePayload::Schale(Some(operation))) =
+        &scope.payload()
     else {
         return Ok(None);
     };
+    let inside = operation.thickness.get();
+    let slots = operation.wall_slots.as_ref();
+    let (wall, outward, mode) = match slots.and_then(|slots| slots.outside.as_ref()) {
+        None => (inside, Some(operation.outward), None),
+        Some(outside) if outside.thickness.get().to_bits() == inside.to_bits() => (
+            inside + outside.thickness.get(),
+            None,
+            Some(cadmpeg_ir::features::ShellMode::BothSides),
+        ),
+        Some(_) => return Ok(None),
+    };
+    let join = slots.map(|slots| {
+        if slots.rounded_corners {
+            cadmpeg_ir::features::ShellJoin::Arc
+        } else {
+            cadmpeg_ir::features::ShellJoin::Intersection
+        }
+    });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
     let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
@@ -3716,12 +3810,12 @@ pub(super) fn project_shell(
             bodies,
             removed_faces,
             thickness: (Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                thickness.get() * 10.0,
+                wall * 10.0,
             ))))
             .map(Into::into),
-            outward: Some(*outward),
-            mode: None,
-            join: None,
+            outward,
+            mode,
+            join,
             resolve_intersections: None,
             allow_self_intersections: None,
         },
@@ -5661,23 +5755,16 @@ fn revolve_face_axis_operand<'a>(
     .then_some(operand)
 }
 
-/// Orient every resolved Revolve axis so that the revolve turns right-handed
-/// about the axis direction.
-///
-/// Fusion revolves a positive angle from the profile toward the normal side of
-/// the profile's sketch plane. The stored direction of an origin axis or of a
-/// sketch line plays no part. The direction that turns the profile that way is
-/// the cross product of the in-plane direction from the axis to the profile and
-/// the sketch normal. A Revolve whose profile side is not established keeps its
-/// profile and extent but loses its axis, because a guessed direction can turn
-/// the profile the other way.
+/// Orient partial-turn axes using the source sweep convention.
 pub(crate) fn orient_revolve_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     (linear_tolerance, angular_tolerance): (f64, f64),
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::{
+        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolveExtent,
+    };
 
     for feature in features {
         feature.evaluation.edit(|definition, _| {
@@ -5689,6 +5776,14 @@ pub(crate) fn orient_revolve_axes(
             let Some(axis) = construction.axis().cloned() else {
                 return;
             };
+            if matches!(
+                construction.extent(),
+                Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle },
+                }) if matches!(angle, cadmpeg_ir::Dimension::Literal(a) if *a == cadmpeg_ir::scalar::PositiveAngle::FULL_TURN)
+            ) {
+                return;
+            }
             let oriented = match construction.profile() {
                 Some(PlanarProfileRef::Sketch(sketch)) => sketches
                     .iter()
@@ -7401,18 +7496,18 @@ fn hole_termination(
 /// Whether the face operands of a Hole scope name at most its start face: no
 /// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
 /// followed by a `bounded_face` recipe, each bound to its scope reference entry.
-/// A further face operand or a direct persistent face selection can name an
-/// extent face, so it refuses the form.
+/// A further face operand, or a direct persistent face selection on a carrier
+/// that sketch points do not place, can name an extent face, so it refuses the
+/// form.
 fn hole_start_faces_only(
     scope: &DesignParameterScope,
     face_operands: &[DesignFaceOperand],
 ) -> Option<bool> {
     use crate::records::recipes::ConstructionRecipeKind;
     let stream = native_stream(&scope.id)?;
-    if scope
-        .hole_construction()
-        .is_some_and(|construction| construction.face_selection.is_some())
-    {
+    if scope.hole_construction().is_some_and(|construction| {
+        construction.face_selection.is_some() && !construction.placed_by_sketch_points()
+    }) {
         return Some(false);
     }
     let mut faces: Vec<_> = face_operands
@@ -7443,6 +7538,30 @@ fn hole_start_faces_only(
             && bound(first)
             && bound(second),
     )
+}
+
+/// One directed placement per Hole entry point, in model millimetres.
+fn hole_placements(
+    scope: &DesignParameterScope,
+) -> Option<Vec<cadmpeg_ir::features::holes::HolePlacement>> {
+    let construction = scope.hole_construction()?;
+    let control = scope.hole_extent()?.direction_control.as_ref()?.value;
+    let [x, y, z] = construction.drilling_direction(control)?;
+    let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(x, y, z))?;
+    construction
+        .entry_points()?
+        .into_iter()
+        .map(|point| {
+            Some(cadmpeg_ir::features::holes::HolePlacement::Directed {
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    point[0].get() * 10.0,
+                    point[1].get() * 10.0,
+                    point[2].get() * 10.0,
+                ))?,
+                direction,
+            })
+        })
+        .collect()
 }
 
 fn project_hole(
@@ -7539,22 +7658,12 @@ fn project_hole(
         Some(face) => face,
         None => FaceSelection::Native(scope.id.clone()),
     };
-    let placements = if let Some(construction) = scope.hole_construction() {
-        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-            position: or_none!(cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                construction.position[0].get() * 10.0,
-                construction.position[1].get() * 10.0,
-                construction.position[2].get() * 10.0,
-            ))),
-            direction: or_none!(cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                construction.direction[0].get(),
-                construction.direction[1].get(),
-                construction.direction[2].get(),
-            ))),
-        }])
-    } else {
-        None
-    };
+    let placements = hole_placements(scope);
+    if placements.is_none() {
+        losses.push(crate::loss::F3dLossCode::HolePlacementUnproven.note(format!(
+            "Hole {} retains its native placement because its carrier and point-data records do not define an admitted placement.", scope.id
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
@@ -8123,7 +8232,13 @@ fn project_delete_face(
         face_operands,
     )
     .map_or_else(
-        || resolved_face_group(group, face_operands),
+        || {
+            if heal {
+                Ok(None)
+            } else {
+                resolved_face_group(group, face_operands)
+            }
+        },
         |face| Ok(Some(face)),
     )?;
     let faces = match faces {

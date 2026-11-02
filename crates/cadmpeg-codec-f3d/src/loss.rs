@@ -44,6 +44,8 @@ pub(crate) enum F3dLossCode {
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
     WorkPlaneFrameUnbound,
+    /// A cylinder primitive has no unique checked solved placement.
+    CylinderPlacementUnbound,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -130,6 +132,8 @@ pub(crate) enum F3dLossCode {
     HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
     DesignBodyBindingUnresolved,
+    /// Design body-map pairs name a body outside the current model.
+    HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
     /// Decal timeline objects retain native image and mapping records.
@@ -161,6 +165,8 @@ pub(crate) enum F3dLossCode {
     MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
+    /// A Hole carrier and its point-data records do not define an admitted placement.
+    HolePlacementUnproven,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -246,6 +252,10 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Combine body refinement violates operand arity or disjoint membership.
+    FeatureCombineSelectionNative,
+    /// Fixed Fillet scalar lanes have no complete group assignment.
+    FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
     /// Feature face operands stay unresolved inside historical selections.
@@ -459,6 +469,7 @@ impl F3dLossCode {
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
+        Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -496,6 +507,7 @@ impl F3dLossCode {
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
+        Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
@@ -511,6 +523,7 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
+        Self::HolePlacementUnproven,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -552,6 +565,8 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureCombineSelectionNative,
+        Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
@@ -659,6 +674,7 @@ impl F3dLossCode {
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
+            Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -706,6 +722,7 @@ impl F3dLossCode {
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
+            Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
@@ -726,6 +743,7 @@ impl F3dLossCode {
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
+            Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
@@ -765,6 +783,8 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
@@ -925,6 +945,7 @@ impl F3dLossCode {
             | Self::RecipePrefixUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
@@ -959,6 +980,7 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
+            | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
@@ -972,6 +994,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1015,6 +1038,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
@@ -1150,7 +1175,9 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1190,6 +1217,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
@@ -1204,7 +1233,8 @@ impl F3dLossCode {
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentAmbiguous
-            | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyRootPathIdentitiesNative
+            | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::ImageAssetUntransferred => LossTaxonomy::AssetNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
@@ -1331,6 +1361,7 @@ mod tests {
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
+                "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
@@ -1368,6 +1399,7 @@ mod tests {
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
+                "design.history-only-body-omitted",
                 "appearance.reference-image-native",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
@@ -1383,6 +1415,7 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
+                "feature.hole-placement-unproven",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",
@@ -1424,6 +1457,8 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.combine-selection-native",
+                "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",

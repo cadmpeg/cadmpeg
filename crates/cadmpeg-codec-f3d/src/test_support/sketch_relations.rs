@@ -50,6 +50,20 @@ pub(crate) fn rectangular_pattern_record(
     flags: [u8; 3],
     direction_reference_count: u32,
 ) -> Vec<u8> {
+    rectangular_grid_pattern_record(
+        [count, 1],
+        [distance, 0.0],
+        flags,
+        direction_reference_count,
+    )
+}
+
+pub(crate) fn rectangular_grid_pattern_record(
+    counts: [u32; 2],
+    distances: [f64; 2],
+    flags: [u8; 3],
+    direction_reference_count: u32,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     super::lp_ascii(&mut bytes, "300");
     bytes.extend_from_slice(&10u64.to_le_bytes());
@@ -64,8 +78,8 @@ pub(crate) fn rectangular_pattern_record(
     }
     bytes.extend_from_slice(&[0; 8]);
     for (n, count_parameter, direction, value, distance_parameter) in [
-        (count, 20u64, [1.0f64, 0.0, 0.0], distance, 21u64),
-        (1, 22, [0.0, 1.0, 0.0], 0.0, 23),
+        (counts[0], 20u64, [1.0f64, 0.0, 0.0], distances[0], 21u64),
+        (counts[1], 22, [0.0, 1.0, 0.0], distances[1], 23),
     ] {
         bytes.extend_from_slice(&n.to_le_bytes());
         super::push_reference_u64(&mut bytes, count_parameter);

@@ -107,6 +107,57 @@ fn references(
     Ok(values)
 }
 
+fn is_selection_type(kind: &crate::records::entity_header::SegmentTypeData) -> bool {
+    kind.type_guid.as_str().eq_ignore_ascii_case(TYPE_GUID)
+        && kind
+            .base_type_guid
+            .value()
+            .is_some_and(|guid| guid.as_str().eq_ignore_ascii_case(BASE_GUID))
+        && kind.version == 1
+        && kind.module == "Fusion"
+}
+
+/// Visit each framed selection record with the local targets of its second
+/// reference run. A record outside this frame form is skipped.
+pub(super) fn for_each_selection(
+    root: View<'_>,
+    meta: &crate::metastream::MetaStream,
+    frames: &std::collections::HashMap<u64, PrimaryRecordFrame>,
+    mut visit: impl FnMut(PrimaryRecordFrame, &[u64]),
+) {
+    for (ordinal, kind) in meta.types.iter().enumerate() {
+        if !is_selection_type(kind) {
+            continue;
+        }
+        for entity in kind.entities.values() {
+            let Some(frame) = frames.get(entity).copied() else {
+                continue;
+            };
+            let targets = root
+                .child(frame.start, frame.member_end)
+                .and_then(|view| prefix(view, frame, ordinal))
+                .and_then(|view| tail::parse(view, false))
+                .and_then(|fields| local_targets(root, fields.second));
+            if let Some(targets) = targets {
+                visit(frame, &targets);
+            }
+        }
+    }
+}
+
+fn local_targets(root: View<'_>, span: tail::ReferenceRunSpan) -> Option<Vec<u64>> {
+    let run = root.child(
+        usize::try_from(span.start).ok()?,
+        usize::try_from(span.end).ok()?,
+    )?;
+    let mut cursor = 0;
+    let mut targets = Vec::new();
+    while cursor < run.remaining() {
+        targets.push(take_reference(run.window(), &mut cursor)?.into_local()?.0);
+    }
+    Some(targets)
+}
+
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -140,14 +191,7 @@ pub(crate) fn decode(
             .map(|frame| (frame.entity_id, frame))
             .collect();
         for (ordinal, kind) in meta.types.iter().enumerate() {
-            if !kind.type_guid.as_str().eq_ignore_ascii_case(TYPE_GUID)
-                || !kind
-                    .base_type_guid
-                    .value()
-                    .is_some_and(|guid| guid.as_str().eq_ignore_ascii_case(BASE_GUID))
-                || kind.version != 1
-                || kind.module != "Fusion"
-            {
+            if !is_selection_type(kind) {
                 continue;
             }
             for entity in kind.entities.values() {

@@ -7,14 +7,15 @@ use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
 use crate::layout::entity_common_header as entity_hdr;
+use crate::layout::integer_values_header as int_values;
 
 /// Named ATTRIBUTE family whose inline `REAL_VALUES` child carries face color.
 const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
 
 #[derive(Debug, Clone)]
 pub(crate) struct FaceColor {
-    pub(crate) face_attr: u16,
-    pub(crate) color_attr: u16,
+    pub(crate) face_attr: u32,
+    pub(crate) color_attr: u32,
     pub(super) face_seq: u32,
     pub(super) stream_order: usize,
     pub(crate) color: Color,
@@ -24,7 +25,7 @@ pub(crate) struct FaceColor {
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FaceColorVersion {
-    pub(super) face_attr: u16,
+    pub(super) face_attr: u32,
     pub(super) seq: u32,
     pub(super) stream_order: usize,
 }
@@ -40,22 +41,22 @@ pub(crate) struct Facts {
     pub(super) face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
-    pub(super) face_payloads: Vec<(u16, Vec<u32>)>,
-    pub(super) body_payloads: Vec<(u16, Vec<u32>)>,
+    pub(super) face_payloads: Vec<(u32, Vec<u32>)>,
+    pub(super) body_payloads: Vec<(u32, Vec<u32>)>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
 }
 
 #[derive(Debug, Clone)]
 struct EntityRecord {
-    attr: u16,
+    attr: u32,
     seq: u32,
-    disc: u16,
-    refs: Vec<u16>,
+    disc: u32,
+    refs: Vec<u32>,
     end: usize,
 }
 
-/// Number of u16 fields in one bare XT ATTRIBUTE node.
+/// Number of pointer fields in one bare XT ATTRIBUTE node.
 ///
 /// The low flag byte is the value count. Every attribute has five pointer
 /// fields before its values, regardless of the definition node it references.
@@ -63,7 +64,7 @@ fn attribute_slot_count(flo: u8) -> Option<usize> {
     (1..=0x20).contains(&flo).then_some(5 + usize::from(flo))
 }
 
-fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16>, usize)> {
+fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u32>, usize)> {
     if prefixed {
         if body.get(at) != Some(&1) {
             return None;
@@ -71,7 +72,7 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         let mut out = Vec::new();
         let mut p = at;
         while body.get(p) == Some(&1) {
-            out.push(View::u16_be_at(body, p.checked_add(1)?)?);
+            out.push(super::word_at(body, p.checked_add(1)?)?);
             p = p.checked_add(3)?;
         }
         if !out.is_empty() && body.get(p) == Some(&0) {
@@ -79,16 +80,45 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         }
     }
     let mut refs = Vec::new();
-    for index in 0..count {
-        let cell = index
-            .checked_mul(2)
-            .and_then(|delta| at.checked_add(delta))?;
-        refs.push(View::u16_be_at(body, cell)?);
+    let mut end = at;
+    for _ in 0..count {
+        refs.push(cadmpeg_parasolid::pointer::read_at(body, &mut end)?);
     }
-    count
-        .checked_mul(2)
-        .and_then(|size| at.checked_add(size))
-        .map(|end| (refs, end))
+    Some((refs, end))
+}
+
+pub(super) struct EntityHeader {
+    pub(super) flags: u32,
+    pub(super) attr: u32,
+    pub(super) seq: u32,
+    pub(super) disc: u32,
+    pub(super) fields: usize,
+}
+
+pub(super) fn attribute_header(bytes: &[u8], p: usize) -> Option<EntityHeader> {
+    bytes.get(p..p.checked_add(entity_hdr::LEN)?)?;
+    let flags = View::u32_be_at(bytes, p + entity_hdr::FLAGS)?;
+    let mut at = p + entity_hdr::ATTR;
+    let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    let shifted = at.checked_sub(entity_hdr::SEQ)?;
+    let seq = View::u32_be_at(bytes, shifted + entity_hdr::SEQ)?;
+    at = shifted + entity_hdr::DISC;
+    let disc = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    Some(EntityHeader {
+        flags,
+        attr,
+        seq,
+        disc,
+        fields: at,
+    })
+}
+
+pub(super) fn integer_values_header(bytes: &[u8], p: usize) -> Option<(u32, u32, usize)> {
+    bytes.get(p..p.checked_add(int_values::LEN)?)?;
+    let count = View::u32_be_at(bytes, p + int_values::COUNT)?;
+    let mut at = p + int_values::NODE_INDEX;
+    let node = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    (node > 1).then_some((count, node, at))
 }
 
 fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
@@ -105,16 +135,14 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
         if body.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(flags) = View::u32_be_at(body, p + entity_hdr::FLAGS) else {
-            continue;
-        };
-        let Some(attr) = View::u16_be_at(body, p + entity_hdr::ATTR) else {
-            continue;
-        };
-        let Some(seq) = View::u32_be_at(body, p + entity_hdr::SEQ) else {
-            continue;
-        };
-        let Some(disc) = View::u16_be_at(body, p + entity_hdr::DISC) else {
+        let Some(EntityHeader {
+            flags,
+            attr,
+            seq,
+            disc,
+            fields,
+        }) = attribute_header(body, p)
+        else {
             continue;
         };
         let [_, _, _, flo] = flags.to_be_bytes();
@@ -129,7 +157,7 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
             };
             count
         };
-        let Some((refs, end)) = refs(body, p + entity_hdr::LEN, count, prefixed) else {
+        let Some((refs, end)) = refs(body, fields, count, prefixed) else {
             continue;
         };
         out.push(EntityRecord {
@@ -143,7 +171,7 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
     out
 }
 
-fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
+fn color_record(body: &[u8], off: usize) -> Option<(u32, Color, usize)> {
     if body.get(off..off + 2) != Some(&[0x00, 0x53]) {
         return None;
     }
@@ -151,14 +179,14 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     if body.get(p) == Some(&0xff) {
         p += 1;
     }
-    if View::u32_be_at(body, p)? & 0xff != 3 {
+    let (count, attr, data) = integer_values_header(body, p)?;
+    if count & 0xff != 3 {
         return None;
     }
-    let attr = View::u16_be_at(body, p + 4)?;
     let [r, g, b] = [
-        View::f64_be_at(body, p + 6)?,
-        View::f64_be_at(body, p + 14)?,
-        View::f64_be_at(body, p + 22)?,
+        View::f64_be_at(body, data)?,
+        View::f64_be_at(body, data + 8)?,
+        View::f64_be_at(body, data + 16)?,
     ];
     if attr <= 1
         || ![r, g, b]
@@ -168,7 +196,7 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
         return None;
     }
     let color = Color::new(f32_from_f64(r)?, f32_from_f64(g)?, f32_from_f64(b)?, 1.0)?;
-    Some((attr, color, p + 30))
+    Some((attr, color, data + 24))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -178,10 +206,10 @@ struct FramedColor {
     parent_seq: u32,
 }
 
-fn linked_colors(body: &[u8], entities: &[EntityRecord]) -> HashMap<(u16, u16), Vec<FramedColor>> {
-    let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
+fn linked_colors(body: &[u8], entities: &[EntityRecord]) -> HashMap<(u32, u32), Vec<FramedColor>> {
+    let mut colors = HashMap::<(u32, u32), Vec<FramedColor>>::new();
     for parent in entities {
-        let mut linked_faces: HashSet<u16> = parent.refs.iter().copied().collect();
+        let mut linked_faces: HashSet<u32> = parent.refs.iter().copied().collect();
         linked_faces.insert(parent.attr);
         let mut at = parent.end;
         while let Some((color_attr, color, end)) = color_record(body, at) {
@@ -295,6 +323,15 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
 mod tests {
     use super::{attribute_slot_count, refs, scan_entities, scan_metadata, FACE_COLOR_FAMILY};
 
+    fn pointer(out: &mut Vec<u8>, value: u16) {
+        if value <= 0x7ffe {
+            out.extend(value.to_be_bytes());
+        } else {
+            out.extend((value | 0x8000).to_be_bytes());
+            out.extend((value >> 15).to_be_bytes());
+        }
+    }
+
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: &[u16]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
         bytes.extend_from_slice(&1_u32.to_be_bytes());
@@ -308,10 +345,12 @@ mod tests {
     fn bare_entity_slots(attr: u16, seq: u32, disc: u16, flo: u8, refs: &[u16]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
         bytes.extend_from_slice(&u32::from(flo).to_be_bytes());
-        bytes.extend_from_slice(&attr.to_be_bytes());
+        pointer(&mut bytes, attr);
         bytes.extend_from_slice(&seq.to_be_bytes());
-        bytes.extend_from_slice(&disc.to_be_bytes());
-        bytes.extend(refs.iter().flat_map(|reference| reference.to_be_bytes()));
+        pointer(&mut bytes, disc);
+        for reference in refs {
+            pointer(&mut bytes, *reference);
+        }
         bytes
     }
 
@@ -378,7 +417,7 @@ mod tests {
         }
         bytes.push(0);
 
-        assert_eq!(refs(&bytes, 0, 6, true), Some(((2_u16..=8).collect(), 22)));
+        assert_eq!(refs(&bytes, 0, 6, true), Some(((2_u32..=8).collect(), 22)));
     }
 
     #[test]

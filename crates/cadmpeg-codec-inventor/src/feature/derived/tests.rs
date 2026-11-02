@@ -113,7 +113,7 @@ fn property_wire_keeps_all_source_references() {
 #[test]
 fn unsupported_component_versions_lengths_and_lists_remain_untyped() {
     let bytes = component();
-    for version in [18, 23, 25, 31] {
+    for version in [18, 20, 22, 24, 25, 31] {
         assert!(super::parser(
             super::COMPONENT_TYPE,
             cadmpeg_core::decode::View::over_retained(&bytes),
@@ -152,4 +152,55 @@ fn native_component_wire_cannot_add_an_unchecked_list_count() {
     let mut wire = serde_json::to_value(value).expect("serialize");
     wire["kind"]["definition"]["count"] = 1.into();
     assert!(serde_json::from_value::<PmDcFeaturePropertyPayload>(wire).is_err());
+}
+
+#[test]
+fn version_23_component_suffix_is_zero_and_source_header_has_one_stamp() {
+    let mut bytes = component();
+    push_u32(
+        &mut bytes,
+        crate::layout::pm_dc_derived_component_suffix::STATE_VALUE,
+    );
+    assert!(parsed(&bytes, false, 23).is_ok());
+    assert!(super::parser(
+        super::COMPONENT_TYPE,
+        cadmpeg_core::decode::View::over_retained(&bytes),
+        23
+    )
+    .is_some());
+    assert!(parsed(&bytes, false, 19).is_err());
+    let suffix = bytes.len() - crate::layout::pm_dc_derived_component_suffix::LEN;
+    for value in [1_u32, u32::MAX] {
+        bytes[suffix..].copy_from_slice(&value.to_le_bytes());
+        assert!(parsed(&bytes, false, 23).is_err());
+        assert!(super::parser(
+            super::COMPONENT_TYPE,
+            cadmpeg_core::decode::View::over_retained(&bytes),
+            23
+        )
+        .is_none());
+    }
+    let mut source = content(5);
+    push_u32(&mut source, u32::MAX);
+    push_u32(&mut source, 0x8000_0006);
+    let result = parsed(&source, true, 23).expect("version-23 source");
+    assert_eq!(result.header.stamps, [-1]);
+    assert!(
+        matches!(result.kind, PmDcFeaturePropertyKind::Derived { definition: Property::Source { component } } if component == crate::pmdc::PmDcReference::from_packed(0x8000_0006))
+    );
+    assert!(super::parser(
+        super::SOURCE_TYPE,
+        cadmpeg_core::decode::View::over_retained(&source),
+        23
+    )
+    .is_some());
+    assert!(super::parser(
+        super::SOURCE_TYPE,
+        cadmpeg_core::decode::View::over_retained(&source),
+        19
+    )
+    .is_none());
+    for len in 0..source.len() {
+        assert!(parsed(&source[..len], true, 23).is_err());
+    }
 }

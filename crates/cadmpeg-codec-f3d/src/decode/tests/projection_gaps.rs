@@ -64,6 +64,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
             map_ordinal: 0,
             component_owner: None,
             component_owner_unresolved: false,
+            history_only: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
@@ -464,6 +465,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         design_projection_gaps(&ir, &native),
         DesignProjectionGaps {
             unresolved_body_bindings: 0,
+            history_only_body_bindings: 0,
             incomplete_features: 6,
             native_reference_images: 0,
             native_decals: 0,

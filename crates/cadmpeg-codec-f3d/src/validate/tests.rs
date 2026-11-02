@@ -54,6 +54,7 @@ mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
 mod parameter_state;
+mod repro_fragments;
 mod sweep_body_roles;
 mod thread_link;
 mod timeline;
@@ -484,6 +485,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 } else {
                     operand_record_index
                 },
+                target_body_node: None,
                 tools: crate::records::feature::combine::DesignCombineTools {
                     first: DesignCombineBodySelection {
                         record_index: if empty_legacy_tool {
@@ -492,6 +494,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        body_node: None,
                     },
                     additional: vec![],
                 },

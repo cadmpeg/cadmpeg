@@ -14,6 +14,7 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
         map_ordinal: 0,
         component_owner: None,
         component_owner_unresolved: false,
+        history_only: false,
         id: "f3d:Design/BulkStream.dat:design-body-binding#10".to_owned(),
         stream: "Design/BulkStream.dat".to_owned(),
         pair_count: 1,

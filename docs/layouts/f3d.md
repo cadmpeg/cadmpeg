@@ -44,6 +44,24 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
+## `construction_operand_extended_path_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 65 B
+
+Offsets are relative to the path record's indexed header. The placement follows the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 28 | `zero_run` | `bytes[28]` | little | spec | Its indexed header is followed by 28 zero bytes |
+| 39 | 4 | `prefix_value` | `u32` | little | spec | `u32 3` at offset 39 · value `3` |
+| 43 | 13 | `trailing_zero_run` | `bytes[13]` | little | spec | and 13 zero bytes |
+| 56 | 1 | `entity_marker` | `u8` | little | spec | Byte 56 is `01` · value `1` |
+| 57 | 8 | `entity_reference` | `u64` | little | spec | the u64 persistent entity reference is at offset 57 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
 ## `sketch_container_visibility_member_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 37 B
@@ -156,7 +174,7 @@ Parsed by:
 | 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
 | 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
 
-## `design_parameter_legacy_287_tail`
+## `design_parameter_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
 
@@ -167,9 +185,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `tail_prefix` | `bytes[2]` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` · value `[0, 1]` |
-| 2 | 1 | `family_marker` | `u8` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` · value `175` |
-| 3 | 9 | `zero_run_9` | `bytes[9]` | little | spec | the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00` |
+| 0 | 1 | `separator` | `u8` | little | spec | The twelve-byte parameter tail is · value `0` |
+| 1 | 1 | `collection_marker` | `u8` | little | spec | The twelve-byte parameter tail is · value `1` |
+| 2 | 4 | `collection_record_index` | `u32` | little | spec | The twelve-byte parameter tail is |
+| 6 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The twelve-byte parameter tail is |
 
 ## `design_parameter_owner_prefix`
 
@@ -244,6 +263,37 @@ Parsed by:
 | 77 | 1 | `repeated_scope_marker` | `u8` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
+
+## `draft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the primary indexed scope header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | stores ten zero bytes at offsets 11 through 20, u32 three at offset 21 |
+| 21 | 4 | `form` | `u32` | little | spec | u32 three at offset 21 · value `3` |
+| 25 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 25 |
+| 29 | 1 | `flipped` | `u8` | little | spec | the flipped Boolean at offset 29 |
+| 30 | 1 | `tangent_chain` | `u8` | little | spec | the tangent-chain Boolean at offset 30 |
+| 31 | 4 | `mode` | `u32` | little | spec | the mode u32 at offset 31 |
+| 35 | 11 | `angle_reference` | `bytes[11]` | little | spec | a marked reference to the first angle lane at offset 35 |
+| 46 | 11 | `opposite_angle_reference` | `bytes[11]` | little | spec | a marked reference to the second angle lane at offset 46 |
+
+## `shell_wall_slot_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 23 B
+
+Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | offset 21 is the tangent-chain Boolean |
+| 22 | 1 | `rounded_corners` | `u8` | little | spec | offset 22 is the corner Boolean |
 
 ## `shell_class_369_261_scope_frame`
 
@@ -652,6 +702,23 @@ Parsed by:
 | 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
+
+## `design_hole_direction_control`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
+
+Unstated regions:
+
+- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
 
 ## `design_hole_point_data_v1_prefix`
 
@@ -1881,6 +1948,51 @@ Offsets are relative to the class-329 primary indexed scope header. The variable
 | 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
 | 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
 | 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field |
+
+## `combine_operand_list_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20, the zero-based operation |
+| 21 | 4 | `operation` | `u32` | little | spec | the zero-based operation u32 at offset 21 |
+| 25 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 25 through 28 |
+| 29 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 29 |
+| 30 | 1 | `zero_flag` | `u8` | little | spec | zero at byte 30 |
+| 31 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 31, a marked nonzero |
+| 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
+| 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
+| 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field, a u64 |
+| 46 | 8 | `stamp` | `u64` | little | spec | a u64 operation-identity value at offset 46 |
+| 54 | 4 | `tool_count` | `u32` | little | spec | the tool list at offset 54 |
+
+## `combine_body_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the body-selection record header. The clauses start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A body-selection record of the operand-list form stores ten zero bytes after its indexed header |
+| 21 | 4 | `clause_count` | `u32` | little | spec | the u32 clause count at offset 21 |
+
+## `combine_body_node_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A browser node stores ten zero bytes after its indexed header |
+| 21 | 4 | `guid_code_unit_count` | `u32` | little | spec | the counted GUID at offset 21 |
 
 ## `combine_external_selector_prefix`
 
@@ -5630,6 +5742,18 @@ Spec §3.1 · layout: byte offsets · size: 25 B
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 | 21 | 4 | `reference_count` | `u32` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
 
+## `body_consumer_browser_node_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the browser-node record header. The GUID code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A browser node named this way stores ten zero bytes after its indexed header |
+| 21 | 4 | `guid_code_unit_count` | `u32` | little | spec | the counted GUID at offset 21, hidden flag `1` |
+
 ## `body_reference_persistent_pair`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
@@ -8012,20 +8136,6 @@ Parsed by:
 | 22 | 11 | `offset_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
 | 33 | 1 | `end_flag` | `u8` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` · value `1` |
 
-## `design_parameter_plain_tail`
-
-Spec §3.1 · layout: byte offsets · size: 12 B
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `reserved` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `0` |
-| 1 | 1 | `reference` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `1` |
-| 2 | 8 | `target` | `u64` | little | spec | The reference stores its complete u64 target and two zero flag bytes. |
-| 10 | 2 | `flags` | `bytes[2]` | little | spec | The reference stores its complete u64 target and two zero flag bytes. · value `[0, 0]` |
-
 ## `design_configuration_table_serializer_prefix`
 
 Spec §1.2 · layout: byte offsets · size: 66 B
@@ -8106,6 +8216,23 @@ Parsed by:
 | 22 | 4 | `type_length` | `u32` | little | derived | ASCII byte length of IntrinsicMetaTypeuint64. · value `23` |
 | 26 | 23 | `meta_type` | `bytes[23]` | little | spec | LP-ASCII `IntrinsicMetaTypeuint64` · value `"IntrinsicMetaTypeuint64"` |
 | 49 | 8 | `entity_genesis` | `u64` | little | spec | the u64 origin bitfield |
+
+## `pathless_external_placement_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 25 B
+
+Prefix through the control word; the metadata UUIDs follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `indexed_header` | `bytes[15]` | little | spec | A pathless occurrence placement |
+| 15 | 4 | `empty_name` | `u32` | little | spec | A pathless occurrence placement · value `0` |
+| 19 | 1 | `path_flag` | `u8` | little | spec | A pathless occurrence placement · value `0` |
+| 20 | 1 | `separator` | `u8` | little | spec | A pathless occurrence placement · value `0` |
+| 21 | 4 | `control` | `u32` | little | spec | A pathless occurrence placement · value `1` |
 
 ## Not tabulated
 

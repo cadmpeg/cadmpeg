@@ -133,6 +133,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -400,6 +401,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -482,6 +484,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -598,6 +601,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -685,6 +689,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -893,6 +898,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -1036,6 +1042,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             feature_input_lane("first", Some("0")),
             feature_input_lane("second", Some("1")),
         ],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     );
     assert_eq!(ir.model.parameters, expected.model.parameters);

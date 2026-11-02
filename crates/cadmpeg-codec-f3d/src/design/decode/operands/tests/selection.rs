@@ -701,6 +701,21 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     );
     assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
 
+    for successor in [99u32, 114, u32::MAX] {
+        let mut independent_successor = bytes[..next_at].to_vec();
+        indexed_header(&mut independent_successor, *b"311", successor);
+        let operand = parse_entity_selection_operand(&independent_successor, &group, 0, &record)
+            .expect("expanded identity with independent successor");
+        assert_eq!(operand.primary_identity, 1331);
+        assert_eq!(operand.secondary().unwrap().identity.value, 183);
+        assert_eq!(operand.next_record_index(), successor);
+        assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+        let wire = serde_json::to_vec(&operand).unwrap();
+        let restored: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
+            serde_json::from_slice(&wire).unwrap();
+        assert_eq!(restored, operand);
+    }
+
     let mut compact = bytes[..identity_at].to_vec();
     indexed_header(&mut compact, *b"429", 103);
     compact.extend_from_slice(&[0; 10]);
@@ -911,3 +926,23 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
 }
 
 mod counted_frames;
+
+#[test]
+fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
+    let (mut bytes, selection_at, _, _) = region_selection_frame();
+    let first_member =
+        selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
+    let incidence = first_member
+        + crate::layout::sketch_profile_region_member::ZERO_WORDS_3
+        + std::mem::size_of::<[u32; 3]>();
+    bytes[incidence + 4..incidence + 8].copy_from_slice(&11u32.to_le_bytes());
+    bytes[incidence + 8..incidence + 12].copy_from_slice(&12u32.to_le_bytes());
+    let selection = parse_sketch_profile_region_selection(&bytes, 100, 0).unwrap();
+    let member = &selection.regions[0].members[0];
+    assert_eq!(member.incidence_values.map(u32::from), [11, 12]);
+    for offset in [incidence + 4, incidence + 8] {
+        let mut invalid = bytes.clone();
+        invalid[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
+    }
+}

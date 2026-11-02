@@ -130,6 +130,7 @@ fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
+        declared_measures: Omitted,
     };
     report_reductions(&mut coverage, losses);
     coverage
