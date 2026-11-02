@@ -130,6 +130,9 @@ the fixed header. Code 37 and version 4 select 33 bytes, with `zero:u32 LE` at
 `compressed_byte_len` and bytes `+18..+44` opaque. The extension may contain a
 Parasolid text header.
 
+Code 61 and version 4 select 57 bytes. The `zero:u32 LE` at `+14` equals zero.
+Bytes `+18..+56` are opaque.
+
 The computed position is a candidate member start. A wrapper resolves only when
 that position begins a checksum-valid zlib stream that consumes exactly
 `compressed_byte_len` bytes. A position without a zlib header stays unresolved;
