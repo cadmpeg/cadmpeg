@@ -2289,7 +2289,7 @@ narrow-attr FACE records carrying a pointer past `0x7fff`. The deltas forms of
 A record key is the decoded stream-local `attr` in the 31-bit pointer domain.
 A wide record key and a wide reference use the same encoding. The optional
 first-of-type `ff` precedes the record key. A wide record key can also start
-with byte `ff`. The complete record fields determine the framing.
+with byte `ff`. The complete record fields determine the framing. Complete analytic carriers, bounded-curve records, spline wrapper headers, curve and surface descriptors, and their referenced value arrays form enclosing node scopes. Their node IDs, references, and scalar payloads belong to that node. A byte pair equal to a node tag inside a field retains its field meaning.
 
 ### 4.1 XT ownership nodes
 

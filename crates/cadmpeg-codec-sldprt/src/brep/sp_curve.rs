@@ -311,6 +311,12 @@ fn native_header(bytes: &[u8], start: usize) -> Option<(Header, usize)> {
     ))
 }
 
+pub(super) fn record_end(bytes: &[u8], off: usize) -> Option<usize> {
+    super::record_starts(bytes, off, TAG)
+        .filter_map(|start| native_header(bytes, start).map(|(_, end)| end))
+        .min()
+}
+
 /// `00 89` records whose `b_curve` is in `pcurves`.
 pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap<u32, SpCurve> {
     let mut out = HashMap::new();

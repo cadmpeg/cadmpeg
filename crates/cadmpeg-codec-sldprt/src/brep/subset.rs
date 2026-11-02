@@ -133,6 +133,18 @@ fn header(bytes: &[u8], start: usize) -> Option<(u32, u32, usize)> {
     (source > 1).then_some((attr, source, at))
 }
 
+pub(super) fn record_end(bytes: &[u8], off: usize) -> Option<usize> {
+    super::record_starts(bytes, off, TAG)
+        .filter_map(|start| header(bytes, start))
+        .filter_map(|(_, _, data)| {
+            let end = data.checked_add(PAYLOAD_LEN)?;
+            (0..8)
+                .all(|index| View::f64_be_at(bytes, data + index * 8).is_some_and(f64::is_finite))
+                .then_some(end)
+        })
+        .min()
+}
+
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
 pub(super) fn scan(
     ctx: &DecodeContext<'_>,

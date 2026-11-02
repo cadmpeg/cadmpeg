@@ -38,6 +38,7 @@ use sheet_metal::refusal::PlateError;
 pub(crate) mod base;
 pub(crate) mod body_selection;
 pub(crate) mod chamfer;
+pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod delete_face;
 pub(crate) mod derived;
@@ -1865,13 +1866,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
         ],
         "SheetMetalPlate",
     ),
-    (
-        [
-            0xda, 0x14, 0x19, 0xb4, 0xd2, 0x11, 0xda, 0xd0, 0x60, 0x00, 0x12, 0xa9, 0x9d, 0xcc,
-            0xef, 0xb0,
-        ],
-        "Coil",
-    ),
+    (coil::CLASS_BYTES, "Coil"),
     (
         [
             0xda, 0xc2, 0x7a, 0x76, 0xd2, 0x11, 0x0d, 0x2e, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3,

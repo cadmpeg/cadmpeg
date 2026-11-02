@@ -763,6 +763,20 @@ In segment major version 19, the body-copy Mirror form with generated-node conte
 
 The generated body node has label class `5bb87e87ac4a0f14d314ef89ad8b5a7f`. It has the fixed generated-body feature layout in the layout table. It is a generic feature with outline value 3, 9, or 15, value 0, and four qualified property references with type-2 metadata `[4, 0]`. Its label has an empty type-2 participant list. Slots 0 through 2 are RDx variables with `name_value` 0. Slot 0 has nominal and model values 2. Slot 1 has nominal and model values equal to the source wrapper's content-header source index. Slot 2 has nominal and model values equal to the owning Mirror's content-header source index. Both source indexes are nonzero. Slot 3 selects the result surface-body wrapper. The source and result wrappers have distinct identities and distinct nonzero unqualified body references. The body-copy Mirror retains the source body and creates one body reflected about the slot-12 plane.
 
+Feature-label class `da1419b4d211dad0600012a99dccefb0` identifies Coil. Its owner uses the generic feature record grammar of this section. In segment major version 19, its type-2 property vector has 20 slots. The slots select these property records:
+
+| Slot | Property record |
+| --- | --- |
+| 0 | Part-operation enumeration |
+| 1 | Boundary patch |
+| 2 | Work axis |
+| 3, 4, 10, 13 | Boolean |
+| 5 | Property reference |
+| 6, 7, 8, 9, 11, 12, 14, 15 | Numeric parameter |
+| 16, 17 | Null |
+| 18 | Feature dimensions |
+| 19 | Object collection |
+
 ### 13.1 Feature history
 
 A model root (§11) also owns the browser feature tree of its model. The root label of a model root is the feature label whose owner reference selects the model root. The tree of the document model root is the part modeling history. The tree of a flat-pattern model root is the flat-pattern history. A segment has a history only when it has exactly one document model root.

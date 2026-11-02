@@ -57,6 +57,16 @@ pub(crate) enum DesignComponentPathElementKind {
     Other,
 }
 
+impl DesignComponentPathElementKind {
+    pub(crate) fn admits_inline_type(self, guid: Option<&str>) -> bool {
+        guid.is_none_or(|guid| match self {
+            Self::Component => guid.eq_ignore_ascii_case("E03784ED-5E19-4E14-B9F2-3B07017018CD"),
+            Self::Occurrence => guid.eq_ignore_ascii_case("CE2913AA-CFE0-4F04-9102-24424ED3BCFA"),
+            Self::Other => false,
+        })
+    }
+}
+
 /// One element of a component path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignComponentPathElement {
