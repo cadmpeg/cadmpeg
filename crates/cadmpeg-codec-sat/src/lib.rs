@@ -58,7 +58,7 @@ impl CodecBackend for SatCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        decode::decode(ctx, root.window())
+        decode::decode(ctx, root)
     }
 }
 
