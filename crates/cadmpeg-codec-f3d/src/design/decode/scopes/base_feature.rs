@@ -675,6 +675,7 @@ use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
+use crate::layout::base_feature_wide_zero_body as wide_zero_body;
 use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
 use crate::layout::timeline_body_owner_prefix as owner_prefix;
 use crate::records::feature::scope;
@@ -868,6 +869,57 @@ pub(super) fn exact_timeline_owned_base_feature(
     })
 }
 
+/// Read the zero-body frame whose shared-metadata reference starts at offset 36.
+fn exact_wide_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || bytes
+            .get(start + wide_zero_body::ZERO_RUN_9..start + wide_zero_body::ZERO_BODY_MARKER)?
+            != [0; 9]
+        || bytes.get(start + wide_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + wide_zero_body::ZERO_RUN_15..start + wide_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 15]
+        || bytes.get(start + wide_zero_body::SHARED_METADATA_MARKER) != Some(&1)
+        || bytes.get(
+            start + wide_zero_body::ZERO_PADDING_8..start + wide_zero_body::GUID_CODE_UNIT_COUNT,
+        )? != [0; 8]
+        || View::u32_le_at(bytes, start + wide_zero_body::GUID_CODE_UNIT_COUNT)? != 36
+    {
+        return None;
+    }
+    let metadata_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + wide_zero_body::SHARED_METADATA_RECORD,
+    )?)
+    .ok()?;
+    if !scope
+        .reference_members()
+        .values()
+        .copied()
+        .eq([metadata_record])
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(wide_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(
+                start + wide_zero_body::SHARED_METADATA_FIELD
+                    ..start + wide_zero_body::ZERO_PADDING_8,
+            )?
+            .to_vec()
+            .into(),
+    })
+}
+
 pub(super) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -907,11 +959,9 @@ pub(super) fn exact_base_feature_construction(
             scope.class_tag.as_str() == "290" && scope.paired_class_tag.as_str() == "261";
         let legacy_360_258 =
             scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
-        let legacy_409_262 =
-            scope.class_tag.as_str() == "409" && scope.paired_class_tag.as_str() == "262";
         let legacy_444_263 =
             scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
-        if legacy_409_262 && scope.frame_length() == 258 {
+        if !legacy_444_263 && scope.frame_length() == 258 {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
             {
@@ -965,6 +1015,9 @@ pub(super) fn exact_base_feature_construction(
                     .to_vec()
                     .into(),
             }));
+        }
+        if let Some(construction) = exact_wide_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
         }
         if legacy_444_263 && scope.frame_length() == 258 {
             if scope.byte_offset().checked_add(scope.frame_length())

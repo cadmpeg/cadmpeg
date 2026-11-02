@@ -371,3 +371,74 @@ fn timeline_object_admits_the_marked_count_prefix() {
         assert_eq!(owners.contains_key(&51), owned, "{prefix:?}");
     }
 }
+
+/// A zero-body Base Feature frame whose shared-metadata marker is at
+/// `metadata_marker`, under the stream-local class pair `class_tags`.
+fn zero_body_frame(
+    frame_length: usize,
+    metadata_marker: usize,
+    class_tags: (&str, &str),
+) -> (Vec<u8>, DesignParameterScope) {
+    let mut bytes = vec![0u8; frame_length];
+    bytes[20] = 1;
+    bytes[metadata_marker] = 1;
+    bytes[metadata_marker + 1..metadata_marker + 9].copy_from_slice(&77u64.to_le_bytes());
+    bytes[metadata_marker + 23..metadata_marker + 27].copy_from_slice(&36u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-zero-body",
+        DesignFeatureKind::BaseFeature,
+        70,
+    );
+    scope.class_tag = DesignClassTag::try_from(class_tags.0.to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from(class_tags.1.to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(frame_length);
+            draft.kind_offset = u64_from_index(frame_length - 101);
+            draft.paired_byte_offset = u64_from_index(frame_length);
+            draft.reference_members = ReferenceRun::unlocated(vec![77]);
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    (bytes, scope)
+}
+
+fn zero_body_metadata(bytes: &[u8], scope: &DesignParameterScope) -> Option<(usize, u32)> {
+    match exact_base_feature_construction(bytes, scope).unwrap()? {
+        DesignBaseFeatureConstruction::ResultBodies {
+            bodies,
+            metadata_record,
+            ..
+        } => Some((bodies.iter().count(), metadata_record)),
+        _ => None,
+    }
+}
+
+#[test]
+fn zero_body_frame_is_read_under_any_class_pair() {
+    for class_tags in [("409", "262"), ("339", "264")] {
+        let (bytes, scope) = zero_body_frame(258, 32, class_tags);
+        assert_eq!(
+            zero_body_metadata(&bytes, &scope),
+            Some((0, 77)),
+            "{class_tags:?}"
+        );
+    }
+}
+
+#[test]
+fn wide_zero_body_frame_reads_its_metadata_at_offset_37() {
+    let (bytes, scope) = zero_body_frame(262, 36, ("284", "259"));
+    assert_eq!(zero_body_metadata(&bytes, &scope), Some((0, 77)));
+
+    let mut flagged = bytes.clone();
+    flagged[29] = 1;
+    assert_eq!(zero_body_metadata(&flagged, &scope), None);
+
+    let mut unmarked = bytes;
+    unmarked[36] = 0;
+    assert_eq!(zero_body_metadata(&unmarked, &scope), None);
+}

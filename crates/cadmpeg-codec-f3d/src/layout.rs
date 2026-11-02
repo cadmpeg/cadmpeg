@@ -2546,6 +2546,32 @@ pub(crate) mod timeline_body_owner_marked_prefix {
     pub(crate) const BODY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `base_feature_wide_zero_body` record.
+///
+/// Spec §3.1. Record length 63 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The first GUID follows the code-unit count.
+/// ```
+pub(crate) mod base_feature_wide_zero_body {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BODY_MARKER: usize = 20;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 21;
+    /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_MARKER: usize = 36;
+    /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SHARED_METADATA_RECORD: usize = 37;
+    /// Offset of `shared_metadata_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_FIELD: usize = 45;
+    /// Offset of `zero_padding_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_PADDING_8: usize = 51;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 59;
+}
+
 /// Byte offsets for the `base_feature_result_body_entry` record.
 ///
 /// Spec §3.1. Record length 15 B.

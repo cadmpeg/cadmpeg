@@ -2549,6 +2549,24 @@ Offsets are relative to the object's primary indexed header. The counted referen
 | 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
 | 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
 
+## `base_feature_wide_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 63 B
+
+Offsets are relative to the primary indexed header. The first GUID follows the code-unit count.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the 262-byte zero-body form, offsets 11 through 19 are zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores `u8 1`, offsets 21 through 35 are zero |
+| 21 | 15 | `zero_run_15` | `bytes[15]` | little | spec | offsets 21 through 35 are zero |
+| 36 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 36 stores the shared-metadata marker |
+| 37 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 37 its u64 record index |
+| 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
+| 51 | 8 | `zero_padding_8` | `bytes[8]` | little | spec | offsets 51 through 58 are zero |
+| 59 | 4 | `guid_code_unit_count` | `u32` | little | spec | u32 `36` at offset 59 |
+
 ## `base_feature_result_body_entry`
 
 Spec §3.1 · layout: byte offsets · size: 15 B
