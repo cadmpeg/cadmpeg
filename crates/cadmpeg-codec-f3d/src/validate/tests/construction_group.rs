@@ -419,14 +419,7 @@ fn pattern_native(
         group["id"] = format!("{stream}:design-construction-operand-group#2000").into();
         group["record_index"] = 102.into();
         group["scope_reference_ordinal"] = 2.into();
-        group["byte_offset"] = 2_000.into();
-        group["member_offsets"] = serde_json::json!([2_026]);
         group["members"] = serde_json::json!([103]);
-        group["frame"]["member_count_offset"] = 2_021.into();
-        group["frame"]["opaque_index_offset"] = 2_058.into();
-        group["frame"]["opaque_scalar_offset"] = 2_062.into();
-        group["role_offset"] = 2_040.into();
-        group["paired_byte_offset"] = 2_080.into();
         let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
             serde_json::from_value(group).unwrap();
         group.operand_role = DesignConstructionOperandRole::Other(second);

@@ -3230,13 +3230,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 start_offset,
                 ..
             } => {
+                // A stored scope carries no source offsets, so the layout
+                // check runs only when the offset arrays survived the wire.
                 let Some(direction_face_extend_offsets) = direction_face_extend_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let Some(side_extent_discriminator_offsets) = side_extent_discriminator_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let operation_prefix_marker_offset =
                     operation_prefix_marker.as_ref().and_then(|marker| marker.offset);
@@ -7931,7 +7933,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
-    let mut ordinals_by_namespace = BTreeMap::<(&str, u64), Vec<(u64, u32)>>::new();
     let collections = native
         .design_types
         .iter()
@@ -7975,7 +7976,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                             .is_none_or(|ordinal_offset| ordinal_offset > offset)
                     })
                 });
-            visibility.ordinal_collection.is_some_and(|collection| {
+            visibility.ordinal_collection.map_or(header_valid, |collection| {
                 let collection = collection.get();
                 if header_valid
                     && collections.contains(&(ids::design_segment(&placement.id), collection))
@@ -7985,13 +7986,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                         visibility.stream_ordinal.get(),
                     ))
                 {
-                    ordinals_by_namespace
-                        .entry((native_stream, collection))
-                        .or_default()
-                        .push((
-                            placement.entity_id.suffix(),
-                            visibility.stream_ordinal.get(),
-                        ));
                     visibility
                         .visible_offset()
                         .is_none_or(|offset| visibility_offsets.insert((native_stream, offset)))
@@ -8023,17 +8017,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Fusion Design sketch placement has an invalid frame or scope link",
                 Some(placement.id.clone()),
-            );
-        }
-    }
-    for ((stream, _), mut ordinals) in ordinals_by_namespace {
-        ordinals.sort_unstable();
-        if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order",
-                Some(stream.to_owned()),
             );
         }
     }

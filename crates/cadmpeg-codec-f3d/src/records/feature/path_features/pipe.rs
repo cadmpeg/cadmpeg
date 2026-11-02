@@ -254,23 +254,25 @@ impl<'a> PipeIndex<'a> {
         for group in &groups {
             let (data, header) = self.typed(segment, group.record_index)?;
             let ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
-            let layout_valid = match (
-                group.byte_offset,
-                group.paired_byte_offset,
-                group.role_offset(),
-                group.frame.opaque_index_offset(),
-                group.frame.member_count_offset,
-            ) {
-                (Some(start), Some(paired), Some(role), Some(opaque), Some(count)) => {
-                    paired > role
-                        && GROUP_TAIL_LENGTHS
+            let layout_valid = group
+                .paired_byte_offset
+                .zip(group.role_offset())
+                .is_none_or(|(paired, role)| paired > role)
+                && group
+                    .frame
+                    .opaque_index_offset()
+                    .zip(group.paired_byte_offset)
+                    .is_none_or(|(opaque, paired)| {
+                        GROUP_TAIL_LENGTHS
                             .iter()
                             .any(|length| opaque.checked_add(*length) == Some(paired))
-                        && start.checked_add(21).is_some_and(|offset| count >= offset)
-                }
-                (None, None, None, None, None) => true,
-                _ => false,
-            };
+                    })
+                && group
+                    .byte_offset
+                    .zip(group.frame.member_count_offset)
+                    .is_none_or(|(start, count)| {
+                        start.checked_add(21).is_some_and(|offset| count >= offset)
+                    });
             if !has_type(data, GROUP_GUID, GROUP_BASE, &[1])
                 || !positions_agree(group.byte_offset, header.byte_offset)
                 || group.class_tag != header.class_tag

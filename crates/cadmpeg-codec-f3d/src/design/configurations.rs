@@ -315,6 +315,14 @@ pub(crate) fn canonicalize_active_configuration(
         .unwrap_or_default();
     for parameter in parameters.iter_mut() {
         if let Some(expression) = overrides.get(&parameter.id) {
+            // D5: the value caches the expression. The folded active
+            // expression replaces the cache only when it evaluates to a
+            // literal of the cached quantity.
+            if let Some(current) = parameter.value.clone() {
+                if let Some(value) = expression.literal_value_as(&current) {
+                    parameter.value = Some(value);
+                }
+            }
             parameter.expression.clone_from(expression);
         }
     }

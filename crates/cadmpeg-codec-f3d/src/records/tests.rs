@@ -456,18 +456,24 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
             let mut wrong_owner = wire.clone();
             if owner.is_none() {
                 wrong_owner["owner_record_index"] = serde_json::json!(2);
+                assert!(
+                    serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_owner)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("owner_record_index")
+                );
             } else {
+                // Owner-less dimension and feature parameters store a null
+                // owner reference (main #591, DR-144); the wire admits them.
                 wrong_owner
                     .as_object_mut()
                     .unwrap()
                     .remove("owner_record_index");
+                let ownerless: crate::records::parameters::DesignParameter =
+                    serde_json::from_value(wrong_owner.clone()).unwrap();
+                assert_eq!(ownerless.owner_record_index(), None);
+                assert_eq!(serde_json::to_value(ownerless).unwrap(), wrong_owner);
             }
-            assert!(
-                serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_owner)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("owner_record_index")
-            );
             let mut bad_discriminator = wire.clone();
             bad_discriminator["family_discriminator"] = serde_json::json!(7);
             assert!(

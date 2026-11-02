@@ -154,8 +154,8 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                     "recipe_prefix_offset": 43,
                     "recipe_prefix_bytes": "",
                     "recipe_references": [
-                        {"selector": 1, "selector_offset": 0, "token": "first", "token_offset": 0, "design_reference": 50, "design_reference_offset": 0},
-                        {"selector": 1, "selector_offset": 0, "token": "second", "token_offset": 0, "design_reference": 50, "design_reference_offset": 0}
+                        {"clause_index": 0, "selector": 1, "selector_offset": 0, "token": "first", "token_offset": 0, "design_reference": 50, "design_reference_offset": 0},
+                        {"clause_index": 0, "selector": 1, "selector_offset": 0, "token": "second", "token_offset": 0, "design_reference": 50, "design_reference_offset": 0}
                     ],
                     "recipe_program_offset": 0,
                     "recipe_program": program,

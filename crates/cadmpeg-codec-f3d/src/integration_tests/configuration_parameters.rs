@@ -53,7 +53,11 @@ fn configuration_empty_table_preserves_discriminator_five_user_parameters() {
     let width = parameters.iter().find(|p| p.name == "Width").unwrap();
     let height = parameters.iter().find(|p| p.name == "Height").unwrap();
     assert_eq!(width.expression, "20 mm".into());
-    assert_eq!(height.expression, "Width / 2".into());
+    assert_eq!(
+        height.expression,
+        cadmpeg_ir::features::Expression::from_spans("Width / 2", [(0..5, width.id.clone())])
+            .unwrap()
+    );
     assert_eq!(
         width.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -101,13 +105,19 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
             .unwrap();
         assert_eq!(configuration.ordinal, ordinal);
         assert_eq!(configuration.active, active);
-        assert_eq!(
-            configuration
-                .parameter_overrides
-                .get(&width.id)
-                .and_then(|expression| expression.literal_text()),
-            Some(expression.to_owned())
-        );
+        if active {
+            // D13: the base is the active configuration, whose overrides stay
+            // empty; the active cell value is the base parameter expression.
+            assert_eq!(width.expression.literal_text(), Some(expression.to_owned()));
+        } else {
+            assert_eq!(
+                configuration
+                    .parameter_overrides
+                    .get(&width.id)
+                    .and_then(|expression| expression.literal_text()),
+                Some(expression.to_owned())
+            );
+        }
     }
     assert_configuration_valid(&decoded);
 }
@@ -162,3 +172,4 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
 }
+
