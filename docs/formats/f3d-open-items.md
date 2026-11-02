@@ -1089,7 +1089,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
 
-**Known.** `f3d.md` §3.1 "In the 262-byte zero-body form" defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope.
+**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope.
 
 **Need.** Frames of this form that differ only in byte 29.
 
