@@ -11,7 +11,7 @@ fn index_result() -> BrepBodyIndexes {
         .expect("valid component fixture");
     let admitted_components = [&component];
     let admitted_edge_curves = BTreeSet::from([10]);
-    let eligible_faces = BTreeMap::from([(5, Vec::new())]);
+    let eligible_faces = BTreeMap::from([(5.into(), Vec::new())]);
     let eligible_face_ids = BTreeSet::from([5]);
     let curve_faces = BTreeMap::new();
     BrepBodyIndexes::from_components(
@@ -31,7 +31,7 @@ fn brep_body_indexes_preserve_service_values() {
     assert_eq!(
         indexes.body_components,
         vec![NeutralShellSpec {
-            faces: vec![5],
+            faces: vec![5.into()],
             wire_curves: BTreeSet::from([10]),
         }]
     );

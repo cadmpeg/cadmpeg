@@ -343,11 +343,11 @@ fn explicit_single_body_merges_disconnected_components() {
     let merged = {
         merge_body_components(vec![
             NeutralShellSpec {
-                faces: vec![1, 2],
+                faces: vec![1.into(), 2.into()],
                 wire_curves: BTreeSet::from([10]),
             },
             NeutralShellSpec {
-                faces: vec![3],
+                faces: vec![3.into()],
                 wire_curves: BTreeSet::from([11, 12]),
             },
         ])
@@ -356,7 +356,7 @@ fn explicit_single_body_merges_disconnected_components() {
     assert_eq!(
         merged,
         vec![NeutralShellSpec {
-            faces: vec![1, 2, 3],
+            faces: vec![1.into(), 2.into(), 3.into()],
             wire_curves: BTreeSet::from([10, 11, 12])
         }]
     );
@@ -507,16 +507,16 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
 
 #[test]
 fn partitions_face_shells_and_retains_unattached_wire_curves() {
-    let faces = [1, 2, 3];
+    let faces = [1.into(), 2.into(), 3.into()];
     let face_adjacency = BTreeMap::from([
-        (1, BTreeSet::from([2])),
-        (2, BTreeSet::from([1])),
-        (3, BTreeSet::new()),
+        (1.into(), BTreeSet::from([2.into()])),
+        (2.into(), BTreeSet::from([1.into()])),
+        (3.into(), BTreeSet::new()),
     ]);
     let face_vertices = BTreeMap::from([
-        (1, BTreeSet::from([10, 11])),
-        (2, BTreeSet::from([11, 12])),
-        (3, BTreeSet::from([30, 31])),
+        (1.into(), BTreeSet::from([10, 11])),
+        (2.into(), BTreeSet::from([11, 12])),
+        (3.into(), BTreeSet::from([30, 31])),
     ]);
     let edge_vertices = BTreeMap::from([(100, [11, 12]), (101, [40, 41])]);
 
@@ -534,11 +534,11 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
         shells,
         vec![
             NeutralShellSpec {
-                faces: vec![1, 2],
+                faces: vec![1.into(), 2.into()],
                 wire_curves: BTreeSet::from([100]),
             },
             NeutralShellSpec {
-                faces: vec![3],
+                faces: vec![3.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
@@ -551,10 +551,12 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
 
 #[test]
 fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
-    let faces = [1, 2];
-    let face_adjacency = BTreeMap::from([(1, BTreeSet::new()), (2, BTreeSet::new())]);
-    let face_vertices =
-        BTreeMap::from([(1, BTreeSet::from([10, 11])), (2, BTreeSet::from([20, 21]))]);
+    let faces = [1.into(), 2.into()];
+    let face_adjacency = BTreeMap::from([(1.into(), BTreeSet::new()), (2.into(), BTreeSet::new())]);
+    let face_vertices = BTreeMap::from([
+        (1.into(), BTreeSet::from([10, 11])),
+        (2.into(), BTreeSet::from([20, 21])),
+    ]);
     let edge_vertices = BTreeMap::from([(100, [10, 20])]);
 
     assert_eq!(
@@ -567,11 +569,11 @@ fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
         ),
         vec![
             NeutralShellSpec {
-                faces: vec![1],
+                faces: vec![1.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
-                faces: vec![2],
+                faces: vec![2.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
@@ -632,7 +634,7 @@ fn closed_component_counts_two_uses_of_one_face() {
             },
         ]),
         &half_edges,
-        &[5],
+        &[5.into()],
     ));
     assert!(!component_is_closed(
         &BTreeSet::from([7]),
@@ -641,7 +643,7 @@ fn closed_component_counts_two_uses_of_one_face() {
             side: crate::topology::Side::Zero,
         }]),
         &half_edges,
-        &[5],
+        &[5.into()],
     ));
 }
 
