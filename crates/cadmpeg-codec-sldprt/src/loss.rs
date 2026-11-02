@@ -49,8 +49,6 @@ pub(crate) enum SldprtLossCode {
     ParameterAmbiguousIdentity,
     /// Semantic dimension record is unbound or retains a native subtype.
     PmiDimensionUnbound,
-    /// `PMISemanticDataDB` `MessagePack` map failed to parse into a dimension.
-    PmiSemanticRecordMalformed,
     /// Semantic map or extra dimension item has no typed payload representation.
     PmiSemanticRecordUntyped,
     /// A `PMISemanticDataDB` section reached its parse work cap; later
@@ -263,7 +261,6 @@ impl SldprtLossCode {
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
-        Self::PmiSemanticRecordMalformed,
         Self::PmiSemanticRecordUntyped,
         Self::PmiSemanticParseCapped,
         Self::PmiSwiftAnnotationUnsupported,
@@ -365,7 +362,6 @@ impl SldprtLossCode {
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
-            Self::PmiSemanticRecordMalformed => "pmi.semantic-record-malformed",
             Self::PmiSemanticRecordUntyped => "pmi.semantic-record-untyped",
             Self::PmiSemanticParseCapped => "pmi.semantic-parse-capped",
             Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
@@ -499,7 +495,6 @@ impl SldprtLossCode {
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
-            | Self::PmiSemanticRecordMalformed
             | Self::PmiSemanticRecordUntyped
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
@@ -648,7 +643,6 @@ impl SldprtLossCode {
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
-            | Self::PmiSemanticRecordMalformed
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
@@ -757,10 +751,6 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (SldprtLossCode::PmiDimensionUnbound, Representation::Reduced),
-    (
-        SldprtLossCode::PmiSemanticRecordMalformed,
-        Representation::Model,
-    ),
     (
         SldprtLossCode::PmiSemanticRecordUntyped,
         Representation::Model,
