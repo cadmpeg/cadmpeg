@@ -750,6 +750,10 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
                 mutated[offset] = 9;
                 assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());
             }
+            let mut modeled = bytes.clone();
+            modeled[30] = 1;
+            modeled.splice(34..34, [1u64, 0x130].into_iter().flat_map(u64::to_le_bytes));
+            assert!(exact_thread_construction(&modeled, &scope, &owners).is_none());
         }
         if standard {
             for offset in [
