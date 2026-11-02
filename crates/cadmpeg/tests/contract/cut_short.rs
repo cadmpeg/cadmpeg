@@ -4,12 +4,154 @@
 //! every held record agrees with the uncut decode under
 //! `Allowances::given_up`.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_test_support::comparison::Allowances;
 
 use super::support;
 
 /// The cut fractions of the source length the rule names.
 const CUTS: [usize; 2] = [50, 90];
+
+/// Every record id the document holds, across neutral and native arenas.
+fn record_ids(document: &serde_json::Value) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    let walk = |value: &serde_json::Value, ids: &mut BTreeSet<String>| {
+        if let Some(rows) = value.as_array() {
+            for row in rows {
+                if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                    ids.insert(id.to_owned());
+                }
+            }
+        }
+    };
+    if let Some(model) = document.get("model").and_then(serde_json::Value::as_object) {
+        for value in model.values() {
+            walk(value, &mut ids);
+        }
+    }
+    if let Some(native) = document
+        .get("native")
+        .and_then(serde_json::Value::as_object)
+    {
+        for namespace in native.values() {
+            if let Some(arenas) = namespace.as_object() {
+                for value in arenas.values() {
+                    walk(value, &mut ids);
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// The ids of every `unknowns` stub the document holds.
+fn stub_ids(document: &serde_json::Value) -> BTreeSet<String> {
+    let mut stubs = BTreeSet::new();
+    if let Some(native) = document
+        .get("native")
+        .and_then(serde_json::Value::as_object)
+    {
+        for namespace in native.values() {
+            if let Some(rows) = namespace
+                .get("unknowns")
+                .and_then(serde_json::Value::as_array)
+            {
+                for row in rows {
+                    if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                        stubs.insert(id.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    stubs
+}
+
+/// Whether a report JSON loss charges the one part give-up the helper reports.
+fn is_unreadable(loss: &serde_json::Value) -> bool {
+    match loss.get("code") {
+        Some(serde_json::Value::String(code)) => code == "decode/record.unreadable",
+        Some(serde_json::Value::Object(code)) => {
+            code.get("code").and_then(serde_json::Value::as_str) == Some(super::support::UNREADABLE)
+        }
+        _ => false,
+    }
+}
+
+/// Whether an array element refers to a removed record, mirroring the
+/// comparison's list pruning: a string equal to a removed identity, or an
+/// object keyed by one or holding such a reference.
+fn refers_to_removed(value: &serde_json::Value, removed: &BTreeSet<String>) -> bool {
+    match value {
+        serde_json::Value::String(id) => removed.contains(id),
+        serde_json::Value::Array(_) => false,
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .any(|(key, value)| removed.contains(key) || refers_to_removed(value, removed)),
+        _ => false,
+    }
+}
+
+/// Drop every list entry that refers to a removed record, mirroring the
+/// comparison's pruning of the allowance set.
+fn filter_lists(value: &mut serde_json::Value, removed: &BTreeSet<String>) {
+    match value {
+        serde_json::Value::Array(values) => {
+            values.retain(|value| !refers_to_removed(value, removed));
+            for value in values {
+                filter_lists(value, removed);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for value in fields.values_mut() {
+                filter_lists(value, removed);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The uncut document restricted to the records the cut decode holds, with
+/// every list entry that names a record the cut decode lacks removed, so the
+/// held records compare under the rule 2 list loss alone.
+fn restrict_to_held(
+    uncut: &serde_json::Value,
+    held: &BTreeSet<String>,
+    missing: &BTreeSet<String>,
+) -> serde_json::Value {
+    let mut restricted = uncut.clone();
+    let mut restrict_rows = |rows: &mut serde_json::Value| {
+        if let Some(rows) = rows.as_array_mut() {
+            rows.retain(|row| {
+                row.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|id| held.contains(id))
+            });
+            for row in rows.iter_mut() {
+                filter_lists(row, missing);
+            }
+        }
+    };
+    if let Some(model) = restricted
+        .get_mut("model")
+        .and_then(|model| model.as_object_mut())
+    {
+        model.values_mut().for_each(&mut restrict_rows);
+    }
+    if let Some(native) = restricted
+        .get_mut("native")
+        .and_then(|native| native.as_object_mut())
+    {
+        for arenas in native
+            .values_mut()
+            .filter_map(|arenas| arenas.as_object_mut())
+        {
+            arenas.values_mut().for_each(&mut restrict_rows);
+        }
+    }
+    restricted
+}
 
 fn check_format(format: &str) {
     let sampled = super::support::sampled_fixtures(format);
@@ -40,6 +182,7 @@ fn check_format(format: &str) {
             }
         };
         let uncut_document = super::support::document(&uncut);
+        let uncut_ids = record_ids(&uncut_document);
         for percent in CUTS {
             let length = fixture.bytes.len() * percent / 100;
             let cut = &fixture.bytes[..length];
@@ -47,10 +190,34 @@ fn check_format(format: &str) {
                 Ok(decoded) => {
                     let document = super::support::document(&decoded);
                     let report = super::support::report(&decoded);
+                    let held = record_ids(&document);
+                    let stubs = stub_ids(&document);
+                    for added in held.difference(&uncut_ids) {
+                        if !stubs.contains(added) {
+                            findings.push(format!(
+                                "{format}: {} cut at {percent}% adds non-stub record {added}",
+                                fixture.path.display()
+                            ));
+                        }
+                    }
+                    let missing: BTreeSet<String> = uncut_ids.difference(&held).cloned().collect();
+                    let unreadable = report
+                        .get("losses")
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|losses| losses.iter().any(is_unreadable));
+                    if !missing.is_empty() && !unreadable {
+                        findings.push(format!(
+                            "{format}: {} cut at {percent}% lacks {} uncut record(s) but charges no record.unreadable",
+                            fixture.path.display(),
+                            missing.len()
+                        ));
+                    }
+                    let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
+                    let restricted = restrict_to_held(&uncut_document, &comparable, &missing);
                     match Allowances::given_up(&uncut_document, &report) {
                         Ok(allowances) => {
                             if let Some(mismatch) =
-                                super::support::check_agree(&uncut_document, &document, &allowances)
+                                super::support::check_agree(&restricted, &document, &allowances)
                             {
                                 findings.push(format!(
                                     "{format}: {} cut at {percent}% disagrees with the uncut decode: {mismatch}",
