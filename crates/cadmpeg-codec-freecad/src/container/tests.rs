@@ -238,13 +238,46 @@ fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
 pub(crate) fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let unsafe_name = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
-    let error = FcstdCodec
+    let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(unsafe_name),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .expect_err("unsafe path must fail");
-    assert!(error.to_string().contains("unsafe ZIP entry path"));
+        .expect("the unsafe entry is given up while the document still inspects");
+    let unreadable: Vec<_> = summary
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1, "{:?}", summary.losses);
+    assert!(
+        unreadable[0].message.contains("unsafe ZIP entry path"),
+        "{}",
+        unreadable[0].message
+    );
+    assert!(
+        unreadable[0].message.contains("part zip.entry"),
+        "{}",
+        unreadable[0].message
+    );
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[(
+                "../Document.xml",
+                xml,
+            ), (
+                "Document.xml",
+                b"<Document SchemaVersion=\"4\" FileVersion=\"1\"><Objects Count=\"0\"></Objects><ObjectData Count=\"0\"></ObjectData></Document>",
+            )])),
+            &DecodeOptions::default(),
+        )
+        .expect("the decode keeps the independently readable root");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("unsafe ZIP entry path")));
 }
 
 #[test]
