@@ -282,6 +282,19 @@ Offsets are relative to the primary indexed scope header.
 | 35 | 11 | `angle_reference` | `bytes[11]` | little | spec | a marked reference to the first angle lane at offset 35 |
 | 46 | 11 | `opposite_angle_reference` | `bytes[11]` | little | spec | a marked reference to the second angle lane at offset 46 |
 
+## `shell_wall_slot_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 23 B
+
+Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | offset 21 is the tangent-chain Boolean |
+| 22 | 1 | `rounded_corners` | `u8` | little | spec | offset 22 is the corner Boolean |
+
 ## `shell_class_369_261_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 271 B

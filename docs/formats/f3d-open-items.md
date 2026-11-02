@@ -1001,6 +1001,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
 
+### DR-202. Fields of the older Shell frames
+
+**Question.** Do the fixed-length `Shell` frames with a Boolean at offset 21 store the fields of the wall-slot form?
+
+**Known.** `f3d.md` §3.1 reads offset 21 as the outward convention in the class-369/261 frame, and the decoder reads the same offset that way in the other fixed-length frames. The wall-slot form stores the tangent-chain Boolean at offset 21 and states the wall direction by which slot is present.
+
+**Need.** Controlled frames of the fixed-length forms that vary the wall direction and the tangent chain independently, with result volumes.
+
+**Conflict.** One byte offset has two meanings across the forms. The two meanings give different wall directions for a tangent-chain selection if the older frames store the newer field.
+
+**Note.** No authored file has a fixed-length frame.
+
 ### DR-203. Origin-plane identities outside Draft
 
 **Question.** Does a primary identity of `42`, `43`, or `44` name an origin plane in every feature when an ASM entity has the same number?
@@ -1024,6 +1036,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The public FHCS frame selects points with persistent identities `117` and `119`.
+
+### DR-240. Presentation frame whose label states another value
+
+**Question.** Which dimension does a direct presentation frame govern when its label states a value that differs from the first following dimension owner's parameter?
+
+**Known.** The opaque presentation bytes of a direct frame hold an LP-UTF16 label that states the governed parameter's expression. Under the first-following-owner rule, one parameter owner can receive two frames, and a frame can receive an owner whose parameter differs from its label. The decoder retains the native dimensional constraint when the owner has two frames, and when the operand measurement differs from the parameter.
+
+**Need.** Files with the direct two-operand frame form that create a dimension, delete or replace it, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** One public frame states `91.675 mm`, its two points are 91.675 mm apart, and its first following owner is a 5.175 mm parameter that a second frame also selects.
 
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 

@@ -28,6 +28,7 @@ mod named_variable_tail;
 mod offset_faces;
 mod remove_body_named_tail;
 mod scale;
+mod shell_wall_slots;
 mod surfaces;
 mod thicken;
 mod thread;
