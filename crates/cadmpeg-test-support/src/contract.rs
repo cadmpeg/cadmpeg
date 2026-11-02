@@ -170,6 +170,10 @@ pub fn neutral_view(ir: &CadIr, exclude: &[ArenaClass]) -> Value {
                 cadmpeg_ir::attributes::AttributeTarget::Feature(_)
                     | cadmpeg_ir::attributes::AttributeTarget::Parameter(_)
                     | cadmpeg_ir::attributes::AttributeTarget::Sketch(_)
+            ) && !matches!(
+                attribute.target,
+                cadmpeg_ir::attributes::AttributeTarget::Record { arena, .. }
+                    if exclude.contains(&arena.class())
             )
         });
     }
