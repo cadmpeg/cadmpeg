@@ -268,10 +268,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
 /// writer emit Compressed ASCII.
 ///
 /// The retained image is the original bytes, so the resolved dialect is the
-/// source's by construction; without a document baseline the synthesis path
-/// writes an equivalent document instead of replaying the copy.
+/// source's by construction and the replay law admits the copy. This is the
+/// capability an explicit Fixed ASCII target cannot ask for.
 #[test]
-fn compressed_ascii_synthesizes_its_own_bytes_under_an_inherit_request() {
+fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let source = compressed_points_file();
     let result = EditableDecodeResult::from(
         IgesCodec
@@ -287,35 +287,27 @@ fn compressed_ascii_synthesizes_its_own_bytes_under_an_inherit_request() {
 
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::Synthesized { .. }
+        WritePath::VerbatimReplay { .. }
     ));
-    let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        plan.report(),
-        "identity/target",
-    )
-    .as_ref()
-    .map(ToString::to_string)
-    .expect("a synthesized export names its target");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("iges:5.3-compressed-ascii".to_owned())
+    );
     assert!(matches!(
         &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
-        FidelityResolution::Degraded { .. }
+        FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let redecoded = IgesCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .expect("synthesized output decodes");
-    let classified = redecoded
-        .report()
-        .dialects()
-        .expect("synthesized output classifies a host dialect")
-        .primary()
-        .dialect()
-        .to_string();
-    assert_eq!(classified, claimed);
+    assert_eq!(written, source);
 }
 
 #[test]

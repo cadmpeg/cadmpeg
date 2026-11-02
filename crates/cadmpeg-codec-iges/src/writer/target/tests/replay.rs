@@ -115,7 +115,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
 }
 
 #[test]
-fn a_synthesized_export_states_the_synthesis_target_for_a_preserved_source() {
+fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -129,31 +129,104 @@ fn a_synthesized_export_states_the_synthesis_target_for_a_preserved_source() {
         .expect("explicit target plans");
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::Synthesized { .. }
+        WritePath::VerbatimReplay { .. }
     ));
 
     let mut written = Vec::new();
-    let report = plan.write_to(&mut written).expect("synthesis writes");
-    let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        &(report),
-        "identity/target",
-    )
-    .as_ref()
-    .map(cadmpeg_core::dialect::DialectId::as_str)
-    .expect("a synthesized export names its target")
-    .to_owned();
-    let redecoded = IgesCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .expect("synthesized output decodes");
+    let report = plan.write_to(&mut written).expect("replay writes");
     assert_eq!(
-        claimed,
-        redecoded
-            .report()
-            .dialects()
-            .expect("synthesized output classifies a host dialect")
-            .primary()
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(report),
+            "identity/target"
+        )
+        .as_ref(),
+        decoded
+            .ir()
+            .source
+            .as_ref()
+            .expect("decoded source exists")
             .dialect()
-            .as_str(),
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+    );
+}
+
+#[test]
+fn an_edited_point_does_not_replay_its_source_image() {
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .expect("point fixture decodes"),
+    );
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    let point = ir
+        .model
+        .points
+        .first_mut()
+        .expect("the point fixture decodes a point");
+    point.set_position(point.position().negated());
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("an edited source still plans");
+    assert!(
+        !matches!(
+            plan.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ),
+        "an edited document must not replay its source image"
+    );
+}
+
+#[test]
+fn an_altered_source_image_does_not_replay() {
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .expect("point fixture decodes"),
+    );
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let record = fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("the decode retains its source image");
+    let mut image = record
+        .data()
+        .expect("the retained image carries bytes")
+        .to_vec();
+    let middle = image.len() / 2;
+    image[middle] ^= 0x01;
+    let untyped = record.untyped().iter().copied().collect::<Vec<_>>();
+    let id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
+        .to_owned()
+        .try_into()
+        .expect("source image identity");
+    fidelity
+        .insert_retained_record(
+            id,
+            cadmpeg_ir::RetainedSourceRecord::from_bytes(
+                record.stream(),
+                record.offset(),
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: image },
+            )
+            .expect("altered source image extent"),
+        )
+        .expect("source image identity is unique");
+    fidelity
+        .mark_untyped(crate::SOURCE_IMAGE_ID, untyped)
+        .expect("the altered image keeps its untyped classes");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("an altered image still plans");
+    assert!(
+        !matches!(
+            plan.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ),
+        "an altered source image must not replay"
     );
 }
 

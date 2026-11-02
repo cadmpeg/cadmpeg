@@ -102,9 +102,6 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
             "retained F3D source image has no bytes".into(),
         ));
     };
-    // The digest is the source baseline, so the document comparison in
-    // `write_preserved_bytes` takes the patch path until a document
-    // baseline is re-established.
     let expected = &fidelity.decode_digest;
     let authored = super::synthesis::write(input.ir)?;
     let omitted_native = input
@@ -128,7 +125,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
     let write_path =
-        match F3dCodec::write_preserved_bytes(input.ir, data, expected, &mut bytes, &mut notes) {
+        match F3dCodec::write_preserved_bytes(input.ir, data, expected, input.ir.scope, input.limits, &mut bytes, &mut notes) {
             Ok(path) => path,
             Err(error) if super::synthesis::declines(&error) => {
                 return Ok(Preservation::PatchDeclined {

@@ -29,7 +29,12 @@ fn inherited_caller_refusal_precedes_retained_layout_and_projection_shortcuts() 
         panic!("working capacity overflow must latch a resource refusal")
     };
     assert!(matches!(
-        admit_unedited(&ctx, &ir, &fidelity),
+        admit_unedited(
+            &ctx,
+            &ir,
+            &fidelity,
+            cadmpeg_core::decode::ResourceLimits::desktop()
+        ),
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));
     assert!(matches!(
@@ -91,7 +96,12 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));
     assert!(matches!(
-        admit_unedited(&ctx, decoded.ir(), &fidelity),
+        admit_unedited(
+            &ctx,
+            decoded.ir(),
+            &fidelity,
+            cadmpeg_core::decode::ResourceLimits::desktop()
+        ),
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));
     assert_eq!(serde_json::to_value(decoded.ir()).unwrap(), before_ir);

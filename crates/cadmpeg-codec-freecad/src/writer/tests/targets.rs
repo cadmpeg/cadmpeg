@@ -135,6 +135,97 @@ fn unchanged_represented_sources_patch_their_own_layout() {
     }
 }
 #[test]
+fn unchanged_minimal_archive_patches_its_retained_layout() {
+    let decoded = decode(&schema_two_archive());
+    assert!(
+        decoded.source_fidelity().unrepresented().is_empty(),
+        "unrepresented: {:?}; losses: {:?}",
+        decoded.source_fidelity().unrepresented(),
+        decoded.report().losses
+    );
+    let output = inherited(&decoded);
+    assert!(
+        matches!(output.report().write_path(), WritePath::Patched { .. }),
+        "unchanged minimal source: {:#?}",
+        output.report()
+    );
+}
+
+#[test]
+fn an_uncarried_native_edit_declines_the_retained_layout() {
+    let decoded = decode(&schema_two_archive());
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    let mut documents = ir
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<DocumentFacts>("document")
+        .expect("typed document facts")
+        .to_vec();
+    assert_eq!(documents.len(), 1, "the minimal archive declares one document");
+    documents[0].program_version = Some("edited by the replay gate test".to_owned());
+    ir.native
+        .namespace_mut("fcstd")
+        .set_arena::<DocumentFacts>(
+            &cadmpeg_test_support::service_decode_context(),
+            "document",
+            &documents,
+        )
+        .expect("edited document facts");
+    let output = plan(&ir, Some(&fidelity), TargetRequest::Inherit)
+        .expect("an edited source still plans");
+    assert!(
+        matches!(
+            output.report().write_path(),
+            WritePath::Synthesized { .. }
+        ),
+        "an uncarried native edit must decline the retained layout, got {:#?}",
+        output.report()
+    );
+}
+
+#[test]
+fn an_altered_archive_image_declines_the_retained_layout() {
+    let decoded = decode(&schema_two_archive());
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let record = fidelity
+        .remove_retained_record(crate::fidelity::SOURCE_IMAGE)
+        .expect("the decode retains its archive image");
+    let mut image = record
+        .data()
+        .expect("the retained image carries bytes")
+        .to_vec();
+    let middle = image.len() / 2;
+    image[middle] ^= 0x01;
+    let untyped = record.untyped().iter().copied().collect::<Vec<_>>();
+    fidelity
+        .insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::mint(crate::fidelity::SOURCE_IMAGE)
+                .expect("archive image identity"),
+            cadmpeg_ir::RetainedSourceRecord::from_bytes(
+                record.stream(),
+                record.offset(),
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: image },
+            )
+            .expect("altered archive image extent"),
+        )
+        .expect("archive image identity is unique");
+    fidelity
+        .mark_untyped(crate::fidelity::SOURCE_IMAGE, untyped)
+        .expect("the altered image keeps its untyped classes");
+    let output = plan(&ir, Some(&fidelity), TargetRequest::Inherit)
+        .expect("an altered image still plans");
+    assert!(
+        matches!(
+            output.report().write_path(),
+            WritePath::Synthesized { .. }
+        ),
+        "an altered archive image must decline the retained layout, got {:#?}",
+        output.report()
+    );
+}
+
+#[test]
 fn no_fidelity_or_missing_layout_uses_synthesis_in_the_selected_schema() {
     let decoded = decode(&schema_two_archive());
     let output = plan(decoded.ir(), None, TargetRequest::Inherit)

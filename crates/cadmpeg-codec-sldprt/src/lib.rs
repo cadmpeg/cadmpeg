@@ -173,11 +173,9 @@ impl SldprtCodec {
     /// Replay the retained source image when the document is untouched since the
     /// decode that recorded its baseline, and write it semantically otherwise.
     ///
-    /// The comparison below is against the required source digest, so the
-    /// document takes the semantic write path — the conservative branch,
-    /// which reproduces the document from the IR instead of replaying bytes
-    /// that may no longer describe it — until a document baseline is
-    /// re-established.
+    /// The gate hashes the retained image against the required source digest,
+    /// decodes the image again, and compares the fresh document hash with the
+    /// current one. Both comparisons must hold for replay.
     ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
@@ -188,6 +186,7 @@ impl SldprtCodec {
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
         source_fidelity: &cadmpeg_ir::SourceFidelity,
+        limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         // A missing source image is reported before the digest comparison:
@@ -215,11 +214,27 @@ impl SldprtCodec {
                 writer,
             );
         };
-        // The digest is the source baseline, so the document comparison
-        // below takes the semantic path until a document baseline is
-        // re-established.
-        let expected = &source_fidelity.decode_digest;
-        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
+        // The gate replays only when the retained image still digests to the
+        // source baseline and decodes to the current document.
+        let current = decode::document_local_sha256(ir)?;
+        let replays = cadmpeg_ir::hash::retained_image_replays(
+            data,
+            &source_fidelity.decode_digest,
+            current.as_str(),
+            ir.scope,
+            limits,
+            |ctx, root| {
+                let fresh = cadmpeg_ir::Codec::decode_with_context(&SldprtCodec, ctx, root)
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        _ => CodecError::UnsupportedContent(
+                            "the retained SLDPRT source image refused to decode".into(),
+                        ),
+                    })?;
+                decode::document_local_sha256(fresh.ir())
+            },
+        );
+        if !replays {
             return Self::write_semantic(
                 ir,
                 annotations,
