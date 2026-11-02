@@ -128,10 +128,13 @@ fn configuration_table_members_outside_the_table_form_are_counted() {
             .unwrap();
     assert!(admitted.tables().is_empty());
     assert_eq!(admitted.unknown_member_count(), 2);
-    let admitted: DesignConfiguration = serde_json::from_value(wire("table", &populated())).unwrap();
+    let admitted: DesignConfiguration =
+        serde_json::from_value(wire("table", &populated())).unwrap();
     assert_eq!(admitted.tables().len(), 1);
     assert_eq!(admitted.unknown_member_count(), 0);
-    let rule: DesignConfiguration = serde_json::from_value(wire("rule", &json!({"when": "x", "activate": "y", "configurations": {}}),
+    let rule: DesignConfiguration = serde_json::from_value(wire(
+        "rule",
+        &json!({"when": "x", "activate": "y", "configurations": {}}),
     ))
     .unwrap();
     assert!(rule.tables().is_empty());
