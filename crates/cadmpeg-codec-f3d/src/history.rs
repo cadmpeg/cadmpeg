@@ -13,6 +13,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 pub(crate) mod binding;
+mod blend_spine;
 
 mod body_candidates;
 mod body_index;
@@ -8174,10 +8175,18 @@ fn treatment_edge_candidates<'a>(
                     continue;
                 };
 
-                for edge in left_edges
-                    .intersection(right_edges)
-                    .filter(|edge| deleted_edge_set.contains(edge))
-                {
+                for edge in left_edges.intersection(right_edges).filter(|edge| {
+                    deleted_edge_set.contains(edge)
+                        && index.spines.get(carrier).is_none_or(|spine| {
+                            spine.admits(
+                                index
+                                    .preceding_edges
+                                    .get(edge)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            )
+                        })
+                }) {
                     transitions_out.push(*edge);
                     if let Some(radius) = radius {
                         radii_out.push(
