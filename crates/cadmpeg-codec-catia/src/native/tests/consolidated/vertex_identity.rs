@@ -10,6 +10,87 @@ use super::{
 };
 
 #[test]
+fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
+    let face = [0xb2, 3, 0x5f, 4, 5, 0x82, 0x1d, 3, 5];
+    let owner = [
+        0xb2, 3, 0x62, 11, 5, 0x85, 5, 0x0b, 5, 0x23, 0x21, 0x84, 0x41, 0xff, 0x0f, 1,
+    ];
+    let vertex = [0xb2, 3, 0x5d, 2, 5, 3, 0];
+    let edge = [0xb2, 3, 0x5e, 6, 5, 3, 9, 0x7b, 7, 0x0b, 0x21];
+    let definition = [0xb2, 3, 0x24, 4, 5, 0x81, 0x29, 0x0f, 0x87];
+    let first_use = [0xb2, 3, 6, 4, 5, 0x82, 5, 0x2d, 0x88];
+    let second_use = [0xb2, 3, 6, 4, 5, 0x82, 9, 0x31, 0x84];
+    let build = |edge: &[u8]| {
+        let mut bytes = face.to_vec();
+        bytes.extend_from_slice(&owner);
+        for _ in 0..2 {
+            bytes.extend_from_slice(&vertex);
+            bytes.extend_from_slice(&vertex);
+            bytes.extend_from_slice(edge);
+            bytes.extend_from_slice(&definition);
+            bytes.extend_from_slice(&first_use);
+            bytes.extend_from_slice(&second_use);
+        }
+        bytes
+    };
+    let mut complete_edge = edge;
+    complete_edge[7] = 5;
+    let complete = crate::native::CatiaNative::decode(&build(&complete_edge));
+    let [first, second] = complete.consolidated_edge_nodes.as_slice() else {
+        panic!("two successor edges with complete endpoints");
+    };
+    let first_vertex = u64::try_from(face.len() + owner.len()).expect("small fixture");
+    let second_vertex = first_vertex
+        + u64::try_from(
+            2 * vertex.len() + edge.len() + definition.len() + first_use.len() + second_use.len(),
+        )
+        .expect("small fixture");
+    assert_eq!(
+        first.endpoint_records.map(|records| records[0]),
+        Some(first_vertex)
+    );
+    assert_eq!(
+        second.endpoint_records.map(|records| records[0]),
+        Some(second_vertex)
+    );
+    assert_ne!(
+        complete.vertex_identity_ids(first)[0],
+        complete.vertex_identity_ids(second)[0]
+    );
+
+    let native = crate::native::CatiaNative::decode(&build(&edge));
+    let [first, second] = native.consolidated_edge_nodes.as_slice() else {
+        panic!("two owner-local successor edges");
+    };
+    assert_eq!(
+        first.allocation.as_ref().map(|(_, ordinal)| *ordinal),
+        Some(2)
+    );
+    assert_eq!(
+        second.allocation.as_ref().map(|(_, ordinal)| *ordinal),
+        Some(8)
+    );
+    assert_eq!([first.vertex_refs[0], second.vertex_refs[0]], [2, 2]);
+    assert!(first.endpoint_records.is_none() && second.endpoint_records.is_none());
+    assert_eq!(native.vertex_identity_ids(first), ["", ""]);
+    assert_eq!(native.vertex_identity_ids(second), ["", ""]);
+    assert!(native.consolidated_vertex_identities.is_empty());
+    let wire = serde_json::to_value(&native).expect("serialize native records");
+    assert_eq!(
+        wire["consolidated_edge_nodes"][0]["vertices"],
+        serde_json::json!(["", ""])
+    );
+    assert_eq!(
+        wire["consolidated_edge_nodes"][1]["vertices"],
+        serde_json::json!(["", ""])
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaNative>(wire).expect("load native records"),
+        native
+    );
+}
+
+#[test]
 fn native_namespace_merges_shared_consolidated_vertex_identity() {
     let mut bytes = a5_native_edge_run_stream(6, 139, 142);
     bytes.extend_from_slice(&a5_native_edge_run_stream(9, 142, 151));
