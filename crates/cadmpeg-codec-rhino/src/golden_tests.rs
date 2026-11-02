@@ -277,23 +277,45 @@ fn encode_output_is_deterministic() {
 }
 
 /// A geometry-depth decode agrees with the full decode outside the design
-/// arenas. The decoder holds design only when it locates a design part
-/// (§1.1), so a geometry decode is a cut exactly for the fixtures whose full
-/// decode holds no design part.
+/// arenas. The decoder holds design only when the request includes it and a
+/// design part was located (§1.1), so a geometry decode is a cut exactly for
+/// the fixtures whose full decode holds model but no design, plus the
+/// fixtures whose full decode holds design that the geometry request excludes.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let fixtures = harness().fixture_inputs();
-    let without_design = fixtures
-        .iter()
-        .filter(|(_, bytes)| {
-            cadmpeg_test_support::golden::decode(
-                &RhinoCodec,
-                &mut Cursor::new(bytes),
-                &DecodeOptions::default(),
-            )
-            .is_ok_and(|full| !full.ir().scope.design)
-        })
-        .count();
+    let mut model_only = 0;
+    let mut design_excluded = 0;
+    for (_, bytes) in &fixtures {
+        let full = cadmpeg_test_support::golden::decode(
+            &RhinoCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        );
+        let geometry = cadmpeg_test_support::golden::decode(
+            &RhinoCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        );
+        match (full, geometry) {
+            (Ok(full), Ok(geometry)) => {
+                if full.ir().scope == cadmpeg_ir::ContentScope::geometry() {
+                    model_only += 1;
+                } else if full.ir().scope.design
+                    && geometry.ir().scope == cadmpeg_ir::ContentScope::geometry()
+                {
+                    design_excluded += 1;
+                }
+            }
+            (Err(_), Err(_)) => {}
+            (full, geometry) => {
+                panic!("full and geometry decodes disagree on refusal: {full:?} vs {geometry:?}")
+            }
+        }
+    }
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &RhinoCodec,
         &fixtures,
@@ -309,7 +331,7 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    assert_eq!(summary.cut, without_design, "{summary:?}");
+    assert_eq!(summary.cut, model_only + design_excluded, "{summary:?}");
 }
 
 /// Check 8 (#246): no native row of a decoded golden holds the id of a

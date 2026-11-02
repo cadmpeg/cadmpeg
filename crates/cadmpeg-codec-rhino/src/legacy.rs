@@ -2551,14 +2551,49 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ));
     }
     let mut offset = header.start_offset + file_header::LEN;
-    let comment = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
-        .map_err(|error| malformed(&error))?;
-    let comment_missing = comment.typecode != TCODE_COMMENT;
-    if !comment_missing {
-        if comment.short() {
-            return Err(CodecError::Malformed("V1 comment chunk is short".into()));
+    // The 32-byte start section is located once `parse_header` succeeds. A
+    // comment chunk that cannot be framed gives up the rest of the stream as
+    // one `rhino.v1_record` part instead of refusing the file, so a truncated
+    // file still decodes its prefix (#223 item 14).
+    let mut give_ups = Vec::new();
+    let mut comment_missing = false;
+    match chunk_at(data, offset, data.len(), ArchiveVersion::V1, false) {
+        Ok(comment) => {
+            if comment.typecode != TCODE_COMMENT {
+                comment_missing = true;
+            } else if comment.short() {
+                crate::container::give_up(
+                    &mut give_ups,
+                    "rhino.v1_record",
+                    offset,
+                    data.len(),
+                    data.len(),
+                    crate::container::model_classes(),
+                    None,
+                    Vec::new(),
+                    "V1 comment chunk is short",
+                );
+                comment_missing = true;
+                offset = data.len();
+            } else {
+                offset = comment.next_offset();
+            }
         }
-        offset = comment.next_offset();
+        Err(error) => {
+            crate::container::give_up(
+                &mut give_ups,
+                "rhino.v1_record",
+                offset,
+                data.len(),
+                data.len(),
+                crate::container::model_classes(),
+                None,
+                Vec::new(),
+                error,
+            );
+            comment_missing = true;
+            offset = data.len();
+        }
     }
 
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
@@ -3020,6 +3055,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
 
     losses.append(&mut tolerance_losses);
+    let mut give_up_unknowns = Vec::new();
+    let give_up_marks = crate::container::materialize_give_ups(
+        ctx,
+        data,
+        &give_ups,
+        &mut losses,
+        &mut give_up_unknowns,
+    )?;
     let mut notes = Vec::new();
     notes.push(format!("decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"));
     if !direct_records.is_empty() {
@@ -3052,7 +3095,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
-    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    let scope = crate::container::scope_from_parts(
+        &ir,
+        model_part_seen,
+        false,
+        ctx.depth().required_scope(),
+    );
     ir.scope = scope;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
@@ -3064,8 +3112,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
+    source_fidelity.retain_unknown_records("rhino", give_up_unknowns)?;
     for id in untyped_ids {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    for mark in &give_up_marks {
+        source_fidelity.mark_untyped(mark.id.as_str(), mark.classes.clone())?;
     }
     Ok(Decoded {
         ir,
@@ -4005,10 +4057,13 @@ mod tests {
             .iter()
             .any(|loss| loss.code == RhinoLossCode::ContainerScanDiagnostic.kind()));
         missing.truncate(35);
-        assert!(
-            decode_v1(&missing).is_err(),
-            "unbounded chunk is still refused"
-        );
+        let truncated = decode_v1(&missing).expect("unframed comment gives up the stream");
+        assert!(truncated.ir.model.points.is_empty());
+        assert!(truncated.body.losses.iter().any(|loss| loss
+            .code
+            .to_string()
+            .contains("record.unreadable")
+            && loss.message.contains("rhino.v1_record")));
     }
 
     #[test]
