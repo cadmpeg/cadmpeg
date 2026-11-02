@@ -38,8 +38,34 @@ pub(crate) struct DesignShellOperation {
     pub(crate) thickness_offset: u64,
     /// Whether the wall grows outward from the original boundary.
     pub(crate) outward: bool,
-    /// Byte offset of the outward Boolean.
+    /// Byte offset of the outward Boolean or of the present wall slot.
     pub(crate) outward_offset: u64,
+    /// Fields that only the wall-slot form stores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) wall_slots: Option<DesignShellWallSlots>,
+}
+
+/// Fields of a `Shell` scope that stores its walls in optional slots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignShellWallSlots {
+    /// Whether the selected faces extend along tangent faces.
+    pub(crate) tangent_chain: bool,
+    /// Whether offset corners are rounded instead of sharp.
+    pub(crate) rounded_corners: bool,
+    /// Outside wall of a scope that stores both walls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) outside: Option<DesignShellOutsideWall>,
+}
+
+/// Outside wall of a `Shell` scope that stores both walls.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignShellOutsideWall {
+    /// Wall thickness in source centimetres.
+    pub(crate) thickness: cadmpeg_ir::scalar::PositiveReal,
+    /// Referenced scalar record.
+    pub(crate) thickness_record_index: u32,
+    /// Byte offset of the scalar.
+    pub(crate) thickness_offset: u64,
 }
 
 /// Exact `Thicken` construction.
