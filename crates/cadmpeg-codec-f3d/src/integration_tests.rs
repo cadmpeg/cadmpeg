@@ -178,6 +178,9 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
 
 #[test]
 fn design_pipeline_correlates_protein_properties_history_sketches_and_configuration() {
+    use crate::test_support::configuration_table::{
+        property_target, root_record, string_cell, table_document, with_root_segment, ROOT_RECORD,
+    };
     let protein = decode(f3d_with_smbh_and_protein(
         &synthetic_geometry_with_history_smbh(),
     ));
@@ -188,14 +191,23 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#;
-    let configured = decode(f3d_with_configuration(
-        &synthetic_geometry_smbh(),
-        name,
-        payload,
+    let payload = serde_json::to_vec(&table_document(
+        "1",
+        &[("P", property_target("Part Number"))],
+        &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
+        &["wide"],
+    ))
+    .unwrap();
+    let configured = decode(with_root_segment(
+        f3d_with_configuration(&synthetic_geometry_smbh(), name, &payload),
+        root_record(*b"256", ROOT_RECORD, "1", "wide"),
     ));
     assert_eq!(configured.ir().model.configurations.len(), 1);
     assert!(configured.ir().model.configurations[0].active);
+    assert_eq!(
+        configured.ir().model.configurations[0].properties["property:Part Number"],
+        "W-1"
+    );
     assert_valid(&configured);
 }
 
