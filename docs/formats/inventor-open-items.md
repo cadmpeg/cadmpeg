@@ -280,6 +280,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** An exact selection-to-face join and input-body revision are required for a resolved face identity. Other surface controls require their selection, frame, and polarity roles.
 
+### DE-13. Coil construction operands
+
+**Question.** Which property operands define the Coil type, handedness, axial travel, taper, and start and end conditions?
+
+**Known.** Section 13 identifies the Coil feature-label class and its generic feature owner. The ordered property vector retains references to operation, boundary-patch, work-axis, Boolean, numeric-parameter, dimension-list, and result-collection records through their existing grammars. Coil remains a native history operation with `feature.coil-operands-native`.
+
+**Need.** Slot 0 requires the Coil input/result body construction joins for operations outside new-body creation. Slot 1 requires its selected-profile construction join. Slot 2 requires the axis control and orientation rules outside the zero-control work-axis form. Slot 3 requires its Boolean construction role and polarity. Slot 4 requires its Boolean role and its relation to axis direction. Slot 5 requires its control grammar and the type-selector map for pitch and revolution, revolution and height, pitch and height, and spiral. Slots 6 through 9, 11, 12, 14, and 15 require their driving and inactive parameter roles, sign conventions, and parameter dependencies. Boolean slots 10 and 13 require their construction roles and any joins to end conditions. The profile selection requires its consumed-sketch and axis joins. Result selections require their input/result revision joins. Each polarity requires a controlled positive case before a neutral helical sweep can represent it.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
