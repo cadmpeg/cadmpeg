@@ -25,11 +25,8 @@ fn thicken_bytes_reach_the_admitted_partial_operation_and_native_refusal() {
                 panic!("admitted synthetic Thicken")
             };
             assert_eq!(
-                thickness
-                    .as_ref()
-                    .expect("positive thickness")
-                    .literal()
-                    .expect("literal thickness")
+                ir.dimension_value(thickness.as_ref().expect("positive thickness"))
+                    .expect("resolved thickness")
                     .get(),
                 2.5
             );
