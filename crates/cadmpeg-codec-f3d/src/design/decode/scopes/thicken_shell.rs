@@ -132,8 +132,7 @@ pub(super) fn exact_shell_wall_slots(
     let table = references.values().copied().collect::<Vec<_>>();
     let walls = [inside, outside].into_iter().flatten().collect::<Vec<_>>();
     let scalars_at = table.len().checked_sub(walls.len())?;
-    if walls.is_empty()
-        || scalars_at < 2
+    if scalars_at < 2
         || !walls
             .iter()
             .map(|(record, _)| *record)
