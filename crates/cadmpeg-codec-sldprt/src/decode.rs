@@ -3143,12 +3143,14 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
+    let mut pmi_stubs = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(
         ctx,
         scan,
         &mut annotations,
         &mut pmi_losses,
         &mut untyped_pmi_sections,
+        &mut pmi_stubs,
     )?;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
@@ -3629,6 +3631,7 @@ fn build_geometry_ir(
         "admit SLDPRT entities",
     )?;
     let mut unknowns = brep.unknowns;
+    unknowns.extend(pmi_stubs);
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     for owned_face_color in brep.face_colors {
@@ -4280,18 +4283,21 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
+    let mut pmi_stubs = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(
         ctx,
         scan,
         &mut annotations,
         &mut pmi_losses,
         &mut untyped_pmi_sections,
+        &mut pmi_stubs,
     )?;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
         // a PmiDimension record; retaining its section does not type it.
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
+    unknowns.extend(pmi_stubs);
     ir.model.pmi =
         crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
