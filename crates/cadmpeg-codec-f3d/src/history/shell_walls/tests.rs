@@ -182,6 +182,14 @@ fn a_repeated_member_counts_once() {
 }
 
 #[test]
+fn an_empty_group_states_no_selection() {
+    assert_eq!(
+        removed(&[], 2.0, &transition(&[1], &[]), &inside_shell()),
+        None
+    );
+}
+
+#[test]
 fn no_changed_face_without_a_wall_states_no_selection() {
     assert_eq!(
         removed(&[7], 2.0, &transition(&[1], &[]), &inside_shell()),
@@ -195,9 +203,13 @@ fn no_changed_face_without_a_wall_states_no_selection() {
 
 #[test]
 fn a_zero_offset_states_no_selection() {
+    let without_top = State::default()
+        .plane(1, point(20.0, 15.0, 0.0), vector(0.0, 0.0, 1.0))
+        .plane(3, point(0.0, 30.0, 0.0), vector(-1.0, 0.0, 0.0));
     assert_eq!(
-        removed(&[7], 0.0, &transition(&[2], &[]), &inside_shell()),
-        None
+        removed(&[7], 0.0, &transition(&[], &[2]), &without_top),
+        None,
+        "a deleted face has no wall at any offset"
     );
 }
 

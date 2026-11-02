@@ -135,11 +135,15 @@ fn scope(record_index: u32) -> DesignParameterScope {
 }
 
 fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
+    group_in(GROUP_ID, scope_record_index, members)
+}
+
+fn group_in(id: &str, scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
     serde_json::from_value(serde_json::json!({
-        "id": GROUP_ID,
+        "id": id,
         "byte_offset": 0,
         "class_tag": "261",
         "record_index": 43,
@@ -172,6 +176,16 @@ fn bind(
     mode: Option<ShellMode>,
     updated: &[i64],
 ) -> FaceSelection {
+    bind_group(GROUP_ID, scope, groups, mode, updated)
+}
+
+fn bind_group(
+    group_id: &str,
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    mode: Option<ShellMode>,
+    updated: &[i64],
+) -> FaceSelection {
     let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
     let mut feature = Feature {
         product_definition: None,
@@ -187,7 +201,7 @@ fn bind(
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Shell {
                 bodies: None,
-                removed_faces: FaceSelection::Native(GROUP_ID.into()),
+                removed_faces: FaceSelection::Native(group_id.into()),
                 thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
                 outward: Some(false),
                 mode,
@@ -294,5 +308,14 @@ fn shell_group_with_more_members_than_open_faces_does_not_bind() {
     assert_eq!(
         bind(&scope(42), &[group(42, &[7, 8])], None, TOP),
         FaceSelection::Native(GROUP_ID.into())
+    );
+}
+
+#[test]
+fn shell_group_of_another_stream_does_not_bind() {
+    const OTHER: &str = "f3d:Design/Other.dat:group#43";
+    assert_eq!(
+        bind_group(OTHER, &scope(42), &[group_in(OTHER, 42, &[7])], None, TOP),
+        FaceSelection::Native(OTHER.into())
     );
 }
