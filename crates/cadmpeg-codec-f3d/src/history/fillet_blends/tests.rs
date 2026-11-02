@@ -109,6 +109,30 @@ fn output() -> AsmHistoricalTopology {
     topology
 }
 
+/// The fillet of edges 17 and 18: blend face 21 along y meets faces 10 and 12.
+fn two_blends() -> AsmHistoricalTopology {
+    let mut topology = faces(&[
+        (10, &[30, 33]),
+        (11, &[31]),
+        (12, &[32, 34]),
+        (20, &[30, 31, 32]),
+        (21, &[33, 34]),
+    ]);
+    for (surface, axis) in [(120, z()), (121, y())] {
+        topology.surface_cylinders.push(AsmHistoricalCylinder {
+            surface,
+            origin: Point3::new(3.0, 3.0, 0.0),
+            axis,
+            radius: 3.0,
+        });
+        topology.surface_radii.push(AsmHistoricalSurfaceRadius {
+            surface,
+            radius: 3.0,
+        });
+    }
+    topology
+}
+
 fn transition(inserted: &[i64], deleted_edges: &[i64]) -> AsmHistoricalTransition {
     AsmHistoricalTransition {
         previous_state_id: Some(1),
@@ -205,13 +229,46 @@ fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
 }
 
 #[test]
+fn two_blends_replace_the_edges_along_their_spines() {
+    assert_eq!(
+        transition_blends(
+            &transition(&[20, 21], &[17, 18, 19]),
+            &input(z()),
+            &two_blends()
+        ),
+        Some(vec![
+            Blend {
+                radius: 3.0,
+                edge: 17
+            },
+            Blend {
+                radius: 3.0,
+                edge: 18
+            }
+        ])
+    );
+}
+
+#[test]
 fn an_inserted_face_without_one_carrier_states_nothing() {
-    let mut output = output();
+    let mut output = two_blends();
+    output.faces.push(22);
     output.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 20,
+        entity: 22,
         carrier: 130,
     });
-    assert_eq!(blends(&input(z()), &output), None);
+    output.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 22,
+        carrier: 131,
+    });
+    assert_eq!(
+        transition_blends(
+            &transition(&[20, 21, 22], &[17, 18, 19]),
+            &input(z()),
+            &output
+        ),
+        None
+    );
 }
 
 #[test]
@@ -432,6 +489,24 @@ fn a_selection_that_names_a_kept_edge_stays() {
 #[test]
 fn a_group_with_another_member_count_keeps_its_selection() {
     assert_eq!(bound(native(), three_mm(), &[group(42, &[7, 8])]), native());
+    let mut definition = fillet(native(), three_mm());
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7])],
+        1,
+        (
+            &transition(&[20, 21], &[17, 18, 19]),
+            &input(z()),
+            &two_blends(),
+        ),
+    );
+    assert_eq!(
+        definition,
+        fillet(native(), three_mm()),
+        "two blends round two edges"
+    );
 }
 
 #[test]
@@ -474,4 +549,85 @@ fn a_blend_face_without_a_boundary_states_nothing() {
         .face_loops
         .retain(|relation| relation.owner_ref != 20);
     assert_eq!(blends(&input(z()), &output), None);
+}
+
+fn history() -> crate::history_records::AsmHistory {
+    let state = |state_id: i64, topology: AsmHistoricalTopology, next_ref| {
+        let versions = topology
+            .faces
+            .iter()
+            .chain(&topology.edges)
+            .map(|&entity_ref| crate::history_records::AsmEntityVersion {
+                entity_ref,
+                record_ref: 1,
+            })
+            .collect();
+        (
+            crate::history_records::AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            versions,
+        )
+    };
+    crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, output(), Some(1)), state(1, input(z()), None)],
+    )
+}
+
+fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
+    let mut feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(fillet(
+            native(),
+            three_mm(),
+        )),
+        native_ref: native_ref.map(str::to_owned),
+    };
+    super::bind_fillet_blend_edges(
+        std::slice::from_mut(&mut feature),
+        super::FilletBlendInputs {
+            scopes: &[scope(42)],
+            groups: &[group(42, &[7])],
+            histories: &mut [history()],
+        },
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        feature.evaluation.definition()
+    else {
+        panic!("expected a fillet");
+    };
+    groups[0].edges.clone()
+}
+
+#[test]
+fn a_fillet_binds_from_the_transition_of_its_scope() {
+    assert_eq!(slots(&bind_feature(Some(SCOPE_ID))), ["17"]);
+    assert_eq!(bind_feature(None), native());
 }
