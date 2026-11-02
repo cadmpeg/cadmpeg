@@ -238,13 +238,46 @@ fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
 pub(crate) fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let unsafe_name = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
-    let error = FcstdCodec
+    let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(unsafe_name),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .expect_err("unsafe path must fail");
-    assert!(error.to_string().contains("unsafe ZIP entry path"));
+        .expect("the unsafe entry is given up while the document still inspects");
+    let unreadable: Vec<_> = summary
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1, "{:?}", summary.losses);
+    assert!(
+        unreadable[0].message.contains("unsafe ZIP entry path"),
+        "{}",
+        unreadable[0].message
+    );
+    assert!(
+        unreadable[0].message.contains("part zip.entry"),
+        "{}",
+        unreadable[0].message
+    );
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[(
+                "../Document.xml",
+                xml,
+            ), (
+                "Document.xml",
+                b"<Document SchemaVersion=\"4\" FileVersion=\"1\"><Objects Count=\"0\"></Objects><ObjectData Count=\"0\"></ObjectData></Document>",
+            )])),
+            &DecodeOptions::default(),
+        )
+        .expect("the decode keeps the independently readable root");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("unsafe ZIP entry path")));
 }
 
 #[test]
@@ -309,13 +342,41 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().model.entity_count(), 0);
+    assert_eq!(decoded.ir().model.entity_count(), 1);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 0;
     let error = FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
-        .expect_err("one document object and no model entity require a limit of one");
+        .expect_err("one document object and one model entity require a limit of two");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit FCStd document objects"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 1;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(document)), &options)
+        .expect_err("the stored feature counts beside its document object");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "part native entity"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 2;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(document)), &options)
+        .expect_err("the staged model entity counts after its native records");
     assert!(
         matches!(
             error,
@@ -326,7 +387,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 3;
     FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
         .expect("the exact additive entity limit must admit the fixture");
