@@ -261,7 +261,7 @@ fn directory_records(file: &Synthetic, included: usize) -> usize {
     let present = included
         .saturating_sub(directory_start)
         .min(directory_cards);
-    present.div_ceil(2)
+    present / 2
 }
 
 fn projected_ids(file: &Synthetic, included: usize) -> BTreeSet<String> {
@@ -679,12 +679,21 @@ fn is_global_malformed(bytes: &[u8]) -> bool {
 }
 
 #[test]
-fn a_finished_global_with_a_prohibited_delimiter_is_malformed_when_the_file_ends() {
+fn a_finished_global_with_a_prohibited_delimiter_is_malformed_or_given_up_when_the_file_ends() {
     let global = prohibited_delimiter_global();
     let ended = start_and_global(global);
-    let terminated = crate::test_support::test_cards::fixed_ascii_with_global(global);
-    assert!(is_global_malformed(&terminated));
     assert!(is_global_malformed(&ended));
+    let terminated = crate::test_support::test_cards::fixed_ascii_with_global(global);
+    let decoded = decode(&terminated).expect("terminated file decodes past the refused global part");
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(losses[0].message.contains("iges.global_section"), "{}", losses[0].message);
 }
 
 #[test]
@@ -750,3 +759,5 @@ fn a_file_that_ends_inside_global_publishes_no_global_value() {
         1
     );
 }
+
+
