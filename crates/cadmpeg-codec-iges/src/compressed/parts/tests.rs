@@ -15,12 +15,8 @@ fn actual_data_callback_records_match_the_existing_parameter_grammar_without_rep
         .expect("original source window");
     let normalized = super::normalize(source, &ctx).expect("actual Compressed callbacks");
     let scan = crate::card::scan(&normalized.bytes).expect("existing normalized grammar");
-    let reparsed = crate::directory::parse(
-        &scan,
-        normalized.admission.global.global_table(),
-        &ctx,
-    )
-    .expect("rendered Directory reparses to the admitted entries");
+    let reparsed = crate::directory::parse(&scan, normalized.admission.global.global_table(), &ctx)
+        .expect("rendered Directory reparses to the admitted entries");
     assert_eq!(reparsed.len(), normalized.admission.directory.len());
     for (reparsed, admitted) in reparsed.iter().zip(&normalized.admission.directory) {
         assert_eq!(reparsed.sequence, admitted.sequence);

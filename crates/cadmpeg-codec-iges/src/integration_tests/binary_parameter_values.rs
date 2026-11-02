@@ -34,9 +34,15 @@ fn assert_value_admitted(baseline: &DecodeResult, decoded: &DecodeResult, field:
     );
     assert_eq!(entity(decoded, 1), entity(baseline, 1));
     let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     assert!(decoded
         .report()
         .losses

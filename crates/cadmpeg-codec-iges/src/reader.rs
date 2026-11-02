@@ -223,16 +223,16 @@ fn project_document_attributes(
             &cadmpeg_ir::identity_namespace!("iges", "application", "attribute"),
             key,
         );
-        ir.model.attributes.push(
-            cadmpeg_ir::attributes::SourceAttribute::new(
+        ir.model
+            .attributes
+            .push(cadmpeg_ir::attributes::SourceAttribute::new(
                 ctx,
                 id,
                 None,
                 cadmpeg_ir::attributes::AttributeTarget::Document,
                 name.to_owned(),
                 vec![cadmpeg_ir::attributes::AttributeValue::String(value)],
-            )?,
-        );
+            )?);
     }
     Ok(())
 }
@@ -255,9 +255,7 @@ fn merge_part_native(
             records
                 .len()
                 .checked_mul(size_of::<cadmpeg_ir::NativeRecord>())
-                .ok_or_else(|| {
-                    CodecError::malformed("IGES part native storage overflows")
-                })?,
+                .ok_or_else(|| CodecError::malformed("IGES part native storage overflows"))?,
         );
         held.try_reserve(records.len()).map_err(|_| {
             ResourceLimit::allocation_failed(
@@ -463,8 +461,7 @@ impl<'a> PhysicalParse<'a> {
         };
         // A given-up Directory Entry owns its Parameter Data cards: they are
         // not unclaimed (#215 rules 2-3).
-        let (directory, given_up_directory) = if let Some(directory) = prepared_directory
-        {
+        let (directory, given_up_directory) = if let Some(directory) = prepared_directory {
             (directory, Vec::new())
         } else if scan.source_view().is_some() {
             let parsed = directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?;
@@ -1047,10 +1044,7 @@ fn decode_with_occurrence_limits(
     // whose fields were given up (its slots changed or it never formed).
     let mut skipped = std::mem::take(&mut projection.skipped);
     for sequence in parse.given_up_fields.keys() {
-        skipped.push((
-            *sequence,
-            format!("iges:entity:directory#{sequence}"),
-        ));
+        skipped.push((*sequence, format!("iges:entity:directory#{sequence}")));
     }
     amend_dropped_records(
         &parse.given_up_fields,

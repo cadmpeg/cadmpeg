@@ -321,9 +321,15 @@ fn a_split_numeric_parameter_is_given_up_in_the_decode() {
     for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
         assert_eq!(parameters[index]["value"]["value"], value);
     }
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let fidelity = result.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), 1);

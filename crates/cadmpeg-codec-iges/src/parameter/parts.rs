@@ -316,9 +316,7 @@ impl ConflictParts {
     ) -> Result<Self, CodecError> {
         let mut ends = BTreeMap::new();
         for owned in ownership {
-            if owned.defect != Some(ParameterDefect::OwnershipConflict)
-                || owned.cards.is_empty()
-            {
+            if owned.defect != Some(ParameterDefect::OwnershipConflict) || owned.cards.is_empty() {
                 continue;
             }
             let mut cards = Vec::new();

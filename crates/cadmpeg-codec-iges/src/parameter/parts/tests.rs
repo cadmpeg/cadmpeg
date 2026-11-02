@@ -45,10 +45,7 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
     assert!(actual.given_up.is_empty());
     // finish_records analyzes every assembled record: one analysis per
     // record sequence.
-    assert_eq!(
-        actual.trailing_pointer_analysis.len(),
-        actual.records.len()
-    );
+    assert_eq!(actual.trailing_pointer_analysis.len(), actual.records.len());
     for record in &actual.records {
         assert!(actual
             .trailing_pointer_analysis

@@ -111,9 +111,15 @@ fn conflicted_parameter_parts_keep_an_unrelated_current_point_and_exact_source_h
         serde_json::to_value(original).unwrap()
     );
     let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let mut homes = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(homes.len(), 2);
     homes.sort_unstable_by_key(|part| part.offset());
@@ -175,9 +181,15 @@ fn original_duplicate_claims_match_one_independent_physical_frame_and_one_helper
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(decoded.ir().model.points.is_empty());
-    assert!(native.arenas().get("quarantined_directory_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
 
-    assert!(native.arenas().get("quarantined_parameter_records").is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), 1);
     let part = parts[0];
@@ -591,8 +603,11 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
         assert!(unreadable[0]
             .message
             .contains("unequal Parameter claims overlap"));
-        assert!(decoded.report().losses.iter().all(|loss| loss.code
-            != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .is_ok());
@@ -699,8 +714,11 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(losses[0].message.contains("iges.parameter_section"));
     assert!(losses[0].message.contains("locate no Parameter cards"));
-    assert!(decoded.report().losses.iter().all(|loss| loss.code
-        != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .unwrap()
         .is_ok());
