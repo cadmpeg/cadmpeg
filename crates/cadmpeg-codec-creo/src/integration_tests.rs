@@ -1361,3 +1361,50 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
         }
     }
 }
+#[test]
+fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    let faces: Vec<_> = model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == "creo:visibgeom:surface#158")
+        .collect();
+    assert_eq!(faces.len(), 4);
+    for (outer, hole) in [(182, 163), (998, 159), (1006, 165), (1014, 161)] {
+        let matching: Vec<_> = faces
+            .iter()
+            .filter(|face| {
+                let edge_ids: std::collections::BTreeSet<_> = face
+                    .loops
+                    .iter()
+                    .flat_map(|loop_id| {
+                        let lp = model
+                            .loops
+                            .iter()
+                            .find(|lp| &lp.id == loop_id)
+                            .expect("face loop");
+                        lp.coedges().iter().map(|coedge_id| {
+                            &model
+                                .coedges
+                                .iter()
+                                .find(|coedge| &coedge.id == coedge_id)
+                                .expect("loop coedge")
+                                .edge
+                        })
+                    })
+                    .collect();
+                edge_ids
+                    .iter()
+                    .any(|edge| edge.as_str() == format!("creo:visibgeom:edge#{outer}"))
+                    && edge_ids
+                        .iter()
+                        .any(|edge| edge.as_str() == format!("creo:visibgeom:edge#{hole}"))
+            })
+            .collect();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].loops.iter().count(), 2);
+    }
+}

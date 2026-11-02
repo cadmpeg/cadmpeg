@@ -2905,7 +2905,7 @@ semantics.
 
 ## 5. Topology and section records
 
-A planar face can have one strictly convex polygon perimeter of typed line
+A planar face region can have a strictly convex polygon perimeter of typed line
 edges and disjoint two-edge circular hole loops. Each circle loop has two
 distinct circle carriers with one center, radius, and axis parallel to the
 plane normal. Its closed native pcurve paths have diametrically opposite
@@ -3681,10 +3681,10 @@ decoded components remain construction geometry. For `arcorient=0`, profile
 traversal reverses the analytic arc when it runs from the first `pointid` to
 the second.
 
-For a native planar face with multiple closed loops, exactly one loop must
-strictly contain every other loop. That containing loop is the outer boundary;
-every contained loop is an inner boundary. A planar face with one closed loop,
-and a non-planar face admitted under the one-loop rule, has one outer boundary.
+A native planar face can have multiple disjoint outer cycles. Each inner cycle
+lies inside one outer cycle. A planar face region has one outer boundary and
+zero or more inner boundaries. A planar face with one closed loop, and a
+non-planar face admitted under the one-loop rule, has one outer boundary.
 
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The two entries are angular sectors of one oriented cylinder; the rowless face use inherits the materialized sibling's carrier and orientation. The table class token alone does not identify the surface kind.
 
