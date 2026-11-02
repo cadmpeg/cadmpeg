@@ -304,6 +304,20 @@ fn authored_scope_ordinals_for_stream<'a>(
         }
     }
     for scope in scopes {
+        let Some(owner) = scope.base_feature_construction().and_then(
+            crate::records::feature::base_feature::DesignBaseFeatureConstruction::timeline_owner,
+        ) else {
+            continue;
+        };
+        if scopes_by_record.contains_key(&owner) {
+            continue;
+        }
+        if let Some(ordinal) = item_ordinals.get(&u64::from(owner)).copied() {
+            // discarded-value: each owned scope is visited once in this stream.
+            let _ = out.insert((stream, scope.record_index), ordinal);
+        }
+    }
+    for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
             .and_then(super::super::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index)

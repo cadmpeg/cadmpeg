@@ -153,6 +153,17 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+    /// Result bodies of a scope that a timeline object owns.
+    TimelineOwnedBodies {
+        /// Parameter-body records in source order.
+        parameter_bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Design body entity suffixes in source order.
+        bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Timeline object that names this scope.
+        owner_record: u32,
+        /// Byte offset of the object's reference to this scope.
+        owner_reference_offset: u64,
+    },
 }
 
 #[cfg(test)]
@@ -226,6 +237,17 @@ impl Clone for DesignBaseFeatureConstruction {
                 linkage_record_offset: *linkage_record_offset,
                 auxiliary_record: *auxiliary_record,
                 auxiliary_record_offset: *auxiliary_record_offset,
+            },
+            Self::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+            } => Self::TimelineOwnedBodies {
+                parameter_bodies: parameter_bodies.clone(),
+                bodies: bodies.clone(),
+                owner_record: *owner_record,
+                owner_reference_offset: *owner_reference_offset,
             },
         }
     }
@@ -327,6 +349,18 @@ impl Serialize for DesignBaseFeatureConstruction {
                 linkage_record_offset: u64,
                 auxiliary_record: u32,
                 auxiliary_record_offset: u64,
+            },
+            TimelineOwnedBodies {
+                parameter_body_records: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                parameter_body_record_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                parameter_body_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                owner_record: u32,
+                owner_reference_offset: u64,
             },
         }
         let wire = match self {
@@ -468,6 +502,21 @@ impl Serialize for DesignBaseFeatureConstruction {
                 linkage_record_offset: *linkage_record_offset,
                 auxiliary_record: *auxiliary_record,
                 auxiliary_record_offset: *auxiliary_record_offset,
+            },
+            Self::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+            } => BorrowedWire::TimelineOwnedBodies {
+                parameter_body_records: SliceColumn::new(parameter_bodies, |row| row.value),
+                parameter_body_record_offsets: SliceColumn::new(parameter_bodies, |row| row.offset),
+                parameter_body_fields: SliceColumn::new(parameter_bodies, |row| row.field.into()),
+                body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
+                body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
+                owner_record: *owner_record,
+                owner_reference_offset: *owner_reference_offset,
             },
         };
         wire.serialize(serializer)
@@ -649,6 +698,47 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+    /// Result bodies of a scope that a timeline object owns.
+    TimelineOwnedBodies {
+        /// Parameter-body records in source order.
+        parameter_body_records: Vec<u64>,
+        /// Byte offsets parallel to `parameter_body_records`.
+        parameter_body_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `parameter_body_records`.
+        parameter_body_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Design body entity suffixes in source order.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Timeline object that names this scope.
+        owner_record: u32,
+        /// Byte offset of the object's reference to this scope.
+        owner_reference_offset: u64,
+    },
+}
+
+/// Join one column-wise run of 15-byte Base Feature references.
+fn entry_rows(
+    values: Vec<u64>,
+    offsets: Vec<u64>,
+    fields: Vec<NativeBytes<[u8; 6]>>,
+) -> Result<Vec<DesignBaseFeatureEntry<u64>>, String> {
+    if values.len() != offsets.len() || values.len() != fields.len() {
+        return Err("Base Feature reference columns must be parallel".into());
+    }
+    require_local_fields(&fields)?;
+    Ok(values
+        .into_iter()
+        .zip(offsets)
+        .zip(fields)
+        .map(|((value, offset), field)| DesignBaseFeatureEntry {
+            value,
+            offset,
+            field: *field,
+        })
+        .collect())
 }
 
 impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstruction {
@@ -916,6 +1006,36 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     auxiliary_record_offset,
                 }
             }
+            DesignBaseFeatureConstructionWire::TimelineOwnedBodies {
+                parameter_body_records,
+                parameter_body_record_offsets,
+                parameter_body_fields,
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                owner_record,
+                owner_reference_offset,
+            } => {
+                if parameter_body_records.len() != body_entity_suffixes.len() {
+                    return Err(
+                        "parameter_body_records and body_entity_suffixes must be parallel".into(),
+                    );
+                }
+                Self::TimelineOwnedBodies {
+                    parameter_bodies: entry_rows(
+                        parameter_body_records,
+                        parameter_body_record_offsets,
+                        parameter_body_fields,
+                    )?,
+                    bodies: entry_rows(
+                        body_entity_suffixes,
+                        body_entity_suffix_offsets,
+                        body_entity_fields,
+                    )?,
+                    owner_record,
+                    owner_reference_offset,
+                }
+            }
         })
     }
 }
@@ -1096,21 +1216,54 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     auxiliary_record_offset,
                 }
             }
+            DesignBaseFeatureConstruction::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+            } => Self::TimelineOwnedBodies {
+                parameter_body_records: parameter_bodies.iter().map(|row| row.value).collect(),
+                parameter_body_record_offsets: parameter_bodies
+                    .iter()
+                    .map(|row| row.offset)
+                    .collect(),
+                parameter_body_fields: parameter_bodies
+                    .iter()
+                    .map(|row| row.field.into())
+                    .collect(),
+                body_entity_suffixes: bodies.iter().map(|row| row.value).collect(),
+                body_entity_suffix_offsets: bodies.iter().map(|row| row.offset).collect(),
+                body_entity_fields: bodies.iter().map(|row| row.field.into()).collect(),
+                owner_record,
+                owner_reference_offset,
+            },
         }
     }
 }
 
 impl DesignBaseFeatureConstruction {
+    /// Timeline object that gives this scope its authored position.
+    pub(crate) fn timeline_owner(&self) -> Option<u32> {
+        match self {
+            Self::TimelineOwnedBodies { owner_record, .. } => Some(*owner_record),
+            _ => None,
+        }
+    }
+
     /// Return the body suffixes in source order for any Base Feature form.
     pub(crate) fn body_entity_suffixes(&self) -> impl ExactSizeIterator<Item = u64> + '_ {
         let count = match self {
-            Self::BodySnapshot { bodies, .. } => bodies.len(),
+            Self::BodySnapshot { bodies, .. } | Self::TimelineOwnedBodies { bodies, .. } => {
+                bodies.len()
+            }
             Self::BodyBasedOnFaces { .. } => 1,
             Self::ResultBodies { bodies, .. } => bodies.iter().len(),
             Self::LegacyBodyBasedOnFaces { form, .. } => form.bodies().len(),
         };
         (0..count).map(move |index| match self {
-            Self::BodySnapshot { bodies, .. } => bodies[index].value,
+            Self::BodySnapshot { bodies, .. } | Self::TimelineOwnedBodies { bodies, .. } => {
+                bodies[index].value
+            }
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
             Self::ResultBodies { bodies, .. } => match bodies {
                 DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => {
@@ -1135,7 +1288,7 @@ impl DesignBaseFeatureConstruction {
             Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),
             Self::LegacyBodyBasedOnFaces { form, .. } => (None, form.bodies(), None),
             Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
-            Self::BodySnapshot { .. } => (None, &[][..], None),
+            Self::BodySnapshot { .. } | Self::TimelineOwnedBodies { .. } => (None, &[][..], None),
         };
         results
             .into_iter()

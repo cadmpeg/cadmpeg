@@ -2523,6 +2523,32 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes the class-444 zero-body payload.
 
+## `timeline_body_owner_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Bytes 11 through 20 of its primary record are zero |
+| 21 | 4 | `body_count` | `u32` | little | spec | offset 21 stores u32 `N` |
+
+## `timeline_body_owner_marked_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the object's primary indexed header. The counted references start at the end of this prefix, and the reference to the owned scope follows them.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the marked form, bytes 11 through 19 are zero |
+| 20 | 1 | `marker` | `u8` | little | spec | byte 20 is `0x01` |
+| 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
+| 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
+
 ## `base_feature_result_body_entry`
 
 Spec §3.1 · layout: byte offsets · size: 15 B

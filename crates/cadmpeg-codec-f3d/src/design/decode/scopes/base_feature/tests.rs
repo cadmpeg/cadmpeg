@@ -2,7 +2,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use super::exact_base_feature_construction;
+use super::{
+    exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
+};
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
@@ -229,5 +231,143 @@ fn base_feature_fixed_body_runs_refuse_nonlocal_reference_flags() {
                     .is_none());
             }
         }
+    }
+}
+
+const PASTE_OBJECT: &str = "BA3059E4-4B23-4D02-9D18-E7BB95C991F3";
+const BODY_TO_COMPONENT_OBJECT: &str = "56225BC7-69B7-446A-9AEA-6AA25BC7806E";
+
+/// A timeline object for record 50 that places `bodies.len()` bodies, followed
+/// by the owned Base Feature scope for record 51. The object's first counted
+/// reference sits where a one-body object stores its scope reference.
+fn owned_frames(bodies: &[(u32, u32)], scope_count: u32) -> (Vec<u8>, DesignParameterScope) {
+    owned_frames_with_prefix(bodies, scope_count, &[0; 10])
+}
+
+fn owned_frames_with_prefix(
+    bodies: &[(u32, u32)],
+    scope_count: u32,
+    prefix: &[u8],
+) -> (Vec<u8>, DesignParameterScope) {
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"300", 50);
+    bytes.extend_from_slice(prefix);
+    bytes.extend_from_slice(&u32::try_from(bodies.len()).unwrap().to_le_bytes());
+    for (parameter, _) in bodies {
+        push_owner_reference(&mut bytes, u64::from(*parameter));
+    }
+    push_owner_reference(&mut bytes, 51);
+    let start = bytes.len();
+    crate::test_support::indexed_header(&mut bytes, *b"301", 51);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&scope_count.to_le_bytes());
+    for value in bodies
+        .iter()
+        .map(|(parameter, _)| parameter)
+        .chain(bodies.iter().map(|(_, body)| body))
+    {
+        crate::test_support::push_marked_reference(&mut bytes, *value);
+        bytes.extend_from_slice(&[0; 4]);
+    }
+    bytes.resize(bytes.len() + 64, 0);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design1/BulkStream.dat:scope#owned",
+        DesignFeatureKind::BaseFeature,
+        51,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = u64_from_index(start);
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    (bytes, scope)
+}
+
+fn push_owner_reference(bytes: &mut Vec<u8>, target: u64) {
+    bytes.push(1);
+    bytes.extend_from_slice(&target.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+}
+
+fn owner_types(guid: &str) -> Vec<crate::records::entity_header::SegmentType> {
+    vec![crate::records::entity_header::SegmentType::try_new(
+        "f3d:Design1/MetaStream.dat:design-type#0".to_owned(),
+        crate::design::test_support::design_type(guid, None, 1, "Fusion", vec![50]),
+    )
+    .unwrap()]
+}
+
+#[test]
+fn timeline_object_names_its_scope_after_the_counted_references() {
+    let (bytes, scope) = owned_frames(&[(71, 61), (72, 62)], 4);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let types = owner_types(PASTE_OBJECT);
+    let owners = timeline_body_owners(&bytes, &records, types.iter());
+    assert_eq!(owners.keys().copied().collect::<Vec<_>>(), [51]);
+    let construction = exact_timeline_owned_base_feature(&bytes, &scope, owners[&51])
+        .expect("owned two-body scope");
+    assert_eq!(construction.timeline_owner(), Some(50));
+    assert_eq!(
+        construction.body_entity_suffixes().collect::<Vec<_>>(),
+        [61, 62]
+    );
+    let DesignBaseFeatureConstruction::TimelineOwnedBodies {
+        parameter_bodies, ..
+    } = &construction
+    else {
+        panic!("owned Base Feature form");
+    };
+    assert_eq!(
+        parameter_bodies
+            .iter()
+            .map(|row| row.value)
+            .collect::<Vec<_>>(),
+        [71, 72]
+    );
+}
+
+#[test]
+fn timeline_body_owners_admit_each_owner_type() {
+    let (bytes, _) = owned_frames(&[(55, 65)], 2);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    for (guid, owned) in [
+        (PASTE_OBJECT, true),
+        (BODY_TO_COMPONENT_OBJECT, true),
+        ("00000000-0000-0000-0000-00000000ABCD", false),
+    ] {
+        let types = owner_types(guid);
+        let owners = timeline_body_owners(&bytes, &records, types.iter());
+        assert_eq!(owners.contains_key(&51), owned, "{guid}");
+    }
+}
+
+#[test]
+fn owned_scope_requires_two_references_per_placed_body() {
+    let (bytes, scope) = owned_frames(&[(71, 61), (72, 62)], 2);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let types = owner_types(PASTE_OBJECT);
+    let owners = timeline_body_owners(&bytes, &records, types.iter());
+    assert!(exact_timeline_owned_base_feature(&bytes, &scope, owners[&51]).is_none());
+}
+
+#[test]
+fn timeline_object_admits_the_marked_count_prefix() {
+    for (prefix, owned) in [
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0][..], true),
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0][..], false),
+        (&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 9][..], false),
+    ] {
+        let (bytes, _) = owned_frames_with_prefix(&[(71, 61)], 2, prefix);
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let types = owner_types(BODY_TO_COMPONENT_OBJECT);
+        let owners = timeline_body_owners(&bytes, &records, types.iter());
+        assert_eq!(owners.contains_key(&51), owned, "{prefix:?}");
     }
 }
