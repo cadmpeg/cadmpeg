@@ -443,7 +443,7 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Some(format!("{}", Self::mint_unknown_id(order)));
+                return Some(format!("{}", crate::container::mint_unknown_id(order)));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
@@ -509,6 +509,23 @@ impl<'a> DecodeContext<'a> {
             }
         }
         members
+    }
+
+    /// Commit the Unknown-surface placeholder for a free object only.
+    ///
+    /// A definition member's unreadable payload fails without free geometry:
+    /// its only neutral home is through its definition's product records, so
+    /// a placeholder surface would invent model content no occurrence owns
+    /// (#223).
+    fn commit_unknown_surface_unless_member(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if self.is_definition_member(source_order) {
+            self.mark_failed(source_order);
+            return Ok(());
+        }
+        self.commit_unknown_surface(source_order)
     }
 
     /// Decode and atomically commit supported simple geometry.
@@ -1179,7 +1196,7 @@ impl<'a> DecodeContext<'a> {
                         .collect(),
                 }),
             ),
-            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            native_ref: Some(crate::container::mint_unknown_id(source_order).to_string()),
             product_definition: None,
         };
         match self
@@ -1969,28 +1986,6 @@ impl<'a> DecodeContext<'a> {
     /// A definition member's unreadable payload fails without free geometry:
     /// its only neutral home is through its definition's product records, so
     /// a placeholder surface would invent model content no occurrence owns
-    /// (#223).
-    fn commit_unknown_surface_unless_member(
-        &mut self,
-        source_order: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        if self.is_definition_member(source_order) {
-            self.mark_failed(source_order);
-            return Ok(());
-        }
-        self.commit_unknown_surface(source_order)
-    }
-
-    /// Mints the stable unknown-record ID for source order.
-    fn mint_unknown_id(source_order: usize) -> UnknownId {
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
-            cadmpeg_ir::ids::IdentityKey::zero_padded(
-                cadmpeg_core::decode::u64_from_index(source_order),
-                6,
-            ),
-        )
-    }
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
@@ -2167,13 +2162,20 @@ impl<'a> DecodeContext<'a> {
         for (index, status) in self.statuses.iter().enumerate() {
             if !matches!(status, Some(GeometryOutcome::Decoded)) {
                 self.untyped_records
-                    .entry(Self::mint_unknown_id(index))
+                    .entry(crate::container::mint_unknown_id(index))
                     .or_default()
                     .insert(cadmpeg_ir::ArenaClass::Model);
             }
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, self.annotations);
-        let (mut ir, unknowns) = self.session.into_parts();
+        let (mut ir, mut unknowns) = self.session.into_parts();
+        let give_up_marks = crate::container::materialize_give_ups(
+            ctx,
+            self.scan.data,
+            &self.scan.give_ups,
+            &mut losses,
+            &mut unknowns,
+        )?;
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
         losses.extend(crate::neutral_projection::project(
@@ -2183,7 +2185,9 @@ impl<'a> DecodeContext<'a> {
             view_projections,
             &mut ir,
         )?);
-        let scope = self.scan.content_scope(&ir);
+        // The scan names each given-up part's records in its loss's dropped
+        // list (#215 rule 2); no post-projection step is needed.
+        let scope = self.scan.content_scope(&ir, ctx.depth().required_scope());
         ir.scope = scope;
         ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
@@ -2203,6 +2207,9 @@ impl<'a> DecodeContext<'a> {
         )?);
         for (id, classes) in self.untyped_records {
             source_fidelity.mark_untyped(id.as_str(), classes)?;
+        }
+        for mark in &give_up_marks {
+            source_fidelity.mark_untyped(mark.id.as_str(), mark.classes.clone())?;
         }
         Ok(Decoded {
             ir,
@@ -2225,7 +2232,7 @@ impl<'a> DecodeContext<'a> {
             let object = &self.scan.objects[source_order];
             let range = object.range();
             let degraded = object.is_degraded();
-            let id = Self::mint_unknown_id(source_order);
+            let id = crate::container::mint_unknown_id(source_order);
             let record = self.source_record(id, range)?;
 
             records.push(record);
@@ -2473,7 +2480,7 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id.clone()],
                     &association,
-                    Self::mint_unknown_id(source_order).to_string(),
+                    crate::container::mint_unknown_id(source_order).to_string(),
                 ));
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
@@ -2573,7 +2580,7 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id],
                     &association,
-                    Self::mint_unknown_id(source_order).to_string(),
+                    crate::container::mint_unknown_id(source_order).to_string(),
                 ));
                 let point_prefix = format!("rhino:object:point#{key}.");
                 for point in self
@@ -5701,15 +5708,22 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
-    let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
-        crate::history::project(
-            expand.ctx(),
-            &scan.history,
-            geometry_context,
-            candidate,
-            &mut history_warnings,
-        )
-    });
+    // §1.1: a geometry request excludes design, so history projects only at
+    // full depth. Design arenas stay empty otherwise, and the scope derivation
+    // reports no design.
+    let untyped = if expand.ctx().depth() == cadmpeg_core::decode::DecodeDepth::Full {
+        context.validate_candidate_fallible(|candidate, _annotations| {
+            crate::history::project(
+                expand.ctx(),
+                &scan.history,
+                geometry_context,
+                candidate,
+                &mut history_warnings,
+            )
+        })
+    } else {
+        Ok((0, 0, 0, 0))
+    };
     context.report.phase_warnings.append(&mut history_warnings);
     match untyped {
         Ok((0, 0, 0, 0)) => {}
