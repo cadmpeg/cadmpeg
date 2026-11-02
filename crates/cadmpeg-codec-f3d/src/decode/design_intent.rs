@@ -854,6 +854,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     crate::design::feature_project::orient_revolve_axes(
         &mut model.features,
+        &design.design_parameter_scopes,
         &model.sketches,
         &model.sketch_entities,
         (
