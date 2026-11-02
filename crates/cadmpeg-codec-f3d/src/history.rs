@@ -32,7 +32,9 @@ mod output_chain;
 mod recipe_index;
 mod reference_edge;
 pub(crate) mod selection;
+mod shell_walls;
 pub(crate) mod stored_bodies;
+mod surface_rows;
 pub(crate) mod thread_face;
 mod topology_cache;
 mod treatment_index;
@@ -3149,6 +3151,29 @@ pub(crate) fn bind_feature_face_selections(
                     );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Shell {
+                        removed_faces,
+                        thickness: Some(thickness),
+                        mode,
+                        ..
+                    },
+                ) => {
+                    shell_walls::bind_shell_removed_faces(
+                        removed_faces,
+                        feature_id,
+                        scope,
+                        groups,
+                        &shell_walls::ShellWalls {
+                            thickness: thickness.get(),
+                            mode: *mode,
+                            previous_state_id,
+                            transition,
+                            input: history.topology(selection_previous_row),
+                            output: history.topology(selection_state_row),
+                        },
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
                 ) => {
                     bind_surface_stitch_face_selection(
@@ -3271,6 +3296,7 @@ fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefiniti
                 | cadmpeg_ir::features::FeatureOperation::Pattern { .. }
                 | cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
                 | cadmpeg_ir::features::FeatureOperation::Thicken { .. }
+                | cadmpeg_ir::features::FeatureOperation::Shell { .. }
                 | cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
                 | cadmpeg_ir::features::FeatureOperation::SplitFace { .. }
                 | cadmpeg_ir::features::FeatureOperation::Hole { face: Some(_), .. }
