@@ -289,7 +289,30 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
         }?;
         projected.push(item);
     }
-    (!projected.is_empty()).then_some(projected.into_iter().map(Some).collect())
+    if projected.is_empty() {
+        // An empty link container holds no slots, but its existence stays a
+        // fact: the property projects with no values instead of a loss.
+        const CONTAINERS: &[&str] = &[
+            "Link",
+            "LinkList",
+            "LinkSub",
+            "LinkSubList",
+            "XLink",
+            "XLinkList",
+            "XLinkSub",
+            "XLinkSubList",
+            "Sub",
+        ];
+        if !values.is_empty()
+            && values
+                .iter()
+                .all(|value| CONTAINERS.contains(&value.tag.as_str()))
+        {
+            return Some(Vec::new());
+        }
+        return None;
+    }
+    Some(projected.into_iter().map(Some).collect())
 }
 
 /// Canonical semantic text for legacy string-valued parameter maps. This is
