@@ -5577,7 +5577,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte header is followed by 28 zero bytes |
 | 11 | 28 | `zero_run_28` | `bytes[28]` | little | spec | header is followed by 28 zero bytes |
-| 39 | 4 | `constant_three` | `u32` | little | spec | u32 value 3 at offset 39 |
+| 39 | 4 | `prefix_word` | `u32` | little | spec | The prefix word is 2 or 3. |
 | 43 | 13 | `zero_run_13` | `bytes[13]` | little | spec | 13 zero bytes |
 | 56 | 11 | `nonzero_record_reference` | `bytes[11]` | little | spec | a nonzero marked same-segment reference at offset 56 |
 | 67 | 1 | `identity_flag` | `u8` | little | spec | an identity flag byte at offset 67 |
@@ -8390,6 +8390,88 @@ Parsed by:
 | 931 | 1 | `tail_separator` | `bytes[1]` | little | spec | Version 5 uses the same type GUID and field order · value `[0]` |
 | 932 | 11 | `last_tail_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
 | 943 | 2 | `tail_zeros` | `bytes[2]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0]` |
+
+## `assembly_wide_null_matrix_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 58 | 128 | `transform` | `f64[16]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 186 | 1 | `zero_separator` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 187 | 11 | `scope_backlink` | `bytes[11]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 198 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 209 | 4 | `discriminator` | `u32` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 213 | 2 | `zero_tail` | `bytes[2]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
+
+## `assembly_locator_prefix_two`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 39 | 4 | `word` | `u32` | little | spec | prefix word 2 or 3 · value `2` |
+
+Unstated regions:
+
+- `0..39` (39 B): Indexed header and zero prefix.
+
+## `assembly_locator_prefix_three`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 39 | 4 | `word` | `u32` | little | spec | prefix word 2 or 3 · value `3` |
+
+Unstated regions:
+
+- `0..39` (39 B): Indexed header and zero prefix.
+
+## `assembly_wide_null_identity_77`
+
+Spec §Assembly operands · layout: byte offsets · size: 77 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 58 | 1 | `separator` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 59 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 70 | 1 | `wrapper_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 71 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity variants span 77 bytes |
+| 75 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity variants span 77 bytes |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
+
+## `assembly_wide_null_identity_87`
+
+Spec §Assembly operands · layout: byte offsets · size: 87 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 58 | 1 | `separator` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 59 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 70 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 81 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity variants span 77 bytes |
+| 85 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity variants span 77 bytes |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
 
 ## Not tabulated
 

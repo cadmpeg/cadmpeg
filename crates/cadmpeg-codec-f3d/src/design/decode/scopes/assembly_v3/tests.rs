@@ -371,11 +371,37 @@ fn version_three_grammar_refuses_wrong_types_versions_and_truncated_spans() {
 }
 
 fn append_paths(bytes: &mut Vec<u8>, types: &mut StreamTypes<'static>) {
+    append_locator_paths(bytes, types, None);
+}
+
+fn append_locator_paths(
+    bytes: &mut Vec<u8>,
+    types: &mut StreamTypes<'static>,
+    wide: Option<(bool, u32)>,
+) {
     for locator in [40, 50] {
         indexed_header(bytes, *b"497", locator);
-        bytes.extend([0; 10]);
-        reference(bytes, 10, false);
-        bytes.extend([1, 0]);
+        if let Some((null, word)) = wide {
+            bytes.extend([0; 28]);
+            bytes.extend(word.to_le_bytes());
+            bytes.extend([0; 13]);
+            if null {
+                bytes.push(0);
+            } else {
+                reference(bytes, 10, false);
+            }
+            bytes.push(0);
+            for row in 0..4 {
+                for column in 0..4 {
+                    bytes.extend(f64::from(u8::from(row == column)).to_le_bytes());
+                }
+            }
+            bytes.push(0);
+        } else {
+            bytes.extend([0; 10]);
+            reference(bytes, 10, false);
+            bytes.extend([1, 0]);
+        }
         reference(bytes, 30, false);
         reference(bytes, locator + 2, false);
         bytes.extend(2_u32.to_le_bytes());
@@ -401,7 +427,7 @@ fn append_paths(bytes: &mut Vec<u8>, types: &mut StreamTypes<'static>) {
             u64::from(locator),
             (
                 super::super::assembly_operand_paths::WIDE_PATH_LOCATOR_TYPE_GUID,
-                3,
+                if wide.is_some() { 5 } else { 3 },
             ),
         );
         types.insert(
@@ -558,4 +584,92 @@ fn version_five_compact_identity_at_legacy_length_remains_a_relation() {
     .unwrap();
     assert!(valid_alignment(&scope, &decoded, &types, &owners));
     assert!(relation_only(&scope, &decoded, &types));
+}
+
+#[test]
+fn version_five_locator_matrix_forms_qualify_validate_and_project() {
+    for (null, word) in [(true, 2), (true, 3), (false, 2), (false, 3)] {
+        let (mut bytes, mut scope, owners, mut types) =
+            versioned_fixture(5, 7, false, false, false, 0);
+        append_locator_paths(&mut bytes, &mut types, Some((null, word)));
+        let decoded = alignment(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            decoded.form,
+            Some(DesignAssemblyAlignmentForm::Qualified(_))
+        ));
+        assert!(valid_alignment(&scope, &decoded, &types, &owners));
+        let frames = decoded.operand_frames().unwrap();
+        assert_eq!(frames[0].reference_record_index, 10);
+        assert_eq!(frames[1].reference_record_index, 20);
+        assert_eq!(frames[1].transform[0][3], 3.0);
+        if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+            *slot = Some(decoded);
+        }
+        let projected = crate::design::assembly::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[],
+        );
+        assert_eq!(projected.joints.len(), 1);
+    }
+}
+
+#[test]
+fn version_five_locator_wrong_word_and_span_keep_partial_alignment() {
+    for wrong_span in [false, true] {
+        let (mut bytes, mut scope, owners, mut types) =
+            versioned_fixture(5, 7, false, false, false, 0);
+        let locator_at = bytes.len();
+        append_locator_paths(
+            &mut bytes,
+            &mut types,
+            Some((true, if wrong_span { 2 } else { 4 })),
+        );
+        if wrong_span {
+            bytes.insert(locator_at + 215, 0);
+        }
+        let decoded = alignment(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+            &types,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            decoded.form,
+            Some(DesignAssemblyAlignmentForm::Frames { .. })
+        ));
+        assert!(valid_alignment(&scope, &decoded, &types, &owners));
+        if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+            *slot = Some(decoded);
+        }
+        let projection = crate::design::assembly::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[],
+        );
+        assert!(projection.joints.is_empty());
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .filter(
+                    |loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()
+                )
+                .count(),
+            1
+        );
+    }
 }

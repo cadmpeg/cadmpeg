@@ -1986,9 +1986,13 @@ and 567 in the 850-byte scope, after the count 2.
 
 A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
 
+A wide version-five locator has prefix word 2 or 3. A null construction reference occupies one zero byte at 56. With flag 0 at 57, the rigid matrix starts at 58, the separator is at 186, the scope backlink at 187, the wrapper reference at 198, the discriminator at 209, and the two-byte zero tail at 213. This null-construction matrix locator spans 215 bytes. For version-three and version-five Assemble scopes, the scope connector supplies the operand frame; the locator path supplies its occurrence qualifier.
+
+The null-construction identity variants span 77 bytes with a null wrapper and 87 bytes with a present wrapper. Their flag is 1 at 57, separator at 58, backlink at 59 and wrapper at 70. The discriminator and zero tail start at 71 and 75 for the 77-byte form, and 81 and 85 for the 87-byte form. A qualified operand requires a present wrapper.
+
 A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
-header is followed by 28 zero bytes, u32 value 3 at offset 39, 13 zero bytes,
+header is followed by 28 zero bytes, a u32 prefix word at offset 39, 13 zero bytes,
 a nonzero marked same-segment reference at offset 56, and an identity flag byte
 at offset 67. Flag `0` is followed by a row-major rigid 4×4 transform at offset
 68; flag `1` stores no transform. One zero byte follows the flag or the

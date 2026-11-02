@@ -18340,11 +18340,12 @@ source = "spec"
 anchor = "header is followed by 28 zero bytes"
 
 [[record.field]]
-name = "constant_three"
+name = "prefix_word"
 offset = 39
 type = "u32"
 source = "spec"
-anchor = "u32 value 3 at offset 39"
+anchor = "prefix word 2 or 3"
+note = "The prefix word is 2 or 3."
 
 [[record.field]]
 name = "zero_run_13"
@@ -28777,3 +28778,228 @@ type = "bytes[2]"
 source = "spec"
 anchor = "Version 5 uses the same type GUID and field order"
 value = [0, 0]
+
+[[record]]
+name = "assembly_wide_null_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "This null-construction matrix locator spans 215 bytes."
+size = 215
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "transform"
+offset = 58
+type = "f64[16]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "zero_separator"
+offset = 186
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 187
+type = "bytes[11]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 198
+type = "bytes[11]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "discriminator"
+offset = 209
+type = "u32"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "zero_tail"
+offset = 213
+type = "bytes[2]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record]]
+name = "assembly_locator_prefix_two"
+kind = "byte"
+section = "Assembly operands"
+anchor = "prefix word 2 or 3"
+[[record.gap]]
+offset = 0
+size = 39
+note = "Indexed header and zero prefix."
+[[record.field]]
+name = "word"
+offset = 39
+type = "u32"
+value = 2
+source = "spec"
+anchor = "prefix word 2 or 3"
+
+[[record]]
+name = "assembly_locator_prefix_three"
+kind = "byte"
+section = "Assembly operands"
+anchor = "prefix word 2 or 3"
+[[record.gap]]
+offset = 0
+size = 39
+note = "Indexed header and zero prefix."
+[[record.field]]
+name = "word"
+offset = 39
+type = "u32"
+value = 3
+source = "spec"
+anchor = "prefix word 2 or 3"
+
+[[record]]
+name = "assembly_wide_null_identity_77"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity variants span 77 bytes"
+size = 77
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "separator"
+offset = 58
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 70
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 75
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record]]
+name = "assembly_wide_null_identity_87"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity variants span 77 bytes"
+size = 87
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "separator"
+offset = 58
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 81
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 85
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
