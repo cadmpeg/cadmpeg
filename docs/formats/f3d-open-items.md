@@ -296,16 +296,6 @@ measurement form.
 
 **Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
 
-### DR-91. Opposed joint frame mate
-
-**Question.** For a joint whose frame-sense byte is `1` (opposed), how do the two operand frames' in-plane axes relate, and how does the alignment angle apply?
-
-**Known.** In every observed opposed joint the two frames' z axes are antiparallel (`z₁ = −z₀`). For an aligned joint, the first operand's model frame is the second's turned by the alignment angle about its z axis. No observed opposed joint has a nonzero alignment angle or offset, so the in-plane axis that flips and the sign of the angle are not fixed by any sample.
-
-**Need.** An opposed joint with a nonzero angle and asymmetric operands, whose stored placement shows the result, would fix which in-plane axis reverses (x or y) and whether the angle turns about `z₀` or `z₁`.
-
-**Conflict.** Assuming a 180° turn about either in-plane axis, or applying the angle with the aligned sign, states a relation no sample shows.
-
 ### DR-92. Current revision of a component definition
 
 **Question.** When a component definition is stored as revisions, each binding its own context UUID, which revision is current?
@@ -1205,3 +1195,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The byte sequence permits several scalar partitions.
 
 **Note.** The reader preserves the complete manifest in the native archive payload.
+
+### DR-244. Saved assembly state for occurrence poses and joint relations
+
+**Question.** Which saved assembly state selects the occurrence pose to compare with an Assemble joint relation, and which fields bind that state to the joint?
+
+**Known.** The version-three connector equation uses the two scope frames, the four referenced angle and XYZ lanes, and the facing term. Current-pose carriers satisfy this equation for 328 of 334 V1.8 targets, two of four RailCore v1 targets, and five of seven earlier admitted controls. The two RailCore residuals are 40 mm and 18.35 mm. The six V1.8 residuals range from 6.50691939 mm to 373.68352745 mm. V1.8 record 146871 satisfies the equation under its neutral occurrence pose. The decoder retains the stored occurrence transforms and reports joints separately.
+
+**Need.** A byte-level state selector and links from its joint records to the selected occurrence-pose carriers, checked across independent public designs with different saved assembly states.
+
+**Conflict.** Current-pose carriers differ from the joint equation at RailCore v1 records 3068 and 3232 and V1.8 records 146871, 12428, 12811, 11527, 2578, and 2333. Earlier admitted controls at V1.8 record 985 and robot record 4614 also differ. The V1.8 control has a 0.0405289814 mm translation residual. The robot control has a 1472.38643012 mm translation residual and a 1.42261826 maximum rotation-component residual. V1.8 record 146871 has a current-carrier residual of 6.50691939 mm and a neutral-consumer residual below 0.0001 mm.
+
+**Note.** Scope admission follows the registered type, version, field grammar, and span equation. Stored-pose closure supplies evidence about the selected assembly state. DR-113 and DR-116 cover their separate placement and binding questions.
+
+### DR-245. Motion of a joint record shared by several Assemble scopes
+
+**Question.** When several version-3 `Assemble` scopes reference one joint record, which scope does its motion record bind, and do the other scopes take the same freedoms, limits, and rest state?
+
+**Known.** An adjacent joint record has an index one less than its scope's, and its motion binds that scope. Seventeen V1.8 scopes reference an earlier joint record. V1.8 stores no freedom entry in any Design stream, so no shared joint shows a motion.
+
+**Need.** A public design whose shared joint record has a motion record with freedom entries, with the moving scope identified.
+
+**Conflict.** None.
+
+**Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.

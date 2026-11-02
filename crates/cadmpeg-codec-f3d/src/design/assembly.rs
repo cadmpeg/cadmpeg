@@ -855,6 +855,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     let mut joints = BTreeMap::<String, AssemblyJoint>::new();
     let mut unprojected = 0_usize;
+    let mut partial_alignments = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
@@ -926,11 +927,20 @@ pub(crate) fn project_assembly_joints_with_paths(
                         .or_insert(member);
                 }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if scope.assembly_alignment().is_some_and(|alignment| alignment.frame_sense.is_some() && matches!(alignment.form, Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. }))) {
+                    partial_alignments += 1;
+                }
+            }
             Err(_) => unprojected += 1,
         }
     }
     let mut losses = Vec::new();
+    if partial_alignments != 0 {
+        losses.push(F3dLossCode::AssemblyAlignmentPartial.note(format!(
+            "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding or operand paths are unresolved."
+        )));
+    }
     if undecoded_motion_count != 0 {
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(

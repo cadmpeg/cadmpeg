@@ -5,6 +5,7 @@ pub(crate) mod align;
 mod assembly_alignment;
 mod assembly_carrier_paths;
 mod assembly_operand_frames;
+pub(crate) mod assembly_v3;
 pub(crate) use assembly_operand_frames::wide_family_frame_offsets;
 mod assembly_operand_paths;
 mod axial_assembly;

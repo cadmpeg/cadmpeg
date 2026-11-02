@@ -98,6 +98,8 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
+    /// Partial assembly alignments with unresolved motion binding or operand paths.
+    AssemblyAlignmentPartial,
     /// An ordinary rigid-group frame has no admitted grammar.
     AssemblyRigidGroupFrameUnparsed,
     /// Design assembly joints projected as fixed because their freedom codes or
@@ -465,6 +467,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
+        Self::AssemblyAlignmentPartial,
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
@@ -663,6 +666,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
+            Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
@@ -898,6 +902,7 @@ impl F3dLossCode {
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
+            | Self::AssemblyAlignmentPartial
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -1141,6 +1146,7 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionLost
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
+            | Self::AssemblyAlignmentPartial
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -1297,6 +1303,7 @@ mod tests {
                 "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
+                "assembly.alignment-partial",
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",

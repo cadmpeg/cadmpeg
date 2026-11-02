@@ -63,13 +63,38 @@ pub(crate) struct LocalComponentProjection {
 /// Component operations supply the occurrences and placements they prove.
 /// Local child trees repeat beneath each containing instance. A carrier whose
 /// container or definition cannot resolve stays unplaced and is reported.
+#[cfg(test)]
 pub(crate) fn project_local_components(
     sources: &LocalComponentSources<'_>,
 ) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
+    project_local_components_with_types(sources, &[])
+}
+
+pub(crate) fn project_local_components_with_types(
+    sources: &LocalComponentSources<'_>,
+    types: &[crate::records::entity_header::SegmentType],
+) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
     let mut projector = Projector::new(sources);
+    let mut types_by_stream = std::collections::HashMap::new();
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
-        if let Some(qualifiers) = scope.assembly_alignment().and_then(
+        let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
+            alignment.frame_sense.is_some()
+                && super::decode::scopes::assembly_v3::registered(
+                    scope,
+                    types_by_stream.entry(stream).or_insert_with(|| {
+                        stream
+                            .strip_prefix("f3d:")
+                            .and_then(crate::ids::decode_identity_key_component)
+                            .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
+                            .unwrap_or_default()
+                    }),
+                )
+        });
+        if let Some(qualifiers) = scope
+            .assembly_alignment()
+            .filter(|_| !relation_only)
+            .and_then(
             super::super::records::feature::assembly::DesignAssemblyAlignment::operand_qualifiers,
         ) {
             for qualifier in &qualifiers {
