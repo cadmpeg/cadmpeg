@@ -8658,7 +8658,8 @@ fn is_part_construction_geometry(kind: &str) -> bool {
 fn is_stored_geometry_feature(kind: &str) -> bool {
     matches!(
         kind,
-        "Part::FeatureExt"
+        "Part::Feature"
+            | "Part::FeatureExt"
             | "Part::FeatureGeometrySet"
             | "Part::Spline"
             | "Part::Part2DObject"
@@ -8785,10 +8786,6 @@ fn is_spreadsheet(kind: &str) -> bool {
 /// Object namespaces that carry construction records. Matching a namespace
 /// does not admit a vendor extension as one of the exact neutral operations.
 pub(crate) fn is_design_kind(kind: &str) -> bool {
-    // A plain Part::Feature is a dumb geometry carrier, not authored history.
-    if kind == "Part::Feature" {
-        return false;
-    }
     let Some((namespace, _)) = kind.split_once("::") else {
         return false;
     };
@@ -8834,6 +8831,46 @@ pub(crate) fn is_design_object(kind: &str) -> bool {
         // Unknown construction types retain an attributable Native operation;
         // this does not dispatch them as any recognized built-in family.
         || is_design_kind(kind)
+}
+
+/// Whether the design dispatch claims this object type for a typed neutral
+/// operation. A claimed type that still lands Native kept neutral semantics
+/// out of reach, so its retention is reported; an unclaimed type is at its
+/// Native home, which is not a loss. This mirrors the dispatch chain above.
+pub(crate) fn has_typed_projection(kind: &str) -> bool {
+    is_spreadsheet(kind)
+        || is_body(kind)
+        || is_datum(kind)
+        || is_sketch(kind)
+        || is_stored_geometry_feature(kind)
+        || kind == "PartDesign::FeatureBase"
+        || is_imported_geometry(kind)
+        || is_part_construction_geometry(kind)
+        || is_primitive(kind)
+        || is_boolean(kind)
+        || is_loft(kind)
+        || is_sweep(kind)
+        || is_helical_sweep(kind)
+        || matches!(kind, "Part::Helix" | "Part::Spiral")
+        || is_binder(kind)
+        || is_pattern(kind)
+        || kind == "Part::Scale"
+        || is_hole(kind)
+        || is_extrusion(kind)
+        || is_revolution(kind)
+        || matches!(kind, "PartDesign::Thickness" | "Part::Thickness")
+        || matches!(kind, "Part::Offset" | "Part::Offset2D")
+        || matches!(
+            kind,
+            "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
+        )
+        || kind == "Part::RuledSurface"
+        || kind == "Part::Section"
+        || kind == "Part::Mirroring"
+        || kind == "Part::ProjectOnSurface"
+        || kind == "PartDesign::Draft"
+        || is_fillet(kind)
+        || is_chamfer(kind)
 }
 
 pub(crate) fn census(

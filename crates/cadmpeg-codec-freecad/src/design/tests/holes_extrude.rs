@@ -1064,16 +1064,23 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
-    assert_eq!(result.report().losses.len(), 1);
-    assert!(result
-        .report()
-        .losses
+    let profile = result
+        .ir()
+        .model
+        .features
         .iter()
-        .all(
-            |loss| loss.code.local_code() == "feature.object-unprojected"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-                && loss.message.contains("Profile")
-        ));
+        .find(|feature| feature.name.as_deref() == Some("Profile"))
+        .expect("profile feature");
+    assert!(matches!(
+        profile.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
+            if kind.as_str() == "Part::Part2DObjectPython"
+    ));
+    assert!(
+        result.report().losses.is_empty(),
+        "the vendor profile stays native without a loss: {:?}",
+        result.report().losses
+    );
     assert!(
         result.source_fidelity().unrepresented().is_empty(),
         "typed profile placement remains available"

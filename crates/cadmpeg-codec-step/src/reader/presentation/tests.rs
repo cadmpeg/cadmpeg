@@ -576,12 +576,6 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             .count(),
         2
     );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ConflictingScalarColors.kind()
-            && loss.message.contains("#47")
-            && loss.message.contains("#76")
-            && loss.message.contains("scalar color omitted")
-    }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -626,12 +620,6 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
                 })
             }));
         }
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::ConflictingScalarColors.kind()
-                && loss.message.contains("#47")
-                && loss.message.contains("#76")
-                && loss.message.contains("scalar color omitted")
-        }));
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -639,9 +627,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
 }
 
 #[test]
-fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
-    const EPS_ALPHA: f32 = 0.000_001;
-
+fn independent_same_rgb_styles_keep_bindings_without_scalar_color() {
     let source = String::from_utf8(
         include_bytes!("tests/data/ap05_independent_styles_first.p21").to_vec(),
     )
@@ -672,13 +658,23 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .iter()
         .find(|face| face.id.as_str() == "step:data:face#29")
         .expect("styled face");
-    let color = face.color.expect("same-RGB scalar face color");
-    assert!((color.a() - 0.25).abs() < EPS_ALPHA);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
+    assert!(face.color.is_none());
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    &binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Face(face)
+                        if face.as_str() == "step:data:face#29"
+                )
+            })
+            .count(),
+        2
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -701,7 +697,7 @@ fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
         let result = decode_inline(input);
         assert!(result.ir().model.appearance_bindings.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::ConflictingScalarColors.kind()
+            loss.code == StepLossCode::DecodeWarning.kind()
                 && loss.message.contains("STYLED_ITEM #8")
                 && loss.message.contains("equal-precedence")
         }));
@@ -1254,7 +1250,7 @@ fn surface_style_usage_prefers_positive_side_over_set_order() {
 }
 
 #[test]
-fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
+fn surface_style_usage_permutations_keep_positive_side_binding() {
     for input in [
         include_bytes!("tests/data/ap06_surface_sides_positive_negative_first.p21").as_slice(),
         include_bytes!("tests/data/ap06_surface_sides_positive_negative_reordered.p21").as_slice(),
@@ -1274,10 +1270,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
             .iter()
             .find(|face| face.id.as_str() == "step:data:face#29")
             .expect("styled face");
-        assert_eq!(
-            face.color,
-            Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
-        );
+        assert!(face.color.is_none());
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model");

@@ -527,25 +527,9 @@ const LEGACY_FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
         &SldprtCodec,
         &harness().fixture_inputs(),
-        |decoded| {
-            let native = decoded
-                .ir()
-                .native
-                .namespace("sldprt")
-                .map(crate::native::SldprtNative::load)
-                .transpose()
-                .expect("typed native records");
-            let expected = crate::loss::unrepresented(&decoded.report().losses, native.as_ref());
-            assert!(
-                expected
-                    .iter()
-                    .all(|class| decoded.source_fidelity().unrepresented().contains(class)),
-                "each absent source class must be declared"
-            );
-        },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }

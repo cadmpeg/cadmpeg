@@ -144,20 +144,6 @@ pub(super) fn write_semantic_at(
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
     let mut source_baseline = None;
-    if let Some(native) = native.as_mut() {
-        for lane in &mut native.feature_input_lanes {
-            if lane.native_payload.is_empty() && lane.native_payload.byte_len() != 0 {
-                let id = crate::records::lane_payload::retained_id(&lane.id)?;
-                if let Some(bytes) = retained_records
-                    .iter()
-                    .find(|record| record.id == id)
-                    .and_then(|record| record.data)
-                {
-                    lane.native_payload.attach(bytes)?;
-                }
-            }
-        }
-    }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_input_renames = if prepared_design {
@@ -1976,87 +1962,14 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    crate::resolved_features::write_prepare::validate_lane_against_payload(histories, lane, true)
+        .map_err(CodecError::UnsupportedContent)?;
     let expected_lane = crate::resolved_features::write_prepare::generated_native_lane(
         histories,
         &lane.id,
         lane.configuration.clone(),
         lane.native_payload.to_vec(),
     )?;
-    let expected_classes = &expected_lane.classes;
-    if &lane.classes != expected_classes {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited class declarations",
-            lane.id
-        )));
-    }
-    // Every field of an object-name record, the value included, states the
-    // payload bytes at `offset`.
-    let expected_names = &expected_lane.names;
-    if lane.names.len() != expected_names.len()
-        || lane
-            .names
-            .iter()
-            .zip(expected_names)
-            .any(|(actual, expected)| {
-                actual.id != expected.id
-                    || actual.parent != expected.parent
-                    || actual.ordinal != expected.ordinal
-                    || actual.offset != expected.offset
-                    || actual.object_id != expected.object_id
-            })
-    {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited object-name structure",
-            lane.id
-        )));
-    }
-    if let Some((index, actual, expected)) = lane
-        .names
-        .iter()
-        .zip(expected_names)
-        .enumerate()
-        .find_map(|(index, (actual, expected))| {
-            (actual.value != expected.value).then_some((index, actual, expected))
-        })
-    {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-            lane.id, actual.value, expected.value
-        )));
-    }
-    if !crate::resolved_features::scalars::scalar_indices_match(
-        &lane.scalars,
-        &expected_lane.scalars,
-    ) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited named scalars",
-            lane.id
-        )));
-    }
-    if lane.relation_bindings != expected_lane.relation_bindings {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited relation bindings",
-            lane.id
-        )));
-    }
-    if lane.relation_instances != expected_lane.relation_instances {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited relation instances",
-            lane.id
-        )));
-    }
-    if lane.references != expected_lane.references {
-        return Err(CodecError::UnsupportedContent(format!(
-            "feature-input lane {} has edited reference cells",
-            lane.id
-        )));
-    }
-    if lane.sketch_entities.len() != expected_lane.sketch_entities.len() {
-        return Err(CodecError::NotImplemented(format!(
-            "feature-input lane {} has edited marker membership",
-            lane.id
-        )));
-    }
     for (entity, expected_entity) in lane
         .sketch_entities
         .iter()

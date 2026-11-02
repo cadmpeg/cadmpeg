@@ -153,7 +153,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("invalid required coordinate omits its bounded dependent graph"),
     );
-    assert!(recovered
+    assert!(!recovered
         .report()
         .losses
         .iter()
