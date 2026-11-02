@@ -309,13 +309,41 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().model.entity_count(), 0);
+    assert_eq!(decoded.ir().model.entity_count(), 1);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 0;
     let error = FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
-        .expect_err("one document object and no model entity require a limit of one");
+        .expect_err("one document object and one model entity require a limit of two");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit FCStd document objects"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 1;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(document)), &options)
+        .expect_err("the stored feature counts beside its document object");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "part native entity"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 2;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(document)), &options)
+        .expect_err("the staged model entity counts after its native records");
     assert!(
         matches!(
             error,
@@ -326,7 +354,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 3;
     FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
         .expect("the exact additive entity limit must admit the fixture");
