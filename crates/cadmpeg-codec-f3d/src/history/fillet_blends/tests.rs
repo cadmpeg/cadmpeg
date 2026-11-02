@@ -65,10 +65,12 @@ fn faces(boundaries: &[(i64, &[i64])]) -> AsmHistoricalTopology {
 /// A straight edge with its axis row and midpoint tangent along `direction`.
 fn line(topology: &mut AsmHistoricalTopology, edge: i64, direction: Vector3) {
     topology.edges.push(edge);
-    topology.edge_curves.push(AsmHistoricalOptionalCarrierBinding {
-        entity: edge,
-        carrier: Some(100 + edge),
-    });
+    topology
+        .edge_curves
+        .push(AsmHistoricalOptionalCarrierBinding {
+            entity: edge,
+            carrier: Some(100 + edge),
+        });
     topology.curve_axes.push(AsmHistoricalCurveAxis {
         curve: 100 + edge,
         origin: Point3::new(0.0, 0.0, 0.0),
@@ -93,12 +95,7 @@ fn input(edge_17: Vector3) -> AsmHistoricalTopology {
 
 /// The fillet of edge 17: blend face 20 meets faces 10, 11, and 12.
 fn output() -> AsmHistoricalTopology {
-    let mut topology = faces(&[
-        (10, &[30]),
-        (11, &[31]),
-        (12, &[32]),
-        (20, &[30, 31, 32]),
-    ]);
+    let mut topology = faces(&[(10, &[30]), (11, &[31]), (12, &[32]), (20, &[30, 31, 32])]);
     topology.surface_cylinders.push(AsmHistoricalCylinder {
         surface: 120,
         origin: Point3::new(3.0, 3.0, 0.0),
@@ -389,7 +386,10 @@ fn native() -> EdgeSelection {
 
 #[test]
 fn a_group_binds_to_the_edge_its_blend_replaces() {
-    assert_eq!(slots(&bound(native(), three_mm(), &[group(42, &[7])])), ["17"]);
+    assert_eq!(
+        slots(&bound(native(), three_mm(), &[group(42, &[7])])),
+        ["17"]
+    );
     assert_eq!(
         slots(&bound(native(), three_mm(), &[group(42, &[7, 7])])),
         ["17"],
@@ -397,24 +397,36 @@ fn a_group_binds_to_the_edge_its_blend_replaces() {
     );
 }
 
-#[test]
-fn a_bound_group_replaces_the_edges_of_an_earlier_selection() {
-    let earlier = EdgeSelection::historical(
-        crate::ids::feature_input_topology_id(
-            &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
-            1,
-        ),
-        vec![crate::ids::history_input_edge_id(
-            &crate::ids::feature_input_prefix(
-                &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
-                1,
-            ),
-            18,
-        )],
+fn earlier(slots: &[i64]) -> EdgeSelection {
+    let feature = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
+    let prefix = crate::ids::feature_input_prefix(&feature, 1);
+    EdgeSelection::historical(
+        crate::ids::feature_input_topology_id(&feature, 1),
+        slots
+            .iter()
+            .map(|slot| crate::ids::history_input_edge_id(&prefix, *slot))
+            .collect(),
         GROUP_ID.into(),
     )
-    .unwrap();
-    assert_eq!(slots(&bound(earlier, three_mm(), &[group(42, &[7])])), ["17"]);
+    .unwrap()
+}
+
+#[test]
+fn a_bound_group_replaces_an_earlier_selection_of_deleted_edges() {
+    assert_eq!(
+        slots(&bound(earlier(&[18]), three_mm(), &[group(42, &[7])])),
+        ["17"]
+    );
+}
+
+#[test]
+fn a_selection_that_names_a_kept_edge_stays() {
+    for kept in [&[21][..], &[18, 21]] {
+        assert_eq!(
+            bound(earlier(kept), three_mm(), &[group(42, &[7])]),
+            earlier(kept)
+        );
+    }
 }
 
 #[test]
@@ -437,4 +449,29 @@ fn a_group_without_a_constant_radius_keeps_its_selection() {
         chord_length: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
     };
     assert_eq!(bound(native(), chordal, &[group(42, &[7])]), native());
+}
+
+#[test]
+fn a_group_of_another_stream_keeps_its_selection() {
+    const OTHER: &str = "f3d:Design/Other.dat:group#43";
+    let mut other = group(42, &[7]);
+    other = serde_json::from_value({
+        let mut value = serde_json::to_value(&other).unwrap();
+        value["id"] = OTHER.into();
+        value
+    })
+    .unwrap();
+    assert_eq!(
+        bound(EdgeSelection::Native(OTHER.into()), three_mm(), &[other]),
+        EdgeSelection::Native(OTHER.into())
+    );
+}
+
+#[test]
+fn a_blend_face_without_a_boundary_states_nothing() {
+    let mut output = output();
+    output
+        .face_loops
+        .retain(|relation| relation.owner_ref != 20);
+    assert_eq!(blends(&input(z()), &output), None);
 }

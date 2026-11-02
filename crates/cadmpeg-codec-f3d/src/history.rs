@@ -8180,11 +8180,7 @@ fn treatment_edge_candidates<'a>(
                     deleted_edge_set.contains(edge)
                         && index.spines.get(carrier).is_none_or(|spine| {
                             spine.admits(
-                                index
-                                    .preceding_edges
-                                    .get(edge)
-                                    .copied()
-                                    .unwrap_or_default(),
+                                index.preceding_edges.get(edge).copied().unwrap_or_default(),
                             )
                         })
                 }) {

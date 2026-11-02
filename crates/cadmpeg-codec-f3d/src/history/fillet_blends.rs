@@ -75,10 +75,15 @@ fn transition_blends(
                 let Some(right_edges) = input_boundaries.get(right) else {
                     continue;
                 };
-                candidates.extend(left_edges.intersection(right_edges).copied().filter(|edge| {
-                    deleted.contains(edge)
-                        && spine.admits(edges.get(edge).copied().unwrap_or_default())
-                }));
+                candidates.extend(
+                    left_edges
+                        .intersection(right_edges)
+                        .copied()
+                        .filter(|edge| {
+                            deleted.contains(edge)
+                                && spine.admits(edges.get(edge).copied().unwrap_or_default())
+                        }),
+                );
             }
         }
         let mut candidates = candidates.into_iter();
@@ -99,7 +104,9 @@ fn group_edges(radii: &[Option<f64>], blends: &[Blend]) -> Option<Vec<Vec<i64>>>
     let mut edges = vec![Vec::new(); radii.len()];
     for blend in blends {
         let mut owners = radii.iter().enumerate().filter(|(_, radius)| {
-            radius.is_some_and(|radius| (radius - blend.radius).abs() <= FILLET_BLEND_RADIUS_TOLERANCE)
+            radius.is_some_and(|radius| {
+                (radius - blend.radius).abs() <= FILLET_BLEND_RADIUS_TOLERANCE
+            })
         });
         let (Some((owner, _)), None) = (owners.next(), owners.next()) else {
             return None;
@@ -115,11 +122,29 @@ fn group_edges(radii: &[Option<f64>], blends: &[Blend]) -> Option<Vec<Vec<i64>>>
 fn native_group_id(selection: &EdgeSelection) -> Option<&str> {
     match selection {
         EdgeSelection::Native(native) => Some(native.as_str()),
-        EdgeSelection::Historical { native, .. } | EdgeSelection::HistoricalPartial { native, .. } => {
-            Some(native.as_str())
-        }
+        EdgeSelection::Historical { native, .. }
+        | EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str()),
         _ => None,
     }
+}
+
+/// Whether a selection names an edge of the input state that the transition
+/// keeps.
+fn names_kept_edge(
+    selection: &EdgeSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    deleted: &HashSet<i64>,
+) -> bool {
+    let edges = match selection {
+        EdgeSelection::Historical { edges, .. } => edges.as_slice(),
+        EdgeSelection::HistoricalPartial { edges, .. } => edges.as_slice(),
+        _ => return false,
+    };
+    edges.iter().any(|edge| {
+        crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
+            .is_none_or(|slot| !deleted.contains(&slot))
+    })
 }
 
 /// Bind each `Fillet` group whose blends replace one edge per distinct group
@@ -129,14 +154,19 @@ fn native_group_id(selection: &EdgeSelection) -> Option<&str> {
 /// face at its group's radius. When every new carrier of the transition is a
 /// blend whose spine names one deleted edge, those edges hold every rounded
 /// edge, so a group whose blends name one edge per distinct member selects
-/// exactly those edges.
+/// exactly those edges. A selection that names an edge the transition keeps
+/// stays, because DR-224 asks whether a rounded edge can keep its slot.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     previous_state_id: i64,
-    states: (&AsmHistoricalTransition, &AsmHistoricalTopology, &AsmHistoricalTopology),
+    states: (
+        &AsmHistoricalTransition,
+        &AsmHistoricalTopology,
+        &AsmHistoricalTopology,
+    ),
 ) {
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: fillet_groups,
@@ -158,8 +188,18 @@ pub(super) fn bind_fillet_groups(
     let Some(edges) = group_edges(&radii, &blends) else {
         return;
     };
+    let deleted = transition
+        .topology
+        .edges
+        .deleted
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
     let stream = crate::ids::native_stream(&scope.id);
     for (fillet_group, slots) in fillet_groups.iter_mut().zip(edges) {
+        if names_kept_edge(&fillet_group.edges, feature_id, previous_state_id, &deleted) {
+            continue;
+        }
         let Some(native) = native_group_id(&fillet_group.edges).map(str::to_owned) else {
             continue;
         };
@@ -197,7 +237,8 @@ pub(super) fn bind_fillet_groups(
 /// Design records that `Fillet` binding reads.
 pub(crate) struct FilletBlendInputs<'a> {
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
-    pub(crate) groups: &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
+    pub(crate) groups:
+        &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
     pub(crate) histories: &'a mut [AsmHistory],
 }
 
@@ -226,7 +267,9 @@ pub(crate) fn bind_fillet_blend_edges(
     let gates = states
         .iter()
         .enumerate()
-        .filter_map(|(position, state)| state.map(|state| (state.history, state.previous, position)))
+        .filter_map(|(position, state)| {
+            state.map(|state| (state.history, state.previous, position))
+        })
         .collect::<Vec<_>>();
     let mut available = HashSet::new();
     super::visit_states_oldest_first(histories, gates, |history, previous, position| {

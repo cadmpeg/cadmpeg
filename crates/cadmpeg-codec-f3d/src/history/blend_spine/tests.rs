@@ -38,60 +38,93 @@ fn around_z() -> BlendSpine {
 
 #[test]
 fn a_cylinder_blend_replaces_a_line_along_its_axis() {
-    let line = edge(point(0.0, 30.0, 0.0), vector(0.0, 0.0, -1.0), vector(0.0, 0.0, -1.0));
+    let line = edge(
+        point(0.0, 30.0, 0.0),
+        vector(0.0, 0.0, -1.0),
+        vector(0.0, 0.0, -1.0),
+    );
     assert!(along_z().admits(line));
 }
 
 #[test]
 fn a_cylinder_blend_does_not_replace_a_cap_edge_across_its_axis() {
-    let cap = edge(point(0.0, 30.0, 0.0), vector(0.0, -1.0, 0.0), vector(0.0, -1.0, 0.0));
+    let cap = edge(
+        point(0.0, 30.0, 0.0),
+        vector(0.0, -1.0, 0.0),
+        vector(0.0, -1.0, 0.0),
+    );
     assert!(!along_z().admits(cap));
 }
 
 #[test]
 fn a_cylinder_blend_does_not_replace_a_circle_about_a_parallel_axis() {
-    let circle = edge(point(5.0, 0.0, 0.0), vector(0.0, 0.0, 1.0), vector(1.0, 0.0, 0.0));
+    let circle = edge(
+        point(5.0, 0.0, 0.0),
+        vector(0.0, 0.0, 1.0),
+        vector(1.0, 0.0, 0.0),
+    );
     assert!(!along_z().admits(circle));
 }
 
 #[test]
 fn a_cylinder_blend_does_not_replace_a_circle_whose_midpoint_runs_along_its_axis() {
-    let circle = edge(point(5.0, 0.0, 0.0), vector(1.0, 0.0, 0.0), vector(0.0, 0.0, 1.0));
+    let circle = edge(
+        point(5.0, 0.0, 0.0),
+        vector(1.0, 0.0, 0.0),
+        vector(0.0, 0.0, 1.0),
+    );
     assert!(!along_z().admits(circle));
 }
 
 #[test]
 fn a_torus_blend_replaces_a_circle_around_its_axis() {
-    let rim = edge(point(1.0, 2.0, 7.0), vector(0.0, 0.0, -1.0), vector(1.0, 0.0, 0.0));
+    let rim = edge(
+        point(1.0, 2.0, 7.0),
+        vector(0.0, 0.0, -1.0),
+        vector(1.0, 0.0, 0.0),
+    );
     assert!(around_z().admits(rim));
 }
 
 #[test]
 fn a_torus_blend_does_not_replace_a_circle_off_its_axis_line() {
-    let rim = edge(point(1.5, 2.0, 7.0), vector(0.0, 0.0, 1.0), vector(1.0, 0.0, 0.0));
+    let rim = edge(
+        point(1.5, 2.0, 7.0),
+        vector(0.0, 0.0, 1.0),
+        vector(1.0, 0.0, 0.0),
+    );
     assert!(!around_z().admits(rim));
 }
 
 #[test]
 fn a_torus_blend_does_not_replace_a_tilted_circle() {
-    let rim = edge(point(1.0, 2.0, 7.0), vector(0.0, 1.0, 0.0), vector(1.0, 0.0, 0.0));
+    let rim = edge(
+        point(1.0, 2.0, 7.0),
+        vector(0.0, 1.0, 0.0),
+        vector(1.0, 0.0, 0.0),
+    );
     assert!(!around_z().admits(rim));
 }
 
 #[test]
 fn a_torus_blend_does_not_replace_a_line_on_its_axis() {
-    let line = edge(point(1.0, 2.0, 7.0), vector(0.0, 0.0, 1.0), vector(0.0, 0.0, 1.0));
+    let line = edge(
+        point(1.0, 2.0, 7.0),
+        vector(0.0, 0.0, 1.0),
+        vector(0.0, 0.0, 1.0),
+    );
     assert!(!around_z().admits(line));
 }
 
 #[test]
 fn an_edge_without_an_axis_row_or_a_tangent_is_not_replaced() {
-    let line = edge(point(0.0, 0.0, 0.0), vector(0.0, 0.0, 1.0), vector(0.0, 0.0, 1.0));
+    let line = edge(
+        point(0.0, 0.0, 0.0),
+        vector(0.0, 0.0, 1.0),
+        vector(0.0, 0.0, 1.0),
+    );
     for spine in [along_z(), around_z()] {
-        assert!(!spine.admits(EdgeGeometry {
-            axis: None,
-            ..line
-        }));
+        assert!(!spine.admits(EdgeGeometry { axis: None, ..line }));
         assert!(!spine.admits(EdgeGeometry {
             tangent: None,
             ..line
@@ -137,7 +170,11 @@ fn a_cylinder_row_states_a_line_spine_and_an_axis_with_a_radius_states_a_circle(
     assert_eq!(spines.get(&10), Some(&along_z()));
     assert_eq!(spines.get(&11), Some(&around_z()));
     assert_eq!(spines.get(&12), None, "an axis without a radius is a cone");
-    assert_eq!(spines.get(&13), None, "a radius without an axis is a sphere");
+    assert_eq!(
+        spines.get(&13),
+        None,
+        "a radius without an axis is a sphere"
+    );
     assert_eq!(spines.get(&14), None);
 }
 
