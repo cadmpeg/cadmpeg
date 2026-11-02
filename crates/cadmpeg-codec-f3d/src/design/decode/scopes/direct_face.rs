@@ -9,6 +9,7 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
+use super::thicken_shell::exact_shell_wall_slots;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -83,6 +84,11 @@ pub(super) fn exact_direct_face_operation(
         && scope.paired_class_tag.as_str() == "261"
     {
         return exact_shell_class_369_261(bytes, records, scope);
+    }
+    if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell) {
+        if let Some(operation) = exact_shell_wall_slots(bytes, records, scope) {
+            return Some(operation);
+        }
     }
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
@@ -250,6 +256,7 @@ pub(super) fn exact_direct_face_operation(
                     thickness_offset: scalar.value_offset,
                     outward,
                     outward_offset: u64::try_from(outward_offset).ok()?,
+                    wall_slots: None,
                 },
             ))
         }

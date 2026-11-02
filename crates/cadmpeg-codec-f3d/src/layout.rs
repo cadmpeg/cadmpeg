@@ -302,6 +302,24 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `shell_wall_slot_scope_prefix` record.
+///
+/// Spec §3.1. Record length 23 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23.
+/// ```
+pub(crate) mod shell_wall_slot_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 23;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_CHAIN: usize = 21;
+    /// Offset of `rounded_corners` (`u8`). Spec §3.1.
+    pub(crate) const ROUNDED_CORNERS: usize = 22;
+}
+
 /// Byte offsets for the `shell_class_369_261_scope_frame` record.
 ///
 /// Spec §3.1. Record length 271 B.

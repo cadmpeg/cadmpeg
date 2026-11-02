@@ -776,6 +776,7 @@ pub(crate) fn decode_face_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        seen.insert((stream, group.scope_record_index, group.record_index));
         let Some(scope) = scope_index.get(&(stream, group.scope_record_index)) else {
             continue;
         };

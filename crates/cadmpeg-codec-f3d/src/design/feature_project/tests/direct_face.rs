@@ -35,6 +35,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
                 thickness_offset: 0,
                 outward: true,
                 outward_offset: 0,
+                wall_slots: None,
             });
         }
         _ => panic!("unsupported direct-face scope fixture"),
@@ -139,6 +140,92 @@ fn shell_projects_native_body_group() {
     };
     assert_eq!(bodies, Some(BodySelection::Native(group.id.clone())));
     assert_eq!(removed_faces, FaceSelection::Faces(Vec::new()));
+}
+
+fn wall_slot_scope(
+    inside: f64,
+    outside: Option<f64>,
+    rounded_corners: bool,
+) -> DesignParameterScope {
+    use crate::records::feature::direct_face::{DesignShellOutsideWall, DesignShellWallSlots};
+    let mut scope = scope(DesignFeatureKind::Shell);
+    if let DesignScopePayloadMut::Shell(Some(operation)) = scope.payload_mut() {
+        operation.thickness = cadmpeg_ir::scalar::PositiveReal::new(inside).unwrap();
+        operation.outward = false;
+        operation.wall_slots = Some(DesignShellWallSlots {
+            tangent_chain: false,
+            rounded_corners,
+            outside: outside.map(|thickness| DesignShellOutsideWall {
+                thickness: cadmpeg_ir::scalar::PositiveReal::new(thickness).unwrap(),
+                thickness_record_index: 301,
+                thickness_offset: 0,
+            }),
+        });
+    }
+    scope
+}
+
+#[test]
+fn wall_slots_project_thickness_direction_mode_and_corners() {
+    use cadmpeg_ir::features::{ShellJoin, ShellMode};
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let project = |scope: &DesignParameterScope| {
+        let FeatureOperation::Shell {
+            thickness,
+            outward,
+            mode,
+            join,
+            ..
+        } = projected_operation(super::super::project_shell(
+            scope,
+            &[],
+            std::slice::from_ref(&group),
+        ))
+        else {
+            panic!("expected a shell");
+        };
+        (thickness.unwrap().get(), outward, mode, join)
+    };
+    assert_eq!(
+        project(&wall_slot_scope(0.2, None, false)),
+        (2.0, Some(false), None, Some(ShellJoin::Intersection))
+    );
+    assert_eq!(
+        project(&wall_slot_scope(0.2, None, true)),
+        (2.0, Some(false), None, Some(ShellJoin::Arc))
+    );
+    assert_eq!(
+        project(&wall_slot_scope(0.1, Some(0.1), false)),
+        (
+            2.0,
+            None,
+            Some(ShellMode::BothSides),
+            Some(ShellJoin::Intersection)
+        )
+    );
+}
+
+#[test]
+fn walls_of_different_thickness_have_no_neutral_shell() {
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let scope = wall_slot_scope(0.3, Some(0.1), false);
+    assert_eq!(
+        super::super::project_shell(&scope, &[], std::slice::from_ref(&group)).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_shell_without_wall_slots_states_no_corners() {
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let scope = scope(DesignFeatureKind::Shell);
+    let FeatureOperation::Shell { outward, join, .. } = projected_operation(
+        super::super::project_shell(&scope, &[], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a shell");
+    };
+    assert_eq!(outward, Some(true));
+    assert_eq!(join, None);
 }
 
 fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {

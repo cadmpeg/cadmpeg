@@ -774,6 +774,42 @@ source = "spec"
 anchor = "a six-byte zero trailer"
 
 [[record]]
+name = "shell_wall_slot_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `Shell` scope can store its walls in optional slots"
+size = 23
+note = "Offsets are relative to the primary indexed scope header. The optional wall slots start at offset 23."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "offsets 11 through 20 are zero, offset 21 is the tangent-chain Boolean"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "offset 21 is the tangent-chain Boolean"
+
+[[record.field]]
+name = "rounded_corners"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "offset 22 is the corner Boolean"
+
+[[record]]
 name = "shell_class_369_261_scope_frame"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

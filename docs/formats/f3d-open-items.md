@@ -1001,6 +1001,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
 
+### DR-202. Fields of the older Shell frames
+
+**Question.** Do the fixed-length `Shell` frames with a Boolean at offset 21 store the fields of the wall-slot form?
+
+**Known.** `f3d.md` §3.1 reads offset 21 as the outward convention in the class-369/261 frame, and the decoder reads the same offset that way in the other fixed-length frames. The wall-slot form stores the tangent-chain Boolean at offset 21 and states the wall direction by which slot is present.
+
+**Need.** Controlled frames of the fixed-length forms that vary the wall direction and the tangent chain independently, with result volumes.
+
+**Conflict.** One byte offset has two meanings across the forms. The two meanings give different wall directions for a tangent-chain selection if the older frames store the newer field.
+
+**Note.** No authored file has a fixed-length frame.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
