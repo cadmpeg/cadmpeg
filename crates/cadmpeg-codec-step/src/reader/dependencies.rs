@@ -13,14 +13,29 @@ use super::decode_text;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
-pub(super) fn decode(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+/// External documents, sources and items named by the exchange.
+///
+/// Parsed once and shared by asset creation and prototype resolution, so an
+/// invalid string is reported once no matter how many records name it.
+pub(super) struct ExternalReferences {
+    /// Document id to its identifier, name and kind.
+    pub(super) documents: BTreeMap<u64, (String, String, Option<u64>)>,
+    /// External source id to its URI.
+    pub(super) sources: BTreeMap<u64, String>,
+    /// Externally defined item id to its item and source id.
+    pub(super) items: BTreeMap<u64, (String, u64)>,
+    /// Document reference id to its document id.
+    pub(super) document_refs: BTreeMap<u64, u64>,
+}
+
+pub(super) fn external_references(
     exchange: &Exchange,
-    ir: &mut cadmpeg_ir::CadIr,
-) -> Result<StageOutcome<()>, CodecError> {
-    let mut losses = Vec::new();
+    losses: &mut Vec<LossNote>,
+) -> Result<ExternalReferences, CodecError> {
     let mut documents = BTreeMap::new();
     let mut sources = BTreeMap::new();
+    let mut items = BTreeMap::new();
+    let mut document_refs = BTreeMap::new();
     for (&id, record) in exchange.records() {
         if let Some(parameters) = document_parameters(record) {
             let identifier = parameters
@@ -29,7 +44,7 @@ pub(super) fn decode(
                     decode_text(
                         exchange,
                         value,
-                        &mut losses,
+                        losses,
                         id,
                         "document identifier",
                         StepLossCode::MetadataStringInvalid,
@@ -42,7 +57,7 @@ pub(super) fn decode(
                     decode_text(
                         exchange,
                         value,
-                        &mut losses,
+                        losses,
                         id,
                         "document name",
                         StepLossCode::MetadataStringInvalid,
@@ -62,14 +77,49 @@ pub(super) fn decode(
             let parameters = partial.parameters.as_slice();
             if let Some(source) = parameters
                 .first()
-                .map(|value| source_text(exchange, value, &mut losses, id, "external source"))
+                .map(|value| source_text(exchange, value, losses, id, "external source"))
                 .transpose()?
                 .flatten()
             {
                 sources.insert(id, source);
             }
         }
+        if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
+            let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
+                continue;
+            };
+            let item = partial
+                .parameters
+                .first()
+                .map(|value| source_text(exchange, value, losses, id, "external item"))
+                .transpose()?
+                .flatten()
+                .unwrap_or_default();
+            items.insert(id, (item, source_id));
+        }
+        if let Some(parameters) = document_reference_parameters(record) {
+            if let Some(document_id) = parameters.first().and_then(ValueExt::reference) {
+                document_refs.insert(id, document_id);
+            }
+        }
     }
+    Ok(ExternalReferences {
+        documents,
+        sources,
+        items,
+        document_refs,
+    })
+}
+
+pub(super) fn decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    exchange: &Exchange,
+    ir: &mut cadmpeg_ir::CadIr,
+    externals: &ExternalReferences,
+) -> Result<StageOutcome<()>, CodecError> {
+    let mut losses = Vec::new();
+    let documents = &externals.documents;
+    let sources = &externals.sources;
     let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
@@ -143,20 +193,10 @@ pub(super) fn decode(
                 typed.insert(*kind);
             }
         }
-        if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
-            let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
+        if let Some((item, source_id)) = externals.items.get(&id) {
+            let Some(source) = sources.get(source_id) else {
                 continue;
             };
-            let Some(source) = sources.get(&source_id) else {
-                continue;
-            };
-            let item = partial
-                .parameters
-                .first()
-                .map(|value| source_text(exchange, value, &mut losses, id, "external item"))
-                .transpose()?
-                .flatten()
-                .unwrap_or_default();
             let Some(uri) = cadmpeg_core::text::NonBlankString::new(source.clone()) else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "externally defined item #{id} references an empty external source #{source_id}"
@@ -178,7 +218,7 @@ pub(super) fn decode(
             );
             notes.insert(["external source ", source, " item ", &item].join(""));
             typed.insert(id);
-            typed.insert(source_id);
+            typed.insert(*source_id);
         }
     }
 

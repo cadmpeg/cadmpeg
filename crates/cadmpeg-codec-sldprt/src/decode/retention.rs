@@ -13,16 +13,11 @@ use cadmpeg_ir::{Annotations, SourceFidelity};
 #[derive(Default)]
 pub(super) struct Retention {
     records: BTreeMap<String, ArenaClasses>,
-    source: ArenaClasses,
     /// History features whose inline thin operation is ambiguous in a lane.
     pub(super) ambiguous_thin_features: BTreeSet<String>,
 }
 
 impl Retention {
-    pub(super) fn source(&mut self, class: ArenaClass) {
-        self.source.insert(class);
-    }
-
     pub(super) fn record(&mut self, id: &str, class: ArenaClass) {
         self.records.entry(id.to_owned()).or_default().insert(class);
     }
@@ -77,17 +72,11 @@ impl Retention {
         opaque
     }
 
-    pub(super) fn apply(mut self, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
+    pub(super) fn apply(self, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
         for (id, classes) in self.records {
             if fidelity.retained_records().contains_key(id.as_str()) {
                 fidelity.mark_untyped(&id, classes)?;
-            } else {
-                // Metadata routes can retain only the enclosing source image.
-                self.source.extend(classes);
             }
-        }
-        if !self.source.is_empty() {
-            fidelity.mark_untyped("sldprt:file:source-image#0", self.source)?;
         }
         Ok(())
     }
@@ -116,7 +105,8 @@ mod tests {
         }
         let mut retention = Retention::default();
         retention.record("sldprt:file:block#17", ArenaClass::Design);
-        // A record not retained separately belongs to the enclosing source.
+        // A record that was never retained carries no mark; only retained
+        // records are marked, and the source image is never marked by fallback.
         retention.record("sldprt:file:block#29", ArenaClass::Model);
         retention.apply(&mut fidelity).unwrap();
         assert!(fidelity.retained_records()["sldprt:file:block#17"]
@@ -124,12 +114,12 @@ mod tests {
             .contains(&ArenaClass::Design));
         assert!(fidelity.retained_records()["sldprt:file:source-image#0"]
             .untyped()
-            .contains(&ArenaClass::Model));
+            .is_empty());
         let encoded = serde_json::to_value(&fidelity).unwrap();
         let mut parsed: SourceFidelity = serde_json::from_value(encoded).unwrap();
         assert_eq!(parsed.unrepresented(), fidelity.unrepresented());
         parsed.remove_retained_record("sldprt:file:block#17");
         assert!(!parsed.unrepresented().contains(&ArenaClass::Design));
-        assert!(parsed.unrepresented().contains(&ArenaClass::Model));
+        assert!(!parsed.unrepresented().contains(&ArenaClass::Model));
     }
 }

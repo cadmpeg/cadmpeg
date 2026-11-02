@@ -15,10 +15,6 @@ impl<T> NonemptyGroup<T> {
         }
     }
 
-    pub(super) fn first(&self) -> &T {
-        &self.first
-    }
-
     pub(super) fn iter(&self) -> impl Iterator<Item = &T> {
         std::iter::once(&self.first).chain(self.additional.iter())
     }

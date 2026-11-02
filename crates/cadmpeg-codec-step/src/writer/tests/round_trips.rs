@@ -816,10 +816,11 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     );
     assert_eq!(decoded.ir().model.edges.len(), 1);
     assert_eq!(decoded.ir().model.shells[0].wire_edges().len(), 1);
-    assert_eq!(
-        decoded.ir().model.bodies[0].color,
-        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
-    );
+    assert!(decoded.ir().model.bodies[0].color.is_none());
+    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
+        appearance.base_color
+            == Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
+    }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

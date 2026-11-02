@@ -57,7 +57,7 @@ fn nested_solid_transmit_has_feature_input_solid_body_retained_loss() {
         assert_eq!(native.feature_input_lanes.len(), 1);
         assert_eq!(
             native.feature_input_lanes[0].native_payload,
-            crate::records::lane_payload::LanePayload::from(payload.clone())
+            cadmpeg_ir::native::bytes::NativeBytes::from(payload.clone())
         );
         assert_valid(&result);
     }
