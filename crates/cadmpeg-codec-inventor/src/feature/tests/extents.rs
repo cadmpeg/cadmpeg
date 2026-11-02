@@ -1896,8 +1896,10 @@ fn work_point_extent_and_validator_keep_the_opposite_side() {
         [1.0, 0.0, 0.0],
         &work_point(24, [0.0, 0.0, 2.5]).id(),
     );
+    // D2: the owned length parameter is canonical, so the side binds it.
+    let (_, neutral_parameters) = extent_test_parameters();
     assert!(
-        matches!(&second.termination, LinearTermination::Blind { length } if length.literal().is_some_and(|value| value.get() == 3.0))
+        matches!(&second.termination, LinearTermination::Blind { length } if *length == cadmpeg_ir::features::Dimension::Parameter(neutral_parameters[2].id.clone()))
     );
 }
 

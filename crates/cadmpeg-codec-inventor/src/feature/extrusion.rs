@@ -311,6 +311,12 @@ impl<'a> ValidationIndex<'a> {
                     .iter()
                     .filter_map(|r| Some((r.native_ref.as_deref()?, r))),
             ),
+            parameter_ids: records
+                .model
+                .parameters
+                .iter()
+                .filter_map(|r| Some((r.native_ref.as_deref()?, &r.id)))
+                .collect(),
             directions: unique_index(records.directions.iter().map(|r| (key(&r.identity), r))),
             transforms: unique_index(records.transforms.iter().map(|r| (key(&r.identity), r))),
             work_planes: unique_index(records.planes.iter().map(|r| (key(&r.identity), r))),
