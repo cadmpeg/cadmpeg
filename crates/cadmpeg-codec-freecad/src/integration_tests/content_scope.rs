@@ -7,7 +7,7 @@ use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::document::{ArenaClass, ArenaClasses, ContentScope};
-use cadmpeg_ir::report::{loss::LossTaxonomy, Severity};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -88,19 +88,29 @@ fn unprojected_design_objects_report_blocking_loss_but_remain_typed() {
 <Objects Count="4"><Object name="PartDesignExtension" type="PartDesign::VendorFeature"/><Object name="SketchExtension" type="Sketcher::VendorFeature"/><Object name="PartExtension" type="Part::VendorFeature"/><Object name="SheetExtension" type="Spreadsheet::VendorSheet"/></Objects>
 <ObjectData Count="4"><Object name="PartDesignExtension"><Properties Count="0"/></Object><Object name="SketchExtension"><Properties Count="0"/></Object><Object name="PartExtension"><Properties Count="0"/></Object><Object name="SheetExtension"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = decode(document, DecodeDepth::Full);
-    let losses: Vec<_> = decoded
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.object-unprojected"
-        })
-        .collect();
-    assert_eq!(losses.len(), 4);
-    assert!(losses.iter().all(|loss| loss.severity == Severity::Blocking
-        && loss.code.taxonomy() == LossTaxonomy::FeatureHistoryRetained));
-    assert!(decoded.ir().model.features.is_empty());
+    for (name, kind) in [
+        ("PartDesignExtension", "PartDesign::VendorFeature"),
+        ("SketchExtension", "Sketcher::VendorFeature"),
+        ("PartExtension", "Part::VendorFeature"),
+        ("SheetExtension", "Spreadsheet::VendorSheet"),
+    ] {
+        let feature = decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{name} projects as a neutral feature"));
+        assert!(
+            matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Native { kind: actual, .. }) if actual.as_str() == kind),
+            "{name} keeps its vendor kind"
+        );
+    }
+    assert!(
+        decoded.report().losses.is_empty(),
+        "vendor objects at their Native home report no loss: {:?}",
+        decoded.report().losses
+    );
     assert_eq!(
         decoded
             .ir()

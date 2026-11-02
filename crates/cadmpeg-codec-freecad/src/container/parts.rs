@@ -20,14 +20,6 @@ pub(super) fn open_optional<'source>(
     output: &mut PartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
     let frames = archive.member_frames(ctx)?;
-    for entry in archive.entries() {
-        if !crate::native::is_safe_entry_name(&entry.name) {
-            return Err(CodecError::malformed(format_args!(
-                "unsafe ZIP entry path {:?}",
-                entry.name
-            )));
-        }
-    }
     let stage = output;
     let mut members = OptionalMembers::default();
     for (entry, frame) in archive.entries().iter().zip(&frames) {
@@ -57,6 +49,20 @@ pub(super) fn open_optional<'source>(
             members.failed.insert(name.to_owned());
             continue;
         };
+        if !crate::native::is_safe_entry_name(&entry.name) {
+            // The name cannot become an output path. Give up only this
+            // entry's payload part; the remaining members still decode.
+            let given_up: Option<()> =
+                ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
+                    Err(CodecError::malformed(format_args!(
+                        "unsafe ZIP entry path {:?}",
+                        entry.name
+                    )))
+                })?;
+            debug_assert!(given_up.is_none());
+            members.failed.insert(name.to_owned());
+            continue;
+        }
         match ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
             archive.open_member(ctx, &payload)
         })? {

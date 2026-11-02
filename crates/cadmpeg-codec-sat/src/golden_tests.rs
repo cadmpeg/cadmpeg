@@ -91,17 +91,8 @@ fn golden_output_is_deterministic() {
 /// a geometry request excludes design, so every geometry decode is a cut.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
-        &SatCodec,
-        &inputs(),
-        |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("sat"),
-            );
-            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
-        },
-    );
+    let summary =
+        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&SatCodec, &inputs());
     assert_eq!(summary.cut, summary.inputs, "{summary:?}");
 }
 

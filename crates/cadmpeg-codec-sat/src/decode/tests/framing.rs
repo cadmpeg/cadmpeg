@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::BTreeMap;
-
-use cadmpeg_asm::brep::AsmBrep;
+use cadmpeg_asm::brep::stats::Stats;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::document::CadIr;
 
 use super::{text_sphere_stream, SatLossCode};
 
@@ -18,19 +17,16 @@ fn framed_entity_presence_controls_the_no_carrier_event_without_unknown_records(
         branch: stream.terminator,
         header: &header,
     }));
-    let (matched, kernel) = super::super::layers(&evidence);
+    let (_, kernel) = super::super::layers(&evidence);
     for has_entities in [false, true] {
-        let decoded = super::super::build_result(
+        let decoded = super::super::assemble_result(
             &ctx,
-            Some(super::super::FramedStream {
-                brep: AsmBrep::default(),
-                has_entities,
-            }),
-            BTreeMap::new(),
-            &header,
+            CadIr::empty(),
+            Vec::new(),
+            has_entities,
             Some(stream.terminator),
-            matched.clone(),
             &kernel,
+            super::super::stream_part_for_test(&ctx, Stats::default()),
         )
         .expect("framed empty carrier graph");
         assert!(!decoded.body.transfer.geometry_transferred);

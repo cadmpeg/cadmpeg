@@ -576,7 +576,7 @@ pub(crate) fn render_parameter_expression(
         if parameter.expression == value.literal_expression()
             && parameter.expression.literal_value_as(value).as_ref() == Some(value)
         {
-            return Some(format_parameter_value(value));
+            return parameter.expression.literal_text();
         }
     }
     parameter.expression.render_with(|id| {

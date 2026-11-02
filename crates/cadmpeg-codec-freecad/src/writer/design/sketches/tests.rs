@@ -98,6 +98,24 @@ fn conics_and_weighted_spline_lanes_survive_synthesis() {
 }
 
 #[test]
+fn periodic_spline_stored_form_survives_synthesis() {
+    let ir = source(
+        "<Geometry type=\"Part::GeomBSplineCurve\"><BSplineCurve Degree=\"2\" IsPeriodic=\"1\" PolesCount=\"4\" KnotsCount=\"5\"><Pole X=\"-10\" Y=\"-10\" Z=\"0\" Weight=\"1\"/><Pole X=\"10\" Y=\"-10\" Z=\"0\" Weight=\"1\"/><Pole X=\"10\" Y=\"10\" Z=\"0\" Weight=\"1\"/><Pole X=\"-10\" Y=\"10\" Z=\"0\" Weight=\"1\"/><Knot Value=\"0\" Mult=\"1\"/><Knot Value=\"1\" Mult=\"1\"/><Knot Value=\"2\" Mult=\"1\"/><Knot Value=\"3\" Mult=\"1\"/><Knot Value=\"4\" Mult=\"1\"/></BSplineCurve><Construction value=\"0\"/></Geometry>",
+        1,
+        "",
+        0,
+    );
+    assert_eq!(ir.model.sketch_entities.len(), 1);
+    let (written, losses) = synthesize(&ir);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(written.model.sketch_entities.len(), 1);
+    assert_eq!(
+        written.model.sketch_entities[0].geometry,
+        ir.model.sketch_entities[0].geometry
+    );
+}
+
+#[test]
 fn external_cache_indices_and_live_dependency_survive_synthesis() {
     let support = Object::new("Support".into(), "Part::Feature", "Support");
     let mut sketch = Object::new("Sketch".into(), "Sketcher::SketchObject", "Sketch");
