@@ -5650,6 +5650,22 @@ fn saved_section_scalar(
         .map_or((None, offset + 1), |(value, next)| (Some(value), next))
 }
 
+/// Decode a named saved circle or arc `radius`, whose positive DICT prefixes
+/// use the DICT head rule.
+fn saved_radius_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize) {
+    if let Some((value, next)) =
+        scalar::decode_positive_dict(payload, offset).filter(|&(_, next)| next <= end)
+    {
+        return (Some(value), next);
+    }
+    saved_section_scalar(payload, offset, end, cache)
+}
+
 fn saved_line_block(
     payload: &[u8],
     mut cursor: usize,
@@ -5870,12 +5886,24 @@ fn saved_line_entities(
     entities
 }
 
+type SavedScalarReader = fn(&[u8], usize, usize, &scalar::ScalarCache) -> (Option<f64>, usize);
+
 fn saved_named_scalars<const N: usize>(
     payload: &[u8],
     field: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
+) -> Option<[Option<f64>; N]> {
+    saved_named_scalars_in(payload, field, (start, end), cache, saved_section_scalar)
+}
+
+fn saved_named_scalars_in<const N: usize>(
+    payload: &[u8],
+    field: &[u8],
+    (start, end): (usize, usize),
+    cache: &scalar::ScalarCache,
+    read: SavedScalarReader,
 ) -> Option<[Option<f64>; N]> {
     let window = payload.get(start..end)?;
     let label_start = (0..window.len()).find(|&offset| {
@@ -5902,7 +5930,7 @@ fn saved_named_scalars<const N: usize>(
     }
     let mut values = [None; N];
     for value in &mut values {
-        let (decoded, next) = saved_section_scalar(payload, cursor, end, cache);
+        let (decoded, next) = read(payload, cursor, end, cache);
         (next > cursor).then_some(())?;
         *value = decoded;
         cursor = next;
@@ -6196,8 +6224,14 @@ fn saved_circular_entities(
             };
             let center = saved_named_scalars::<3>(payload, b"center", body_start, body_end, cache)
                 .unwrap_or([None; 3]);
-            let radius = saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
-                .unwrap_or([None])[0];
+            let radius = saved_named_scalars_in::<1>(
+                payload,
+                b"radius",
+                (body_start, body_end),
+                cache,
+                saved_radius_scalar,
+            )
+            .unwrap_or([None])[0];
             if kind == "arc" {
                 let positional = saved_positional_generated_entities(
                     payload,

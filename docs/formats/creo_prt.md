@@ -5045,6 +5045,9 @@ payload bytes are the remaining IEEE bytes.
 In the same lane, `b3`, `cb`, and `d6` map to IEEE prefixes `bf e0`, `bf f8`,
 and `c0 04`, respectively; their six payload bytes are the remaining IEEE
 bytes.
+In the `radius` field of a named saved arc or circle, the prefixes `5b..a3`
+and `b7` use the positive DICT head rule of §2.3. This rule takes precedence
+over the other saved-section forms of those prefixes.
 The positional `var_arr` scalar lane maps `64`, `69`, `9c`, `9d`, `9f`, `a0`,
 `ad`, `b3`, `cb`, `cc`, `d0`, `d2`, and `d6` to IEEE prefixes `3f d9`,
 `3f de`, `40 11`, `40 12`, `40 14`, `40 15`, `3f d9`, `bf e0`, `bf f8`,
