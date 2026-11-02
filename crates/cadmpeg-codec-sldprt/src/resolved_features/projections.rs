@@ -431,8 +431,19 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             // Canonical units belong in the neutral parameter;
                             // native history helpers keep their native spelling.
                             parameter.expression = evaluated.literal_expression();
+                            set_typed_parameter_cache(parameter, evaluated);
+                        } else if parameter.expression.literal_text().is_some()
+                            && parameter.expression.literal_value_as(&evaluated).as_ref()
+                                != Some(&evaluated)
+                        {
+                            // Authored text that does not denote the admitted
+                            // cache needs canonical units; a denoting spelling
+                            // stays as authored (D5).
+                            parameter.expression = evaluated.literal_expression();
+                            parameter.value = Some(evaluated);
+                        } else {
+                            parameter.value = Some(evaluated);
                         }
-                        set_typed_parameter_cache(parameter, evaluated);
                     }
                 }
             }

@@ -381,7 +381,7 @@ fn decode_result(
                     crate::records::SketchInputKind::Native(_)
                         | crate::records::SketchInputKind::NativeHandle(_)
                 ) {
-                    let id = crate::records::lane_payload::retained_id(&lane.id)?;
+                    let id = crate::records::lane_retained_id(&lane.id)?;
                     retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Design);
                 }
             }
@@ -3210,7 +3210,7 @@ fn build_geometry_ir(
         &mut pmi_losses,
     )?;
     for lane in untyped_lanes {
-        let id = crate::records::lane_payload::retained_id(&lane)?;
+        let id = crate::records::lane_retained_id(&lane)?;
         retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Design);
     }
     crate::resolved_features::profiles::bind_sketch_profiles(
@@ -4306,7 +4306,7 @@ fn build_metadata_ir(
         &mut pmi_losses,
     )?;
     for lane in untyped_lanes {
-        let id = crate::records::lane_payload::retained_id(&lane)?;
+        let id = crate::records::lane_retained_id(&lane)?;
         retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Design);
     }
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
@@ -5127,7 +5127,7 @@ fn retain_lane_images(
         if lane.native_payload.is_empty() {
             continue;
         }
-        let id = crate::records::lane_payload::retained_id(&lane.id)?;
+        let id = crate::records::lane_retained_id(&lane.id)?;
         crate::annotations::note(
             annotations,
             id.as_str(),
