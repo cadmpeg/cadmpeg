@@ -142,16 +142,38 @@ enum PreservedWritePath {
 }
 
 impl F3dCodec {
-    /// Replay retained source bytes when the document baseline still matches;
-    /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
+    /// Replay retained source bytes when the image still digests to the source
+    /// baseline and decodes to the current document; otherwise patch. Returns
+    /// which branch ran.
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
         expected: &cadmpeg_ir::hash::digest::Sha256Digest,
+        scope: cadmpeg_core::decode::ContentScope,
+        limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
+        let current = decode::document_local_sha256(ir)?;
+        let replays = cadmpeg_ir::hash::retained_image_replays(
+            data,
+            expected,
+            current.as_str(),
+            scope,
+            limits,
+            |ctx, root| {
+                let fresh = cadmpeg_ir::Codec::decode_with_context(&F3dCodec, ctx, root).map_err(
+                    |failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        _ => CodecError::UnsupportedContent(
+                            "the retained F3D source image refused to decode".into(),
+                        ),
+                    },
+                )?;
+                decode::document_local_sha256(fresh.ir())
+            },
+        );
+        if !replays {
             writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
