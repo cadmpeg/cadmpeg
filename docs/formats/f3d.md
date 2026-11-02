@@ -1936,6 +1936,21 @@ occurrence GUIDs traverse child occurrences within the selected insertion,
 including child occurrences that insert another document. The scope
 connector belongs to the innermost occurrence in that path.
 
+Version 5 uses the same type GUID and field order with these extensions.
+Its joint reference selects type version 6.
+Nine zero bytes follow the facing byte's two zero bytes. Each connector
+stores six zero bytes between its reference and identity byte, and an
+LP-UTF16 GUID of 36 code units after its identity byte or explicit matrix.
+Two zero bytes follow the angle-owner reference. An additional nonnull
+reference follows the first tail reference. This tail uses separator length
+`S = 0`. One zero byte separates its two boolean bytes from its last
+reference. Version 5 uses eleven-byte plain local references. Its span is
+`377 + (R + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+select angle, Z, X, and Y lanes. The zero run after the four owner references
+is six bytes. This form stores four alignment owners. The version-five
+expanded two-matrix layout with `R = 16` spans 945 bytes; its complete field
+table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
+
 The scope matrices are operand-local connector frames. Let `C0` and `C1` be
 these frames after composition with their operand poses. The mate equation
 is `C0 = C1 * T(X, Y, Z) * Rz(angle) * F`. Angle is in radians; offsets and
@@ -1944,13 +1959,13 @@ matrix translations are in centimetres. Facing byte `0` selects identity
 translation, rotation, facing. This equation defines the joint
 relation. Occurrence transforms retain their stored placement.
 
-The 945-byte `Assemble` scope uses the wide operand-frame form. It stores
+The expanded two-matrix version-5 `Assemble` scope with sixteen reference-table
+entries spans 945 bytes and uses the wide operand-frame form. It stores
 `u8 1` at offset 20, four zero bytes, the frame-sense byte at offset 25, and zero
 bytes at offsets 26 through 36. Its operand references are at offsets 37 and
 259. Seven zero bytes follow each reference, rigid row-major transforms start
-at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its four
-parameter owners are the angle, X, Y, and Z alignment lanes in owner-local
-order, and they are the first four entries of its reference table. The
+at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its explicit
+owner references select angle, Z, X, and Y alignment lanes. The
 operand-path-locator count is at offset 537 and the two marked locator
 references are at offsets 541 and 552.
 

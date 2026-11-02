@@ -123,6 +123,20 @@ pub(super) fn exact_assembly_alignment_with_types(
     parameter_owners: &[DesignParameterOwner],
     stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
+    if stream_types
+        .get(&u64::from(scope.record_index))
+        .is_some_and(|(guid, version)| {
+            *version == 5 && guid.eq_ignore_ascii_case(super::assembly_v3::TYPE_GUID)
+        })
+    {
+        return super::assembly_v3::alignment(
+            bytes,
+            records,
+            scope,
+            parameter_owners,
+            stream_types,
+        );
+    }
     let existing =
         legacy_assembly_alignment(bytes, records, scope, parameter_owners, stream_types)?;
     if existing.is_some() {
