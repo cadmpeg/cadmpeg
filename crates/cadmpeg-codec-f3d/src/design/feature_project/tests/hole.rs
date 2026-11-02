@@ -250,6 +250,9 @@ fn hole_direction_control_selects_the_travel_of_every_placement() {
     );
 }
 
+/// Carrier `refType`, carrier position, and point records.
+type CarrierCase = (u32, [f64; 3], &'static [(u32, [f64; 3])]);
+
 #[test]
 fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
     let mut scope = DesignParameterScope::empty(
@@ -258,7 +261,7 @@ fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
         32,
     );
     set_extent(&mut scope, 0, false);
-    let cases: [(u32, [f64; 3], &[(u32, [f64; 3])]); 4] = [
+    let cases: [CarrierCase; 4] = [
         (13, [0.0; 3], &[]),
         (
             13,
