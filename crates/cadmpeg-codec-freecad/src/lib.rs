@@ -1331,6 +1331,12 @@ fn semantic_losses(
         let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
             continue;
         };
+        // A type the dispatch never claims is at its Native home; only a
+        // claimed type that still lands Native kept neutral semantics out of
+        // reach (#224 §7.11.1).
+        if !crate::design::has_typed_projection(kind.as_str()) {
+            continue;
+        }
         let (code, suffix) = if matches!(
             kind.as_str(),
             "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"

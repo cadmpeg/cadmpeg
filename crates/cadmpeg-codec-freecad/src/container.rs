@@ -210,6 +210,11 @@ fn scan_impl<'a>(
     for file in archive.entries() {
         let name = file.name.clone();
         if !crate::native::is_safe_entry_name(&name) {
+            // The unsafe payload was given up as its own entry part while
+            // opening members. The name never becomes an output path.
+            if opened.failed.contains(&file.name) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "unsafe ZIP entry path {name:?}"
             )));
