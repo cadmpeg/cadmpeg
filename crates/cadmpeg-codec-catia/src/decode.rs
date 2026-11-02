@@ -241,10 +241,7 @@ fn finish_decode(
         let message = (statement).to_owned();
         report
             .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
-                message
-            }));
+            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
     }
     for note in refusal.take_notes() {
         report.losses.push(note);
@@ -3504,8 +3501,7 @@ fn finish_decode(
     if modeling_scope_is_unresolved {
         report
             .losses
-            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note(
                 format!(
                 "CATIA outer declarations do not unambiguously select one object graph physically \
              contained by the declared CATPrtCont stream; \
@@ -3514,13 +3510,12 @@ fn finish_decode(
              modeling scope, and feature, formula, sketch, constraint, configuration, and \
              history authorship remains unresolved."
             )
-            }));
+            ));
     }
     if unresolved_object_record_count != 0 {
         report
             .losses
-            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note(
                 format!(
             "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), \
              {object_record_count} object-graph field record(s), including \
@@ -3652,13 +3647,12 @@ fn finish_decode(
             transferred_principal_plane_records.len(),
             ir.model.sketches.len(),
         )
-            }));
+            ));
     }
     if !native.legacy_entity_runs.is_empty() {
         report
             .losses
-            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note(
                 format!(
             "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} \
              complete compact schema program(s), containing {legacy_schema_identifier_count} \
@@ -3691,7 +3685,7 @@ fn finish_decode(
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
         )
-            }));
+            ));
     }
     if unresolved_dimension_quantity_count != 0 {
         report.losses.push(
@@ -3703,7 +3697,7 @@ fn finish_decode(
         );
     }
     if !native.value_blocks.is_empty() {
-        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note({ source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
+        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
                 "CATIA native data retains {} visualization value block(s), {value_field_count} \
                  encoded field(s), and {value_selection_count} schema-selected presentation \
                  value(s); {} display-color packet(s) remain without a proven typed face or body \
@@ -3711,7 +3705,7 @@ fn finish_decode(
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets(),
                 appearance_transfer.transferred_packets(),
-            ) }));
+            )));
     }
     native.display_colors = appearance_transfer.source_colors;
     native_projection::project(
