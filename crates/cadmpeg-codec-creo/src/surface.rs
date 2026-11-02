@@ -6552,7 +6552,10 @@ fn plane_local_system_compound_close(
     };
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
-            && complete_plane_local_system(ctx, &payload[start..close], cache, losses)?.is_some()
+            && matches!(
+                plane_local_system_reading(ctx, &payload[start..close], cache, losses)?,
+                PlaneLocalSystemReading::Frame(..)
+            )
         {
             return Ok(Some(close));
         }
@@ -7226,13 +7229,15 @@ fn plane_envelope_boundary_has_local_system(
     else {
         return Ok(false);
     };
-    Ok(complete_plane_local_system(
-        ctx,
-        &body[local_system_start..local_system_close],
-        cache,
-        losses,
-    )?
-    .is_some())
+    Ok(matches!(
+        plane_local_system_reading(
+            ctx,
+            &body[local_system_start..local_system_close],
+            cache,
+            losses,
+        )?,
+        PlaneLocalSystemReading::Frame(..)
+    ))
 }
 
 fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
@@ -7559,6 +7564,36 @@ fn complete_plane_local_system_slots(
     .map(|(slots, _)| slots.get())
 }
 
+/// What one bounded plane local-system body states.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PlaneLocalSystemReading {
+    /// A complete admitted twelve-slot frame.
+    Frame(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    ),
+    /// A compact rotation whose complete-field admission fails for the reason.
+    Refused(&'static str),
+    /// No production reads the body.
+    Unread,
+}
+
+impl PlaneLocalSystemReading {
+    fn frame(
+        self,
+    ) -> Option<(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    )> {
+        match self {
+            Self::Frame(slots, layout) => Some((slots, layout)),
+            Self::Refused(_) | Self::Unread => None,
+        }
+    }
+}
+
+/// Read one bounded body as a complete plane local system and record the
+/// refusal of a compact rotation that fails its complete-field admission.
 pub(crate) fn complete_plane_local_system(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -7571,6 +7606,22 @@ pub(crate) fn complete_plane_local_system(
     )>,
     CodecError,
 > {
+    let reading = plane_local_system_reading(ctx, body, cache, losses)?;
+    if let PlaneLocalSystemReading::Refused(reason) = reading {
+        losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
+    }
+    Ok(reading.frame())
+}
+
+/// Read one bounded body as a plane local system. Only work-cap losses go to
+/// `losses`, so a search over candidate compound closes can call it at a data
+/// `e3`.
+pub(crate) fn plane_local_system_reading(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneLocalSystemReading, CodecError> {
     let mut linkage_view = cadmpeg_core::decode::View::over_retained(body);
     for close in 0..body.len() {
         if linkage_view.seek(close).is_none()
@@ -7586,10 +7637,10 @@ pub(crate) fn complete_plane_local_system(
             continue;
         }
         if let Some(Ok(values)) = scalar::decode_compact_plane_rotation(&body[..close], cache) {
-            return Ok(Some((
+            return Ok(PlaneLocalSystemReading::Frame(
                 values,
                 scalar::PlaneSupportFrameLayout::CompactRotation,
-            )));
+            ));
         }
     }
     let compact_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
@@ -7600,37 +7651,41 @@ pub(crate) fn complete_plane_local_system(
     };
     if let Some(rotation) = rotation {
         return Ok(match rotation {
-            Ok(values) => Some((values, scalar::PlaneSupportFrameLayout::CompactRotation)),
+            Ok(values) => PlaneLocalSystemReading::Frame(
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            ),
             Err(reason) => {
                 if let Some(prefix) = compact_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
                     let mut normalized = Vec::new();
                     normalized.extend_from_slice(prefix);
                     normalized.push(0x18);
-                    return complete_plane_local_system(ctx, &normalized, cache, losses);
+                    return plane_local_system_reading(ctx, &normalized, cache, losses);
                 }
-                losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
-                None
+                PlaneLocalSystemReading::Refused(reason)
             }
         });
     }
-    if let Some(parsed) = scalar::decode_plane_support_local_system(ctx, body, cache, losses)? {
-        return Ok(Some(parsed));
+    if let Some((slots, layout)) =
+        scalar::decode_plane_support_local_system(ctx, body, cache, losses)?
+    {
+        return Ok(PlaneLocalSystemReading::Frame(slots, layout));
     }
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     if frame_body.len() != body.len() {
-        if let Some(parsed) =
+        if let Some((slots, layout)) =
             scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)?
         {
-            return Ok(Some(parsed));
+            return Ok(PlaneLocalSystemReading::Frame(slots, layout));
         }
     }
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);
         normalized.push(0x18);
-        return complete_plane_local_system(ctx, &normalized, cache, losses);
+        return plane_local_system_reading(ctx, &normalized, cache, losses);
     }
-    Ok(None)
+    Ok(PlaneLocalSystemReading::Unread)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -7666,6 +7721,7 @@ pub(crate) fn plane_local_systems_for_rows(
         simple: bool,
         offset: usize,
         angular_loss: AngularLoss,
+        refusal: Option<&'static str>,
     }
 
     /// Whether an angular-frame loss already attributes this local system.
@@ -7723,7 +7779,12 @@ pub(crate) fn plane_local_systems_for_rows(
                 continue;
             }
             let body = &payload[chunk_start..chunk_end];
-            let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
+            let reading = plane_local_system_reading(ctx, body, &cache, losses)?;
+            let refusal = match reading {
+                PlaneLocalSystemReading::Refused(reason) => Some(reason),
+                PlaneLocalSystemReading::Frame(..) | PlaneLocalSystemReading::Unread => None,
+            };
+            let decoded = reading.frame();
             let losses_before_arbitration = losses.len();
             let decoded = plane_frame_by_envelope(
                 decoded,
@@ -7769,6 +7830,7 @@ pub(crate) fn plane_local_systems_for_rows(
                 simple,
                 offset: chunk_start,
                 angular_loss,
+                refusal,
             });
         }
         let has_complete = row_systems
@@ -7787,10 +7849,16 @@ pub(crate) fn plane_local_systems_for_rows(
             };
             if selected {
                 if candidate.layout.is_none() && candidate.angular_loss == AngularLoss::None {
-                    losses.push(crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
-                        "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
-                        row.id, candidate.offset
-                    )));
+                    losses.push(match candidate.refusal {
+                        Some(reason) => crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(format!(
+                            "Plane {} local system at byte {}: {reason}; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                        None => crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
+                            "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                    });
                 }
                 let body = candidate.body.to_vec();
                 let system = PlaneLocalSystem {
