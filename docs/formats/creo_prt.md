@@ -1420,8 +1420,9 @@ Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
 image dictionary expands the support directions according to its slot lanes;
 the stored origin and the envelope witness below select the model-space signs.
 In `18 A 18 B 18 e6 C`, the first support is `B` on model Y and the stored
-axis is `C` on model Z. The second support is the cross product of the stored
-axis and first support.
+axis is `C` on model Z. In `A 18 e6 B 18 C 18`, the first support is `A` on
+model X and the stored axis is `B` on model Y. The second support is the cross
+product of the stored axis and first support.
 The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
 second support `+X`, and stored axis `+Y`.
 In the inline non-plane grammar, `18 e4 0f 18 0f 18 10 18 e4` expands to
