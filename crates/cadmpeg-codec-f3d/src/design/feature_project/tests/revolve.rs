@@ -22,7 +22,7 @@ fn revolve_projects_with_native_profile() {
                 angle_offset: 0,
                 second_side: None,
                 opposite_angle: None,
-                solid: None,
+                solid: Some(false),
                 reversed: false,
             })
             .into();
@@ -99,6 +99,10 @@ fn revolve_projects_with_native_profile() {
             groups[0].id.clone()
         ))
     );
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { solid, .. } = construction else {
+        panic!("expected a resolved revolve");
+    };
+    assert_eq!(solid, Some(false));
 }
 
 #[test]

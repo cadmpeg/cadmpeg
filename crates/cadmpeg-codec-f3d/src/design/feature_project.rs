@@ -5827,13 +5827,13 @@ fn oriented_revolve_axis(
         }
     }
     Some(cadmpeg_ir::features::RevolutionAxis {
-        direction: if positive_side? != reversed {
-            axis.direction
-        } else {
+        direction: if positive_side? == reversed {
             // Reversing a zero component gives -0.0; keep it a plain zero.
             cadmpeg_ir::features::FeatureDirection3::from_unit_without_small_components(
                 cadmpeg_ir::units::UnitVector3::normalized(axis.direction.reversed().get())?,
             )
+        } else {
+            axis.direction
         },
         ..axis.clone()
     })
