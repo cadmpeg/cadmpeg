@@ -192,12 +192,6 @@
       ],
       "faces": [
         {
-          "color": {
-            "a": 1.0,
-            "b": 0.10000000149011612,
-            "g": 0.10000000149011612,
-            "r": 0.8999999761581421
-          },
           "id": "step:data:face#29",
           "loops": {
             "classification": "classified",
