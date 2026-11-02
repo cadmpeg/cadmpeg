@@ -780,7 +780,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order.
+**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder reports `assembly.occurrences-unresolved` when it retains assembly uses or placement frames without a neutral occurrence graph.
 
 **Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
 

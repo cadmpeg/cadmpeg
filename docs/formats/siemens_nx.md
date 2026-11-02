@@ -196,8 +196,8 @@ section relative to the compressed stream wrappers in the same segment index.
 
 Linked OM registries define their schema role by exact declarations:
 `UGS::Solid::Topol` marks the model store, `UGS::FEATURE_RECORD` marks feature
-history, `UGS::EXP_expression` marks expressions, and
-`UGS::OM::SaveAuditTrail` marks audit data when no specialized marker is
+history, `UGS::EXP_expression` marks expressions, and `UGS::OCC_instance` marks
+assembly. `UGS::OM::SaveAuditTrail` marks audit data when no specialized marker is
 present. Exactly one specialized marker assigns its role. A registry with no
 specialized marker and the audit marker assigns `audit_trail`; a registry with
 no marker assigns `other`. More than one specialized marker assigns
@@ -1937,9 +1937,9 @@ feature suppression from a status code, group endpoint, common-frame byte, or
 empty collection without both serialized operation-to-state-object and
 state-object-to-value relations.
 
-An audit-trail record area is consumed only from an OM section whose role is
-`audit_trail`. After the record-area product header and its `41 00` marker, a
-complete audit row is `04, ordinal, 13, [04 05 selector:u8 00], e0,
+An audit-trail record area in an `audit_trail` or `assembly` OM section follows
+the record-area product header and its `41 00` marker. A complete audit row is
+`04, ordinal, 13, [04 05 selector:u8 00], e0,
 timestamp:u32 BE, tagged_value`. The ordinal is a non-null operation-state
 object-index token. The optional selector envelope is admitted only in the
 shown four-byte form. The timestamp marker is `e0`; the tagged value uses the
