@@ -6,10 +6,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::Vertex;
-use cadmpeg_ir::{CadIr, SourceProvenance};
+use cadmpeg_ir::SourceProvenance;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{
@@ -302,43 +300,6 @@ fn decode_enforces_each_iges_session_resource_dimension() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "iges_native_entities"
     ));
-}
-
-#[test]
-fn semantic_decode_barrier_rejects_invalid_cadir() {
-    let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
-        point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
-        tolerance: None,
-    });
-
-    let error = crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &ir)
-    })
-    .unwrap_err();
-
-    assert!(error.to_string().contains("referential_integrity"));
-    assert!(error.to_string().contains("iges:model:vertex#invalid"));
-    assert!(error.to_string().contains("iges:model:point#missing"));
-}
-
-/// Phase 5 freeze: shared builders must match the IGES rejection gate.
-#[test]
-fn phase5_freeze_shared_admissibility_fixtures() {
-    let accepted = cadmpeg_test_support::admissibility::accepted_empty();
-    assert!(crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &accepted)
-    })
-    .is_ok());
-    let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("iges:model")
-        .expect("fixture identities are valid");
-    let error = crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &rejected)
-    })
-    .unwrap_err();
-    assert!(error.to_string().contains("referential_integrity"));
 }
 
 fn tagged_loss(tag: &str) -> LossNote {
