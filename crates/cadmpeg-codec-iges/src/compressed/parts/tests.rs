@@ -15,18 +15,17 @@ fn actual_data_callback_records_match_the_existing_parameter_grammar_without_rep
         .expect("original source window");
     let normalized = super::normalize(source, &ctx).expect("actual Compressed callbacks");
     let scan = crate::card::scan(&normalized.bytes).expect("existing normalized grammar");
-    let expected = crate::parameter::assemble(
+    let reparsed = crate::directory::parse(
         &scan,
-        &normalized.admission.directory,
-        [],
-        &normalized.admission.global,
+        normalized.admission.global.global_table(),
+        &ctx,
     )
-    .expect("existing Parameter parser oracle");
-    assert_eq!(normalized.admission.parameters.records, expected.records);
-    assert_eq!(
-        normalized.admission.parameters.trailing_pointer_analysis,
-        expected.trailing_pointer_analysis
-    );
+    .expect("rendered Directory reparses to the admitted entries");
+    assert_eq!(reparsed.len(), normalized.admission.directory.len());
+    for (reparsed, admitted) in reparsed.iter().zip(&normalized.admission.directory) {
+        assert_eq!(reparsed.sequence, admitted.sequence);
+        assert_eq!(reparsed.entity_type, admitted.entity_type);
+        assert_eq!(reparsed.form, admitted.form);
+    }
     assert_eq!(normalized.admission.parameters.records.len(), 2);
-    assert!(normalized.admission.parameters.quarantined.is_empty());
 }

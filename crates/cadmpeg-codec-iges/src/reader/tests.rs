@@ -359,7 +359,7 @@ fn directory_fixture() -> (
     let scan = crate::card::scan(&bytes).unwrap();
     let (global, _) = crate::global::parse(&scan).unwrap();
     let table = global.global_table();
-    let (directory, _) = crate::test_support::with_service_context(&bytes, |ctx| {
+    let directory = crate::test_support::with_service_context(&bytes, |ctx| {
         crate::directory::parse(&scan, table, ctx)
     })
     .unwrap();
@@ -382,20 +382,6 @@ fn reader_occurrence_loss_carries_its_directory_provenance() {
     assert_eq!(
         losses[0].provenance.as_ref().unwrap().tag.as_deref(),
         Some("directory_entry:D1")
-    );
-}
-
-#[test]
-fn quarantined_placement_records_a_missing_record_rejection() {
-    let (mut directory, _) = directory_fixture();
-    directory[0].entity_type = 408;
-    directory[0].form = 0;
-    let quarantined = std::collections::BTreeSet::from([directory[0].sequence]);
-    let mut projection = crate::entities::geometry::Projection::default();
-    super::mark_quarantined_placements(&mut projection, &directory, &quarantined);
-    assert_eq!(
-        projection.placement_rejections.get(&directory[0].sequence),
-        Some(&crate::entities::structure::PlacementRejection::MissingRecord)
     );
 }
 

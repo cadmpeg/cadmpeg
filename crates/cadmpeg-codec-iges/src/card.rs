@@ -48,6 +48,17 @@ impl Section {
             Self::Terminate => "terminate",
         }
     }
+
+    /// The part that names one card of this section given up by framing.
+    pub(crate) const fn part(self) -> &'static str {
+        match self {
+            Self::Start => "iges.start_section",
+            Self::Global => "iges.global_section",
+            Self::Directory => "iges.directory_section",
+            Self::Parameter => "iges.parameter_section",
+            Self::Terminate => "iges.terminate_section",
+        }
+    }
 }
 
 /// A section a file can end in when it has no Terminate card.
@@ -139,6 +150,13 @@ pub(crate) enum ScannedLine {
         sequence: u32,
         line: PhysicalLine,
     },
+    /// A card that framing cannot place: an unmarked line or a card whose
+    /// section is out of order. The reader gives it up as its part (#215).
+    GivenUp {
+        /// The part that names this card's failure.
+        label: &'static str,
+        line: PhysicalLine,
+    },
     Trailing(PhysicalLine),
     DroppedFinal(PhysicalLine),
 }
@@ -146,7 +164,7 @@ pub(crate) enum ScannedLine {
 impl ScannedLine {
     pub(crate) fn physical(&self) -> &PhysicalLine {
         match self {
-            Self::Card { line, .. } | Self::Trailing(line) | Self::DroppedFinal(line) => line,
+            Self::Card { line, .. } | Self::GivenUp { line, .. } | Self::Trailing(line) | Self::DroppedFinal(line) => line,
         }
     }
 }
@@ -643,8 +661,16 @@ fn dropped_final_card(line: &UnframedLine) -> Result<DroppedFinalCard, CodecErro
     })
 }
 
-/// Order the sections and make each card's position inside its section its
-/// sequence, recording every declaration the position replaced.
+/// The part for a physical line that framing cannot place in section order.
+pub(crate) const UNMARKED_LINE_PART: &str = "iges.unmarked_line";
+
+/// Order the sections and make each accepted card's position inside its
+/// section its sequence, recording every declaration the position replaced.
+///
+/// A line with no section marker before the Terminate card is given up as an
+/// `iges.unmarked_line` part; a card whose section is out of order is given
+/// up as that section's part. Either way the reader reports the part and
+/// decodes the rest (#215 rule 1).
 fn frame_sections(
     mut lines: Vec<UnframedLine>,
     recoveries: &mut FramingRecoveries,
@@ -665,24 +691,32 @@ fn frame_sections(
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
+    let mut accepted_section = None;
     for raw in lines {
         if terminated {
             scanned.push(ScannedLine::Trailing(raw.line));
             continue;
         }
         let line = &raw.line;
-        let current = raw.section.ok_or_else(|| {
-            crate::error::malformed(format!(
-                "IGES physical line at offset {} is unsequenced before Terminate",
-                line.offset
-            ))
-        })?;
+        let Some(current) = raw.section else {
+            // No section marker before the Terminate card: the line is one
+            // unmarked part, and framing continues after it.
+            scanned.push(ScannedLine::GivenUp {
+                label: UNMARKED_LINE_PART,
+                line: raw.line,
+            });
+            continue;
+        };
         if section != Some(current) {
             if section.is_some_and(|previous| current <= previous) {
-                return Err(CodecError::malformed(format_args!(
-                    "IGES section {} is out of order",
-                    current.name()
-                )));
+                // The section is out of order: the card cannot be positioned.
+                // Give it up as its section's part and keep the accepted
+                // section; every card of a misplaced run is given up alone.
+                scanned.push(ScannedLine::GivenUp {
+                    label: current.part(),
+                    line: raw.line,
+                });
+                continue;
             }
             section = Some(current);
             position = 1;
@@ -714,33 +748,29 @@ fn frame_sections(
             .checked_add(1)
             .ok_or_else(|| CodecError::Malformed("IGES section sequence overflow".into()))?;
         terminated = current == Section::Terminate;
+        accepted_section = Some(current);
         scanned.push(ScannedLine::Card {
             section: current,
             sequence: recovered,
             line: raw.line,
         });
     }
-    if !matches!(
-        scanned.first(),
-        Some(ScannedLine::Card {
-            section: Section::Start,
-            ..
-        })
-    ) {
-        return Err(CodecError::Malformed(
-            "IGES Fixed ASCII requires a Start section".into(),
-        ));
-    }
     if terminated {
         return Ok((scanned, SourceEnd::Terminated));
     }
-    let last = match scanned.last() {
-        Some(ScannedLine::Card { section, .. }) => *section,
-        Some(ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_)) | None => {
-            return Err(CodecError::Malformed(
-                "IGES Fixed ASCII requires a Start section".into(),
-            ));
+    let Some(last) = accepted_section else {
+        // No card could be placed in section order, so the scan holds no
+        // section. The reader still decodes the given-up parts.
+        let dropped_card = dropped.as_ref().map(dropped_final_card).transpose()?;
+        recoveries.set_absent_terminate(AbsentTerminate {
+            section: OpenSection::Start,
+            file_end,
+            dropped_final_card: dropped_card,
+        });
+        if let Some(line) = dropped {
+            scanned.push(ScannedLine::DroppedFinal(line.line));
         }
+        return Ok((scanned, SourceEnd::EndsIn(OpenSection::Start)));
     };
     let open = OpenSection::from_section(last)
         .ok_or_else(|| CodecError::Malformed("IGES Fixed ASCII requires a Start section".into()))?;
@@ -948,9 +978,10 @@ impl<'a> CardScan<'a> {
                 sequence,
                 line,
             } if *current == section => Some((*sequence, line)),
-            ScannedLine::Card { .. } | ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => {
-                None
-            }
+            ScannedLine::Card { .. }
+            | ScannedLine::GivenUp { .. }
+            | ScannedLine::Trailing(_)
+            | ScannedLine::DroppedFinal(_) => None,
         })
     }
 

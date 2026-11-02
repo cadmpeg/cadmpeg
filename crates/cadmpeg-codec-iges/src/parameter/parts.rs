@@ -30,8 +30,40 @@ pub(crate) fn assemble(
     for (_, card) in scan.section(Section::Parameter) {
         append_parameter_item(ctx, &mut cards, card)?;
     }
-    if cards.is_empty() || !contiguous(source, &cards)? {
-        return super::assemble(scan, directory, excluded_directory, global);
+    if cards.is_empty() {
+        // No Parameter section exists, so no Parameter Data record is
+        // formed. Entries that declare Parameter Data report it missing in
+        // geometry; there is no part to give up (#215 rule 1).
+        return Ok(ParameterAssembly {
+            records: Vec::new(),
+            trailing_pointer_analysis: BTreeMap::new(),
+            recoveries: crate::card::FramingRecoveries::default(),
+            given_up: BTreeSet::new(),
+            given_up_fields: BTreeMap::new(),
+        });
+    }
+    if !contiguous(source, &cards)? {
+        // The Parameter cards do not form one physical span, so the section
+        // part cannot be bounded. Give up the whole span; every owned record
+        // is unformed and geometry reports each missing record (#215 rule 1).
+        let extent = extent(source, &cards)?;
+        ctx.decode_part(
+            output,
+            extent,
+            crate::reader::part("iges.parameter_section"),
+            |_| {
+                Err::<(), CodecError>(CodecError::malformed(
+                    "IGES Parameter Data cards do not form one physical span",
+                ))
+            },
+        )?;
+        return Ok(ParameterAssembly {
+            records: Vec::new(),
+            trailing_pointer_analysis: BTreeMap::new(),
+            recoveries: crate::card::FramingRecoveries::default(),
+            given_up: BTreeSet::new(),
+            given_up_fields: BTreeMap::new(),
+        });
     }
     let extent = extent(source, &cards)?;
     let source_points = global
@@ -102,7 +134,6 @@ pub(crate) fn assemble(
             ParameterAssembly {
                 records: Vec::new(),
                 trailing_pointer_analysis: BTreeMap::new(),
-                quarantined: Vec::new(),
                 recoveries: crate::card::FramingRecoveries::default(),
                 given_up: section_given_up,
                 given_up_fields: BTreeMap::new(),
@@ -138,7 +169,10 @@ fn parse_owned(
         points: source_points,
     } = section;
     if owned.cards.is_empty() {
-        return super::parse_legacy_owned(owned, lines, global);
+        // No Parameter cards are owned, so no record is formed and there is
+        // no part to give up. Entries that declare Parameter Data report it
+        // missing in geometry (#215 rule 1).
+        return Ok(ParsedOwned::GivenUp);
     }
     let mut cards = Vec::new();
     for sequence in &owned.cards {
@@ -148,12 +182,39 @@ fn parse_owned(
         append_parameter_item(ctx, &mut cards, *card)?;
     }
     if !contiguous(source, &cards)? {
-        return super::parse_legacy_owned(owned, lines, global);
+        // Owned cards that do not form one span cannot be lexed as one
+        // record. Give up the owned span as the record part (#215 rule 1).
+        let span = extent(source, &cards)?;
+        ctx.decode_part(
+            output,
+            span,
+            crate::reader::part("iges.parameter_record"),
+            |_| {
+                Err::<(), CodecError>(failure(
+                    owned.entry.sequence,
+                    OwnedParseFailure::Defect(ParameterDefect::OwnershipConflict, None),
+                ))
+            },
+        )?;
+        return Ok(ParsedOwned::GivenUp);
     }
     let extent = extent(source, &cards)?;
-    if let Some(defect) = owned.quarantine {
+    if let Some(defect) = owned.defect {
         if defect != ParameterDefect::OwnershipConflict || !source_parts.located(extent) {
-            return super::parse_legacy_owned(owned, lines, global);
+            // A conflicted or defective ownership that the section layout
+            // does not locate gives up its span as the record part.
+            ctx.decode_part(
+                output,
+                extent,
+                crate::reader::part("iges.parameter_record"),
+                |_| {
+                    Err::<(), CodecError>(failure(
+                        owned.entry.sequence,
+                        OwnedParseFailure::Defect(defect, None),
+                    ))
+                },
+            )?;
+            return Ok(ParsedOwned::GivenUp);
         }
         if !source_parts.claim(extent) {
             return Ok(ParsedOwned::GivenUp);
@@ -185,7 +246,7 @@ fn parse_owned(
         extent,
         crate::reader::part("iges.parameter_record"),
         |staged| {
-            if let Some(defect) = owned.quarantine {
+            if let Some(defect) = owned.defect {
                 return Err(failure(
                     owned.entry.sequence,
                     OwnedParseFailure::Defect(defect, None),
@@ -255,7 +316,7 @@ impl ConflictParts {
     ) -> Result<Self, CodecError> {
         let mut ends = BTreeMap::new();
         for owned in ownership {
-            if owned.quarantine != Some(ParameterDefect::OwnershipConflict)
+            if owned.defect != Some(ParameterDefect::OwnershipConflict)
                 || owned.cards.is_empty()
             {
                 continue;

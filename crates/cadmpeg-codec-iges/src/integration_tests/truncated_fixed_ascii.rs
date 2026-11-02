@@ -215,8 +215,10 @@ fn loss_count(losses: &[LossNote], code: IgesLossCode) -> usize {
 
 fn directory_count(ir: &CadIr) -> usize {
     let namespace = ir.native.namespace("iges").expect("iges namespace");
-    let arena = |name: &str| namespace.arenas().get(name).map_or(0, Vec::len);
-    arena("entities") + arena("quarantined_directory_records")
+    namespace
+        .arenas()
+        .get("entities")
+        .map_or(0, Vec::len)
 }
 
 fn point_ids(ir: &CadIr) -> BTreeSet<String> {

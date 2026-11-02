@@ -34,7 +34,9 @@ fn assert_value_admitted(baseline: &DecodeResult, decoded: &DecodeResult, field:
     );
     assert_eq!(entity(decoded, 1), entity(baseline, 1));
     let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native.arenas().get("quarantined_directory_records").is_none());
+
+    assert!(native.arenas().get("quarantined_parameter_records").is_none());
     assert!(decoded
         .report()
         .losses
@@ -60,9 +62,4 @@ fn a_binary_arc_value_beyond_global_field_8_is_admitted_and_no_record_is_quarant
     let decoded = crate::test_support::decode(arc_with_real_start_then_point(UNADMITTED_REAL));
     // The arc start X is the fourth value: token 4 after the entity type.
     assert_value_admitted(&baseline, &decoded, 4);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code.local_code() != "parameter.data-quarantined"));
 }

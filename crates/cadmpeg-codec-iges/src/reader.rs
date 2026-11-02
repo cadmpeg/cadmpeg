@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -133,23 +133,6 @@ fn attributed_sequences(losses: &[LossNote]) -> BTreeSet<u32> {
     attributed
 }
 
-fn projection_directory(
-    directory: &[directory::DirectoryEntry],
-    quarantined: &BTreeSet<u32>,
-) -> Option<Vec<directory::DirectoryEntry>> {
-    if quarantined.is_empty() {
-        return None;
-    }
-    let mut projected = Vec::new();
-    for entry in directory
-        .iter()
-        .filter(|entry| !quarantined.contains(&entry.sequence))
-    {
-        projected.push(entry.clone());
-    }
-    Some(projected)
-}
-
 /// Name disappeared records in their covering part loss (#215 rule 1).
 ///
 /// A neutral record the projection skips because its entry's fields were
@@ -254,16 +237,6 @@ fn project_document_attributes(
     Ok(())
 }
 
-fn quarantined_parameter_sequences(
-    records: &[parameter::QuarantinedParameterRecord],
-) -> BTreeSet<u32> {
-    let mut sequences = BTreeSet::new();
-    for record in records {
-        sequences.insert(record.sequence);
-    }
-    sequences
-}
-
 /// Move part-staged native records (the unknowns stubs of given-up parts)
 /// into the document's native namespace.
 fn merge_part_native(
@@ -295,6 +268,49 @@ fn merge_part_native(
             )
         })?;
         held.extend(records);
+    }
+    Ok(())
+}
+
+/// Give up scan-level framing failures as their parts (#215 rule 1).
+///
+/// A line framing cannot place (no section marker, or a section out of
+/// order) is one part with its source bytes. The section parsers skip
+/// given-up lines, so no record is formed from them.
+fn replay_framing_give_ups(
+    scan: &card::CardScan<'_>,
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+) -> Result<(), CodecError> {
+    let Some(source) = scan.source_view() else {
+        // Rendered scans have no source view; their cards are well-formed by
+        // construction, so there is nothing to give up.
+        return Ok(());
+    };
+    for line in &scan.lines {
+        let (label, line) = match line {
+            card::ScannedLine::GivenUp { label, line } => (*label, line),
+            card::ScannedLine::Card { .. }
+            | card::ScannedLine::Trailing(_)
+            | card::ScannedLine::DroppedFinal(_) => continue,
+        };
+        let start = usize::try_from(line.offset)
+            .ok()
+            .and_then(|offset| source.start().checked_add(offset))
+            .ok_or_else(|| CodecError::malformed("IGES framing give-up offset overflows"))?;
+        let end = start
+            .checked_add(line.payload.len())
+            .and_then(|end| end.checked_add(line.line_ending().len()))
+            .ok_or_else(|| CodecError::malformed("IGES framing give-up extent overflows"))?;
+        let extent = source
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("IGES framing give-up exceeds its source"))?;
+        ctx.decode_part(output, extent, crate::reader::part(label), |_| {
+            Err::<(), CodecError>(CodecError::malformed(format_args!(
+                "IGES physical line at source offset {} cannot be placed in section order",
+                line.offset
+            )))
+        })?;
     }
     Ok(())
 }
@@ -381,32 +397,13 @@ fn annotate_representation(
     ));
 }
 
-fn mark_quarantined_placements(
-    projection: &mut entities::geometry::Projection,
-    directory: &[directory::DirectoryEntry],
-    quarantined: &BTreeSet<u32>,
-) {
-    for entry in directory.iter().filter(|entry| {
-        matches!(entry.entity_type, 408 | 420)
-            && entry.form == 0
-            && quarantined.contains(&entry.sequence)
-    }) {
-        projection.placement_rejections.insert(
-            entry.sequence,
-            entities::structure::PlacementRejection::MissingRecord,
-        );
-    }
-}
-
 struct PhysicalParse<'a> {
     scan: card::CardScan<'a>,
     global: global::GlobalRecord,
     global_losses: Vec<LossNote>,
     directory: Vec<directory::DirectoryEntry>,
-    quarantined_directory: Vec<directory::QuarantinedDirectoryRecord>,
     parameters: Vec<parameter::ParameterRecord>,
     trailing_pointer_analysis: BTreeMap<u32, parameter::TrailingPointerAnalysis>,
-    quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     given_up_parameters: BTreeSet<u32>,
     given_up_fields: BTreeMap<u32, Vec<String>>,
     framing_recoveries: card::FramingRecoveries,
@@ -431,9 +428,10 @@ impl<'a> PhysicalParse<'a> {
             Some(source) => card::scan_source(source)?,
             None => card::scan(bytes)?,
         };
+        replay_framing_give_ups(&scan, ctx, &mut parts)?;
         if scan.source_end.ends_before_directory() {
             if let global::GlobalParse::Unfinished(error) = global::parse_if_complete(&scan)? {
-                let mut unfinished = Self::unfinished(scan, ctx);
+                let mut unfinished = Self::unfinished(scan, parts);
                 unfinished.global_losses.push(
                     IgesLossCode::GlobalNoncanonicalFraming
                         .note(format!("IGES Global is unfinished: {error}")),
@@ -463,39 +461,35 @@ impl<'a> PhysicalParse<'a> {
         } else {
             global::parse(&scan)?
         };
-        // A given-up Directory Entry owns its Parameter Data cards, as a
-        // quarantined one does: they are not unclaimed (#215 rules 2-3).
-        let (directory, quarantined_directory, given_up_directory) = if let Some(directory) =
-            prepared_directory
+        // A given-up Directory Entry owns its Parameter Data cards: they are
+        // not unclaimed (#215 rules 2-3).
+        let (directory, given_up_directory) = if let Some(directory) = prepared_directory
         {
-            (directory, Vec::new(), Vec::new())
+            (directory, Vec::new())
         } else if scan.source_view().is_some() {
             let parsed = directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?;
-            (parsed.entries, Vec::new(), parsed.given_up)
+            (parsed.entries, parsed.given_up)
         } else if let Some(identities) = binary_identities {
-            let (directory, quarantined) =
+            let directory =
                 directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
                     identities.semantic_sequence(grammar)
                 })?;
-            (directory, quarantined, Vec::new())
+            (directory, Vec::new())
         } else {
-            let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
-            (directory, quarantined, Vec::new())
+            return Err(CodecError::malformed(
+                "IGES Directory source view is absent",
+            ));
         };
 
         global_losses.extend(directory::metadata_losses(&directory));
         let parameter::ParameterAssembly {
             records: parameters,
             trailing_pointer_analysis,
-            quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
             given_up: given_up_parameters,
             given_up_fields: parameter_given_up_fields,
         } = {
-            let excluded = given_up_directory
-                .iter()
-                .copied()
-                .chain(quarantined_directory.iter().map(|record| record.sequence));
+            let excluded = given_up_directory.iter().copied();
             if let Some(parameters) = prepared_parameters {
                 parameters
             } else if let Some(admitted) = binary_parameters {
@@ -505,7 +499,9 @@ impl<'a> PhysicalParse<'a> {
             } else if scan.source_view().is_some() {
                 parameter::parts::assemble(&scan, &directory, excluded, &global, ctx, &mut parts)?
             } else {
-                parameter::assemble(&scan, &directory, excluded, &global)?
+                return Err(CodecError::malformed(
+                    "IGES Parameter source view is absent",
+                ));
             }
         };
         let conditional_losses = global
@@ -521,10 +517,8 @@ impl<'a> PhysicalParse<'a> {
             global: global::GlobalRecord::Resolved(Box::new(global)),
             global_losses,
             directory,
-            quarantined_directory,
             parameters,
             trailing_pointer_analysis,
-            quarantined_parameters,
             given_up_parameters,
             given_up_fields: parameter_given_up_fields,
             framing_recoveries,
@@ -533,7 +527,7 @@ impl<'a> PhysicalParse<'a> {
         })
     }
 
-    fn unfinished(scan: card::CardScan<'a>, ctx: &DecodeContext<'_>) -> Self {
+    fn unfinished(scan: card::CardScan<'a>, parts: PartOutput) -> Self {
         let mut scan = scan;
         let framing_recoveries = std::mem::take(&mut scan.recoveries);
         Self {
@@ -541,15 +535,13 @@ impl<'a> PhysicalParse<'a> {
             global: global::GlobalRecord::Unfinished,
             global_losses: Vec::new(),
             directory: Vec::new(),
-            quarantined_directory: Vec::new(),
             parameters: Vec::new(),
             trailing_pointer_analysis: BTreeMap::new(),
-            quarantined_parameters: Vec::new(),
             given_up_parameters: BTreeSet::new(),
             given_up_fields: BTreeMap::new(),
             framing_recoveries,
             references: BTreeMap::new(),
-            parts: PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx),
+            parts,
         }
     }
 
@@ -578,14 +570,7 @@ impl<'a> PhysicalParse<'a> {
     }
 
     fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
-        let mut losses = self.framing_recoveries.notes();
-        for record in &self.quarantined_directory {
-            losses.push(record.loss_note());
-        }
-        for record in &self.quarantined_parameters {
-            losses.push(record.loss_note()?);
-        }
-        Ok(losses)
+        Ok(self.framing_recoveries.notes())
     }
 }
 
@@ -776,19 +761,29 @@ fn decode_with_occurrence_limits(
     );
     let (part_model, mut part_native, part_fidelity, mut part_losses) = parts.into_parts();
     let length_context = parse.global.length_context();
-    let mut unavailable_parameter_sequences =
-        quarantined_parameter_sequences(&parse.quarantined_parameters);
-    unavailable_parameter_sequences.extend(&parse.given_up_parameters);
-    let projected_directory =
-        projection_directory(&parse.directory, &unavailable_parameter_sequences);
-    let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
+    // A given-up Directory Entry owns its Parameter Data cards: they are not
+    // unclaimed (#215 rules 2-3).
+    let unavailable_parameter_sequences = parse.given_up_parameters.clone();
+    let filtered_directory = if unavailable_parameter_sequences.is_empty() {
+        None
+    } else {
+        Some(
+            parse
+                .directory
+                .iter()
+                .filter(|entry| !unavailable_parameter_sequences.contains(&entry.sequence))
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+    };
+    let projected_directory = filtered_directory.as_deref().unwrap_or(&parse.directory);
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
-    // Scope derives from the request and the framed model parts, never from
-    // the container flag alone (#209 §1.1, §4.1). IGES frames model parts in
-    // its Directory and Parameter sections and defines no design part; design
-    // is overdelivered with model, which the depth harness pins.
+    // Scope derives below, after every projection has populated the model
+    // (#209 §1.1, §4.1). IGES frames model parts in its Directory and
+    // Parameter sections and defines no design part; design is overdelivered
+    // with model, which the depth harness pins.
     let required = ctx.depth().required_scope();
     let model_part = parse.scan.lines.iter().any(|line| {
         matches!(
@@ -799,13 +794,6 @@ fn decode_with_occurrence_limits(
             }
         )
     });
-    // IGES overdelivers design with model (the depth harness pins cut==0):
-    // design is held whenever model is held or requested.
-    let model = required.model && model_part;
-    ir.scope = cadmpeg_ir::ContentScope {
-        model,
-        design: required.design || model,
-    };
     ir.model = part_model;
     // Part give-ups stage their unknowns stubs as native records. Merge them
     // into the document; the model, fidelity and losses merge with the
@@ -829,11 +817,6 @@ fn decode_with_occurrence_limits(
         )?,
         None => entities::geometry::Projection::default(),
     };
-    mark_quarantined_placements(
-        &mut projection,
-        &parse.directory,
-        &unavailable_parameter_sequences,
-    );
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     let native::NativeStoreResult {
         projection_losses,
@@ -849,10 +832,6 @@ fn decode_with_occurrence_limits(
                 directory: &parse.directory,
                 parameters: &parse.parameters,
                 trailing_pointer_analysis: &parse.trailing_pointer_analysis,
-                quarantine: native::QuarantinedRecords {
-                    directory: &parse.quarantined_directory,
-                    parameters: &parse.quarantined_parameters,
-                },
                 structure_admitted: semantic_structure_admitted,
                 sequences: &projection.sequences,
                 boundary_vertex_derivations: &projection.boundary_vertex_derivations,
@@ -1026,6 +1005,21 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
+    // Scope derives from the request, the framed model parts, and the
+    // populated model arenas, never from the container flag alone (#209
+    // §1.1, §4.1). A class with any populated arena is held.
+    // IGES overdelivers design with model (the depth harness pins cut==0):
+    // design is held whenever model is held or requested.
+    let model = required.model
+        && (model_part
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some());
+    ir.scope = cadmpeg_ir::ContentScope {
+        model,
+        design: required.design || model,
+    };
     // The decode wrapper stamps the source digest from its root view.
     // Transfer scope always agrees with the document scope (#209 §1.1).
     let mut body = DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
@@ -1033,9 +1027,9 @@ fn decode_with_occurrence_limits(
         geometry_transferred,
     });
     body.transfer.scope = ir.scope;
-    // These source records were not delivered as typed geometry, or were
-    // quarantined before semantic admission. Declare that at the retention
-    // boundary; the independent loss table is only a conformance oracle.
+    // These source records were not delivered as typed geometry. Declare that
+    // at the retention boundary: the source image holds their bytes with no
+    // typed record. Given-up parts are marked by the part helper.
     let untyped_geometry = parse.directory.iter().any(|entry| {
         matches!(
             entry.entity_type,
@@ -1045,10 +1039,7 @@ fn decode_with_occurrence_limits(
             || (!projection.decoded.contains(&entry.sequence)
                 && !projection.consumed.contains(&entry.sequence)))
     });
-    if untyped_geometry
-        || !parse.quarantined_directory.is_empty()
-        || !parse.quarantined_parameters.is_empty()
-    {
+    if untyped_geometry {
         source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
     }
     // Name every record a give-up dropped in its covering loss (#215 rule 1):
