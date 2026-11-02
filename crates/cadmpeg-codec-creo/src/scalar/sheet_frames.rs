@@ -5,15 +5,24 @@ use super::{rotation_plane_axes, sweep, ScalarCache, EPS_SUPPORT_FRAME_AGREEMENT
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::units::FiniteVector;
 
-fn directions(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
+fn directions(
+    body: &[u8],
+    cache: &ScalarCache,
+    require_axis_column: bool,
+) -> Option<([f64; 12], usize)> {
     let mut values = [0.0; 12];
     let mut cursor = 0;
     let mut slot = 0usize;
     let mut explicit_direction = false;
+    let mut sign_groups = [None; 9];
+    let mut group_count = 0usize;
     let mut view = View::over_retained(body);
     while slot < 9 {
         view.seek(cursor)?;
         let tag = view.u8()?;
+        if !require_axis_column && tag == 0x28 {
+            return None;
+        }
         let (value, count, end) = sweep::run(
             body,
             cursor,
@@ -22,12 +31,38 @@ fn directions(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
         )?;
         let next = slot.checked_add(count)?;
         (next <= 9).then_some(())?;
+        let group = if tag == 0x41 {
+            let group = group_count;
+            group_count += 1;
+            Some(group)
+        } else if matches!(tag, 0xe4..=0xe6) {
+            slot.checked_sub(1)
+                .and_then(|previous| sign_groups[previous])
+        } else {
+            None
+        };
+        sign_groups.get_mut(slot..next)?.fill(group);
         values.get_mut(slot..next)?.fill(value);
         explicit_direction |= matches!(tag, 0x00 | 0x19..=0xdf);
         cursor = end;
         slot = next;
     }
     explicit_direction.then_some(())?;
+    if !require_axis_column && rotation_plane_axes(&values).is_none() {
+        let mut valid = None;
+        for mask in 1usize..(1usize.checked_shl(u32::try_from(group_count).ok()?)?) {
+            let mut candidate = values;
+            for (index, group) in sign_groups.iter().enumerate() {
+                if group.is_some_and(|group| mask & (1 << group) != 0) {
+                    candidate[index] = -candidate[index];
+                }
+            }
+            if rotation_plane_axes(&candidate).is_some() && valid.replace(candidate).is_some() {
+                return None;
+            }
+        }
+        values = valid?;
+    }
     let axis_column = (0..3).any(|column| {
         [0usize, 2].into_iter().any(|axis| {
             (0..3).all(|row| {
@@ -36,7 +71,7 @@ fn directions(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
             })
         })
     });
-    axis_column.then_some(())?;
+    (!require_axis_column || axis_column).then_some(())?;
     rotation_plane_axes(&values)?;
     Some((values, cursor))
 }
@@ -59,7 +94,15 @@ fn origins(
 }
 
 pub(crate) fn plane_prefix(body: &[u8], cache: &ScalarCache) -> Option<(FiniteVector<12>, usize)> {
-    let (values, cursor) = directions(body, cache)?;
+    let (values, cursor) = directions(body, cache, true)?;
+    origins(body, cache, values, cursor)
+}
+
+pub(crate) fn plane_prefix_with_envelope(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(FiniteVector<12>, usize)> {
+    let (values, cursor) = directions(body, cache, false)?;
     origins(body, cache, values, cursor)
 }
 
@@ -67,7 +110,22 @@ pub(crate) fn plane(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<Result<FiniteVector<12>, &'static str>> {
-    let (values, cursor) = directions(body, cache)?;
+    plane_with_axis_requirement(body, cache, true)
+}
+
+pub(crate) fn plane_with_envelope(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<Result<FiniteVector<12>, &'static str>> {
+    plane_with_axis_requirement(body, cache, false)
+}
+
+fn plane_with_axis_requirement(
+    body: &[u8],
+    cache: &ScalarCache,
+    require_axis_column: bool,
+) -> Option<Result<FiniteVector<12>, &'static str>> {
+    let (values, cursor) = directions(body, cache, require_axis_column)?;
     let complete = origins(body, cache, values, cursor)
         .filter(|(_, end)| *end == body.len())
         .map(|(slots, _)| slots);
@@ -75,8 +133,7 @@ pub(crate) fn plane(
 }
 
 /// The ten angular-stream scalars that open a plane envelope: the parameter
-/// rectangle `u0, v0, u1, v1`, then the XYZ minima and the XYZ maxima. Bytes
-/// after the tenth scalar (a linkage field) are not read.
+/// rectangle `u0, v0, u1, v1`, then the XYZ minima and the XYZ maxima.
 pub(crate) fn envelope(body: &[u8], cache: &ScalarCache) -> Option<[f64; 10]> {
     let mut values = [0.0; 10];
     let mut cursor = 0;
@@ -92,6 +149,12 @@ pub(crate) fn envelope(body: &[u8], cache: &ScalarCache) -> Option<[f64; 10]> {
         values.get_mut(slot..next)?.fill(value);
         cursor = end;
         slot = next;
+    }
+    let tail = body.get(cursor..)?;
+    if !tail.is_empty() {
+        (tail.first() == Some(&crate::psb::token::ENTITY_REF)).then_some(())?;
+        let (_, end) = crate::psb::reference_id(tail, 1).ok()?;
+        (end == tail.len()).then_some(())?;
     }
     values
         .iter()
@@ -199,4 +262,29 @@ pub(crate) fn pcurve(
     } else {
         Ok(frame)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_frame_resolves_a_signed_rotation_literal() {
+        let positive = 0.6_f64.to_be_bytes();
+        let negative = (-0.8_f64).to_be_bytes();
+        let mut body = vec![0x6e];
+        body.extend_from_slice(&positive[2..]);
+        body.extend_from_slice(&[0x18, 0x45]);
+        body.extend_from_slice(&negative[1..7]);
+        body.extend_from_slice(&[0xe4, 0x18, 0x41]);
+        body.extend_from_slice(&positive[1..]);
+        body.extend_from_slice(&[0x18, 0x0f, 0x18, 0x18, 0x18, 0x18]);
+        let frame = plane_with_envelope(&body, &ScalarCache::default())
+            .expect("rotation framing")
+            .expect("unique rotation");
+        let (_, normal) = rotation_plane_axes(frame.as_raw()).expect("right-handed rotation");
+        assert!((normal[0] + 0.8).abs() < 1.0e-9);
+        assert!((normal[1] + 0.6).abs() < 1.0e-9);
+        assert!(normal[2].abs() < 1.0e-9);
+    }
 }

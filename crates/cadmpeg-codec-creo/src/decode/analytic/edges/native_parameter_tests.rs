@@ -640,7 +640,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     assert_eq!(
         pcurve_backed_periodic_conic_parameter_range(
             &evaluation_ctx,
-            &circle(),
+            &mut circle(),
             (7, [10, 11]),
             &candidates,
             &surfaces,
@@ -651,6 +651,30 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
 
+    let mut reversed = circle();
+    let reversed_points = [points[1], points[0]];
+    let range = pcurve_backed_periodic_conic_parameter_range(
+        &evaluation_ctx,
+        &mut reversed,
+        (7, [10, 11]),
+        &candidates,
+        &surfaces,
+        reversed_points,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect("compute reversed range")
+    .expect("pcurves establish an arc");
+    assert!((0.0..std::f64::consts::TAU).contains(&range[0]));
+    for (actual, expected) in range
+        .into_iter()
+        .map(|t| evaluated(&reversed, t))
+        .zip(reversed_points)
+    {
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert!((actual - expected).abs() < 1.0e-12);
+        }
+    }
+
     candidates.insert(
         (7, 11),
         vec![([[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]], 20)],
@@ -658,7 +682,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     assert_eq!(
         pcurve_backed_periodic_conic_parameter_range(
             &evaluation_ctx,
-            &circle(),
+            &mut circle(),
             (7, [10, 11]),
             &candidates,
             &surfaces,

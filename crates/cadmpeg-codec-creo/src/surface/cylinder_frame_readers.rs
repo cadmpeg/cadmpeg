@@ -44,13 +44,19 @@ pub(crate) fn bounded_rotation_envelope(
         let mut values = [0.0; N];
         let mut slot = 0usize;
         while slot < values.len() {
-            let (value, repeat, end) = scalar::decode_stateful_scalar_run(
-                body,
-                view.read_len(),
-                *previous,
-                cache,
-                scalar::StatefulScalarKind::CylinderRotation,
-            )?;
+            let parameter = (N == 4 && (slot == 0 || slot == 2))
+                .then(|| scalar::revolution_frames::parameter_literal(body, view.read_len()))
+                .flatten()
+                .map(|(value, end)| (value, 1, end));
+            let (value, repeat, end) = parameter.or_else(|| {
+                scalar::decode_stateful_scalar_run(
+                    body,
+                    view.read_len(),
+                    *previous,
+                    cache,
+                    scalar::StatefulScalarKind::CylinderRotation,
+                )
+            })?;
             let next = slot.checked_add(repeat)?;
             values.get_mut(slot..next)?.fill(value);
             *previous = Some(value);
@@ -98,7 +104,10 @@ pub(crate) fn bounded_rotation_cylinder_frame(
                 .then_some(())?;
         }
     }
-    PositionalCylinderFrame::new(origin, axis, reference, radius, Some(bounds[3] - bounds[1]))
+    let mut frame =
+        PositionalCylinderFrame::new(origin, axis, reference, radius, Some(bounds[3] - bounds[1]))?;
+    frame.parameter_bounds = Some([[bounds[0], bounds[2]], [bounds[1], bounds[3]]]);
+    Some(frame)
 }
 
 /// Index of the coordinate axis when `axis` is exactly one `+-1` component and two zeros.

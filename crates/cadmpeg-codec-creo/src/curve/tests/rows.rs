@@ -657,6 +657,38 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
 }
 
 #[test]
+fn reciprocal_face_cycles_disambiguate_a_bounded_row_suffix() {
+    fn row(payload: &mut Vec<u8>, id: u8, faces: &[u8], next: [u8; 2]) {
+        payload.extend_from_slice(&[id, 0, 4, 1, 0xf6, 0xff]);
+        payload.extend_from_slice(faces);
+        payload.extend_from_slice(&next);
+        payload.extend_from_slice(&[0, 0, 0xe3, 0xe1, 0xe3]);
+    }
+    let fixture = |include_predecessor| {
+        let mut payload = b"topol_ref_data\0".to_vec();
+        row(&mut payload, 20, &[1, 0x81, 0x2c], [20, 22]);
+        row(&mut payload, 21, &[1, 0x81, 0x2d], [21, 23]);
+        row(&mut payload, 22, &[1, 0x81, 0x2c], [22, 10]);
+        if include_predecessor {
+            row(&mut payload, 23, &[1, 0x81, 0x2d], [23, 10]);
+        }
+        row(&mut payload, 10, &[0x81, 0x2c, 0x81, 0x2d], [20, 21]);
+        payload
+    };
+    let face_ids = BTreeSet::from([1, 44, 300, 301]);
+    let rows = topology_rows_with_face_ids(&fixture(true), Some(&face_ids));
+    let recovered = rows
+        .iter()
+        .find(|row| row.id == 10)
+        .expect("closed face cycles");
+    assert_eq!(recovered.faces, [300, 301].map(NonZeroU32::new));
+    assert_eq!(recovered.next_edges, [20, 21]);
+
+    let incomplete = topology_rows_with_face_ids(&fixture(false), Some(&face_ids));
+    assert!(incomplete.iter().all(|row| row.id != 10));
+}
+
+#[test]
 fn materialized_face_evidence_precedes_namespace_face_evidence() {
     let row = [0x81, 0x73, 0x81, 0x71, 0x81, 0x4b, 0x81, 0x29, 0, 0, 0xe3];
     let materialized_face_ids = std::collections::BTreeSet::from([369, 371]);
