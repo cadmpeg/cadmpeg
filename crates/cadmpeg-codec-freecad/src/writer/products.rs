@@ -139,9 +139,22 @@ fn definitions(
             Some(index) => &mut objects[index],
             None => {
                 objects.push(Object::new(name.clone(), kind, label));
-                objects
+                let object = objects
                     .last_mut()
-                    .ok_or_else(|| CodecError::malformed("product output is absent"))?
+                    .ok_or_else(|| CodecError::malformed("product output is absent"))?;
+                // A regenerated container keeps the native declaration facts
+                // no neutral record owns, as the synthesis path does for
+                // unrepresented objects. Pending execution is such a fact.
+                if let Some(native) = definition.native_ref.as_deref().and_then(|id| {
+                    native_objects
+                        .iter()
+                        .find(|native| native.id().as_str() == id)
+                }) {
+                    object
+                        .declaration_attributes
+                        .clone_from(&native.attributes);
+                }
+                object
             }
         };
         if definition.kind != ProductDefinitionKind::Object {
