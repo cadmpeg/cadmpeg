@@ -52,17 +52,13 @@ pub(super) fn open_optional<'source>(
         if !crate::native::is_safe_entry_name(&entry.name) {
             // The name cannot become an output path. Give up only this
             // entry's payload part; the remaining members still decode.
-            let given_up: Option<()> = ctx.decode_part(
-                stage,
-                payload.view(),
-                part("zip.entry"),
-                |_stage| {
+            let given_up: Option<()> =
+                ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
                     Err(CodecError::malformed(format_args!(
                         "unsafe ZIP entry path {:?}",
                         entry.name
                     )))
-                },
-            )?;
+                })?;
             debug_assert!(given_up.is_none());
             members.failed.insert(name.to_owned());
             continue;
