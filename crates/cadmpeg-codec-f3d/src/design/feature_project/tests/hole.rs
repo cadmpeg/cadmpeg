@@ -585,3 +585,221 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         crate::loss::F3dLossCode::HoleExtentUnproven.kind()
     );
 }
+
+fn hole_scope() -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    scope
+}
+
+/// A length parameter in centimetres or an angle parameter in radians.
+fn named_parameter(
+    name: &str,
+    value: f64,
+    angle: bool,
+) -> crate::records::parameters::DesignParameter {
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(5),
+        "1",
+        name,
+        Some("mm"),
+        "d1",
+        value,
+    ))
+    .unwrap();
+    if angle {
+        parameter.try_set_unit_value("deg".to_owned()).unwrap();
+    }
+    parameter
+}
+
+fn projected_hole(
+    scope: &DesignParameterScope,
+    parameters: &[crate::records::parameters::DesignParameter],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+) -> Option<FeatureOperation> {
+    let indexed: Vec<_> = parameters
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (u32::try_from(i).unwrap(), p))
+        .collect();
+    match project_hole(scope, &indexed, groups, &[], &mut Vec::new()).unwrap()? {
+        FeatureDefinition::Operation(operation) => Some(operation),
+        FeatureDefinition::PostProcess { .. } => panic!("expected an operation"),
+    }
+}
+
+fn countersink(diameter: f64, angle: f64) -> Vec<crate::records::parameters::DesignParameter> {
+    let mut parameters = hole_parameters().to_vec();
+    parameters.push(named_parameter("CSDiameter", diameter, false));
+    parameters.push(named_parameter("CSAngle", angle, true));
+    parameters
+}
+
+#[test]
+fn countersink_parameters_state_a_countersink_entry() {
+    use cadmpeg_ir::features::holes::{HoleBottom, HoleConstruction, HoleKind};
+    for (tip, bottom_is_flat) in [(std::f64::consts::PI, true), (118_f64.to_radians(), false)] {
+        let mut parameters = countersink(1.0, std::f64::consts::FRAC_PI_2);
+        parameters[2].try_set_evaluated_value(tip).unwrap();
+        let Some(FeatureOperation::Hole { shape, bottom, .. }) =
+            projected_hole(&hole_scope(), &parameters, &[])
+        else {
+            panic!("expected a hole");
+        };
+        let HoleConstruction::Form {
+            kind: HoleKind::Countersink { diameter, angle },
+            ..
+        } = shape.construction()
+        else {
+            panic!("expected a countersink, got {:?}", shape.construction());
+        };
+        assert!((diameter.get() - 10.0).abs() < EPS_HOLE_EXTENT_TEST);
+        assert!((angle.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_HOLE_EXTENT_TEST);
+        assert_eq!(matches!(bottom, Some(HoleBottom::Flat)), bottom_is_flat);
+        assert_eq!(
+            matches!(
+                bottom,
+                Some(HoleBottom::Angled {
+                    depth_to_tip: false,
+                    ..
+                })
+            ),
+            !bottom_is_flat
+        );
+    }
+}
+
+#[test]
+fn a_countersink_no_wider_than_the_hole_or_with_a_straight_angle_stays_native() {
+    for parameters in [
+        countersink(0.4, std::f64::consts::FRAC_PI_2),
+        countersink(0.3, std::f64::consts::FRAC_PI_2),
+        countersink(1.0, std::f64::consts::PI),
+    ] {
+        assert_eq!(projected_hole(&hole_scope(), &parameters, &[]), None);
+    }
+}
+
+#[test]
+fn mixed_counterbore_and_countersink_parameters_stay_native() {
+    let mut parameters = hole_parameters().to_vec();
+    parameters.push(named_parameter("CBDepth", 0.3, false));
+    parameters.push(named_parameter(
+        "CSAngle",
+        std::f64::consts::FRAC_PI_2,
+        true,
+    ));
+    assert_eq!(projected_hole(&hole_scope(), &parameters, &[]), None);
+    let mut parameters = hole_parameters().to_vec();
+    parameters[2]
+        .try_set_evaluated_value(118_f64.to_radians())
+        .unwrap();
+    parameters.push(named_parameter("CSDiameter", 1.0, false));
+    parameters.push(named_parameter("CBDiameter", 1.0, false));
+    assert_eq!(
+        projected_hole(&hole_scope(), &parameters, &[]),
+        None,
+        "a countersink needs its own angle"
+    );
+}
+
+fn extent_group(
+    role: crate::records::topology::extrude_selection::DesignOperandRole,
+    members: &[u32],
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
+        .map(|ordinal| 1026 + ordinal * 11)
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:group#40",
+        "scope_record_index": 32,
+        "scope_reference_ordinal": 8,
+        "record_index": 40,
+        "byte_offset": 1000,
+        "class_tag": "332",
+        "members": members,
+        "member_offsets": member_offsets,
+        "frame": {
+            "member_count_offset": 1021,
+            "opaque_index": 1,
+            "opaque_index_offset": 1072,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 1076,
+            "variant": false
+        },
+        "role": role.raw(),
+        "role_offset": 1054,
+        "paired_class_tag": "259",
+        "paired_byte_offset": 1125
+    }))
+    .unwrap()
+}
+
+#[test]
+fn an_extents_to_hole_ends_on_the_face_of_its_extent_group() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    use cadmpeg_ir::features::LinearTermination;
+    let mut scope = hole_scope();
+    set_extent(&mut scope, 0, true);
+    let without_depth = hole_parameters()[1..].to_vec();
+    let group = extent_group(DesignOperandRole::ROLE_0X5, &[7]);
+    let Some(FeatureOperation::Hole { extent, .. }) =
+        projected_hole(&scope, &without_depth, std::slice::from_ref(&group))
+    else {
+        panic!("expected a hole");
+    };
+    assert_eq!(
+        extent,
+        Some(LinearTermination::ToFace {
+            face: FaceSelection::Native(group.id.clone()),
+            offset: None,
+        })
+    );
+}
+
+#[test]
+fn an_extents_to_hole_needs_one_extent_group_with_one_member() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let mut scope = hole_scope();
+    set_extent(&mut scope, 0, true);
+    let without_depth = hole_parameters()[1..].to_vec();
+    for groups in [
+        Vec::new(),
+        vec![extent_group(DesignOperandRole::ROLE_0X5, &[7, 8])],
+        vec![extent_group(DesignOperandRole::BODIES_A, &[7])],
+        vec![
+            extent_group(DesignOperandRole::ROLE_0X5, &[7]),
+            extent_group(DesignOperandRole::ROLE_0X5, &[8]),
+        ],
+    ] {
+        assert_eq!(projected_hole(&scope, &without_depth, &groups), None);
+    }
+}
+
+#[test]
+fn a_hole_depth_or_an_unsaved_depth_keeps_the_distance_extent() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    use cadmpeg_ir::features::LinearTermination;
+    let group = extent_group(DesignOperandRole::ROLE_0X5, &[7]);
+    let mut saved = hole_scope();
+    set_extent(&mut saved, 0, true);
+    let Some(FeatureOperation::Hole { extent, .. }) =
+        projected_hole(&saved, &hole_parameters(), std::slice::from_ref(&group))
+    else {
+        panic!("expected a hole");
+    };
+    assert!(matches!(extent, Some(LinearTermination::Blind { .. })));
+    assert_eq!(
+        projected_hole(
+            &hole_scope(),
+            &hole_parameters()[1..],
+            std::slice::from_ref(&group)
+        ),
+        None
+    );
+}

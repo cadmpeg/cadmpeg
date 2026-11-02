@@ -7704,12 +7704,10 @@ fn project_hole(
     let entry = match parameters.len().checked_sub(base_count) {
         Some(0) => None,
         Some(2) => match (
-            parameter("CBDepth"),
-            parameter("CBDiameter"),
-            parameter("CSDiameter"),
-            parameter("CSAngle"),
+            (parameter("CBDepth"), parameter("CBDiameter")),
+            (parameter("CSDiameter"), parameter("CSAngle")),
         ) {
-            (Some(counterbore_depth), Some(counterbore_diameter), None, None) => {
+            ((Some(counterbore_depth), Some(counterbore_diameter)), _) => {
                 let counterbore_depth = or_none!(design_positive_length(counterbore_depth));
                 let counterbore_diameter = or_none!(design_positive_length(counterbore_diameter));
                 if depth.is_some_and(|depth| counterbore_depth.get() > depth)
@@ -7722,15 +7720,12 @@ fn project_hole(
                     counterbore_depth,
                 ))
             }
-            (None, None, Some(countersink_diameter), Some(countersink_angle)) => {
+            (_, (Some(countersink_diameter), Some(countersink_angle))) => {
                 let countersink_diameter = or_none!(design_positive_length(countersink_diameter));
                 let countersink_angle = or_none!(cadmpeg_ir::scalar::InteriorAngle::try_from(
                     or_none!(design_angle(countersink_angle))
                 )
                 .ok());
-                if countersink_diameter.get() <= diameter.get() {
-                    return Ok(None);
-                }
                 Some(HoleEntry::Countersink(
                     countersink_diameter,
                     countersink_angle,
