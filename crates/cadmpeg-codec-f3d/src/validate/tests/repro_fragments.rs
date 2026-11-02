@@ -7,9 +7,10 @@ fn repro_fragment_skips_external_body_keys_and_checks_local_binding_frames() {
     let binding = serde_json::from_value(serde_json::json!({
         "id":"f3d:Design1/BulkStream.dat:design-body-binding#16",
         "stream":"Design1/BulkStream.dat", "pair_count":1, "pair_ordinal":0,
-        "asm_body_key":1, "asm_body_key_offset":16,
-        "entity_suffix":7, "entity_suffix_offset":24,
-        "blob_name":"BREP.synthetic.smb", "blob_name_offset":32,
+        "asm_body_key":1,
+        "entity_suffix":7,
+        "blob_name":"BREP.synthetic.smb",
+        "map_ordinal":0,
         "body":"f3d:brep:entity#1"
     }))
     .unwrap();
