@@ -4509,16 +4509,24 @@ pub(super) fn store_headers(
     {
         let candidate = match &section.store {
             IndexedStore::Fixed { records } => records.iter().find_map(|record| {
-                crate::om::store_version(record.bytes, record.offset)
-                    .map(|version| (Some(record.object_id.0), version))
+                crate::om::store_version(
+                    record.bytes,
+                    record.offset,
+                    crate::om::product::ProductRecordForm::IndexedRoot,
+                )
+                .map(|version| (Some(record.object_id.0), version))
             }),
             IndexedStore::OffsetOnly {
                 control, records, ..
             } => std::iter::once(control)
                 .chain(records.iter())
                 .find_map(|record| {
-                    crate::om::store_version(record.bytes, record.offset)
-                        .map(|version| (None, version))
+                    crate::om::store_version(
+                        record.bytes,
+                        record.offset,
+                        crate::om::product::ProductRecordForm::Modern,
+                    )
+                    .map(|version| (None, version))
                 }),
         };
         let Some((object_id, version)) = candidate else {

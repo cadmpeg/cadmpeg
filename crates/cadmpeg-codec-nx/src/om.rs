@@ -3662,9 +3662,8 @@ pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
     expressions
 }
 
-/// Locate independently size-framed OM sections and their type registries.
-pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
-    let mut out = Vec::new();
+fn section_envelopes(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut envelopes = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
         let Some(relative) = bytes[at..]
@@ -3697,6 +3696,16 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
             at = offset + 4;
             continue;
         }
+        envelopes.push((offset, end));
+        at = end;
+    }
+    envelopes
+}
+
+/// Locate independently size-framed OM sections and their type registries.
+pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
+    let mut out = Vec::new();
+    for (offset, end) in section_envelopes(bytes) {
         let type_registry = registry::type_registry(bytes, offset + 16, end);
         let field_owner_count = type_registry.field_owner_count;
         let types = type_registry.definitions;
@@ -3738,7 +3747,6 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
             record_area,
             cached_operation_labels: cached_operation_labels.into(),
         });
-        at = end;
     }
     Ok(out)
 }
@@ -3972,16 +3980,13 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
 ///
-/// A candidate is accepted only when the arrays are adjacent, the index is
-/// monotone, its first offset is zero, its second offset self-anchors the first
-/// entity exactly at the end of the object-id table, and that entity carries the
-/// NX root marker. Each candidate charges its registry span to `budget`; once
-/// the budget is exhausted the remaining candidates are skipped.
+/// Each candidate charges its registry span to `budget`.
 pub(crate) fn indexed_sections<'a>(
     bytes: &'a [u8],
     budget: &WorkBudget,
 ) -> Vec<IndexedSection<'a>> {
     let mut candidates = Vec::new();
+    let envelopes = section_envelopes(bytes);
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
     for offset in 0..bytes.len() {
@@ -4015,7 +4020,10 @@ pub(crate) fn indexed_sections<'a>(
         else {
             continue;
         };
-        let Some(_) = product_record_range_at(bytes, table_end) else {
+        let Some(product) = bytes
+            .get(table_end..)
+            .and_then(|suffix| ProductRecord::read(suffix, ProductRecordForm::IndexedRoot))
+        else {
             continue;
         };
         if View::u32_le_at(bytes, index_start) != Some(0) {
@@ -4026,7 +4034,29 @@ pub(crate) fn indexed_sections<'a>(
         else {
             continue;
         };
-        let Some(base) = table_end.checked_sub(first) else {
+        let section_base = unique_candidate(envelopes.iter().filter_map(|(offset, end)| {
+            if index_start < offset.checked_add(16)? || table_end >= *end {
+                return None;
+            }
+            let payload_len = cadmpeg_core::decode::index_from_u32(View::u32_be_at(
+                bytes,
+                offset.checked_add(8)?,
+            )?);
+            if offset.checked_add(16)?.checked_add(payload_len)? != *end {
+                return None;
+            }
+            let base = offset.checked_add(14)?;
+            let first_boundary = base.checked_add(first)?;
+            let last_index = index_start.checked_add(count.checked_mul(4)?)?;
+            let last = cadmpeg_core::decode::index_from_u32(View::u32_le_at(bytes, last_index)?);
+            let last_boundary = base.checked_add(last)?;
+            (first_boundary >= table_end.checked_add(product.byte_len())? && last_boundary <= *end)
+                .then_some(base)
+        }));
+        if section_base.is_none() && bytes.get(table_end) == Some(&6) {
+            continue;
+        }
+        let Some(base) = section_base.or_else(|| table_end.checked_sub(first)) else {
             continue;
         };
         let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table)
@@ -4131,14 +4161,18 @@ pub(crate) fn indexed_sections<'a>(
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
-pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
+pub(crate) fn store_version(
+    bytes: &[u8],
+    base_offset: usize,
+    form: ProductRecordForm,
+) -> Option<StoreVersion<'_>> {
     bytes
         .len()
         .checked_sub(3)
         .into_iter()
         .flat_map(|last| 0..last)
         .find_map(|at| {
-            let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
+            let product = ProductRecord::read(&bytes[at..], form)?;
             Some(StoreVersion {
                 offset: base_offset.checked_add(at)?,
                 value: product.text(),
