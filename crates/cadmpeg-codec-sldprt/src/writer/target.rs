@@ -118,6 +118,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
                 &value.annotations,
                 &records,
                 value,
+                input.limits,
                 &mut bytes,
             )?
         }
