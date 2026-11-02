@@ -42,7 +42,7 @@ A codec takes native bytes and produces the cadmpeg IR.
 2. **Implement the codec interface.** Codecs implement the [`Codec` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
 3. **Classify exactness correctly.** `ByteExact` means read from the source stream without transformation beyond documented unit conversion. `Derived` means computed deterministically from byte-exact inputs. `Inferred` means supplied from context or convention rather than an explicit source field. `Unknown` means origin or trustworthiness could not be established.
 4. **Account for loss.** If your decoder skips or approximates something, surface it; do not silently drop bytes.
-5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. Add focused decode, validation, and round-trip tests where applicable.
+5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. NIST MBE PMI specimens are a separate maintainer-curated track (`LicenseRef-NIST-PD`); see [corpus/nist-pmi/README.md](corpus/nist-pmi/README.md). Add focused decode, validation, and round-trip tests where applicable.
 6. **Include the provenance declaration** in your PR.
 
 ### Contribute format research (extend a spec)

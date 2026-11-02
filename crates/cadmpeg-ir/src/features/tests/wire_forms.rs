@@ -246,7 +246,7 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
         "native": "native:plane"
     });
     let termination: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
-    let LinearTermination::ToPlane { plane, native } = &termination else {
+    let LinearTermination::ToPlane { plane, native, .. } = &termination else {
         panic!("not a to-plane termination: {termination:?}");
     };
     assert_eq!(
@@ -1796,5 +1796,40 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
             serde_json::from_value::<FeatureDefinition>(wire).is_err(),
             "{field} must be refused"
         );
+    }
+}
+
+#[test]
+fn planar_target_sources_round_trip_and_refuse_invalid_values() {
+    use crate::features::{ExtrudeStart, LinearTermination};
+    for (kind, source) in [
+        ("to_plane", "work_plane"),
+        ("to_plane", "work_point"),
+        ("to_plane", "face_surface"),
+        ("from_plane", "work_plane"),
+        ("from_plane", "face_surface"),
+    ] {
+        let mut wire = serde_json::json!({
+            "kind": kind,
+            "plane": {"origin": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}},
+            "native": "native:target", "source": source
+        });
+        if kind == "to_plane" {
+            let decoded: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        } else {
+            let decoded: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        }
+        for invalid in [serde_json::Value::Null, serde_json::json!("unknown")] {
+            wire["source"] = invalid;
+            if kind == "to_plane" {
+                assert!(serde_json::from_value::<LinearTermination>(wire.clone()).is_err());
+            } else {
+                assert!(serde_json::from_value::<ExtrudeStart>(wire.clone()).is_err());
+            }
+        }
     }
 }

@@ -80,6 +80,7 @@ fn fixed_kind_edge_and_revolve_operations(
         angle_offset: u64_from_index(draft_start + 40),
         opposite_angle_record_index: 176,
         opposite_angle_offset: u64_from_index(draft_start + 155),
+        flags: None,
     });
     assert_eq!(
         exact_draft_operation_with_owners(
@@ -697,6 +698,8 @@ fn fixed_kind_edge_and_revolve_operations(
                     value: 1_780,
                     offset: u64_from_index(revolve_scalar_start + 116 + 40)
                 }),
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -773,6 +776,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: 45,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -838,6 +843,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: u64_from_index(class403_start + 40),
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -886,9 +893,7 @@ fn fixed_kind_edge_and_revolve_operations(
         referenced[referenced_layout::EXTENT_KIND..referenced_layout::EXTENT_KIND + 4]
             .copy_from_slice(&2u32.to_le_bytes());
         referenced[referenced_layout::PROJECT_AXIS] = 1;
-        referenced
-            [referenced_layout::STRUCTURAL_CONSTANT..referenced_layout::STRUCTURAL_CONSTANT + 4]
-            .copy_from_slice(&1u32.to_le_bytes());
+        referenced[referenced_layout::SOLID] = 1;
         referenced[referenced_layout::ANGLE_REFERENCE_MARKER] = 1;
         referenced[referenced_layout::ANGLE_REFERENCE_MARKER + 1
             ..referenced_layout::ANGLE_REFERENCE_MARKER + 5]
@@ -930,6 +935,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: u64_from_index(class403_start + 40),
                 second_side: None,
                 opposite_angle: None,
+                solid: Some(true),
+                reversed: false,
             },
         ));
         assert_eq!(construction(&bytes), expected);
@@ -1054,6 +1061,8 @@ fn fixed_kind_edge_and_revolve_operations(
                             angle_offset: along_offset + 200,
                         },
                     ),
+                    solid: None,
+                    reversed: false,
                 },
             ))
         };
@@ -1155,6 +1164,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -1196,6 +1207,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -1235,6 +1248,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );

@@ -2,11 +2,13 @@
 //! Typed BODY/SHELL/REGION/FACE ownership and face-use decode tests.
 #![allow(clippy::unwrap_used)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::append_void_and_faceless_regions;
 use crate::test_support::parasolid::bridge_owned;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::owned_triangle;
@@ -244,4 +246,39 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         .shells
         .iter()
         .all(|shell| shell.faces().len() == 1));
+}
+
+#[test]
+fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_stays() {
+    let (owner, region, void, faceless) = (500, 80, 600, 601);
+    let mut body = owned_triangle(0, owner, 0.0);
+    append_void_and_faceless_regions(&mut body, owner, region, void, faceless);
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let regions: BTreeMap<_, _> = result
+        .ir()
+        .model
+        .regions
+        .iter()
+        .map(|region| (region.id.as_str(), region.shells.len()))
+        .collect();
+    assert_eq!(
+        regions,
+        BTreeMap::from([("sldprt:brep:region#80", 1), ("sldprt:brep:region#601", 0)])
+    );
+    let body_regions: BTreeSet<_> = result.ir().model.bodies[0]
+        .regions
+        .iter()
+        .map(cadmpeg_ir::ids::RegionId::as_str)
+        .collect();
+    assert_eq!(
+        body_regions,
+        BTreeSet::from(["sldprt:brep:region#80", "sldprt:brep:region#601"])
+    );
 }

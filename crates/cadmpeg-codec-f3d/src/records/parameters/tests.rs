@@ -13,6 +13,7 @@ fn parameter(owned: bool) -> DesignParameter {
         DesignParameterSource::new("Feature Dimension".into(), Some(4), None).unwrap()
     } else {
         DesignParameterSource::User {
+            source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
             family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 122,

@@ -178,7 +178,7 @@ fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
         Some(serde_json::json!("7")),
         Some(serde_json::json!("8")),
         Some(serde_json::json!("9")),
-        Some(serde_json::json!("11")),
+        Some(serde_json::json!("10")),
         Some(serde_json::json!({})),
     ] {
         let mut wire = valid.clone();

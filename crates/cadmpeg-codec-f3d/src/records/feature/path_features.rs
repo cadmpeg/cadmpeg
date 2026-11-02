@@ -23,6 +23,7 @@ cadmpeg_core::named_optional_field!(
     DesignRevolveSecondSideWire,
     "second_side"
 );
+cadmpeg_core::named_optional_field!(deserialize_solid, bool, "solid");
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -61,6 +62,12 @@ pub(crate) struct DesignRevolveConstruction {
     /// both sides of the profile plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) second_side: Option<DesignRevolveSecondSide>,
+    /// Solid flag of a referenced-angle form: `true` for a solid body and
+    /// `false` for a surface body.
+    pub(crate) solid: Option<bool>,
+    /// Whether the stored angle is negative, so that the profile turns toward
+    /// the negative normal of its sketch plane.
+    pub(crate) reversed: bool,
 }
 
 /// Opposite-side travel of a Symmetric or Two Sides `Revolve` scope.
@@ -118,6 +125,16 @@ struct DesignRevolveConstructionWire {
         deserialize_with = "deserialize_second_side"
     )]
     second_side: Option<DesignRevolveSecondSideWire>,
+    /// Solid flag of a referenced-angle form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_solid"
+    )]
+    solid: Option<bool>,
+    /// Whether the stored angle is negative.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    reversed: bool,
 }
 
 impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
@@ -136,6 +153,8 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
                 angle_record_index: side.angle_record_index,
                 angle_offset: side.angle_offset,
             }),
+            solid: value.solid,
+            reversed: value.reversed,
         }
     }
 }
@@ -174,6 +193,8 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
                     })
                 })
                 .transpose()?,
+            solid: value.solid,
+            reversed: value.reversed,
         })
     }
 }

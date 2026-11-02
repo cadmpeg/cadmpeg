@@ -33,7 +33,7 @@ fn position(record: &Record) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::new(x * CM_TO_MM, y * CM_TO_MM, z * CM_TO_MM))
 }
 
-fn line(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
+pub(super) fn line(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
     if !super::is_edge(edge) {
         return None;
     }

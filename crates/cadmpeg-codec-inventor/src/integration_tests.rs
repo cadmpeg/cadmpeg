@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod base;
+mod kernel;
 mod mirror;
 mod motion;
 
@@ -17,6 +18,7 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 
 mod combine;
+mod sketch_graph;
 mod surface_extrusion;
 mod thicken;
 
@@ -71,3 +73,5 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         assert!(errors.is_empty(), "{methods:?}: {errors:?}");
     }
 }
+
+mod coil;

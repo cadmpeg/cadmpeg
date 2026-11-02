@@ -125,6 +125,7 @@ const ARENAS: &[&str] = &[
 ];
 
 const OPTIONAL_ARENAS: &[&str] = &[
+    "pm_dc_thread_definitions",
     "body_wrapper_links",
     "composite_member_links",
     "pm_dc_sheet_metal_styles",
@@ -826,6 +827,17 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         HashMap::new()
     };
     for entity in &ir.model.sketch_entities {
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities
+                .get(reference)
+                .is_some_and(|source| crate::sketch::curve::is_non_geometric(source))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch entity source is a non-geometric sketch record".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
         if entity
             .native_ref
             .as_deref()
@@ -900,6 +912,24 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         HashMap::new()
     };
     for constraint in &ir.model.sketch_constraints {
+        if constraint.native_ref.as_deref().is_some_and(|reference| {
+            native_constraints.get(reference).is_some_and(|source| {
+                crate::sketch::curve::relation_stays_native(source, |reference| {
+                    reference
+                        .record_ordinal()
+                        .and_then(|ordinal| {
+                            entities.get(&(source.identity.segment_token.as_str(), ordinal))
+                        })
+                        .is_some_and(|entity| crate::sketch::curve::is_non_geometric(entity))
+                })
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch constraint source is a non-geometric sketch relation".into(),
+                Some(constraint.id.as_str().to_owned()),
+            ));
+        }
         if constraint
             .native_ref
             .as_deref()
@@ -1417,6 +1447,35 @@ fn validate_features(
             ));
         }
     }
+    unique(
+        findings,
+        data.pm_dc_thread_definitions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc thread definition",
+    );
+    for definition in &data.pm_dc_thread_definitions {
+        let token = definition.identity.segment_token.as_str();
+        if raw.get(&(token, definition.identity.record_ordinal))
+            != Some(&definition.identity.type_id.as_str())
+            || [
+                definition.header.owner,
+                definition.header.parent,
+                definition.header.next,
+            ]
+            .iter()
+            .any(|reference| !resolves(token, reference.index()))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc thread-definition record or reference does not resolve".into(),
+                Some(definition.id()),
+            ));
+        }
+    }
     for label in &data.pm_dc_feature_labels {
         let references = [
             label.header.owner.index(),
@@ -1501,6 +1560,17 @@ fn validate_features(
         .pm_dc_feature_labels
         .iter()
         .filter(|label| label.class_id() == crate::feature::tagging::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
+    let coil_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::coil::CLASS_ID)
         .filter_map(|label| {
             Some((
                 label.identity.segment_token.as_str(),
@@ -1871,6 +1941,25 @@ fn validate_features(
             ));
             continue;
         };
+        if coil_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !crate::feature::coil::definition_matches(
+                feature,
+                raw_feature,
+                results.contains_key(&feature.id),
+                &data.pm_dc_feature_labels,
+                &data.pm_dc_feature_properties,
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Coil requires its native definition while construction operands are unresolved".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if composite_owners.contains(&(
             raw_feature.identity.segment_token.as_str(),
             raw_feature.identity.record_ordinal,
@@ -1922,7 +2011,10 @@ fn validate_features(
                 face,
                 diameter,
                 extent,
-                ..
+                standard,
+                designation,
+                pitch,
+                modeled,
             },
         ) = feature.evaluation.definition()
         {
@@ -1947,9 +2039,22 @@ fn validate_features(
                 matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
                     if *native == collection.id())
             });
+            let thread_fields = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .map_or_else(crate::feature::thread::Fields::default, |label| {
+                    crate::feature::thread::fields(
+                        raw_feature,
+                        label,
+                        &data.pm_dc_thread_definitions,
+                    )
+                });
             if !label_matches
                 || !selection_matches
-                || diameter.is_some()
+                || *diameter != thread_fields.diameter
+                || *pitch != thread_fields.pitch
+                || *standard != thread_fields.standard
+                || *designation != thread_fields.designation
+                || modeled.is_some()
                 || extent.is_some()
                 || results.contains_key(&feature.id)
             {
@@ -2077,7 +2182,25 @@ fn validate_features(
                 }),
                 _ => false,
             };
-            if !admitted {
+            let historical_valid = crate::feature::edge_selection::historical::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                &data.active_carrier,
+                labels
+                    .get(&(token, raw_feature.identity.record_ordinal))
+                    .is_some_and(|label| label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID),
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                property,
+            );
+            if !admitted || !historical_valid {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral edge treatment operands differ from their PmDc slots".into(),
@@ -2814,6 +2937,7 @@ struct NativeData {
     pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
+    pm_dc_thread_definitions: Vec<crate::feature::thread::Definition>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
@@ -2899,6 +3023,8 @@ impl NativeData {
             pm_dc_feature_dimensions: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_dimensions")?,
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,
+            pm_dc_thread_definitions: namespace
+                .arena_as_for_decode(ctx, "pm_dc_thread_definitions")?,
             pm_dc_entity_style_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_entity_style_links")?,
             pm_dc_kernel_entity_links: namespace

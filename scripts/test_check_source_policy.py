@@ -55,6 +55,10 @@ class TempSourceCase(unittest.TestCase):
 
 
 class MeasurementDependencyTests(TempSourceCase):
+    def test_registry_composes_document_measurement(self) -> None:
+        self.write("crates/cadmpeg-registry/Cargo.toml", '[dependencies]\ncadmpeg-measure.workspace = true\n')
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
     def manifest(self, crate: str, tables: str) -> None:
         self.write(f"crates/{crate}/Cargo.toml", f'[package]\nname = "{crate}"\n\n{tables}')
 
@@ -1105,6 +1109,14 @@ class SourcePolicyCommand(TempSourceCase):
         with redirect_stdout(output):
             result = policy.main(list(args))
         return result, output.getvalue()
+
+    def test_authoring_only_reports_document_paths(self) -> None:
+        self.write('docs/example.md', '/home/author/work/example\n')
+        self.write('crates/demo/src/lib.rs', 'fn f() { let x = 1e-9; }\n')
+        result, output = self.run_check('--authoring-paths-only', '--json')
+        self.assertEqual(result, 1)
+        self.assertEqual([finding['rule'] for finding in json.loads(output)['findings']],
+                         ['authoring_path'])
 
     def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")

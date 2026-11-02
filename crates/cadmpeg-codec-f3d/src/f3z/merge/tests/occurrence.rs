@@ -183,6 +183,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             failed: std::collections::BTreeMap::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
+            component_path_tables: Vec::new(),
         }
         .merge(
             &mut ir,
@@ -385,7 +386,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         serde_json::Map::new(),
     )
     .unwrap();
@@ -420,7 +420,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         configurations[0].id(),
         "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
     );
-    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+    assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
 
 #[test]
@@ -442,7 +442,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         configuration_payload.clone(),
     )
     .expect("admitted configuration payload");
@@ -510,7 +509,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_configurations[0].payload(),
-        configuration_payload,
+        &configuration_payload,
         "configuration text and extension map keys are source payload, not identities"
     );
 }
@@ -703,6 +702,7 @@ fn parameter_document(
                 record_index: u32::try_from(ordinal).unwrap(),
                 source_ordinal: u32::try_from(ordinal).unwrap(),
                 source: DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: None,
                 },
                 expression: expression.into(),
@@ -901,6 +901,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         failed: std::collections::BTreeMap::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
@@ -1394,6 +1395,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 failed: std::collections::BTreeMap::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
+                component_path_tables: Vec::new(),
             }
             .merge(
                 &mut ir,

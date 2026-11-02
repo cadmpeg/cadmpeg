@@ -89,6 +89,25 @@ fn derived(mirror: bool) -> (SyntheticRecords, BaseEnvelopeRecords) {
     (design, base)
 }
 
+fn derived_at_version(mirror: bool, version: u8) -> (SyntheticRecords, BaseEnvelopeRecords) {
+    let (mut design, mut base) = derived(mirror);
+    base.design_version = version;
+    if version == 23 {
+        for ordinal in [2, 3, 8, 12, 17] {
+            design[ordinal]
+                .1
+                .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
+        }
+        push_u32(
+            &mut design[9].1,
+            crate::layout::pm_dc_derived_component_suffix::STATE_VALUE,
+        );
+        let footer = design[16].1.len() - 2 * std::mem::size_of::<u32>();
+        design[16].1.insert(footer, 0);
+    }
+    (design, base)
+}
+
 fn decoded(
     design: &SyntheticRecords,
     base: &BaseEnvelopeRecords,
@@ -105,9 +124,13 @@ fn decoded(
 
 #[test]
 fn derived_identity_and_reflection_retain_exact_native_source_and_stored_result() {
-    for mirror in [false, true] {
-        let (design, base) = derived(mirror);
+    for (version, mirror) in [(19, false), (19, true), (23, false), (23, true)] {
+        let (design, base) = derived_at_version(mirror, version);
         let (ir, report, fidelity) = decoded(&design, &base).into_parts();
+        assert!(!report.losses.iter().any(|loss| loss.code
+            == InventorLossCode::FeatureDerivedResultNative
+                .note("resolved result")
+                .code));
         assert!(report.losses.iter().any(|loss| loss.code
             == InventorLossCode::FeatureDerivedSourceNative
                 .note("source retention")
@@ -221,13 +244,13 @@ fn derived_refuses_each_changed_operand_and_pins_native_source_loss() {
 
 #[test]
 fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers() {
-    for mirror in [false, true] {
-        let (design, base) = derived(mirror);
+    for (version, mirror) in [(19, false), (19, true), (23, false), (23, true)] {
+        let (design, base) = derived_at_version(mirror, version);
         let ir = decoded(&design, &base).into_parts().0;
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-        for change in 0..10 {
+        for change in 0..15 {
             let mut changed = ir.clone();
             if change < 2 {
                 let feature = changed
@@ -250,7 +273,7 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                 };
                 let mut records: Vec<serde_json::Value> =
                     namespace.arena_as(arena_name).expect("native records");
-                let ordinal = if change == 2 {
+                let ordinal = if matches!(change, 2 | 10 | 12 | 13) {
                     8
                 } else if change == 6 {
                     10
@@ -288,7 +311,11 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                         record["payload_len"] = 55.into();
                         record["trailing_payload_len"] = 55.into();
                     }
-                    _ => record["save_version_major"] = 18.into(),
+                    9 => record["save_version_major"] = 18.into(),
+                    10 => record["header"]["stamps"] = serde_json::json!([0, 0]),
+                    11 => record["header"]["stamps"] = serde_json::json!([0]),
+                    12 => record["header"]["stamps"] = serde_json::json!([-2]),
+                    _ => record["header"]["flags_extension"] = 0.into(),
                 }
                 namespace
                     .set_arena(&ctx, arena_name, &records)
@@ -307,48 +334,55 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
 
 #[test]
 fn derived_keeps_translated_source_placement_without_changing_stored_result_geometry() {
-    let (mut design, base) = derived(false);
-    let mut transform = content(112);
-    push_u16(&mut transform, 0x8421);
-    push_u16(&mut transform, 0x7356);
-    for value in [2.0_f64, 3.0, 4.0] {
-        transform.extend_from_slice(&value.to_le_bytes());
+    for version in [19, 23] {
+        let (mut design, base) = derived_at_version(false, version);
+        let mut transform = content(112);
+        if version == 23 {
+            push_u32(&mut transform, u32::MAX);
+        }
+        push_u16(&mut transform, 0x8421);
+        push_u16(&mut transform, 0x7356);
+        for value in [2.0_f64, 3.0, 4.0] {
+            transform.extend_from_slice(&value.to_le_bytes());
+        }
+        design[12].1 = transform;
+        let (ir, _, _) = decoded(&design, &base).into_parts();
+        let transforms: Vec<serde_json::Value> = ir
+            .native
+            .namespace("inventor")
+            .expect("namespace")
+            .arena_as("pm_dc_transforms")
+            .expect("source transforms");
+        for (row, expected) in [2.0, 3.0, 4.0].into_iter().enumerate() {
+            assert_eq!(transforms[0]["matrix"][row][3], expected);
+        }
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|f| f.source_properties.contains_key("derived_source"))
+            .expect("derived stored body");
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+        ));
+        let ordinary = decoded(&derived_at_version(false, version).0, &base)
+            .into_parts()
+            .0;
+        assert_eq!(ir.model.bodies, ordinary.model.bodies);
+        assert_eq!(ir.model.points, ordinary.model.points);
+        assert_eq!(ir.model.surfaces, ordinary.model.surfaces);
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let findings = crate::InventorCodec
+            .validate_native(&ctx, &ir, None)
+            .expect("native validation");
+        assert!(
+            !findings.iter().any(|f| f.severity >= Severity::Error),
+            "{findings:?}"
+        );
     }
-    design[12].1 = transform;
-    let (ir, _, _) = decoded(&design, &base).into_parts();
-    let transforms: Vec<serde_json::Value> = ir
-        .native
-        .namespace("inventor")
-        .expect("namespace")
-        .arena_as("pm_dc_transforms")
-        .expect("source transforms");
-    for (row, expected) in [2.0, 3.0, 4.0].into_iter().enumerate() {
-        assert_eq!(transforms[0]["matrix"][row][3], expected);
-    }
-    let feature = ir
-        .model
-        .features
-        .iter()
-        .find(|f| f.source_properties.contains_key("derived_source"))
-        .expect("derived stored body");
-    assert!(matches!(
-        feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
-    ));
-    let ordinary = decoded(&derived(false).0, &base).into_parts().0;
-    assert_eq!(ir.model.bodies, ordinary.model.bodies);
-    assert_eq!(ir.model.points, ordinary.model.points);
-    assert_eq!(ir.model.surfaces, ordinary.model.surfaces);
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let findings = crate::InventorCodec
-        .validate_native(&ctx, &ir, None)
-        .expect("native validation");
-    assert!(
-        !findings.iter().any(|f| f.severity >= Severity::Error),
-        "{findings:?}"
-    );
 }
 
 #[test]
@@ -432,35 +466,110 @@ fn derived_validator_checks_all_three_feature_slot_qualifiers_and_nulls() {
 
 #[test]
 fn derived_without_a_current_body_key_stays_native_with_source_loss() {
-    let (design, mut base) = derived(false);
-    base.brep[0].1[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4]
-        .copy_from_slice(&99_u32.to_le_bytes());
-    let (ir, report, _) = decoded(&design, &base).into_parts();
-    let feature = ir
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("inventor:pmdc:feature#dc-1"))
-        .expect("derived feature");
-    assert!(matches!(
-        feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
-    ));
-    assert!(!feature.source_properties.contains_key("derived_source"));
-    assert!(report.losses.iter().any(|loss| loss.code
-        == InventorLossCode::FeatureDerivedSourceNative
-            .note("unresolved derived source")
-            .code));
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let findings = crate::InventorCodec
-        .validate_native(&ctx, &ir, None)
-        .expect("native validation");
-    assert!(
-        !findings
+    for version in [19, 23] {
+        let (design, mut base) = derived_at_version(false, version);
+        base.brep[0].1[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4]
+            .copy_from_slice(&99_u32.to_le_bytes());
+        let (ir, report, _) = decoded(&design, &base).into_parts();
+        let feature = ir
+            .model
+            .features
             .iter()
-            .any(|finding| finding.severity >= Severity::Error),
-        "{findings:?}"
-    );
+            .find(|feature| feature.native_ref.as_deref() == Some("inventor:pmdc:feature#dc-1"))
+            .expect("derived feature");
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ));
+        assert!(!feature.source_properties.contains_key("derived_source"));
+        let result_losses: Vec<_> = report
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == InventorLossCode::FeatureDerivedResultNative
+                        .note("result operand")
+                        .code
+            })
+            .collect();
+        assert_eq!(result_losses.len(), 1);
+        assert_eq!(result_losses[0].message,
+        "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.");
+        assert!(report.losses.iter().any(|loss| loss.code
+            == InventorLossCode::FeatureDerivedSourceNative
+                .note("unresolved derived source")
+                .code));
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let findings = crate::InventorCodec
+            .validate_native(&ctx, &ir, None)
+            .expect("native validation");
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.severity >= Severity::Error),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
+fn derived_version_23_refuses_suffix_polarity_missing_suffix_and_extra_stamps() {
+    for change in 0..5 {
+        let (mut design, base) = derived_at_version(false, 23);
+        match change {
+            0 => {
+                let terminal =
+                    design[9].1.len() - crate::layout::pm_dc_derived_component_suffix::LEN;
+                design[9].1[terminal..].copy_from_slice(&1_u32.to_le_bytes());
+            }
+            1 => {
+                design[9]
+                    .1
+                    .truncate(header::LEN + crate::layout::pm_dc_derived_component_fields::LEN);
+            }
+            2 => {
+                push_u32(&mut design[9].1, 0);
+            }
+            3 => {
+                design[8].1.drain(
+                    header::LEN..header::LEN + crate::layout::pm_dc_derived_source_stamp::LEN,
+                );
+            }
+            _ => {
+                design[9]
+                    .1
+                    .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
+            }
+        }
+        let (ir, report, _) = decoded(&design, &base).into_parts();
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|f| f.native_ref.as_deref() == Some("inventor:pmdc:feature#dc-1"))
+            .expect("derived feature");
+        assert!(
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            ),
+            "mutation {change}"
+        );
+        assert!(report.losses.iter().any(|loss| loss.code
+            == InventorLossCode::FeatureDerivedSourceNative
+                .note("source retention")
+                .code));
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let findings = crate::InventorCodec
+            .validate_native(&ctx, &ir, None)
+            .expect("native validation");
+        assert!(
+            !findings.iter().any(|f| f.severity >= Severity::Error),
+            "mutation {change}: {findings:?}"
+        );
+    }
 }

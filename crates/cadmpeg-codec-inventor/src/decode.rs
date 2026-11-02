@@ -542,6 +542,13 @@ fn decode_container<'a>(
         &feature_inventory.dimensions,
     )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    if !feature_inventory.thread_definitions.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_thread_definitions",
+            &feature_inventory.thread_definitions,
+        )?;
+    }
     if !feature_inventory.sheet_metal_styles.is_empty() {
         namespace.set_arena(
             ctx,
@@ -641,8 +648,9 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
+    let mut stored_body_losses = Vec::new();
     if !body_keys.is_empty() {
-        let transferred = crate::feature::base::project(
+        let projection = crate::feature::base::project(
             ctx,
             &container.rse,
             &feature_inventory,
@@ -653,10 +661,11 @@ fn decode_container<'a>(
         )?;
         unresolved.features = unresolved
             .features
-            .checked_sub(transferred)
+            .checked_sub(projection.transferred)
             .ok_or_else(|| {
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
+        stored_body_losses = projection.losses;
     }
     let composite_links = if delivered == DecodeDepth::Full {
         crate::feature::composite::links(
@@ -908,10 +917,15 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(stored_body_losses);
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));
         losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
+        losses.extend(crate::feature::coil::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(composite_losses);
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
@@ -963,10 +977,8 @@ fn decode_container<'a>(
                 )
             })
             .count();
-        if partial_threads != 0 {
-            losses.push(InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
-                "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
-            )));
+        if let Some(loss) = crate::feature::thread::partial_loss(partial_threads) {
+            losses.push(loss);
         }
         losses.extend(crate::feature::thicken_operand_losses(
             &ir.model.features,
@@ -1017,15 +1029,11 @@ fn decode_container<'a>(
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
-        if unresolved.sketches != 0
-            || unresolved.sketch_entities != 0
-            || unresolved.sketch_constraints != 0
-        {
-            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
-                "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
-                unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
-            )));
-        }
+        losses.extend(crate::sketch::graph_loss(
+            unresolved.sketches,
+            unresolved.sketch_entities,
+            unresolved.sketch_constraints,
+        ));
         if unresolved.sketch_construction != 0 {
             losses.push(InventorLossCode::SketchConstructionUnresolved.note(format!(
                 "{} Inventor sketch curve(s) carry entity flags whose construction meaning is unresolved; they project as geometry and stay out of the sketch profile tables.",

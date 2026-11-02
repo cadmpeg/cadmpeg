@@ -62,7 +62,7 @@ fn triangle_topology_spans_name_every_record_family() {
             "missing topology tag {tag:#04x}"
         );
     }
-    let records: std::collections::BTreeSet<u16> =
+    let records: std::collections::BTreeSet<u32> =
         ledger.spans.iter().map(|span| span.record).collect();
     for attr in [10, 20, 30, 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62, 100] {
         assert!(records.contains(&attr), "missing record {attr}");
@@ -238,7 +238,7 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
 }
 
 #[test]
-fn a_plain_stream_face_framed_on_a_stored_tolerance_has_a_span() {
+fn a_face_with_a_stored_tolerance_has_a_span_in_each_stream_mode() {
     // The typed FACE 10 supersedes the bridge FACE 10.
     let mut body = syn::triangle_body();
     let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
@@ -251,11 +251,11 @@ fn a_plain_stream_face_framed_on_a_stored_tolerance_has_a_span() {
     body[bridge + 10..bridge + 18].copy_from_slice(&1.0e-8f64.to_be_bytes());
     body[typed + 11..typed + 19].copy_from_slice(&1.0e-8f64.to_be_bytes());
 
-    let plain = ExactReadLedger::collect_plain("", &body);
-    assert_ledger_sound(&body, &plain);
-    assert!(plain
-        .spans
-        .iter()
-        .any(|span| span.tag == 0x0e && span.offset == typed));
-    assert!(!collect(&body).spans.iter().any(|span| span.tag == 0x0e));
+    for ledger in [ExactReadLedger::collect_plain("", &body), collect(&body)] {
+        assert_ledger_sound(&body, &ledger);
+        assert!(ledger
+            .spans
+            .iter()
+            .any(|span| span.tag == 0x0e && span.offset == typed));
+    }
 }

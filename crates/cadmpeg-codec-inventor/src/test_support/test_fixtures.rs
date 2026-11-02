@@ -797,6 +797,71 @@ fn asm_kernel_stream() -> Vec<u8> {
     kernel
 }
 
+pub(crate) fn empty_asm_history_kernel_stream() -> Vec<u8> {
+    let mut kernel = b"ASM BinaryFile4".to_vec();
+    for value in [22_000_u32, 1, 1, 1] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ASM");
+    kernel.extend_from_slice(&[0x0d, 9]);
+    kernel.extend_from_slice(b"asmheader");
+    kernel.push(0x11);
+    for (tag, name) in [
+        (0x0e, "Begin"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0e, "History"),
+        (0x0d, "Data"),
+    ] {
+        kernel.push(tag);
+        kernel.push(u8::try_from(name.len()).expect("fixture identifier length"));
+        kernel.extend_from_slice(name.as_bytes());
+    }
+    kernel.extend_from_slice(&[0x0d, 14]);
+    kernel.extend_from_slice(b"history_stream");
+    for value in [2_i32, 2, 0, 1] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-1_i32, 0, 0, -1] {
+        kernel.push(0x0c);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x11);
+    kernel.extend_from_slice(&[0x0d, 11]);
+    kernel.extend_from_slice(b"delta_state");
+    for value in [2_i32, 1, 0] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-1_i32, -1, 0, -1, 0] {
+        kernel.push(0x0c);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x0b);
+    for value in [0_i32, 0] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x11);
+    for (tag, name) in [
+        (0x0e, "End"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0e, "History"),
+        (0x0d, "Section"),
+        (0x0e, "End"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0d, "data"),
+    ] {
+        kernel.push(tag);
+        kernel.push(u8::try_from(name.len()).expect("fixture identifier length"));
+        kernel.extend_from_slice(name.as_bytes());
+    }
+    kernel
+}
+
 /// An `ACIS BinaryFile` stream at one save format, for the band tests.
 pub(crate) fn acis_kernel_stream(save_format_version: u32) -> Vec<u8> {
     let mut kernel = b"ACIS BinaryFile".to_vec();

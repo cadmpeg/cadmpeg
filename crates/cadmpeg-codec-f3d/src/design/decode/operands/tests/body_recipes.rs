@@ -239,10 +239,12 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 0,
+            target_body_node: None,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: crate::records::feature::combine::DesignCombineBodySelection {
                     record_index: record.record_index,
                     external_identity: None,
+                    body_node: None,
                 },
                 additional: Vec::new(),
             },

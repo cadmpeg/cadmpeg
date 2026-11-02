@@ -609,6 +609,32 @@ pub(super) fn unique_revolve_angle_owner<'a>(
     record_index: Option<u32>,
     local_ordinal: u32,
 ) -> Option<&'a DesignParameterOwner> {
+    revolve_angle_owner(
+        scope,
+        parameter_owners,
+        record_index,
+        local_ordinal,
+        |angle| angle > 0.0,
+    )
+}
+
+/// The angle owner at local ordinal zero that a referenced-angle `Revolve`
+/// scope names; its angle can be negative.
+pub(super) fn referenced_revolve_angle_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: u32,
+) -> Option<&'a DesignParameterOwner> {
+    revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |_| true)
+}
+
+fn revolve_angle_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: Option<u32>,
+    local_ordinal: u32,
+    admits: impl Fn(f64) -> bool,
+) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
             && owner.scope_record_index() == scope.record_index
@@ -618,7 +644,7 @@ pub(super) fn unique_revolve_angle_owner<'a>(
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
             && owner.local_ordinal() == local_ordinal
-            && owner.evaluated_value().get() > 0.0
+            && admits(owner.evaluated_value().get())
     });
     let angle = candidates.next()?;
     candidates.next().is_none().then_some(angle)

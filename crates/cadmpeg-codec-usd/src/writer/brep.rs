@@ -3,10 +3,10 @@
 
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh};
 use cadmpeg_ir::topology::Body;
-use cadmpeg_ir::CadIr;
 
 use cadmpeg_tessellate::Tessellator;
 
@@ -46,8 +46,8 @@ fn grow_carrier(geometry: &SolvedSurfaceGeometry, grow: &mut impl FnMut(Point3))
 
 /// The tessellation limits of a body: a chord of a fixed share of its
 /// vertex-and-carrier box diagonal, and pcurves to half the model tolerance.
-pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Options {
-    let model = &ir.model;
+pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tessellate::Options {
+    let query = StandardIndex;
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
     let mut grow = |position: Point3| {
@@ -56,17 +56,17 @@ pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Optio
             high[axis] = high[axis].max(value);
         }
     };
-    let faces = model
-        .shells
+    let faces = body
+        .regions
         .iter()
-        .filter(|shell| body.regions.contains(&shell.region))
+        .filter_map(|region| index.regions(region.as_str(), query))
+        .flat_map(|region| region.shells.iter())
+        .filter_map(|shell| index.shells(shell.as_str(), query))
         .flat_map(|shell| shell.faces().iter())
-        .filter_map(|face| model.faces.iter().find(|candidate| &candidate.id == face));
+        .filter_map(|face| index.faces(face.as_str(), query));
     for face in faces {
-        if let Some(geometry) = model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
+        if let Some(geometry) = index
+            .surfaces(face.surface.as_str(), query)
             .and_then(|surface| surface.geometry.solved())
         {
             grow_carrier(geometry, &mut grow);
@@ -74,21 +74,14 @@ pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Optio
         let edges = face
             .loops
             .iter()
-            .filter_map(|loop_id| model.loops.iter().find(|loop_| &loop_.id == loop_id))
+            .filter_map(|loop_id| index.loops(loop_id.as_str(), query))
             .flat_map(|loop_| loop_.coedges().iter())
-            .filter_map(|coedge| {
-                model
-                    .coedges
-                    .iter()
-                    .find(|candidate| &candidate.id == coedge)
-            })
-            .filter_map(|coedge| model.edges.iter().find(|edge| edge.id == coedge.edge));
+            .filter_map(|coedge| index.coedges(coedge.as_str(), query))
+            .filter_map(|coedge| index.edges(coedge.edge.as_str(), query));
         for vertex in edges.flat_map(|edge| [&edge.start, &edge.end]) {
-            if let Some(point) = model
-                .vertices
-                .iter()
-                .find(|candidate| &candidate.id == vertex)
-                .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
+            if let Some(point) = index
+                .vertices(vertex.as_str(), query)
+                .and_then(|vertex| index.points(vertex.point.as_str(), query))
             {
                 grow(point.position().get());
             }
@@ -98,7 +91,7 @@ pub(super) fn mesh_options(ir: &CadIr, body: &Body) -> cadmpeg_tessellate::Optio
         .map(|axis| (high[axis] - low[axis]).powi(2))
         .sum::<f64>()
         .sqrt();
-    let tolerance = ir.tolerances.linear.get();
+    let tolerance = index.ir().tolerances.linear.get();
     let chord = if diagonal.is_finite() && diagonal > 0.0 {
         (diagonal * CHORD_RATIO).max(tolerance * MIN_CHORD_TOLERANCES)
     } else {

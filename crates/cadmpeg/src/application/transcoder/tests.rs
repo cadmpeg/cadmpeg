@@ -1,11 +1,9 @@
 #[cfg(feature = "rhino")]
 use cadmpeg_test_support::wire;
 
-#[cfg(any(feature = "iges", feature = "step"))]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step", feature = "usd"))]
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;

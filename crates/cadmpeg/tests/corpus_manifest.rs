@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Pin each corpus fixture's dialect and fail when classification drifts.
+//! Check every corpus specimen: pin its dialect, and require it to pass
+//! `cadmpeg check`.
 //!
-//! `corpus/manifest.toml` records donor-supplied facts about each fixture. One
-//! field is not donor-supplied: `dialect` is derived, by running this codec's
+//! `corpus/manifest.toml` records hand-written facts about each fixture from
+//! its donor or curator. One field is derived: `dialect`, by running this codec's
 //! own `inspect()` over the fixture's bytes and reading the primary layer's
 //! registry id out of the resulting `ContainerSummary`. Pinning it turns
 //! classification into a golden — a codec change that reclassifies a corpus
@@ -23,7 +24,11 @@
 
 use std::fmt::Write as _;
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use cadmpeg_core::decode::InspectOptions;
 use serde::Deserialize;
@@ -187,6 +192,61 @@ fn corpus_manifest_dialects_name_registry_rows() {
             entry.filename
         );
     }
+}
+
+/// Every specimen passes `cadmpeg check`: it decodes, its neutral model and
+/// native namespaces validate, and its measurement completes.
+#[test]
+fn corpus_specimens_pass_check() {
+    let manifest: Manifest =
+        toml::from_str(&std::fs::read_to_string(manifest_path()).unwrap()).unwrap();
+    let corpus = repo_root().join("corpus");
+    let next = AtomicUsize::new(0);
+    let failures = Mutex::new(Vec::new());
+    let workers = std::thread::available_parallelism()
+        .map_or(1, NonZeroUsize::get)
+        .min(manifest.files.len());
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                while let Some(entry) = manifest.files.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let output = Command::new(env!("CARGO_BIN_EXE_cadmpeg"))
+                        .arg("check")
+                        .arg("--input-format")
+                        .arg(&entry.format)
+                        .arg(corpus.join(&entry.filename))
+                        .output()
+                        .unwrap();
+                    if output.status.success() {
+                        continue;
+                    }
+                    let report = [output.stdout, output.stderr].concat();
+                    let report = String::from_utf8_lossy(&report);
+                    let errors: Vec<&str> = report
+                        .lines()
+                        .filter(|line| {
+                            line.starts_with("check:")
+                                || line.starts_with("error:")
+                                || line.contains("[error/")
+                        })
+                        .collect();
+                    failures.lock().unwrap().push(format!(
+                        "{} ({}):\n{}",
+                        entry.filename,
+                        output.status,
+                        errors.join("\n")
+                    ));
+                }
+            });
+        }
+    });
+    let failures = failures.into_inner().unwrap();
+    assert!(
+        failures.is_empty(),
+        "{} specimen(s) failed `cadmpeg check`:\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
 }
 
 /// Every `id` declared by a `[[dialect]]` row in the identity registry.

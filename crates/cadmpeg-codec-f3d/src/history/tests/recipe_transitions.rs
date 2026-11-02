@@ -456,6 +456,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
                 .unwrap(),
+            extended: None,
         });
     }
     let mut cylinder_operand = operand.clone();
@@ -751,12 +752,67 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
+const HOLE_CANDIDATE_HISTORY: &str =
+    "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2";
+
 fn hole_face_case() -> (
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureInputTopology>,
     cadmpeg_ir::features::FeatureId,
 ) {
+    hole_face_case_in("f3d:history", vec![1])
+}
+
+fn hole_face_case_in(
+    operation_history: &str,
+    candidate_states: Vec<i64>,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    cadmpeg_ir::features::FeatureId,
+) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        operation_history.into(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
+    hole_case_with(candidate_states, Vec::new(), history)
+}
+
+fn hole_case_with(
+    candidate_states: Vec<i64>,
+    locations: Vec<crate::records::feature::hole::DesignHoleLocation>,
+    history: crate::history_records::AsmHistory,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    cadmpeg_ir::features::FeatureId,
+) {
     use crate::records::{
         feature::{
             hole::{DesignHoleConstruction, DesignHoleFaceSelection},
@@ -794,7 +850,7 @@ fn hole_face_case() -> (
             direction_offset: 0,
             point_parameters: crate::test_support::reals([0.0; 2]),
             point_parameter_offsets: [0, 0],
-            reference_type: 0,
+            reference_type: 13,
             reference_type_offset: 0,
             tangent_point_data: None,
             input_records: vec![crate::records::identity::Located {
@@ -822,18 +878,18 @@ fn hole_face_case() -> (
                 primary_identity_offset: 0,
                 secondary: None,
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-                    history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
-                        .into(),
+                    history_id: HOLE_CANDIDATE_HISTORY.into(),
                     historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Pcurve,
                         entity_ref: 18044,
-                        state_ids: vec![1],
+                        state_ids: candidate_states,
                     },
                     face_slot: 30,
                 }],
                 next_record_index: 104,
                 next_byte_offset: 0,
             }),
+            locations,
         });
     }
     let mut feature = Feature {
@@ -889,7 +945,100 @@ fn hole_face_case() -> (
         edge_geometry: Vec::new(),
         native_ref: None,
     }];
-    let state = |state_id, next_ref| {
+
+    bind_feature_face_selections(
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: &[scope],
+            groups: &[],
+            operands: &[],
+            entity_operands: &[],
+            body_recipe_operands: &[],
+            histories: &mut [history],
+        },
+    );
+
+    (feature, input_topologies, feature_id)
+}
+
+/// A plate whose top face 10 the Hole updates, with a rim centred on (10, 15, 20)
+/// millimetres and an inserted cylinder on that axis.
+fn drilled_plate_history() -> crate::history_records::AsmHistory {
+    use crate::history_records::{
+        AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
+        AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalOptionalCarrierBinding,
+        AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalTopology,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let axis = Vector3::new(0.0, 0.0, -1.0);
+    let top = AsmHistoricalPlane {
+        surface: 100,
+        origin: Point3::new(20.0, 15.0, 20.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let preceding = AsmHistoricalTopology {
+        faces: vec![10],
+        surfaces: vec![100],
+        surface_planes: vec![top.clone()],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 10,
+            carrier: 100,
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let result = AsmHistoricalTopology {
+        faces: vec![10, 30],
+        surfaces: vec![100, 300],
+        loops: vec![40],
+        coedges: vec![41],
+        edges: vec![42],
+        curves: vec![43],
+        surface_planes: vec![top],
+        surface_cylinders: vec![AsmHistoricalCylinder {
+            surface: 300,
+            origin: Point3::new(10.0, 15.0, 15.0),
+            axis,
+            radius: 2.5,
+        }],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 100,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 30,
+                carrier: 300,
+            },
+        ],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 10,
+            member_refs: vec![40],
+        }],
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: 40,
+            member_refs: vec![41],
+        }],
+        coedge_topology: vec![AsmHistoricalCoedge {
+            coedge: 41,
+            owner_loop: 40,
+            edge: 42,
+            next: 41,
+            previous: 41,
+            radial_next: 41,
+        }],
+        edge_curves: vec![AsmHistoricalOptionalCarrierBinding {
+            entity: 42,
+            carrier: Some(43),
+        }],
+        curve_axes: vec![AsmHistoricalCurveAxis {
+            curve: 43,
+            origin: Point3::new(10.0, 15.0, 20.0),
+            direction: axis,
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let state = |state_id: i64, topology, next_ref, face_record| {
         (
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
@@ -907,32 +1056,105 @@ fn hole_face_case() -> (
                 records: Vec::new(),
                 transition: None,
             },
-            Some(AsmHistoricalTopology::default()),
-            Vec::new(),
+            Some(topology),
+            vec![AsmEntityVersion {
+                entity_ref: 10,
+                record_ref: face_record,
+            }],
         )
     };
-    let history = crate::test_support::history::history(
-        "f3d:history".into(),
+    crate::test_support::history::history(
+        HOLE_CANDIDATE_HISTORY.into(),
         0,
         None,
         false,
-        vec![state(2, Some(1)), state(1, None)],
-    );
+        vec![
+            state(2, result, Some(1), 110),
+            state(1, preceding, None, 10),
+        ],
+    )
+}
 
-    bind_feature_face_selections(
-        std::slice::from_mut(&mut feature),
-        &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
-            scopes: &[scope],
-            groups: &[],
-            operands: &[],
-            entity_operands: &[],
-            body_recipe_operands: &[],
-            histories: &mut [history],
-        },
-    );
+fn entry_location(position: [f64; 3]) -> crate::records::feature::hole::DesignHoleLocation {
+    crate::records::feature::hole::DesignHoleLocation {
+        record_index: 60,
+        position: crate::test_support::reals(position),
+        position_offset: 0,
+        reference_type: 10,
+    }
+}
 
-    (feature, input_topologies, feature_id)
+#[test]
+fn hole_support_face_binds_ahead_of_a_selection_candidate() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (feature, topologies, feature_id) = hole_case_with(
+        vec![1],
+        vec![entry_location([1.0, 1.5, 2.0])],
+        drilled_plate_history(),
+    );
+    let prefix = crate::ids::feature_input_prefix(&feature_id, 1);
+    let expected =
+        crate::ids::history_input_face_id(&prefix, cadmpeg_ir::ids::IdentityKey::from(10));
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        face: Some(FaceSelection::Historical { state, faces, .. }),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("Hole support face stays unresolved");
+    };
+    assert_eq!(
+        state,
+        &crate::ids::feature_input_topology_id(&feature_id, 1)
+    );
+    assert_eq!(faces.as_slice(), [expected.clone()]);
+    assert!(topologies[0].faces.contains(&expected));
+}
+
+#[test]
+fn hole_entry_off_the_support_plane_falls_back_to_its_selection_candidate() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (feature, _, feature_id) = hole_case_with(
+        vec![1],
+        vec![entry_location([1.0, 1.5, 3.0])],
+        drilled_plate_history(),
+    );
+    let prefix = crate::ids::feature_input_prefix(&feature_id, 1);
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        face: Some(FaceSelection::Historical { faces, .. }),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("Hole keeps its selection candidate");
+    };
+    assert_eq!(
+        faces.as_slice(),
+        [crate::ids::history_input_face_id(
+            &prefix,
+            cadmpeg_ir::ids::IdentityKey::from(30)
+        )]
+    );
+}
+
+#[test]
+fn hole_face_candidate_of_the_operation_history_binds_only_in_the_input_state() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let face_of = |feature: &cadmpeg_ir::features::Feature| match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            face: Some(face), ..
+        }) => face.clone(),
+        _ => panic!("Hole definition"),
+    };
+
+    let (feature, topologies, _) = hole_face_case_in(HOLE_CANDIDATE_HISTORY, vec![1, 5]);
+    assert!(matches!(
+        face_of(&feature),
+        FaceSelection::Historical { .. }
+    ));
+    assert_eq!(topologies[0].faces.as_slice().len(), 1);
+
+    let (feature, topologies, _) = hole_face_case_in(HOLE_CANDIDATE_HISTORY, vec![5]);
+    assert!(matches!(face_of(&feature), FaceSelection::Native(_)));
+    assert!(topologies[0].faces.as_slice().is_empty());
 }
 
 #[test]

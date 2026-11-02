@@ -288,6 +288,12 @@ fn source_body(
     .is_some())
 }
 
+#[derive(Default)]
+pub(crate) struct Projection {
+    pub(crate) transferred: usize,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
@@ -296,9 +302,9 @@ pub(crate) fn project(
     transforms: &[crate::sketch::PmDcTransform],
     keys: &[BodyNativeKey],
     model: &mut cadmpeg_ir::document::Model,
-) -> Result<usize, CodecError> {
+) -> Result<Projection, CodecError> {
     let crate::kernel::ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     if PmDcReference::from_packed(carrier.selected_key)
         != PmDcReference::new(
@@ -310,15 +316,15 @@ pub(crate) fn project(
         )
         .ok_or_else(|| CodecError::malformed("Inventor carrier reference overflow"))?
     {
-        return Ok(0);
+        return Ok(Projection::default());
     }
     let Some(target) = one(document.segments.iter().filter(|segment| {
         segment.kind == SegmentKind::PmBRep && segment.pair.token.key() == &carrier.segment_token
     })) else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     let SegmentMetaState::Parsed(target_meta) = &target.meta else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     if document
         .segments
@@ -330,7 +336,7 @@ pub(crate) fn project(
         .count()
         != 1
     {
-        return Ok(0);
+        return Ok(Projection::default());
     }
     let properties = unique_index(inventory.properties.iter().map(|property| {
         (
@@ -356,7 +362,7 @@ pub(crate) fn project(
             label,
         )
     }));
-    let mut transferred = 0;
+    let mut projection = Projection::default();
     let mut sources = std::collections::HashMap::new();
     let mut external_counts = std::collections::HashMap::new();
     for feature in &mut model.features {
@@ -494,6 +500,11 @@ pub(crate) fn project(
             carrier.record_ordinal,
             keys,
         ) else {
+            if derived.is_some() {
+                projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
+                    "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
+                ));
+            }
             continue;
         };
         if !model
@@ -544,9 +555,9 @@ pub(crate) fn project(
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::StoredGeometry {},
             ));
-        transferred += 1;
+        projection.transferred += 1;
     }
-    Ok(transferred)
+    Ok(projection)
 }
 
 pub(crate) fn wrappers<'a>(

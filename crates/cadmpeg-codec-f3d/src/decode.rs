@@ -271,8 +271,14 @@ fn report_unresolved_dimension_companions(report: &mut DecodeBody, count: usize)
 fn report_unresolved_configuration_rules(
     report: &mut DecodeBody,
     configurations: &[crate::records::configuration::DesignConfiguration],
+    unbound_roots: usize,
     ir: &CadIr,
 ) {
+    if unbound_roots != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationActiveRowUnbound, format_args!(
+            "{unbound_roots} Design configuration root record(s) were retained without an admitted active row of a unique table document."
+        ),);
+    }
     let count =
         crate::design::configurations::unresolved_configuration_member_count(configurations);
     if count != 0 {
@@ -302,7 +308,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
-            "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
+            "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
         ),);
     }
 }
@@ -318,6 +324,7 @@ fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
+    history_only_body_bindings: usize,
     incomplete_features: usize,
     native_reference_images: usize,
     native_decals: usize,
@@ -837,6 +844,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             removed_faces,
             thickness,
             outward,
+            mode,
             ..
         }) => {
             let bodies_are_resolved = bodies.as_ref().is_none_or(body_selection_is_resolved);
@@ -848,7 +856,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !bodies_are_resolved
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
                 || thickness.is_none()
-                || outward.is_none()
+                || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
@@ -1316,7 +1324,12 @@ fn design_projection_gaps(
         unresolved_body_bindings: native
             .design_body_bindings
             .iter()
-            .filter(|binding| binding.body.is_none())
+            .filter(|binding| binding.body.is_none() && !binding.history_only)
+            .count(),
+        history_only_body_bindings: native
+            .design_body_bindings
+            .iter()
+            .filter(|binding| binding.history_only)
             .count(),
         unprojected_history_dependencies,
         ambiguous_history_dependencies,
@@ -1977,6 +1990,16 @@ fn report_design_projection_gaps(
             format_args!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
                 gaps.unresolved_body_bindings
+            ),
+        );
+    }
+    if gaps.history_only_body_bindings != 0 {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::HistoryOnlyBodyOmitted,
+            format_args!(
+                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `model.bodies`.",
+                gaps.history_only_body_bindings
             ),
         );
     }
@@ -2790,6 +2813,10 @@ impl<'a> F3dDecodeSession<'a> {
                 assembly_joints: &model.assembly_joints,
             },
             geometry: design_intent::DesignGeometry {
+                primary_brep: match path {
+                    FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
+                    FinalizePath::Bodyless(_) => None,
+                },
                 bodies: &model.bodies,
                 regions: &model.regions,
                 shells: &model.shells,
@@ -3035,6 +3062,7 @@ impl<'a> F3dDecodeSession<'a> {
                     report_unresolved_configuration_rules(
                         &mut self.report,
                         &design.design_configurations,
+                        design.configuration_roots_unbound,
                         &self.ir,
                     );
                 }
@@ -3334,6 +3362,10 @@ fn decode_scanned_document<'a>(
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
+    let only_history_bodies = !unbound_body_bindings.is_empty()
+        && unbound_body_bindings
+            .iter()
+            .all(|binding| binding.history_only);
     let mut brep_outcome = if model_selection.explicitly_empty {
         ModelBrepOutcome::NoPhysicalModel
     } else {
@@ -3353,6 +3385,12 @@ fn decode_scanned_document<'a>(
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
+            if binding.history_only {
+                selected_body_keys
+                    .entry(binding.blob_name().to_owned())
+                    .or_default();
+                continue;
+            }
             index_selected_body_key(
                 &mut selected_body_keys,
                 binding.blob_name(),
@@ -3381,7 +3419,9 @@ fn decode_scanned_document<'a>(
                 }
                 continue;
             }
-            if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+            if only_history_bodies && !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+                brep_outcome = ModelBrepOutcome::NoPhysicalModel;
+            } else if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
                 };
@@ -3629,7 +3669,11 @@ fn mesh_texture_asset(
             data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
-        Some(crate::ids::native_scope(file.archive_entry_name())),
+        Some(crate::ids::native_scoped_id(
+            file.archive_entry_name(),
+            "mesh-texture",
+            0,
+        )),
     )
     .map_err(CodecError::Malformed)
 }
@@ -5075,8 +5119,8 @@ fn container_losses(
 
     let (geometry, topology) = match outcome {
         ModelBrepOutcome::NoPhysicalModel => (
-            "No physical model BREP was selected: the modern model-body maps are explicitly empty. Snapshot streams contain no selected physical model bodies.".to_owned(),
-            "No physical B-rep topology was selected by the empty model-body maps.".to_owned(),
+            "No physical model BREP was selected: the modern model-body maps are explicitly empty or name only bodies outside the current model. Snapshot streams contain no selected physical model bodies.".to_owned(),
+            "No physical B-rep topology was selected by the model-body maps.".to_owned(),
         ),
         ModelBrepOutcome::Empty { stream } => (
             format!("The selected model BREP stream `{stream}` decoded successfully; the selected model has no surfaces, faces, or points."),

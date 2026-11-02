@@ -728,9 +728,24 @@ fn reload_native_arena<T: serde::de::DeserializeOwned>(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    namespace
-        .arena_as_for_decode(decode, name)
-        .map_err(Into::into)
+    if !ir.fragment {
+        return namespace
+            .arena_as_for_decode(decode, name)
+            .map_err(Into::into);
+    }
+    let mut records = Vec::new();
+    for record in namespace.arena_iter_as_for_decode(decode, name) {
+        match record {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                let error = CodecError::from(error);
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    Ok(records)
 }
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -946,7 +961,12 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    let native = match native::F3dNative::load_inner(decode, namespace).map_err(CodecError::from) {
+    let loaded = if ir.fragment {
+        native::F3dNative::load_fragment(decode, namespace)
+    } else {
+        native::F3dNative::load_inner(decode, namespace).map(|native| (native, Vec::new()))
+    };
+    let (native, skipped) = match loaded.map_err(CodecError::from) {
         Ok(native) => native,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -959,7 +979,15 @@ pub(crate) fn validate_native(
             }]);
         }
     };
-    validate_loaded(decode, ir, &native)
+    let mut findings = validate_loaded(decode, ir, &native)?;
+    findings.extend(skipped.into_iter().map(|reason| Finding {
+        check: Check::FragmentSkipped,
+        severity: Severity::Info,
+        entity: None,
+        related: Vec::new(),
+        message: format!("skipped native arena row: {reason}"),
+    }));
+    Ok(findings)
 }
 
 fn validate_loaded(
@@ -1239,6 +1267,14 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         }
     }
 
+    if ctx.ir.fragment {
+        findings.push(Finding {
+            check: Check::FragmentSkipped, severity: Severity::Info, entity: None,
+            related: Vec::new(),
+            message: "skipped f3d.act_document_root and f3d.act_ordinal_coverage: complete ACT stream required".into(),
+        });
+        return Ok(());
+    }
     for (witness, count) in root_counts.into_values() {
         if count != 1 {
             push_constant_finding(
@@ -1308,7 +1344,12 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| !configuration.variants().is_empty());
+        .filter(|configuration| {
+            configuration
+                .tables()
+                .iter()
+                .any(|table| !table.rows.is_empty())
+        });
     let first = nonempty_tables.next();
     if nonempty_tables.next().is_some() {
         let id = first.map(super::records::configuration::DesignConfiguration::id);
@@ -1902,7 +1943,19 @@ fn validate_body_bindings(
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(binding.id());
-        let resolved_valid = if let Some(body) = &binding.body {
+        let source_outside_fragment = ctx.ir.fragment
+            && binding.body.is_some()
+            && !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+            });
+        if source_outside_fragment {
+            findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+                entity: Some(binding.id().to_owned()), related: Vec::new(),
+                message: "skipped f3d.body_binding_source_resolution: source BREP keys are outside this fragment".into() });
+        }
+        let resolved_valid = if source_outside_fragment {
+            true
+        } else if let Some(body) = &binding.body {
             let has_named_source = native.body_native_keys.iter().any(|key| {
                 ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
                     && key.source_brep.as_deref() == Some(binding.blob_name())
@@ -1920,6 +1973,12 @@ fn validate_body_bindings(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Ok(None) | Err(_) => false,
             }
+        } else if binding.history_only {
+            !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+                    && key.source_brep.as_deref() == Some(binding.blob_name())
+                    && key.asm_body_key == Some(binding.asm_body_key)
+            })
         } else {
             true
         };
@@ -2332,7 +2391,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             native.design_body_bindings.iter().any(|binding| {
                                 design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
-                                    && binding.body.is_some()
+                                    && (binding.body.is_some() || binding.history_only)
                             })
                         })
             }
@@ -3166,6 +3225,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     },
                                 )
                         }
+                        records::feature::combine::DesignCombineForm::OperandLists => {
+                            !compact_scope
+                                && !extended_reference_scope
+                                && scope.byte_offset().checked_add(21).is_some_and(
+                                    |expected_offset| operation.operation_offset == expected_offset,
+                                )
+                                && scope.byte_offset().checked_add(29).is_some_and(
+                                    |expected_offset| {
+                                        operation.keep_tools_offset == expected_offset
+                                    },
+                                )
+                        }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
                                 && scope.byte_offset().checked_add(31).is_some_and(
@@ -3183,23 +3254,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = if construction.form.has_standard_reference_table() {
-                    scope
-                        .reference_members()
-                        .values()
-                        .next()
-                        .copied()
-                        .into_iter()
-                        .collect()
-                } else {
-                    scope
-                        .reference_members()
-                        .values()
-                        .skip(construction.form.face_reference_start())
-                        .step_by(2)
-                        .copied()
-                        .collect()
-                };
+                let references = scope
+                    .reference_members()
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
+                let expected_groups = construction.form.face_groups(&references);
                 construction
                     .form
                     .owners_hold(scope, &native.design_parameter_owners)
@@ -5043,12 +5103,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::CircularPattern
                     | design::DesignFeatureFamily::RectangularPattern,
                 ) => {
-                    matches!(
+                    (matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::BODIES_B
                             | DesignOperandRole::ROLE_0X10
-                    ) && group.extrude_role().is_none()
+                    ) || is_path_seed_group(group))
+                        && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Mirror) => {
                     mirror_group_role_admitted(group.role()) && group.extrude_role().is_none()
@@ -5225,7 +5286,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         }) && header.is_some_and(|header| {
             header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
         }) && frame_valid
-            && !group.members().is_empty()
+            && (!group.members().is_empty()
+                || scope.is_some_and(|scope| {
+                    matches!(
+                        design::design_feature_family(&scope.kind()),
+                        Some(
+                            design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::RectangularPattern
+                        )
+                    )
+                }) && is_path_seed_group(group))
             && {
                 let mut seen = HashSet::new();
                 for member in group.members() {
@@ -5248,6 +5318,26 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             );
         }
     }
+}
+
+fn is_path_seed_group(
+    group: &records::topology::construction::DesignConstructionOperandGroup,
+) -> bool {
+    group.role() == DesignOperandRole::PATH_SEED
+        && group.members().is_empty()
+        && group.frame.auxiliary_records.len() == 2
+        && group
+            .frame
+            .auxiliary_paths()
+            .iter()
+            .map(records::topology::construction::DesignConstructionOperandPath::record_index)
+            .eq(group
+                .frame
+                .auxiliary_records
+                .iter()
+                .map(|record| record.value))
+        && group.frame.trailing_records().len() == 1
+        && !group.frame.variant
 }
 
 /// Validate path-feature operand roles against the scope construction.
@@ -6310,7 +6400,28 @@ fn validate_fillet_operand_groups<'a>(
                         || (fixed.groups.len() == 1
                             && (sole_compact_group_shape || in_selection_pair)))
             });
+        let retained_fixed_assignment = !has_parameter_owner
+            && scope.is_some_and(|scope| {
+                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                    scope,
+                    &native.design_construction_operand_groups,
+                ) && ctx
+                    .ir
+                    .model
+                    .features
+                    .iter()
+                    .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                    .all(|feature| {
+                        matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { .. }
+                            )
+                        )
+                    })
+            });
         if is_fillet
+            && !retained_fixed_assignment
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
@@ -7141,7 +7252,8 @@ fn validate_edge_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
@@ -7253,7 +7365,8 @@ fn validate_edge_operands<'a>(
             )? == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && (historical_candidates_retained || expected_faces == operand.candidate_faces)
-            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand);
+            && (ctx.ir.fragment && native.asm_histories.is_empty()
+                || expected_edge_operands.get(operand.id.as_str()) == Some(&operand));
         let valid = valid
             && edge_operand_slots.insert((
                 native_stream,
@@ -7288,6 +7401,19 @@ fn validate_face_boundaries<'a>(
 ) {
     use records::topology::historical_context::AsmFaceBoundary;
     let native = ctx.native;
+    if ctx.ir.fragment && native.asm_histories.is_empty() && !native.design_edge_operands.is_empty()
+    {
+        findings.push(Finding {
+            check: Check::FragmentSkipped,
+            severity: Severity::Info,
+            entity: None,
+            related: Vec::new(),
+            message:
+                "skipped f3d.historical_face_boundaries: cited ASM states are outside this fragment"
+                    .into(),
+        });
+        return;
+    }
     let mut states = HashMap::new();
     for history in &native.asm_histories {
         for state in history.states() {
@@ -7538,7 +7664,8 @@ fn validate_face_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let face_groups_by_index = native
         .design_construction_operand_groups
         .iter()
@@ -7899,11 +8026,11 @@ fn validate_face_operands<'a>(
                 || face_ids_match_refs(&operand.unreferenced_candidate_faces, &expected_unreferenced_faces))
             && (historical_candidates_retained
                 || face_ids_match_refs(&operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces))
-            && expected_history.is_some_and(|expected| {
+            && (ctx.ir.fragment && native.asm_histories.is_empty() || expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
                     && operand.historical_support_contexts == expected.historical_support_contexts
-            })
+            }))
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind
@@ -9480,6 +9607,17 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 /// Validate each ASM history graph as a coherent state chain.
 fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
+    if ctx.ir.fragment
+        && native.asm_histories.is_empty()
+        && native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.history_state_id().is_some())
+    {
+        findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+            entity: None, related: Vec::new(),
+            message: "skipped f3d.history_state_links and f3d.historical_candidates: cited ASM states are outside this fragment".into() });
+    }
     for history in &native.asm_histories {
         if let Err(error) = history.check_transitions() {
             findings.push(Finding {

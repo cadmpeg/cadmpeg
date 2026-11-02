@@ -92,6 +92,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             crate::records::bodies::DesignBodyBindingWire {
                 component_owner: None,
                 component_owner_unresolved: false,
+                history_only: false,
                 id: crate::ids::native_design_body_binding_id(design_stream, at),
                 stream: design_stream.into(),
                 pair_count: 1,

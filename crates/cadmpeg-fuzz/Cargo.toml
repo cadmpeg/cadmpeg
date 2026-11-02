@@ -20,26 +20,45 @@ cargo-fuzz = true
 # any reader needs.
 unreachable_pub = "deny"
 
+[features]
+default = [
+  "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
+  "rhino", "iges", "sat", "pvz", "usd", "step",
+]
+f3d = ["dep:cadmpeg-codec-f3d"]
+inventor = ["dep:cadmpeg-codec-inventor"]
+freecad = ["dep:cadmpeg-codec-freecad"]
+sldprt = ["dep:cadmpeg-codec-sldprt"]
+catia = ["dep:cadmpeg-codec-catia"]
+creo = ["dep:cadmpeg-codec-creo"]
+nx = ["dep:cadmpeg-codec-nx"]
+rhino = ["dep:cadmpeg-codec-rhino"]
+iges = ["dep:cadmpeg-codec-iges"]
+sat = ["dep:cadmpeg-codec-sat"]
+pvz = ["dep:cadmpeg-codec-pvz"]
+usd = ["dep:cadmpeg-codec-usd"]
+step = ["dep:cadmpeg-codec-step"]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-container = { path = "../cadmpeg-container" }
-cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
-cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor" }
+cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", optional = true }
+cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", optional = true }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
-cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
-cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
-cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
-cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
-cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
-cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino" }
-cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
-cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat" }
-cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz" }
-cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd" }
+cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad", optional = true }
+cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", optional = true }
+cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", optional = true }
+cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo", optional = true }
+cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx", optional = true }
+cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", optional = true }
+cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges", optional = true }
+cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat", optional = true }
+cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz", optional = true }
+cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd", optional = true }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
-cadmpeg-codec-step = { path = "../cadmpeg-codec-step" }
+cadmpeg-codec-step = { path = "../cadmpeg-codec-step", optional = true }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
 crc32fast = "1"

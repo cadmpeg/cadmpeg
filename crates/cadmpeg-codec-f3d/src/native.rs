@@ -90,13 +90,19 @@ fn group_by_owner<T>(
     owner_count: usize,
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
+    mut skipped: Option<&mut Vec<String>>,
 ) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
     let mut grouped = (0..owner_count).map(|_| Vec::new()).collect::<Vec<_>>();
     for record in records {
         let parent = owner(&record);
-        let ordinal = owners.get(parent).ok_or_else(|| {
-            cadmpeg_ir::NativeConvertError::InvalidOwner(format!("orphaned or ambiguously parented records: child {} refers to missing parent {parent}", id(&record)))
-        })?;
+        let Some(ordinal) = owners.get(parent) else {
+            let reason = format!("orphaned or ambiguously parented records: child {} refers to missing parent {parent}", id(&record));
+            if let Some(skipped) = skipped.as_deref_mut() {
+                skipped.push(reason);
+                continue;
+            }
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(reason));
+        };
         grouped[*ordinal].push(record);
     }
     Ok(grouped)
@@ -1511,10 +1517,38 @@ impl F3dNative {
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        Self::load_impl(ctx, namespace, None)
+    }
+
+    pub(crate) fn load_fragment(
+        ctx: &DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<(Self, Vec<String>), cadmpeg_ir::NativeConvertError> {
+        let mut skipped = Vec::new();
+        let native = Self::load_impl(ctx, namespace, Some(&mut skipped))?;
+        Ok((native, skipped))
+    }
+
+    fn load_impl(
+        ctx: &DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+        mut skipped: Option<&mut Vec<String>>,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
-            ($name:literal) => {
-                namespace.arena_as_for_decode(ctx, $name)?
-            };
+            ($name:literal) => {{
+                let mut records = Vec::new();
+                for record in namespace.arena_iter_as_for_decode(ctx, $name) {
+                    match record {
+                        Ok(record) => records.push(record),
+                        Err(error) if ctx.resource_refusal().is_some() => return Err(error),
+                        Err(error) => match skipped.as_deref_mut() {
+                            Some(skipped) => skipped.push(format!("{}: {error}", $name)),
+                            None => return Err(error),
+                        },
+                    }
+                }
+                records
+            }};
         }
         let sketch_relations = {
             let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
@@ -1641,6 +1675,7 @@ impl F3dNative {
             boards.len(),
             |change| &change.id,
             |change| &change.parent,
+            skipped.as_deref_mut(),
         )?;
         let mut attached_boards = Vec::new();
         for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
@@ -1655,6 +1690,7 @@ impl F3dNative {
             states.len(),
             |board| &board.id,
             |board| &board.parent,
+            skipped.as_deref_mut(),
         )?;
         let records_by_state = group_by_owner(
             records,
@@ -1662,6 +1698,7 @@ impl F3dNative {
             states.len(),
             |record| &record.id,
             |record| &record.parent,
+            skipped.as_deref_mut(),
         )?;
         let mut attached_states = Vec::new();
         for ((mut state, bulletin_boards), records) in states
@@ -1686,11 +1723,17 @@ impl F3dNative {
             native.asm_histories.len(),
             |state| &state.id,
             |state| &state.parent,
+            skipped.as_deref_mut(),
         )?;
         for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
             *history.states_mut() = states;
         }
-        crate::records::feature::path_features::pipe::admit_native(&native)?;
+        if let Err(error) = crate::records::feature::path_features::pipe::admit_native(&native) {
+            match skipped {
+                Some(skipped) => skipped.push(format!("pipe stream admission: {error}")),
+                None => return Err(error),
+            }
+        }
         Ok(native)
     }
 

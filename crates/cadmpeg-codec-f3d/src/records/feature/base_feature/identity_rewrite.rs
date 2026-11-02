@@ -14,6 +14,7 @@ rewrite_native_enum!(DesignBaseFeatureConstruction, []; {
     BodyBasedOnFaces {body, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset},
     LegacyBodyBasedOnFaces {form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset},
     BodySnapshot {bodies, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset},
+    TimelineOwnedBodies {parameter_bodies, bodies, owner_record, owner_reference_offset},
 });
 rewrite_native_record!(DesignBaseFeatureEntry<T>, [T]; {value, offset, field});
 rewrite_native_scalar!(DesignBaseFeatureResultBody);

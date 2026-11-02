@@ -62,6 +62,19 @@ fn decode_reports_untyped_parameter_frames_that_match_no_grammar() {
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[19],
+        )],
+        &[],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let decoded = with_scan(&archive, decode_parameters).unwrap();
     assert_eq!(decoded.parameters.len(), 1);

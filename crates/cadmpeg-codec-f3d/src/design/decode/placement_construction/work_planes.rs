@@ -6,7 +6,6 @@ use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut, DesignWorkPlaneTransform,
 };
 use crate::records::placement_construction::DesignPlacementConstruction;
-use crate::records::sketch_placement::SketchPlacementMatrix;
 
 pub(crate) fn has_operand(
     scope: &DesignParameterScope,
@@ -29,7 +28,10 @@ pub(crate) fn solved_frame(
     scope: &DesignParameterScope,
     placements: &[DesignPlacementConstruction],
 ) -> Option<DesignWorkPlaneTransform> {
-    if scope.kind() != DesignFeatureKind::WorkPlane {
+    if !matches!(
+        scope.kind(),
+        DesignFeatureKind::WorkPlane | DesignFeatureKind::PlanoDeObra
+    ) {
         return None;
     }
     let mut candidates = placements
@@ -39,37 +41,8 @@ pub(crate) fn solved_frame(
     if candidates.next().is_some() {
         return None;
     }
-    if placement.fields.inferred_x_axis.value != 0
-        || placement.fields.inferred_z_axis.value != 0
-        || placement.fields.z_flip.value != 0
-        || placement
-            .fields
-            .axis_flipped
-            .as_ref()
-            .is_some_and(|value| value.value != 0)
-        || placement
-            .fields
-            .use_u_direction
-            .as_ref()
-            .is_some_and(|value| {
-                value.value != 0 && !(placement.type_version == 16 && value.value == 1)
-            })
-        || placement
-            .fields
-            .periodic_face_mode
-            .as_ref()
-            .is_some_and(|value| value.value != 0)
-    {
-        return None;
-    }
-    let (matrix, offset) = match (&placement.fields.matrix, &placement.fields.identity) {
-        (Some(matrix), _) => (matrix.value, matrix.offset),
-        (None, Some(identity)) if identity.value => {
-            (SketchPlacementMatrix::IDENTITY, identity.offset)
-        }
-        _ => return None,
-    };
-    crate::design::feature_project::work_plane_datum_frame(matrix.rows())?;
+    let frame = super::checked_solved_frame(placement)?;
+    let (matrix, offset) = (frame.value, frame.offset);
     Some(DesignWorkPlaneTransform {
         work_plane_transform: matrix,
         work_plane_transform_offset: offset,
@@ -84,12 +57,17 @@ pub(crate) fn bind(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = Vec::new();
     for scope in scopes {
-        if scope.kind() != DesignFeatureKind::WorkPlane {
+        if !matches!(
+            scope.kind(),
+            DesignFeatureKind::WorkPlane | DesignFeatureKind::PlanoDeObra
+        ) {
             continue;
         }
         if has_operand(scope, placements) {
             let frame = solved_frame(scope, placements);
-            if let DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
+            if let DesignScopePayloadMut::WorkPlane(slot)
+            | DesignScopePayloadMut::PlanoDeObra(slot) = scope.payload_mut()
+            {
                 *slot = frame;
             }
         }

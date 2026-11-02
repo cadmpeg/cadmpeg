@@ -82,13 +82,17 @@ pub(crate) enum InventorLossCode {
     FeatureOperationGraphOpen,
     /// An edge treatment retains an unresolved empty edge-item index list.
     FeatureEdgeSelectionEmptyItemsNative,
+    /// An edge treatment retains an unresolved input-edge selection.
+    FeatureEdgeSelectionNative,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
     FeatureExtrusionProfileNative,
+    /// A planar extrusion target retains its unresolved body-face identity.
+    FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
-    /// Thread annotations retain sizing and termination operands only natively.
+    /// Thread annotations retain class, handedness, termination, and unresolved sizing operands natively.
     FeatureThreadDefinitionPartial,
     /// Thicken selections, construction controls, or thickness side remain native.
     FeatureThickenOperandsNative,
@@ -124,6 +128,10 @@ pub(crate) enum InventorLossCode {
     FeatureChamferOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// Mirror Boolean construction roles remain unresolved.
+    FeatureMirrorBooleanNative,
+    /// Mirror instance maps or generated result operands remain native.
+    FeatureMirrorInstanceMapNative,
     /// Split construction operands or result topology remain native.
     FeatureSplitOperandsNative,
     /// Split mode 1 retains its side and body-revision operands.
@@ -160,12 +168,16 @@ pub(crate) enum InventorLossCode {
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
     FeatureDerivedSourceNative,
+    /// Derived result-body operands retain unresolved current-model body joins.
+    FeatureDerivedResultNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
     /// Tagging selection effects remain native.
     FeatureTaggingNative,
     /// Stored-body composite selections retain unresolved construction controls.
     FeatureCompositeOperandsNative,
+    /// Coil construction controls retain unresolved polarity.
+    FeatureCoilOperandsNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -254,8 +266,10 @@ impl InventorLossCode {
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
         Self::FeatureEdgeSelectionEmptyItemsNative,
+        Self::FeatureEdgeSelectionNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
+        Self::FeatureExtrusionTargetFaceNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
@@ -275,6 +289,8 @@ impl InventorLossCode {
         Self::FeatureFilletOperandsNative,
         Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureMirrorBooleanNative,
+        Self::FeatureMirrorInstanceMapNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureSplitModeOneNative,
         Self::FeatureSplitModeTwoNative,
@@ -293,9 +309,11 @@ impl InventorLossCode {
         Self::FeatureSurfaceLoftSectionsNative,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
+        Self::FeatureDerivedResultNative,
         Self::FeatureDerivedTaggingNative,
         Self::FeatureTaggingNative,
         Self::FeatureCompositeOperandsNative,
+        Self::FeatureCoilOperandsNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -360,10 +378,12 @@ impl InventorLossCode {
             }
             Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
+            Self::FeatureExtrusionTargetFaceNative => "feature.extrusion-target-face-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureEdgeSelectionEmptyItemsNative => {
                 "feature.edge-selection-empty-items-native"
             }
+            Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -389,6 +409,8 @@ impl InventorLossCode {
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
+            Self::FeatureMirrorInstanceMapNative => "feature.mirror-instance-map-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureSplitModeOneNative => "feature.split-mode-one-native",
             Self::FeatureSplitModeTwoNative => "feature.split-mode-two-native",
@@ -410,9 +432,11 @@ impl InventorLossCode {
             Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
+            Self::FeatureDerivedResultNative => "feature.derived-result-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::FeatureTaggingNative => "feature.tagging-native",
             Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
+            Self::FeatureCoilOperandsNative => "feature.coil-operands-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -481,8 +505,10 @@ impl InventorLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureEdgeSelectionEmptyItemsNative
+            | Self::FeatureEdgeSelectionNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
+            | Self::FeatureExtrusionTargetFaceNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
@@ -499,6 +525,8 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalPlateRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureMirrorBooleanNative
+            | Self::FeatureMirrorInstanceMapNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureSplitModeOneNative
             | Self::FeatureSplitModeTwoNative
@@ -530,8 +558,10 @@ impl InventorLossCode {
             | Self::SketchMidpointCurveNative
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
+            | Self::FeatureDerivedResultNative
             | Self::FeatureDerivedTaggingNative
             | Self::FeatureCompositeOperandsNative
+            | Self::FeatureCoilOperandsNative
             | Self::FeatureTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -618,8 +648,10 @@ mod tests {
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
                 "feature.edge-selection-empty-items-native",
+                "feature.edge-selection-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
+                "feature.extrusion-target-face-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
@@ -639,6 +671,8 @@ mod tests {
                 "feature.fillet-operands-native",
                 "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
+                "feature.mirror-boolean-native",
+                "feature.mirror-instance-map-native",
                 "feature.split-operands-native",
                 "feature.split-mode-one-native",
                 "feature.split-mode-two-native",
@@ -657,9 +691,11 @@ mod tests {
                 "feature.surface-loft-sections-native",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
+                "feature.derived-result-native",
                 "feature.derived-tagging-native",
                 "feature.tagging-native",
                 "feature.composite-operands-native",
+                "feature.coil-operands-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",

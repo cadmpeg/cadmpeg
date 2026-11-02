@@ -385,3 +385,69 @@ fn operation_pose_does_not_claim_a_solved_world_pose() {
     });
     assert!(!crate::xref::current_pose_matches(&refs[0]));
 }
+
+#[test]
+fn operation_pose_keeps_an_agreeing_carrier_constraint_and_its_native_evidence() {
+    let (mut ir, poses) = model();
+    for occurrence in &mut ir.model.occurrences {
+        occurrence.transform =
+            crate::design::components::neutral_transform(poses.values().next().unwrap().matrix)
+                .unwrap();
+    }
+    let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
+    let before = ir.model.occurrences.clone();
+    let mut losses = Vec::new();
+    project(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        &poses,
+        &protected,
+        &mut losses,
+    )
+    .unwrap();
+    assert_eq!(ir.model.occurrences, before);
+    let refs = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as::<XrefReference>("xref_references")
+        .unwrap();
+    assert!(refs[0].operation_pose.is_some());
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::OperationPoseDisagrees.kind()));
+}
+
+#[test]
+fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
+    let (mut ir, mut poses) = model();
+    let mut sibling = ir.model.occurrences[0].clone();
+    sibling.id = "f3d:model:occurrence#sibling".try_into().unwrap();
+    let key = "f3d:xref:reference#1-occurrence-0".to_owned();
+    sibling.native_ref = Some(key.clone());
+    ir.model.occurrences.push(sibling);
+    let pose = poses.values().next().unwrap().clone();
+    poses.insert(key.clone(), pose);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut refs = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as::<XrefReference>("xref_references")
+        .unwrap();
+    let mut reference = refs[0].clone();
+    reference.id = key;
+    refs.push(reference);
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        native.xref_references = refs;
+    });
+    let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap();
+    assert_eq!(ir.model.occurrences[0].transform, Transform::identity());
+    assert_eq!(ir.model.occurrences[1].transform, Transform::identity());
+    assert!((ir.model.occurrences[2].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
+}

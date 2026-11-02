@@ -415,3 +415,205 @@ fn thread_requires_type_two_lists_and_closed_edge_members() -> TestResult {
     assert!(admitted(&source, &candidate));
     Ok(())
 }
+
+#[test]
+fn thread_projects_parsed_metric_and_inch_sizes_with_native_polarities() -> TestResult {
+    use crate::test_support::thread::definition_bytes;
+    for (version, nominal, designation, standard, form, pitch, expected_diameter, expected_pitch) in [
+        (
+            19,
+            "6",
+            "M6x1",
+            "ANSI Metric M Profile",
+            0x00ca,
+            "1",
+            6.0,
+            1.0,
+        ),
+        (
+            19,
+            "6",
+            "M6x1",
+            "ANSI Metric M Profile",
+            0x10ca,
+            "1",
+            6.0,
+            1.0,
+        ),
+        (
+            19,
+            "6",
+            "M6x0.75",
+            "ANSI Metric M Profile",
+            0x10ce,
+            "0.75",
+            6.0,
+            0.75,
+        ),
+        (
+            19,
+            "6",
+            "M6x1",
+            "ANSI Metric M Profile",
+            0x10ea,
+            "1",
+            6.0,
+            1.0,
+        ),
+        (19, "6", "M6x1", "ISO Metric profile", 0x00ca, "1", 6.0, 1.0),
+        (
+            19,
+            "6",
+            "M6x0.75",
+            "ANSI Metric M Profile",
+            0x10ee,
+            "0.75",
+            6.0,
+            0.75,
+        ),
+        (
+            19,
+            "6",
+            "M6x0.75",
+            "ISO Metric profile",
+            0x10ee,
+            "0.75",
+            6.0,
+            0.75,
+        ),
+        (
+            19,
+            "0.25",
+            "1/4-20 UNC",
+            "ANSI Unified Screw Threads",
+            0x18f2,
+            "20",
+            6.35,
+            1.27,
+        ),
+        (
+            19,
+            "0.25",
+            "1/4-28 UNF",
+            "ANSI Unified Screw Threads",
+            0x18f2,
+            "28",
+            6.35,
+            25.4 / 28.0,
+        ),
+        (
+            19,
+            "1",
+            "1-8 UNC",
+            "ANSI Unified Screw Threads",
+            0x18f2,
+            "8",
+            25.4,
+            3.175,
+        ),
+        (
+            21,
+            "6",
+            "M6x1",
+            "ANSI Metric M Profile",
+            0x10ea,
+            "1",
+            6.0,
+            1.0,
+        ),
+        (
+            21,
+            "6",
+            "M6x0.75",
+            "ANSI Metric M Profile",
+            0x10ee,
+            "0.75",
+            6.0,
+            0.75,
+        ),
+    ] {
+        let (mut source, mut label, mut properties) = thread_fixture()?;
+        source.edit(|value| value.save_version_major = version);
+        label.edit(|value| {
+            value.save_version_major = version;
+            value.header.owner = crate::pmdc::PmDcReference::from_packed(0x8000_0001);
+        });
+        let parameters = [raw_parameter(20), raw_parameter(21)];
+        let bytes = definition_bytes(
+            1,
+            label.identity.record_ordinal + 1,
+            nominal,
+            designation,
+            standard,
+            form,
+            pitch,
+        );
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())?;
+        let definition = crate::record_identity::Located::new(
+            crate::feature::thread::parse(&ctx, view, version)?,
+            crate::record_identity::RecordTypeId::from_bytes(crate::feature::thread::TYPE),
+            segment(),
+            2000,
+        );
+        let definitions = [definition];
+        for polarity in [false, true] {
+            for ordinal in [11, 12, 16] {
+                let property = properties
+                    .iter_mut()
+                    .find(|property| property.identity.record_ordinal == ordinal)
+                    .ok_or("missing Boolean fixture")?;
+                property.edit(|property| {
+                    if let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut property.kind {
+                        *value = polarity;
+                    }
+                });
+            }
+            let mut index =
+                test_projection_index(&properties, &parameters, &[], &[], &[], &[], &[], &[]);
+            index.thread_definitions = &definitions;
+            let feature =
+                project_thread(&ctx, &source, &label, &index).ok_or("missing thread")??;
+            let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                diameter: Some(diameter),
+                pitch: Some(pitch),
+                extent,
+                modeled,
+                ..
+            }) = feature.evaluation.definition()
+            else {
+                return Err("missing resolved sizing".into());
+            };
+            assert_eq!(diameter.get(), expected_diameter);
+            assert_eq!(pitch.get(), expected_pitch);
+            assert!(extent.is_none());
+            assert!(modeled.is_none());
+            let mut invalid = serde_json::to_value(&definitions[0])?;
+            invalid["controls"][1] = serde_json::json!(0xffff);
+            let invalid = [serde_json::from_value(invalid)?];
+            index.thread_definitions = &invalid;
+            let fallback = project_thread(&ctx, &source, &label, &index)
+                .ok_or("missing native-sizing annotation")??;
+            assert!(matches!(
+                fallback.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                    diameter: None,
+                    pitch: None,
+                    standard: Some(actual_standard),
+                    designation: Some(actual_designation),
+                    extent: None,
+                    modeled: None,
+                    ..
+                }) if actual_standard.as_str() == standard && actual_designation.as_str() == designation
+            ));
+            assert_eq!(
+                crate::feature::thread::partial_loss(1)
+                    .ok_or("missing native-sizing loss")?
+                    .code
+                    .local_code(),
+                "feature.thread-definition-partial"
+            );
+        }
+    }
+    Ok(())
+}

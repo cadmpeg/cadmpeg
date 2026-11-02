@@ -2716,9 +2716,9 @@ pub enum FeatureOperation {
     /// The source may also model the helical form in the body geometry;
     /// `modeled` states whether it does, and absent means unproven. A field
     /// that the source encoding does not prove stays absent. F3D threads set
-    /// `standard`, `designation` and `pitch` and stay definition-incomplete
-    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
-    /// set the four new fields.
+    /// `standard`, `designation` and `pitch`, set `modeled` in the extended
+    /// standard form, and stay definition-incomplete while `modeled` is absent;
+    /// the `nx`, `sldprt`, and `inventor` codecs do not set the four new fields.
     CosmeticThread {
         /// Cylindrical face carrying the thread.
         face: FaceSelection,
@@ -7167,14 +7167,36 @@ pub enum ExtrudeStart {
         )]
         offset: Option<Length>,
     },
-    /// Begin on a selected plane that has no face identity.
+    /// Begin on a plane with its native target reference.
     FromPlane {
         /// Model-space frame of the start plane.
         plane: FeatureSupportPlaneFrame,
-        /// Native record that stores the plane.
+        /// Native target record.
         native: NonBlankString,
+        /// Source of the target plane.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_target_source"
+        )]
+        source: Option<PlaneTargetSource>,
     },
 }
+
+/// Source of a resolved feature support plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PlaneTargetSource {
+    /// A work plane supplies the frame.
+    WorkPlane,
+    /// A work point supplies the plane origin.
+    WorkPoint,
+    /// A stored planar face surface supplies the frame; its face identity remains native.
+    FaceSurface,
+}
+
+rewrite_scalar!(PlaneTargetSource);
 
 /// One-sided termination law of a linear sweep. Sidedness around the profile
 /// plane is stated by the owning feature's extent type.
@@ -7214,12 +7236,19 @@ pub enum LinearTermination {
         /// Vertex terminating the operation.
         vertex: VertexSelection,
     },
-    /// Extends until it reaches a target plane that has no face identity.
+    /// Extends until it reaches a plane with its native target reference.
     ToPlane {
         /// Model-space frame of the terminating plane.
         plane: FeatureSupportPlaneFrame,
-        /// Native record that stores the plane.
+        /// Native target record.
         native: NonBlankString,
+        /// Source of the target plane.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_target_source"
+        )]
+        source: Option<PlaneTargetSource>,
     },
     /// Extends to a fixed offset from a target face.
     OffsetFromFace {
@@ -9521,3 +9550,5 @@ cadmpeg_core::named_optional_field!(
     ProductDefinitionId,
     "product_definition"
 );
+
+cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");

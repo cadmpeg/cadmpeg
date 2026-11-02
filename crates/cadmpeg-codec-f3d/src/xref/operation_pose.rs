@@ -451,6 +451,20 @@ impl Placement<'_> {
         compose_chain(chain)
     }
 
+    fn candidate_world(&self, i: usize) -> Result<Transform, CodecError> {
+        let (parent, local) = self
+            .candidates
+            .get(&i)
+            .copied()
+            .unwrap_or((self.parent(i)?, self.occurrence(i)?.transform));
+        let parent = parent.map_or(Ok(Transform::identity()), |parent| {
+            self.world(parent, false)
+        })?;
+        parent
+            .compose(local)
+            .map_err(|_| CodecError::malformed("F3D operation pose overflow"))
+    }
+
     fn placed_world(&self, mut i: usize) -> Result<Transform, CodecError> {
         let mut chain = Vec::new();
         loop {
@@ -533,8 +547,6 @@ pub(crate) fn project(
         protected,
     };
     let mut groups = BTreeMap::<&str, Vec<usize>>::new();
-    let mut definitions = BTreeMap::<String, BTreeSet<&str>>::new();
-    let mut owners = BTreeMap::<&str, BTreeSet<String>>::new();
     for (i, o) in placement.occurrences.iter().enumerate() {
         let Some(key) = o
             .native_ref
@@ -566,21 +578,6 @@ pub(crate) fn project(
             }
             at = placement.parent(j)?;
         }
-        let definition = placement
-            .parent(i)?
-            .and_then(|parent| placement.occurrences.get(parent))
-            .and_then(|parent| match &parent.prototype {
-                cadmpeg_ir::products::PrototypeReference::Local { definition } => {
-                    Some(definition.to_string())
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| stream.clone());
-        definitions
-            .entry(definition.clone())
-            .or_default()
-            .insert(key);
-        owners.entry(key).or_default().insert(definition);
         groups.entry(key).or_default().push(i);
         placement.candidates.insert(
             i,
@@ -601,7 +598,10 @@ pub(crate) fn project(
             for &i in instances {
                 let local = placement.local(i)?;
                 let o = placement.occurrence(i)?;
-                if protected.contains(&o.id) || first.is_some_and(|first| !agree(first, local)) {
+                if (protected.contains(&o.id)
+                    && !agree(placement.candidate_world(i)?, placement.world(i, true)?))
+                    || first.is_some_and(|first| !agree(first, local))
+                {
                     newly_refused.push(key);
                     break;
                 }
@@ -633,16 +633,6 @@ pub(crate) fn project(
         }
         if newly_refused.is_empty() {
             break;
-        }
-        let mut pending = newly_refused;
-        let mut newly_refused = BTreeSet::new();
-        while let Some(key) = pending.pop() {
-            if refused.contains(key) || !newly_refused.insert(key) {
-                continue;
-            }
-            for definition in owners.get(key).into_iter().flatten() {
-                pending.extend(definitions.get(definition).into_iter().flatten().copied());
-            }
         }
         for key in newly_refused {
             refused.insert(key);

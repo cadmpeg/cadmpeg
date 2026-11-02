@@ -204,6 +204,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
             offset: 0,
         }],
         face_selection: Some(face_selection),
+        locations: Vec::new(),
     };
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:scope#42",
@@ -214,7 +215,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         slot.point = Some(construction);
     }
 
-    { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();
+    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
 
     assert_eq!(
         scope
@@ -726,6 +727,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(identity(occurrence_reference)),
+            body_node: None,
         }
     };
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -743,6 +745,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 11,
+            target_body_node: None,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: tool(12, 500),
                 additional: vec![tool(13, 501)],
@@ -760,6 +763,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(combine_external_identity(occurrence_reference)),
+            body_node: None,
         }
     };
     let mut scope = combine_external_scope();
@@ -1586,3 +1590,241 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 mod extrude_profile;
 
 mod face_support;
+
+mod operand_list_combine {
+    use crate::records::feature::combine::{
+        DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm,
+        DesignCombineOperation, DesignCombineTools,
+    };
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{BodySelection, FeatureId};
+
+    const STREAM: &str = "f3d:Design/BulkStream.dat";
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn node(creating_scope_record_index: u32) -> Option<DesignCombineBodyNode> {
+        Some(DesignCombineBodyNode {
+            record_index: creating_scope_record_index + 1,
+            body_entity_suffix: creating_scope_record_index + 2,
+            creating_scope_record_index,
+        })
+    }
+
+    fn scope(record_index: u32, state: i64) -> DesignParameterScope {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#{record_index}"),
+            DesignFeatureKind::BaseFeature,
+            record_index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(state);
+                draft.previous_history_state_id = Some(state - 1);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    }
+
+    fn topology(bodies: &[i64]) -> crate::history_records::AsmHistoricalTopology {
+        crate::history_records::AsmHistoricalTopology {
+            bodies: bodies.to_vec(),
+            ..Default::default()
+        }
+    }
+
+    fn history(states: &[&[i64]]) -> crate::history_records::AsmHistory {
+        let rows = states
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(id, bodies)| {
+                let id = i64::try_from(id).unwrap();
+                (
+                    crate::history_records::AsmDeltaState {
+                        id: format!("f3d:asm-delta-state#{id}"),
+                        parent: "f3d:asm-history#1".into(),
+                        byte_offset: 0,
+                        state_id: id,
+                        version_flag: 1,
+                        state_flag: 0,
+                        previous_ref: None,
+                        next_ref: (id > 0).then_some(id - 1),
+                        node_index: id,
+                        partner_ref: None,
+                        owner_ref: 0,
+                        bulletin_boards: Vec::new(),
+                        records: Vec::new(),
+                        transition: None,
+                    },
+                    Some(topology(bodies)),
+                    Vec::new(),
+                )
+            })
+            .collect();
+        crate::test_support::history::history("f3d:asm-history#1".into(), 0, None, false, rows)
+    }
+
+    fn operation(
+        target: Option<DesignCombineBodyNode>,
+        tools: &[Option<DesignCombineBodyNode>],
+    ) -> DesignCombineOperation {
+        let mut selections =
+            tools
+                .iter()
+                .zip(12u32..)
+                .map(|(body_node, record_index)| DesignCombineBodySelection {
+                    record_index,
+                    external_identity: None,
+                    body_node: *body_node,
+                });
+        DesignCombineOperation {
+            form: DesignCombineForm::OperandLists,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation_offset: 21,
+            keep_tools: false,
+            keep_tools_offset: 29,
+            target_record_index: 11,
+            target_body_node: target,
+            tools: DesignCombineTools {
+                first: selections.next().unwrap(),
+                additional: selections.collect(),
+            },
+        }
+    }
+
+    fn bind(
+        operation: DesignCombineOperation,
+        history: &crate::history_records::AsmHistory,
+        scopes: &[DesignParameterScope],
+    ) -> (BodySelection, BodySelection) {
+        let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
+        let combine = scope(400, combine_state);
+        let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
+        let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
+        super::super::super::bind_operand_list_combine_bodies(
+            &mut target,
+            &mut tools,
+            &combine,
+            &operation,
+            &FeatureId::mint("test:model:feature#combine").unwrap(),
+            combine_state - 1,
+            (std::slice::from_ref(history), scopes),
+        );
+        (target, tools)
+    }
+
+    fn input_body_slots(selection: &BodySelection) -> Vec<i64> {
+        let ids: Vec<String> = match selection {
+            BodySelection::Historical { bodies, .. } => {
+                bodies.iter().map(ToString::to_string).collect()
+            }
+            BodySelection::HistoricalSet { members, .. } => {
+                members.iter().map(|row| row.body().to_string()).collect()
+            }
+            other => panic!("expected a historical selection, got {other:?}"),
+        };
+        ids.iter()
+            .map(|id| crate::history::historical_body_slot(id).unwrap())
+            .collect()
+    }
+
+    fn creators() -> Vec<DesignParameterScope> {
+        vec![scope(100, 1), scope(200, 2), scope(300, 3)]
+    }
+
+    fn assert_native(selections: &(BodySelection, BodySelection)) {
+        assert!(
+            matches!(selections.0, BodySelection::Native(_)),
+            "{selections:?}"
+        );
+        assert!(
+            matches!(selections.1, BodySelection::Native(_)),
+            "{selections:?}"
+        );
+    }
+
+    #[test]
+    fn slots_come_from_the_creating_scopes_in_tool_order() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        let (target, tools) = bind(
+            operation(node(200), &[node(300), node(100)]),
+            &history,
+            &creators(),
+        );
+        assert_eq!(input_body_slots(&target), [2]);
+        assert_eq!(input_body_slots(&tools), [3, 1]);
+    }
+
+    #[test]
+    fn every_operand_must_resolve_or_both_selections_stay_native() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        for (target, tools) in [
+            (None, vec![node(300), node(100)]),
+            (node(200), vec![None, node(100)]),
+            (node(200), vec![node(300), None]),
+            (node(999), vec![node(300), node(100)]),
+            (node(200), vec![node(300), node(999)]),
+            (node(200), vec![node(200), node(100)]),
+            (node(200), vec![node(300), node(200)]),
+            (node(200), vec![node(300), node(300)]),
+        ] {
+            assert_native(&bind(operation(target, &tools), &history, &creators()));
+        }
+    }
+
+    #[test]
+    fn a_creator_must_insert_one_body_that_reaches_the_input_state() {
+        let two_inserted = history(&[&[], &[1], &[1, 2, 3], &[1, 2, 3, 4], &[1]]);
+        assert_native(&bind(
+            operation(node(100), &[node(200)]),
+            &two_inserted,
+            &creators(),
+        ));
+
+        let removed_before_input = history(&[&[], &[1], &[1, 2], &[1], &[1]]);
+        assert_native(&bind(
+            operation(node(100), &[node(200)]),
+            &removed_before_input,
+            &creators(),
+        ));
+
+        let mut no_previous_state = creators();
+        no_previous_state[1]
+            .try_edit(|draft| {
+                draft.previous_history_state_id = None;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let (target, tools) = bind(
+            operation(node(100), &[node(200)]),
+            &history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[1]]),
+            &no_previous_state,
+        );
+        assert_eq!(input_body_slots(&target), [1]);
+        assert_eq!(input_body_slots(&tools), [2]);
+
+        let scope_in_other_stream = {
+            let mut scopes = creators();
+            scopes[1] = DesignParameterScope::empty(
+                "f3d:Other/BulkStream.dat:design-parameter-scope#200",
+                DesignFeatureKind::BaseFeature,
+                200,
+            );
+            scopes[1]
+                .try_edit(|draft| {
+                    draft.history_state_id = Some(2);
+                    draft.previous_history_state_id = Some(1);
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            scopes
+        };
+        let ordinary = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        assert_native(&bind(
+            operation(node(100), &[node(200)]),
+            &ordinary,
+            &scope_in_other_stream,
+        ));
+    }
+}

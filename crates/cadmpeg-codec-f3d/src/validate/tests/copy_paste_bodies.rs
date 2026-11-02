@@ -122,3 +122,22 @@ fn source_body_is_a_bodies_root_member_or_a_bound_body() {
     unbound_copy.design_body_bindings.pop();
     assert!(invalid(&unbound_copy));
 }
+
+#[test]
+fn copied_body_can_be_history_only_but_not_unsolved() {
+    let unsolved = |ordinal: u32, history_only: bool| {
+        let mut value = serde_json::to_value(binding(14, ordinal)).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("body");
+        object.insert("history_only".to_owned(), history_only.into());
+        serde_json::from_value::<DesignBodyBinding>(value).unwrap()
+    };
+    let mut native = native();
+    native.design_body_members.extend([member(11), member(13)]);
+    native.design_body_bindings.pop();
+    let mut consumed = native.clone();
+    consumed.design_body_bindings.push(unsolved(1, true));
+    assert!(!invalid(&consumed));
+    native.design_body_bindings.push(unsolved(1, false));
+    assert!(invalid(&native));
+}

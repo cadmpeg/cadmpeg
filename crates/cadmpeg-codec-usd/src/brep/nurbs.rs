@@ -149,27 +149,42 @@ impl<const N: usize> Nurbs<N> {
         let [low, high] = self.domain()?;
         let t = t.clamp(low, high);
         let degree = self.degree;
-        let span = (degree..self.points.len()).rev().find(|span| {
-            self.knots[*span] <= t && (t < self.knots[span + 1] || *span + 1 == self.points.len())
-        })?;
-        let rows = self.homogeneous();
-        let mut work: Vec<Vec<f64>> = rows.get(span - degree..=span)?.to_vec();
+        let last = self.points.len().checked_sub(1)?;
+        let span = if t >= high {
+            last
+        } else {
+            self.knots
+                .partition_point(|knot| *knot <= t)
+                .checked_sub(1)?
+                .clamp(degree, last)
+        };
+        // Homogeneous rows of the `degree + 1` control points of the span,
+        // one after another.
+        let width = N + 1;
+        let first = span.checked_sub(degree)?;
+        let mut work = Vec::with_capacity((degree + 1) * width);
+        for index in first..=span {
+            let weight = *self.weights.get(index)?;
+            work.extend(self.points.get(index)?.iter().map(|value| value * weight));
+            work.push(weight);
+        }
         for level in 1..=degree {
             for j in (level..=degree).rev() {
-                let index = span - degree + j;
+                let index = first + j;
                 let denominator = self.knots[index + degree + 1 - level] - self.knots[index];
                 let alpha = if denominator == 0.0 {
                     0.0
                 } else {
                     (t - self.knots[index]) / denominator
                 };
-                let previous = work[j - 1].clone();
-                for (value, before) in work[j].iter_mut().zip(previous) {
+                for axis in 0..width {
+                    let before = work[(j - 1) * width + axis];
+                    let value = &mut work[j * width + axis];
                     *value = alpha * *value + (1.0 - alpha) * before;
                 }
             }
         }
-        let row = work.get(degree)?;
+        let row = work.get(degree * width..)?;
         let weight = *row.get(N)?;
         if weight == 0.0 {
             return None;

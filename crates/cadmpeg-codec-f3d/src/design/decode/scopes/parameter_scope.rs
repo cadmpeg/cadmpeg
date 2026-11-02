@@ -9,7 +9,9 @@ use cadmpeg_core::decode::u64_from_index;
 use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
-use super::base_feature::exact_base_feature_construction;
+use super::base_feature::{
+    exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
+};
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
 use super::coil::exact_coil_placement;
@@ -118,6 +120,7 @@ pub(crate) fn decode_parameter_scopes(
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
@@ -207,7 +210,9 @@ pub(crate) fn decode_parameter_scopes(
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)
-                    | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
+                    | scope::DesignScopePayloadMut::Esboco(slot)
+                    | scope::DesignScopePayloadMut::Boceto(slot)
+                    | scope::DesignScopePayloadMut::SketchJa(slot) = scope.payload_mut()
                     {
                         let entity_id = entity.entity_id.clone();
                         *slot = Some(scope::DesignSketchEntityBinding {
@@ -217,9 +222,14 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if scope.kind() == scope::DesignFeatureKind::WorkPlane {
+            if matches!(
+                scope.kind(),
+                scope::DesignFeatureKind::WorkPlane | scope::DesignFeatureKind::PlanoDeObra
+            ) {
                 if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
-                    if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
+                    if let scope::DesignScopePayloadMut::WorkPlane(slot)
+                    | scope::DesignScopePayloadMut::PlanoDeObra(slot) = scope.payload_mut()
+                    {
                         *slot = Some(scope::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
                             work_plane_transform_offset: frame.transform_offset,
@@ -298,7 +308,8 @@ pub(crate) fn decode_parameter_scopes(
             {
                 match (scope.payload_mut(), construction) {
                     (
-                        scope::DesignScopePayloadMut::SpherePrimitive(slot),
+                        scope::DesignScopePayloadMut::SpherePrimitive(slot)
+                        | scope::DesignScopePayloadMut::EsferaPrimitiva(slot),
                         crate::records::feature::primitives::DesignSolidPrimitive::Sphere(value),
                     ) => *slot = Some(value),
                     (
@@ -330,7 +341,8 @@ pub(crate) fn decode_parameter_scopes(
                     ) => *slot = Some(value),
                     (
                         scope::DesignScopePayloadMut::Shell(slot)
-                        | scope::DesignScopePayloadMut::Schale(slot),
+                        | scope::DesignScopePayloadMut::Schale(slot)
+                        | scope::DesignScopePayloadMut::Vaciado(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
                     ) => *slot = Some(value),
                     (
@@ -368,7 +380,8 @@ pub(crate) fn decode_parameter_scopes(
             {
                 let construction = exact_scale_operation(bytes, &records, &scope, &stream_types)?;
                 if let scope::DesignScopePayloadMut::Scale(slot)
-                | scope::DesignScopePayloadMut::Massstab(slot) = scope.payload_mut()
+                | scope::DesignScopePayloadMut::Massstab(slot)
+                | scope::DesignScopePayloadMut::Escala(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -396,7 +409,9 @@ pub(crate) fn decode_parameter_scopes(
                     let value = Some(parameters);
                     if let scope::DesignScopePayloadMut::Extrude(slot)
                     | scope::DesignScopePayloadMut::Extrusion(slot)
-                    | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+                    | scope::DesignScopePayloadMut::Extrusao(slot)
+                    | scope::DesignScopePayloadMut::Extruir(slot)
+                    | scope::DesignScopePayloadMut::ExtrudeJa(slot) = scope.payload_mut()
                     {
                         slot.get_or_insert_with(Default::default)
                             .fixed_extrude_parameters = value;
@@ -414,7 +429,9 @@ pub(crate) fn decode_parameter_scopes(
                 if let scope::DesignScopePayloadMut::Fillet(slot)
                 | scope::DesignScopePayloadMut::Conge(slot)
                 | scope::DesignScopePayloadMut::Abrundung(slot)
-                | scope::DesignScopePayloadMut::Arredondamento(slot) = scope.payload_mut()
+                | scope::DesignScopePayloadMut::Arredondamento(slot)
+                | scope::DesignScopePayloadMut::Empalme(slot)
+                | scope::DesignScopePayloadMut::FilletJa(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -423,7 +440,9 @@ pub(crate) fn decode_parameter_scopes(
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
                 if let scope::DesignScopePayloadMut::Chamfer(slot)
-                | scope::DesignScopePayloadMut::Chanfrein(slot) = scope.payload_mut()
+                | scope::DesignScopePayloadMut::Chanfrein(slot)
+                | scope::DesignScopePayloadMut::Chaflan(slot)
+                | scope::DesignScopePayloadMut::ChamferJa(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -437,7 +456,8 @@ pub(crate) fn decode_parameter_scopes(
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => *slot = Some(value),
                     (
-                        scope::DesignScopePayloadMut::Loft(slot),
+                        scope::DesignScopePayloadMut::Loft(slot)
+                        | scope::DesignScopePayloadMut::Solevacion(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
                     ) => *slot = Some(value),
                     (
@@ -588,7 +608,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_base_feature_construction(bytes, &scope)?;
+                let owned = body_owners
+                    .get(&scope.record_index)
+                    .and_then(|owner| exact_timeline_owned_base_feature(bytes, &scope, *owner));
+                let construction = match owned {
+                    Some(owned) => Some(owned),
+                    None => exact_base_feature_construction(bytes, &scope)?,
+                };
                 if let scope::DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -1008,16 +1034,21 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
 }
 
+/// Tail byte that begins the second marked reference of an 87-byte fixed tail.
+const FIXED_TAIL_SECOND_REFERENCE: usize = 30;
+
 pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
         ScopeTailForm::Fixed,
         rigid_group,
+        second_tail_reference,
     )
 }
 
@@ -1180,6 +1211,7 @@ fn parameter_scope_previous_history_offset_for_form(
     tail_length: usize,
     tail_form: ScopeTailForm,
     rigid_group: bool,
+    second_tail_reference: bool,
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
@@ -1198,7 +1230,8 @@ fn parameter_scope_previous_history_offset_for_form(
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
-        (_, 87) => Some(41),
+        (_, 87) if second_tail_reference => Some(41),
+        (_, 87) => Some(31),
         _ => None,
     }
 }
@@ -1434,6 +1467,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 tail_length,
                 tail_form,
                 kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
             ) {
                 Some(offset) => Some(kind_end.checked_add(offset)?),
                 None => None,
@@ -1633,7 +1667,9 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 });
                 if let scope::DesignScopePayloadMut::Extrude(slot)
                 | scope::DesignScopePayloadMut::Extrusion(slot)
-                | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+                | scope::DesignScopePayloadMut::Extrusao(slot)
+                | scope::DesignScopePayloadMut::Extruir(slot)
+                | scope::DesignScopePayloadMut::ExtrudeJa(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }

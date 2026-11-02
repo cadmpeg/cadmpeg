@@ -38,49 +38,49 @@ fn nurbs_ends(
 /// A bounded wrapper of an intersection whose chart is absent: the curve is
 /// the intersection of `supports` between the wrapper's two stored ends.
 struct TracedWrapper {
-    attr: u16,
+    attr: u32,
     offset: usize,
     end: usize,
-    supports: [u16; 2],
+    supports: [u32; 2],
     ends: [cadmpeg_ir::math::Point3; 2],
 }
 
 /// Rolling balls already resolved for one face, keyed by blend attribute and
 /// nesting depth.
 pub(super) type BlendMemo<'a, 'ctx> =
-    RefCell<HashMap<(u16, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
+    RefCell<HashMap<(u32, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
 
 /// Blends a rolling-ball support may nest within one another.
 const MAX_BLEND_NESTING: usize = 3;
 
 #[derive(Default)]
 pub(super) struct CarrierIndex {
-    curves: HashMap<u16, IndexedCurve>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
+    curves: HashMap<u32, IndexedCurve>,
+    surfaces: HashMap<u32, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
+    sweeps: HashMap<u32, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
+    blends: HashMap<u32, blend::BlendCarrier>,
     /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
+    offsets: HashMap<u32, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    blend_support_pairs: HashMap<u32, blend::SupportPairCarrier>,
     /// Compact curves whose records share one attribute and geometry but not
     /// one orientation marker (spec §7.2).
-    marker_conflicts: HashSet<u16>,
+    marker_conflicts: HashSet<u32>,
     /// Blend-boundary records naming one side of a rolling-ball construction.
-    blend_bounds: HashMap<u16, blend::BlendBoundCarrier>,
+    blend_bounds: HashMap<u32, blend::BlendBoundCarrier>,
     /// Intersection records whose chart is absent, with their supports.
-    chartless_intersections: HashMap<u16, [u16; 2]>,
+    chartless_intersections: HashMap<u32, [u32; 2]>,
     /// Bounded wrappers of chartless intersections, traced at refinement.
     traced: Vec<TracedWrapper>,
     /// The stored chordal error of each intersection chart refined onto its
     /// exact intersection.
-    stored_chordal_errors: HashMap<u16, f64>,
+    stored_chordal_errors: HashMap<u32, f64>,
     /// `SP_CURVE` records whose `b_curve` decodes (spec §7.6).
-    sp_curves: HashMap<u16, sp_curve::SpCurve>,
+    sp_curves: HashMap<u32, sp_curve::SpCurve>,
     /// Bounded curves on an `SP_CURVE`, the curves of a tolerant edge's fins.
-    surface_curves: HashMap<u16, sp_curve::SurfaceCurveCarrier>,
+    surface_curves: HashMap<u32, sp_curve::SurfaceCurveCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
@@ -106,35 +106,35 @@ impl CarrierIndex {
         }
     }
 
-    pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
+    pub(super) fn curve(&self, attr: u32) -> Option<&IndexedCurve> {
         self.curves.get(&attr)
     }
 
     /// Whether compact records of `attr` disagree on their marker (spec §7.2).
-    pub(super) fn marker_conflict(&self, attr: u16) -> bool {
+    pub(super) fn marker_conflict(&self, attr: u32) -> bool {
         self.marker_conflicts.contains(&attr)
     }
 
-    pub(super) fn curve_attrs(&self) -> HashSet<u16> {
+    pub(super) fn curve_attrs(&self) -> HashSet<u32> {
         self.curves.keys().copied().collect()
     }
 
     /// The chordal error a refined intersection chart was stored with.
-    pub(super) fn stored_chordal_error(&self, attr: u16) -> Option<f64> {
+    pub(super) fn stored_chordal_error(&self, attr: u32) -> Option<f64> {
         self.stored_chordal_errors.get(&attr).copied()
     }
 
     /// The supports of an intersection record whose chart is absent.
-    pub(super) fn chartless_intersection(&self, attr: u16) -> Option<[u16; 2]> {
+    pub(super) fn chartless_intersection(&self, attr: u32) -> Option<[u32; 2]> {
         self.chartless_intersections.get(&attr).copied()
     }
 
-    pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
+    pub(super) fn surface(&self, attr: u32) -> Option<&SurfaceCarrier> {
         self.surfaces.get(&attr)
     }
 
     /// Swept/spun surface construction carried by one attribute.
-    pub(super) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
+    pub(super) fn sweep(&self, attr: u32) -> Option<&sweep::SweepCarrier> {
         self.sweeps.get(&attr)
     }
 
@@ -144,18 +144,18 @@ impl CarrierIndex {
     }
 
     /// The `SP_CURVE` record carried by `attr` (spec §7.6).
-    pub(super) fn sp_curve(&self, attr: u16) -> Option<&sp_curve::SpCurve> {
+    pub(super) fn sp_curve(&self, attr: u32) -> Option<&sp_curve::SpCurve> {
         self.sp_curves.get(&attr)
     }
 
     /// A bounded curve on an `SP_CURVE` carried by `attr` (spec §7.6).
-    pub(super) fn surface_curve(&self, attr: u16) -> Option<&sp_curve::SurfaceCurveCarrier> {
+    pub(super) fn surface_curve(&self, attr: u32) -> Option<&sp_curve::SurfaceCurveCarrier> {
         self.surface_curves.get(&attr)
     }
 
     /// The support of an `SP_CURVE` on carrier `attr`: a surface carrier,
     /// else a swept or spun construction, else an offset of a surface carrier.
-    pub(super) fn sp_curve_support(&self, attr: u16) -> Option<sp_curve::ResolvedSupport<'_>> {
+    pub(super) fn sp_curve_support(&self, attr: u32) -> Option<sp_curve::ResolvedSupport<'_>> {
         if let Some(surface) = self.surfaces.get(&attr) {
             return Some(sp_curve::ResolvedSupport::Surface(&surface.geometry));
         }
@@ -169,7 +169,7 @@ impl CarrierIndex {
 
     /// The swept or spun construction `attr` as an `SP_CURVE` support: its
     /// profile carrier and its spin or sweep, when the profile decodes.
-    pub(super) fn sweep_support(&self, attr: u16) -> Option<sp_curve::SweepSupport> {
+    pub(super) fn sweep_support(&self, attr: u32) -> Option<sp_curve::SweepSupport> {
         let construction = self.sweeps.get(&attr)?;
         let profile = self.curves.get(&construction.profile_attr)?;
         Some(sp_curve::SweepSupport {
@@ -179,7 +179,7 @@ impl CarrierIndex {
     }
 
     /// The offset `attr` of a surface carrier as an `SP_CURVE` support.
-    pub(super) fn offset_support(&self, attr: u16) -> Option<sp_curve::OffsetSupport> {
+    pub(super) fn offset_support(&self, attr: u32) -> Option<sp_curve::OffsetSupport> {
         let offset = self.offsets.get(&attr)?;
         let base = self.surfaces.get(&offset.support)?;
         Some(sp_curve::OffsetSupport {
@@ -189,17 +189,17 @@ impl CarrierIndex {
     }
 
     /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(super) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
+    pub(super) fn blend(&self, attr: u32) -> Option<&blend::BlendCarrier> {
         self.blends.get(&attr)
     }
 
     /// Exact offset-surface construction carried by `attr`.
-    pub(super) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
+    pub(super) fn offset(&self, attr: u32) -> Option<&offset::OffsetCarrier> {
         self.offsets.get(&attr)
     }
 
     /// Zero-offset surface pair carried by `attr`.
-    pub(super) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
+    pub(super) fn blend_support_pair(&self, attr: u32) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
     }
 
@@ -212,7 +212,7 @@ impl CarrierIndex {
     pub(super) fn support_pair_wedge<'a>(
         &'a self,
         ctx: &DecodeContext<'_>,
-        attr: u16,
+        attr: u32,
         spine: &cadmpeg_ir::geometry::CurveGeometry,
         vertices: &[cadmpeg_ir::math::Point3],
     ) -> Result<Option<super::blend_fit::Wedge<'a>>, cadmpeg_core::CodecError> {
@@ -240,7 +240,7 @@ impl CarrierIndex {
         let mut refined_curves = Vec::new();
         let mut traced_curves = Vec::new();
         {
-            let spines: HashSet<u16> = self.blends.values().map(|blend| blend.spine).collect();
+            let spines: HashSet<u32> = self.blends.values().map(|blend| blend.spine).collect();
             // Attribute order makes the first refusal deterministic.
             let mut charts = self.curves.iter().collect::<Vec<_>>();
             charts.sort_unstable_by_key(|(attr, _)| **attr);
@@ -363,7 +363,7 @@ impl CarrierIndex {
     /// names.
     fn chart_supports<'s, 'g, 'ctx>(
         &'s self,
-        attrs: [u16; 2],
+        attrs: [u32; 2],
         blends: &'s [Option<std::rc::Rc<super::blend_fit::BlendGeometry<'g, 'ctx>>>; 2],
     ) -> Option<[super::chart_refine::Support<'s, 'g, 'ctx>; 2]> {
         let support = |slot: usize| -> Option<super::chart_refine::Support<'s, 'g, 'ctx>> {
@@ -390,7 +390,7 @@ impl CarrierIndex {
     fn blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<
@@ -412,7 +412,7 @@ impl CarrierIndex {
     fn nested_blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -438,7 +438,7 @@ impl CarrierIndex {
     fn solve_blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -498,7 +498,7 @@ impl CarrierIndex {
     pub(super) fn blend_side<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
@@ -511,7 +511,7 @@ impl CarrierIndex {
     fn nested_blend_side<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -531,12 +531,12 @@ impl CarrierIndex {
     }
 
     #[cfg(test)]
-    pub(super) fn insert_chartless(&mut self, attr: u16, supports: [u16; 2]) {
+    pub(super) fn insert_chartless(&mut self, attr: u32, supports: [u32; 2]) {
         self.chartless_intersections.insert(attr, supports);
     }
 
     #[cfg(test)]
-    fn insert_blend_support_pair(&mut self, attr: u16, carrier: blend::SupportPairCarrier) {
+    fn insert_blend_support_pair(&mut self, attr: u32, carrier: blend::SupportPairCarrier) {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
@@ -710,7 +710,7 @@ mod tests {
     /// A degree-one chart on supports 2 and 3 through `poles` in millimetres
     /// at chord-length parameters.
     fn chart(
-        attr: u16,
+        attr: u32,
         poles: Vec<cadmpeg_ir::math::Point3>,
         chordal_error: f64,
     ) -> super::intersection::IntersectionCarrier {
@@ -745,7 +745,7 @@ mod tests {
         }
     }
 
-    fn degree(index: &CarrierIndex, attr: u16) -> u32 {
+    fn degree(index: &CarrierIndex, attr: u32) -> u32 {
         match index.curve(attr).unwrap().carrier().geometry.solved() {
             Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve)) => curve.degree(),
             _ => panic!("expected a NURBS chart"),
@@ -836,7 +836,7 @@ mod tests {
 
     #[test]
     fn merge_keeps_one_traced_wrapper_per_attribute() {
-        let traced = |attr: u16, offset: usize| super::TracedWrapper {
+        let traced = |attr: u32, offset: usize| super::TracedWrapper {
             attr,
             offset,
             end: offset + 70,
@@ -875,7 +875,7 @@ mod tests {
             crate::test_support::parasolid::pair_blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut carriers = super::scan_carriers(&ctx, &record).expect("carrier scan");
-        let plane = |attr: u16, origin: Point3, normal: Vector3, reference: Vector3| {
+        let plane = |attr: u32, origin: Point3, normal: Vector3, reference: Vector3| {
             Carrier::Surface(SurfaceCarrier {
                 attr,
                 offset: 0,
