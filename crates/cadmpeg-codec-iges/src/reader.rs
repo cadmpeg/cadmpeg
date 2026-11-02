@@ -195,6 +195,65 @@ fn amend_dropped_records(
     }
 }
 
+/// Project Start-section text and otherwise-unstored Global metadata into
+/// document attributes (#222 §7.7). Fields already in source metadata
+/// (sender, file name, units) are not repeated here.
+fn project_document_attributes(
+    ir: &mut CadIr,
+    scan: &card::CardScan<'_>,
+    global: &global::ResolvedGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let mut items: Vec<(&str, String)> = Vec::new();
+    let mut start = String::new();
+    for (_, line) in scan.section(card::Section::Start) {
+        let width = line.payload.len().min(72);
+        let text = String::from_utf8_lossy(&line.payload[..width]);
+        let text = text.trim_end();
+        if text.is_empty() {
+            continue;
+        }
+        if !start.is_empty() {
+            start.push('\n');
+        }
+        start.push_str(text);
+    }
+    if !start.is_empty() {
+        items.push(("start", start));
+    }
+    for (name, value) in [
+        ("system_id", global.system_id()),
+        ("receiver", global.receiver_product()),
+        ("author", global.author_name()),
+        ("organization", global.author_organization()),
+        ("generation_date", global.generation_date()),
+        ("model_date", global.model_date()),
+    ] {
+        if let Some(value) = value {
+            items.push((name, value.to_owned()));
+        }
+    }
+    for (name, value) in items {
+        ctx.charge_entities(1, "iges_document_attributes")?;
+        let key = cadmpeg_ir::ids::IdentityKey::encode_key_text(&format!("document:{name}"));
+        let id = cadmpeg_ir::ids::AttributeId::compose(
+            &cadmpeg_ir::identity_namespace!("iges", "application", "attribute"),
+            key,
+        );
+        ir.model.attributes.push(
+            cadmpeg_ir::attributes::SourceAttribute::new(
+                ctx,
+                id,
+                None,
+                cadmpeg_ir::attributes::AttributeTarget::Document,
+                name.to_owned(),
+                vec![cadmpeg_ir::attributes::AttributeValue::String(value)],
+            )?,
+        );
+    }
+    Ok(())
+}
+
 fn quarantined_parameter_sequences(
     records: &[parameter::QuarantinedParameterRecord],
 ) -> BTreeSet<u32> {
@@ -811,6 +870,11 @@ fn decode_with_occurrence_limits(
             native::store_physical_cards(&mut ir, &parse.scan, ctx)?
         }
     };
+    if !ctx.container_only() {
+        if let global::GlobalRecord::Resolved(global) = &parse.global {
+            project_document_attributes(&mut ir, &parse.scan, global, ctx)?;
+        }
+    }
     source_fidelity.append(part_fidelity)?;
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();

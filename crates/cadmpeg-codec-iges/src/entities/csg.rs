@@ -150,6 +150,8 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    // Feature ordinals are dense in source order, starting at 0 (#209 §2.2).
+    let mut ordinal = 0_u64;
 
     for entry in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
@@ -349,7 +351,7 @@ pub(super) fn project(
             ir.model.features.push(cadmpeg_ir::features::Feature {
                 product_definition: None,
                 id: crate::ids::feature(&crate::ids::Stem::directory(entry.sequence)),
-                ordinal: u64::from(entry.sequence),
+                ordinal,
                 name: std::str::from_utf8(&entry.label)
                     .ok()
                     .map(str::trim)
@@ -367,6 +369,7 @@ pub(super) fn project(
                 ),
                 native_ref: Some(format!("iges:solid:primitive#D{}", entry.sequence)),
             });
+            ordinal = ordinal.saturating_add(1);
         } else {
             losses.push(crate::loss::IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "iges:entity:directory#{}: analytic primitive type {} has no admitted neutral construction with this placement", entry.sequence, entry.entity_type
