@@ -1,0 +1,184 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "sat": {
+        "unknowns": [
+          {
+            "id": "sat:source:part#69dbf350070966a407b70dac9576d44d7a01257624bcce1ac30bc5af7044fe22"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "acis_save_format_version": "23200",
+        "kernel_family": "asm",
+        "kernel_flags": "2",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 232.4.0.65535 OSX",
+        "save_date": "Synthetic",
+        "scale": "1"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "save_format_major": "232",
+                "save_format_minor": "0"
+              },
+              "dialect": "acis:text-asm"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "encoding": "text",
+              "terminator": "End-of-ASM-data"
+            },
+            "dialect": "sat:text"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "coverage": {
+      "unknown_records": 1,
+      "unknown_surface_faces": 0
+    },
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "save_format_major": "232",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:text-asm"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "encoding": "text",
+            "terminator": "End-of-ASM-data"
+          },
+          "dialect": "sat:text"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part stream stream=\"\" offset=124 length=258: malformed container: invalid ASM source identity component: identity component component is invalid: \"#\"; dropped=[]",
+        "provenance": {
+          "byte_len": 258,
+          "format": "sat",
+          "offset": 124
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "geometry.framed-without-carriers",
+          "kind": "geometry_not_transferred",
+          "namespace": "sat",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the framed stream contains entity records but decoded no surfaces, points, or faces. The stream ends with `End-of-ASM-data`.",
+        "severity": "blocking"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": false,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "47ca7bc4c7e367b3479a072710e19f45b887c2cf45ef4d53b0d590938c42258f",
+    "retained_records": {
+      "sat:source:part#69dbf350070966a407b70dac9576d44d7a01257624bcce1ac30bc5af7044fe22": {
+        "bytes": {
+          "data": "YXNtaGVhZGVyICQtMSAtMSBAMTMgMjMyLjQuMC42NTUzNSAjCkBAQCMjIyQkJApib2R5ICQtMSAtMSAkLTEgJDIgJC0xICQtMSAjCmx1bXAgJC0xIC0xICQtMSAkLTEgJDMgJDEgIwpzaGVsbCAkLTEgLTEgJC0xICQtMSAkLTEgJDQgJC0xICQyICMKZmFjZSAkLTEgLTEgJC0xICQtMSAkLTEgJDMgJC0xICQ1IGZvcndhcmQgc2luZ2xlICMKc3BoZXJlLXN1cmZhY2UgJC0xIC0xICQtMSAwIDAgMCAyNSAxIDAgMCAwIDAgMSBmb3J3YXJkX3YgSSBJIEkgSSAj",
+          "retention": "inline"
+        },
+        "offset": 124,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}

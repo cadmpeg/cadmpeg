@@ -40,6 +40,12 @@ pub(super) fn plan(
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
+    // Write the canonical side of an active configuration that carries state
+    // instead of refusing on its validation Error (#217, #237).
+    crate::history::write::configurations::normalize_active_configuration_state(
+        &mut projected.model.configurations,
+        &mut losses,
+    );
     let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new())?;
     if let Some(finding) = validation
         .findings
