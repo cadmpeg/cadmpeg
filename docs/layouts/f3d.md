@@ -217,7 +217,8 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The wide expression trailer is eleven bytes |
+| 0 | 1 | `text` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 1 | 5 | `zero_run_5` | `bytes[5]` | little | spec | The wide expression trailer is eleven bytes |
 | 6 | 1 | `driven` | `u8` | little | spec | The wide expression trailer is eleven bytes |
 | 7 | 1 | `reserved_7` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
 | 8 | 1 | `favorite` | `u8` | little | spec | The wide expression trailer is eleven bytes |
@@ -3148,6 +3149,22 @@ Unstated regions:
 - `29..33` (4 B): The second marked identity slot is zero in this selection form.
 - `37..41` (4 B): The identity record stores zero bytes at offsets 37 through 40.
 
+## `work_point_sketch_point_compact_identity`
+
+Spec §3.1 · layout: byte offsets · size: 37 B
+
+Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 8 | `sketch_record_index` | `u64` | little | spec | the owning Sketch entity record index as a u64 at offset 21 |
+| 29 | 8 | `point_persistent_id` | `u64` | little | spec | the sketch-point persistent id as a u64 at offset 29 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
+- `11..21` (10 B): The compact identity stores zero bytes at offsets 11 through 20.
+
 ## `class_338_sketch_curve_identity`
 
 Spec §3.1 · layout: byte offsets · size: 49 B
@@ -3694,7 +3711,8 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `first_side_extent` | `u32` | little | spec | A first-side value other than `2` |
-| 4 | 9 | `zero_run_9` | `bytes[9]` | little | spec | is followed by nine zero bytes |
+| 4 | 5 | `zero_run_5` | `bytes[5]` | little | spec | is followed by five zero bytes |
+| 9 | 4 | `target_option` | `u32` | little | spec | the u32 target option at first-side offset `+9` |
 | 13 | 4 | `second_side_extent` | `u32` | little | spec | the second-side value at first-side offset `+13` |
 
 ## `current_extrude_shape_target_extent_prefix`
@@ -4874,6 +4892,20 @@ Unstated regions:
 
 - `0..42` (42 B): The fixed section begins with the retained fields and common envelope before the gap-owner reference.
 - `75..81` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
+
+## `move_marked_transform_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A `Move` scope whose primary bytes 11 through 20 are zero |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | primary bytes 11 through 20 are zero |
+| 21 | 11 | `transform_reference` | `bytes[11]` | little | spec | a marked reference to its rigid-transform record at offset 21 |
+| 32 | 4 | `reference_flag` | `u32` | little | spec | u32 `1` at offset 32 |
+| 36 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked reference to its first ordered reference at offset 36 |
 
 ## `move_transform_frame_253`
 

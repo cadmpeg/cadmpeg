@@ -230,8 +230,10 @@ pub(crate) mod design_parameter_tail {
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 11;
-    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_6: usize = 0;
+    /// Offset of `text` (`u8`). Spec §3.1.
+    pub(crate) const TEXT: usize = 0;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 1;
     /// Offset of `driven` (`u8`). Spec §3.1.
     pub(crate) const DRIVEN: usize = 6;
     /// Offset of `reserved_7` (`u8`). Spec §3.1.
@@ -3222,6 +3224,22 @@ pub(crate) mod work_point_sketch_point_identity {
     pub(crate) const POINT_PERSISTENT_ID: usize = 33;
 }
 
+/// Byte offsets for the `work_point_sketch_point_compact_identity` record.
+///
+/// Spec §3.1. Record length 37 B.
+///
+/// ```text
+/// Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37.
+/// ```
+pub(crate) mod work_point_sketch_point_compact_identity {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `sketch_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SKETCH_RECORD_INDEX: usize = 21;
+    /// Offset of `point_persistent_id` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const POINT_PERSISTENT_ID: usize = 29;
+}
+
 /// Byte offsets for the `class_338_sketch_curve_identity` record.
 ///
 /// Spec §3.1. Record length 49 B.
@@ -3735,6 +3753,10 @@ pub(crate) mod current_extrude_operation_fields {
 /// Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2.
 /// ```
 pub(crate) mod current_extrude_non_target_extent_pair {
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 4;
+    /// Offset of `target_option` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TARGET_OPTION: usize = 9;
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SECOND_SIDE_EXTENT: usize = 13;
 }
@@ -4931,6 +4953,24 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
     pub(crate) const RADIUS_OWNER_REFERENCE: usize = 64;
     /// Offset of `inside_bend_radius` (`f64`, little-endian). Spec §3.1.
     pub(crate) const INSIDE_BEND_RADIUS: usize = 81;
+}
+
+/// Byte offsets for the `move_marked_transform_prologue` record.
+///
+/// Spec §3.1. Record length 47 B.
+///
+/// ```text
+/// Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
+/// ```
+pub(crate) mod move_marked_transform_prologue {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 21;
+    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_FLAG: usize = 32;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 36;
 }
 
 /// Byte offsets for the `move_transform_frame_253` record.

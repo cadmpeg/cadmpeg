@@ -1164,6 +1164,25 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), 40);
 
+    // The owner of a text parameter stores the text in its scalar envelope.
+    let text = parameter
+        .clone()
+        .with_text_value(Some(crate::records::identity::RecordedValue {
+            value: "AB".into(),
+            offset: 270,
+        }))
+        .unwrap();
+    let owners = with_scan(&archive(stream, &exact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&text),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("text parameter owner");
+    assert!(owners.owners.is_empty());
+    assert_eq!(owners.unparsed, [text.id.clone()]);
+
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());
     let owners = with_scan(&archive(stream, &compact), |scan| {
