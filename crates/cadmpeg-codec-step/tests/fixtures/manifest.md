@@ -22,3 +22,7 @@ authored against `docs/formats/step.md`.
 | `ap242_geometric_set.p21` | geometrically bounded surface representation with a curve-bounded sheet carrier |
 | `ap242_degree_cone.p21` | apex-zero conical surface with a conversion-based degree context |
 | `ap242_vertex_loop.p21` | spherical face with singleton vertex boundaries at surface singularities |
+| `ap214_wireframe.p21` | connected edge set in an edge-based wireframe model over two shared edges (#233 check 9) |
+| `ap242_tessellated_solid.p21` | tessellated-solid container over an exact sheet body; the writer normalizes the container to the linked body kind (#233 check 9) |
+| `ap242_coaxiality.p21` | coaxiality tolerance with an unset magnitude: the decoder warns and retains it opaque (#233 check 9) |
+| `ap242_surface_replica.p21` | surface replica with an unresolvable operator over a plain plane; the basis pairs while the replica is retained opaque (#233 check 9) |
