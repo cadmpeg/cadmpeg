@@ -62,16 +62,13 @@ pub(crate) fn ensure_default_configuration(
     supported: &[BodyId],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !projected.scope.design
-        || !projected.model.configurations.is_empty()
-        || supported.is_empty()
+    if !projected.scope.design || !projected.model.configurations.is_empty() || supported.is_empty()
     {
         return Ok(());
     }
     let id = ConfigurationId::mint("sldprt:model:configuration#default")
         .map_err(|_| CodecError::malformed("SLDPRT default configuration identity is invalid"))?;
-    let bodies = DistinctMembers::try_from(supported.to_vec())
-        .map_err(CodecError::malformed)?;
+    let bodies = DistinctMembers::try_from(supported.to_vec()).map_err(CodecError::malformed)?;
     losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
         "configuration {id}: the document carries no configuration, so synthesis authored the required native default carrying {} body(s)",
         supported.len()
@@ -424,6 +421,38 @@ fn generated_configuration_record_id(id: &cadmpeg_ir::features::ConfigurationId)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn configuration_less_document_gets_a_native_default() {
+        let mut ir = crate::test_support::ir::source_less_cube();
+        ir.scope.design = true;
+        ir.model.configurations.clear();
+        let bodies = ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>();
+        let mut losses = Vec::new();
+        super::ensure_default_configuration(&mut ir, &bodies, &mut losses)
+            .expect("a default configuration is authored");
+        assert_eq!(ir.model.configurations.len(), 1);
+        let default = &ir.model.configurations[0];
+        assert_eq!(default.name.as_deref(), Some("Default"));
+        assert!(default.active);
+        assert_eq!(
+            default
+                .bodies
+                .as_ref()
+                .map(|bodies| bodies.iter().cloned().collect::<Vec<_>>()),
+            Some(bodies)
+        );
+        assert!(
+            losses.iter().any(|loss| loss.message.contains("Default")
+                || loss.message.contains("default")),
+            "the authored default is charged"
+        );
+    }
+
     #[test]
     fn generated_configuration_identity_escapes_embedded_separators() {
         let id =
