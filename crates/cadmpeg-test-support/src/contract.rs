@@ -194,6 +194,33 @@ pub fn neutral_view(ir: &CadIr, exclude: &[ArenaClass]) -> Value {
     value
 }
 
+/// W3 (#219): the writer declares every native arena its input holds.
+///
+/// The registry half holds by construction: every writer builds its initial
+/// declarations from its codec's native arena registry. This asserts the
+/// input half over one export: no non-empty arena of the input namespace
+/// goes undeclared in the report.
+///
+/// The reserved `unknowns` arena is out of scope: the export wrapper's
+/// omission accounting skips it by name, and no production decoder emits a
+/// non-empty one.
+pub fn assert_declarations_cover_input(namespace: &str, ir: &CadIr, report: &ExportReport) {
+    let Some(space) = ir.native.namespace(namespace) else {
+        return;
+    };
+    let declared = report.native_dispositions.namespaces.get(namespace);
+    for (arena, records) in space.arenas() {
+        if records.is_empty() || arena == "unknowns" {
+            continue;
+        }
+        assert!(
+            declared.is_some_and(|space| space.arenas.contains_key(arena)),
+            "{namespace}.{arena} holds {} record(s) but the export declares no disposition",
+            records.len()
+        );
+    }
+}
+
 /// Neutral arenas the actual output path declares fully written.
 pub fn written_arenas(report: &ExportReport) -> BTreeSet<ArenaName> {
     ArenaName::ALL

@@ -9,8 +9,15 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_test_support::data_checks::conformance::{dangling_token_findings, scope_findings};
-use cadmpeg_test_support::data_checks::decode_goldens;
+use cadmpeg_test_support::data_checks::conformance::{
+    dangling_token_findings, scope_findings, unrepresented_findings,
+};
+use cadmpeg_test_support::data_checks::properties::property_map_findings;
+use cadmpeg_test_support::data_checks::{
+    creo_stale_findings, decode_goldens, equation_identities, expression_text_findings,
+    feature_ordinal_findings, freecad_stale_findings, never_stale_findings,
+    solidworks_stale_findings, source_attributes_findings,
+};
 use serde_json::Value;
 
 fn workspace() -> PathBuf {
@@ -23,7 +30,25 @@ fn decode_findings(document: &Value, report: &Value, requested: &[&str]) -> Vec<
     findings
 }
 
-fn fixtures(format: &str) -> Vec<PathBuf> {
+/// Data checks 1, 2, 5, 6 and 7 (#246) for one live decode of one format.
+fn decode_data_findings(document: &Value, report: &Value, format: &str) -> Vec<String> {
+    let mut findings = property_map_findings(format, document);
+    findings.extend(source_attributes_findings(document));
+    findings.extend(feature_ordinal_findings(document));
+    findings.extend(match format {
+        "fcstd" => freecad_stale_findings(document),
+        "sldprt" => solidworks_stale_findings(document),
+        "creo" => creo_stale_findings(document, report),
+        _ => never_stale_findings(document),
+    });
+    findings.extend(expression_text_findings(
+        document,
+        &equation_identities(document),
+    ));
+    findings
+}
+
+pub(crate) fn fixtures(format: &str) -> Vec<PathBuf> {
     let root = workspace();
     let (directory, extension) = match format {
         "step" => (
@@ -109,8 +134,19 @@ fn fixture_findings(format: &str) -> Vec<String> {
             };
             let document = serde_json::to_value(decoded.ir()).expect("CADIR JSON");
             let report = serde_json::to_value(decoded.report()).expect("report JSON");
+            let fidelity = serde_json::to_value(decoded.source_fidelity()).expect("fidelity JSON");
             findings.extend(
                 decode_findings(&document, &report, requested)
+                    .into_iter()
+                    .map(|finding| format!("{} at {}: {finding}", path.display(), depth.as_str())),
+            );
+            findings.extend(
+                decode_data_findings(&document, &report, format)
+                    .into_iter()
+                    .map(|finding| format!("{} at {}: {finding}", path.display(), depth.as_str())),
+            );
+            findings.extend(
+                unrepresented_findings(&fidelity)
                     .into_iter()
                     .map(|finding| format!("{} at {}: {finding}", path.display(), depth.as_str())),
             );
@@ -132,6 +168,11 @@ fn golden_findings(crate_name: &str) -> Vec<String> {
             .unwrap_or(Value::Null);
         findings.extend(
             decode_findings(&golden.ir, &report, &["model", "design"])
+                .into_iter()
+                .map(|finding| format!("{}: {finding}", golden.path)),
+        );
+        findings.extend(
+            unrepresented_findings(&golden.fidelity)
                 .into_iter()
                 .map(|finding| format!("{}: {finding}", golden.path)),
         );

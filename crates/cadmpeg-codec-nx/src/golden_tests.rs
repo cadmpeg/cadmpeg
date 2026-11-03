@@ -337,7 +337,6 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_deltas_instances",
     "parasolid_deltas_transmit_headers",
     "parasolid_deltas_records",
-    "parasolid_deltas_residual_spans",
     "parasolid_deltas_partition_prefixes",
     "parasolid_deltas_schemas",
     "parasolid_deltas_metadata",
@@ -1114,13 +1113,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 253, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 252, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        109,
+        108,
         "group A family count"
     );
     assert_eq!(
@@ -1181,8 +1180,9 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    // The mesh-only JT source has no located design content (§1.1).
-    assert_eq!(summary.cut, 1, "{summary:?}");
+    // The mesh-only JT source, the external-child assembly and the two
+    // RMFastLoad body-selection inputs have no located design content (§1.1).
+    assert_eq!(summary.cut, 4, "{summary:?}");
 }
 
 #[test]
@@ -1209,3 +1209,4 @@ fn golden_mesh_only_jt_keeps_projected_neutral_content() {
 fn goldens_hold_no_native_back_links() {
     cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&NxCodec, &inputs());
 }
+

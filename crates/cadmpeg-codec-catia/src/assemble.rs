@@ -74,11 +74,13 @@ pub(crate) fn annotate(
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
 /// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
+/// Returns the findings instead of a bool so callers drop only the records a
+/// finding names, and the records that need them.
 pub(crate) fn neutral_model_is_admissible(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::report::check::ValidationReport, cadmpeg_core::CodecError> {
     ir.model.finalize();
     Ok(cadmpeg_ir::admit_with_additional_native_identities(
         ctx,
@@ -86,8 +88,183 @@ pub(crate) fn neutral_model_is_admissible(
         pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
-    )?
-    .is_ok())
+    )?)
+}
+
+/// Admit a topology candidate, dropping only the records validation findings
+/// name (and, through re-checking, the records that need them).
+///
+/// Each round removes the error findings' named records from the candidate
+/// model and charges a validation loss naming them. Dependents surface as new
+/// findings in the next round through their dangling references. Stops when
+/// the candidate admits or when a round removes nothing. Returns the dropped
+/// record identities in removal order with the final admission report; the
+/// caller removes the matching annotations.
+pub(crate) fn prune_to_admissible(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut CadIr,
+    pending_unknowns: &[UnknownRecord],
+    losses: &mut Vec<LossNote>,
+) -> Result<(Vec<String>, cadmpeg_ir::report::check::ValidationReport), cadmpeg_core::CodecError> {
+    let mut dropped = Vec::new();
+    let mut report = neutral_model_is_admissible(ctx, ir, pending_unknowns)?;
+    loop {
+        if report.is_ok() {
+            return Ok((dropped, report));
+        }
+        let live: std::collections::BTreeSet<String> =
+            model_record_identities(ir).into_iter().collect();
+        let mut named: Vec<String> = report
+            .findings
+            .iter()
+            .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+            .flat_map(|finding| finding.entity.iter().chain(finding.related.iter()).cloned())
+            .filter(|id| live.contains(id))
+            .collect();
+        named.sort();
+        named.dedup();
+        if named.is_empty() {
+            return Ok((dropped, report));
+        }
+        let dead: std::collections::BTreeSet<String> = named.iter().cloned().collect();
+        retain_live_model_records(&mut ir.model, &dead);
+        losses.push(CatiaLossCode::TopologyAdmissionPruned.note(format!(
+            "Topology admission dropped {} record(s) named by validation findings: {}.",
+            named.len(),
+            identity_statement(&named)
+        )));
+        dropped.extend(named);
+        report = neutral_model_is_admissible(ctx, ir, pending_unknowns)?;
+    }
+}
+
+/// Every neutral model record identity in the candidate.
+fn model_record_identities(ir: &CadIr) -> Vec<String> {
+    let mut identities = Vec::new();
+    macro_rules! collect_identities {
+        ($model:expr, $($field:ident),+) => {{
+            $(for record in &$model.$field {
+                identities.push(cadmpeg_ir::schema::EntitySchema::identity(record).to_owned());
+            })+
+        }};
+    }
+    collect_identities!(
+        ir.model,
+        bodies,
+        regions,
+        shells,
+        faces,
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        surfaces,
+        curves,
+        subds,
+        pcurves,
+        procedural_surfaces,
+        procedural_curves,
+        assets,
+        features,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        parameters,
+        sketches,
+        sketch_entities,
+        sketch_constraints,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        tessellations,
+        appearances,
+        appearance_bindings,
+        attributes,
+        pmi,
+        presentation_layers,
+        physical_materials,
+        mass_properties,
+        rigid_bodies,
+        colliders,
+        articulations,
+        physics_scenes,
+        solver_settings,
+        declared_measures
+    );
+    identities
+}
+
+/// Remove every model record whose identity is dead.
+fn retain_live_model_records(
+    model: &mut cadmpeg_ir::document::Model,
+    dead: &std::collections::BTreeSet<String>,
+) {
+    macro_rules! retain_live {
+        ($model:expr, $($field:ident),+) => {{
+            $($model.$field.retain(|record| !dead.contains(cadmpeg_ir::schema::EntitySchema::identity(record)));)+
+        }};
+    }
+    retain_live!(
+        model,
+        bodies,
+        regions,
+        shells,
+        faces,
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        surfaces,
+        curves,
+        subds,
+        pcurves,
+        procedural_surfaces,
+        procedural_curves,
+        assets,
+        features,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        parameters,
+        sketches,
+        sketch_entities,
+        sketch_constraints,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        tessellations,
+        appearances,
+        appearance_bindings,
+        attributes,
+        pmi,
+        presentation_layers,
+        physical_materials,
+        mass_properties,
+        rigid_bodies,
+        colliders,
+        articulations,
+        physics_scenes,
+        solver_settings,
+        declared_measures
+    );
 }
 
 /// One curve or surface carrier identity.
@@ -1166,6 +1343,96 @@ mod route_tests {
     }
 
     #[test]
+    fn admission_prune_drops_only_named_records() {
+        use cadmpeg_ir::report::Severity;
+        // The shell names a missing region; the vertex and point need nothing
+        // and stay while the shell goes with a validation loss naming it.
+        let mut ir = cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
+            .expect("fixture identities are valid");
+        let mut losses = Vec::new();
+        let (dropped, report) = crate::assemble::prune_to_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[],
+            &mut losses,
+        )
+        .expect("prune the inadmissible candidate");
+        assert!(report.is_ok());
+        // The shell goes first; the vertex it freed and the point it
+        // referenced follow through re-checking.
+        assert_eq!(
+            dropped,
+            [
+                "catia:test:shell#0",
+                "catia:test:vertex#0",
+                "catia:test:point#0"
+            ]
+        );
+        assert!(ir.model.shells.is_empty());
+        assert!(ir.model.vertices.is_empty());
+        assert!(ir.model.points.is_empty());
+        assert_eq!(losses.len(), 3);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::CatiaLossCode::TopologyAdmissionPruned.kind()
+        );
+        assert_eq!(losses[0].severity, Severity::Warning);
+        assert!(losses[0].message.contains("catia:test:shell#0"));
+    }
+
+    #[test]
+    fn admission_prune_drops_dependents_through_rechecking() {
+        use cadmpeg_ir::ids::{FaceId, ShellId};
+        use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
+        // A face in the dropped shell dangles after round one and is dropped
+        // in a later round with the freed carriers; each round charges a
+        // validation loss naming its records.
+        let mut ir = cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
+            .expect("fixture identities are valid");
+        let surface = SurfaceId::mint("catia:test:surface#0").expect("surface identity");
+        ir.model.surfaces.push(Surface {
+            native_ref: None,
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.faces.push(Face {
+            native_ref: None,
+            id: FaceId::mint("catia:test:face#0").expect("face identity"),
+            shell: ShellId::mint("catia:test:shell#0").expect("shell identity"),
+            surface,
+            sense: Sense::Forward,
+            loops: FaceLoops::Unspecified { loops: Vec::new() },
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        let mut losses = Vec::new();
+        let (dropped, report) = crate::assemble::prune_to_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[],
+            &mut losses,
+        )
+        .expect("prune the inadmissible candidate");
+        assert!(report.is_ok());
+        assert_eq!(
+            dropped,
+            [
+                "catia:test:face#0",
+                "catia:test:shell#0",
+                "catia:test:surface#0",
+                "catia:test:vertex#0",
+                "catia:test:point#0"
+            ]
+        );
+        assert!(ir.model.shells.is_empty());
+        assert!(ir.model.faces.is_empty());
+        assert!(ir.model.surfaces.is_empty());
+        assert_eq!(losses.len(), 3);
+    }
+
+    #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(
@@ -1173,7 +1440,8 @@ mod route_tests {
             &mut valid,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
 
         let mut invalid =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
@@ -1183,7 +1451,8 @@ mod route_tests {
             &mut invalid,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
@@ -1195,7 +1464,8 @@ mod route_tests {
             &mut accepted,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
         let mut rejected =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
@@ -1204,7 +1474,8 @@ mod route_tests {
             &mut rejected,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     /// Decimal object-id keys reach the gate in native traversal order, in which
@@ -1308,7 +1579,8 @@ mod route_tests {
             &mut ir,
             &unknowns
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]

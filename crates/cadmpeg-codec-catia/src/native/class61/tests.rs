@@ -226,6 +226,7 @@ fn rosters_preserve_logical_order_across_reordered_extents() {
             &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
     })
     .expect("logical source admission");
     let rows = &native.consolidated_class61_records;

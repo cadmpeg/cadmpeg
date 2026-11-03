@@ -22,6 +22,7 @@ use cadmpeg_ir::Exactness;
 
 use crate::assemble::{
     annotate, cgm_source_key, neutral_model_is_admissible, preserve_raw_payload,
+    prune_to_admissible,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::{FamilyEntityAdmission, FamilyOutput};
@@ -1013,6 +1014,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         }
     }
 
+    let mut prune_losses = Vec::new();
     let topology_counts = if let Some(allocation_topology) = &allocation_topology {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut candidate_annotations = annotations.copy_transaction();
@@ -1029,9 +1031,31 @@ pub(in crate::families) fn try_decode_zero_entity(
             },
             refusal,
         );
+        // Topology admission drops only the records a finding names, and the
+        // records that need them, with a validation loss naming them. A
+        // candidate that still does not admit falls back as before.
         let admissible = match &counts {
             Ok(Some(_)) => match neutral_model_is_admissible(ctx, &mut candidate_ir, &unknowns) {
-                Ok(admissible) => admissible,
+                Ok(report) => {
+                    if report.is_ok() {
+                        true
+                    } else {
+                        match prune_to_admissible(
+                            ctx,
+                            &mut candidate_ir,
+                            &unknowns,
+                            &mut prune_losses,
+                        ) {
+                            Ok((dropped, pruned)) => {
+                                for id in &dropped {
+                                    candidate_annotations.remove_entity(id);
+                                }
+                                pruned.is_ok()
+                            }
+                            Err(limit) => return Some(Err(limit)),
+                        }
+                    }
+                }
                 Err(limit) => return Some(Err(limit)),
             },
             _ => false,
@@ -1102,7 +1126,11 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    let losses = vec![topology_loss.note(topology_message.to_string())];
+    let losses = {
+        let mut losses = vec![topology_loss.note(topology_message.to_string())];
+        losses.extend(prune_losses);
+        losses
+    };
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
@@ -1480,7 +1508,8 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]
@@ -1610,7 +1639,8 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]
@@ -1771,7 +1801,8 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]

@@ -2,7 +2,6 @@
 //! Protein state and its owned package entries on the native wire.
 
 use cadmpeg_container::ZipCompression;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, ser::SerializeStruct, Deserialize, Serialize};
 
@@ -21,11 +20,6 @@ pub(crate) enum ProteinRecord {
         declared_len: std::num::NonZeroU32,
         entries: Vec<ProteinEntryRecord>,
     },
-    Malformed {
-        id: String,
-        directory_id: u32,
-        detail: String,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +28,6 @@ enum ProteinRecordState {
     Absent,
     Empty,
     Package,
-    Malformed,
 }
 
 #[derive(Deserialize)]
@@ -44,20 +37,18 @@ struct ProteinRecordWire {
     directory_id: Option<u32>,
     declared_len: Option<u32>,
     entry_count: u64,
-    detail: Option<String>,
 }
 
 impl Serialize for ProteinRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (id, state, directory_id, declared_len, entry_count, detail) = match self {
-            Self::Absent { id } => (id, ProteinRecordState::Absent, None, None, 0, None),
+        let (id, state, directory_id, declared_len, entry_count) = match self {
+            Self::Absent { id } => (id, ProteinRecordState::Absent, None, None, 0),
             Self::Empty { id, directory_id } => (
                 id,
                 ProteinRecordState::Empty,
                 Some(*directory_id),
                 Some(0),
                 0,
-                None,
             ),
             Self::Package {
                 id,
@@ -70,28 +61,14 @@ impl Serialize for ProteinRecord {
                 Some(*directory_id),
                 Some(declared_len.get()),
                 cadmpeg_core::decode::u64_from_index(entries.len()),
-                None,
-            ),
-            Self::Malformed {
-                id,
-                directory_id,
-                detail,
-            } => (
-                id,
-                ProteinRecordState::Malformed,
-                Some(*directory_id),
-                None,
-                0,
-                Some(detail.as_str()),
             ),
         };
-        let mut fields = serializer.serialize_struct("ProteinRecordWire", 6)?;
+        let mut fields = serializer.serialize_struct("ProteinRecordWire", 5)?;
         fields.serialize_field("id", id)?;
         fields.serialize_field("state", &state)?;
         fields.serialize_field("directory_id", &directory_id)?;
         fields.serialize_field("declared_len", &declared_len)?;
         fields.serialize_field("entry_count", &entry_count)?;
-        fields.serialize_field("detail", &detail)?;
         fields.end()
     }
 }
@@ -100,7 +77,7 @@ impl ProteinRecord {
     pub(crate) fn entries(&self) -> &[ProteinEntryRecord] {
         match self {
             Self::Package { entries, .. } => entries,
-            Self::Absent { .. } | Self::Empty { .. } | Self::Malformed { .. } => &[],
+            Self::Absent { .. } | Self::Empty { .. } => &[],
         }
     }
 
@@ -117,14 +94,20 @@ impl ProteinRecord {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        let [wire] =
-            <[_; 1]>::try_from(namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?)
-                .map_err(|records: Vec<_>| {
-                    serde_json::Error::custom(format!(
-                        "Inventor native data has {} Protein state records",
-                        records.len()
-                    ))
-                })?;
+        let records = namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?;
+        let Some([wire]) = <[_; 1]>::try_from(records)
+            .map_err(|records: Vec<_>| {
+                serde_json::Error::custom(format!(
+                    "Inventor native data has {} Protein state records",
+                    records.len()
+                ))
+            })
+            .ok()
+        else {
+            return Ok(Self::Absent {
+                id: "inventor:protein:state#root".to_owned(),
+            });
+        };
         let entries = namespace.arena_as_for_decode(ctx, "protein_entries")?;
         wire.into_record(entries)
             .map_err(|detail| serde_json::Error::custom(detail).into())
@@ -140,14 +123,11 @@ impl ProteinRecordWire {
             ProteinRecordState::Absent
                 if self.directory_id.is_none()
                     && self.declared_len.is_none()
-                    && self.detail.is_none()
                     && entries.is_empty() =>
             {
                 Ok(ProteinRecord::Absent { id: self.id })
             }
-            ProteinRecordState::Empty
-                if self.declared_len == Some(0) && self.detail.is_none() && entries.is_empty() =>
-            {
+            ProteinRecordState::Empty if self.declared_len == Some(0) && entries.is_empty() => {
                 Ok(ProteinRecord::Empty {
                     id: self.id,
                     directory_id: self
@@ -155,7 +135,7 @@ impl ProteinRecordWire {
                         .ok_or("empty Protein requires directory_id")?,
                 })
             }
-            ProteinRecordState::Package if self.detail.is_none() => Ok(ProteinRecord::Package {
+            ProteinRecordState::Package => Ok(ProteinRecord::Package {
                 id: self.id,
                 directory_id: self
                     .directory_id
@@ -164,15 +144,6 @@ impl ProteinRecordWire {
                     .ok_or("Protein package declared_len must be nonzero")?,
                 entries,
             }),
-            ProteinRecordState::Malformed if self.declared_len.is_none() && entries.is_empty() => {
-                Ok(ProteinRecord::Malformed {
-                    id: self.id,
-                    directory_id: self
-                        .directory_id
-                        .ok_or("malformed Protein requires directory_id")?,
-                    detail: self.detail.ok_or("malformed Protein requires detail")?,
-                })
-            }
             _ => Err("Protein state carries incompatible fields or entries".into()),
         }
     }
@@ -247,46 +218,6 @@ impl ProteinAssetRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "ProteinRejectionRecordWire")]
-pub(crate) struct ProteinRejectionRecord {
-    pub(crate) id: String,
-    pub(crate) entry_name: InstancePropertiesEntry,
-    pub(crate) ordinal: u64,
-    detail: NonBlankString,
-}
-
-impl Serialize for ProteinRejectionRecord {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut fields = serializer.serialize_struct("ProteinRejectionRecordWire", 4)?;
-        fields.serialize_field("id", &self.id)?;
-        fields.serialize_field("entry_name", self.entry_name.as_str())?;
-        fields.serialize_field("ordinal", &self.ordinal)?;
-        fields.serialize_field("detail", self.detail.as_str())?;
-        fields.end()
-    }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ProteinRejectionRecordWire {
-    pub(crate) id: String,
-    pub(crate) entry_name: String,
-    pub(crate) ordinal: u64,
-    pub(crate) detail: String,
-}
-
-impl TryFrom<ProteinRejectionRecordWire> for ProteinRejectionRecord {
-    type Error = String;
-    fn try_from(wire: ProteinRejectionRecordWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
-            ordinal: wire.ordinal,
-            detail: NonBlankString::new(wire.detail).ok_or("detail must not be empty")?,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct InstancePropertiesEntry(String);
 
@@ -314,7 +245,7 @@ impl InstancePropertiesEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
+    use super::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord};
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use std::num::NonZeroU32;
@@ -340,7 +271,6 @@ mod tests {
             serde_json::json!({
                 "id": "inventor:protein:state#root", "state": "package",
                 "directory_id": 3, "declared_len": 128, "entry_count": 1,
-                "detail": null,
             }),
         );
     }
@@ -353,17 +283,6 @@ mod tests {
                 "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
         });
         let record: ProteinAssetRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
-        assert_native_limit(&record, expected);
-    }
-
-    #[test]
-    fn protein_rejection_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
-            "id": "inventor:protein:rejection#0", "entry_name": "InstanceProperties.bin",
-            "ordinal": 0, "detail": "unsupported schema"
-        });
-        let record: ProteinRejectionRecord =
             serde_json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
@@ -389,15 +308,6 @@ mod tests {
             .expect_err("inconsistent ordinal")
             .to_string()
             .contains("ordinal"));
-        let rejection = serde_json::json!({
-            "id": "rejection", "entry_name": "InstanceProperties.bin", "ordinal": 0, "detail": "unsupported schema"
-        });
-        let admitted: ProteinRejectionRecord =
-            serde_json::from_value(rejection.clone()).expect("valid rejection");
-        assert_eq!(
-            serde_json::to_value(admitted).expect("valid rejection"),
-            rejection
-        );
         for entry_name in ["", "InstanceProperties.bin.bak", "instanceproperties.bin"] {
             let mut wire = asset.clone();
             wire["entry_name"] = serde_json::json!(entry_name);
@@ -405,19 +315,7 @@ mod tests {
                 .expect_err("invalid entry")
                 .to_string()
                 .contains("entry_name"));
-            let mut wire = rejection.clone();
-            wire["entry_name"] = serde_json::json!(entry_name);
-            assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
-                .expect_err("invalid entry")
-                .to_string()
-                .contains("entry_name"));
         }
-        let mut wire = rejection;
-        wire["detail"] = serde_json::json!("");
-        assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
-            .expect_err("empty detail")
-            .to_string()
-            .contains("detail"));
     }
 
     #[test]
@@ -467,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_and_malformed_states_have_no_package_entries() {
+    fn empty_and_absent_states_have_no_package_entries() {
         for record in [
             ProteinRecord::Absent {
                 id: "inventor:protein:state#root".into(),
@@ -475,11 +373,6 @@ mod tests {
             ProteinRecord::Empty {
                 id: "inventor:protein:state#root".into(),
                 directory_id: 3,
-            },
-            ProteinRecord::Malformed {
-                id: "inventor:protein:state#root".into(),
-                directory_id: 3,
-                detail: "truncated".into(),
             },
         ] {
             let mut namespace = NativeNamespace::default();

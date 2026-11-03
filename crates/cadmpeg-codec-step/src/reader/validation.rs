@@ -20,7 +20,7 @@ use super::decode_text;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
-use super::{RecordExt, ValueExt};
+use super::{live_referenced, RecordExt, ValueExt};
 
 /// The quantity that one validation item states, before unit scaling.
 #[derive(Clone, Copy)]
@@ -212,6 +212,17 @@ pub(super) fn decode(
                 .then_some(id)
         })
         .collect();
+    // A point the damage stranded keeps the record it built: referenced by
+    // a live statement, it is not an unreferenced validation point.
+    let stranded = if exchange.dead_instances().is_empty() {
+        BTreeSet::new()
+    } else {
+        live_referenced(exchange)
+    };
+    let dropped: BTreeSet<u64> = dropped
+        .into_iter()
+        .filter(|id| !stranded.contains(id))
+        .collect();
     ir.model.points.retain(|point| {
         // A point whose identity names no entity is not a validation point.
         let Some(id) = step_id(point.id.as_str()) else {
@@ -220,14 +231,14 @@ pub(super) fn decode(
         !dropped.contains(&id)
     });
     if !dropped.is_empty() {
-        ir.model.attributes.retain(|attribute| {
-            match &attribute.target {
+        ir.model
+            .attributes
+            .retain(|attribute| match &attribute.target {
                 cadmpeg_ir::attributes::AttributeTarget::Point(point) => {
                     step_id(point.as_str()).is_none_or(|id| !dropped.contains(&id))
                 }
                 _ => true,
-            }
-        });
+            });
     }
     Ok(StageOutcome {
         value: (),

@@ -72,11 +72,7 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    crate::decode::report::append_design_intent_losses(
-        &mut cadmpeg_ir::ArenaClasses::default(),
-        ir,
-        losses,
-    );
+    crate::decode::report::append_design_intent_losses(ir, losses);
 }
 
 #[test]

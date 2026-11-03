@@ -87,7 +87,7 @@ use crate::families::b2::records::B2ParameterPointPayload;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
-    PayloadSubtype,
+    PayloadSubtype, SkippedRecord,
 };
 use crate::storage_property::{self, CatiaStoragePropertyMember};
 use crate::value_block;
@@ -1837,7 +1837,7 @@ impl CatiaValueSchemaSelection {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn name(&self) -> Option<&str> {
         match &self.kind {
             CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
@@ -8387,24 +8387,37 @@ impl CatiaNative {
             &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
         .expect("decode the records")
     }
 
-    /// Decode CATIA-native records from descriptor-scoped logical sources.
+    /// Decode CATIA-native records from descriptor-scoped logical sources,
+    /// retaining each given-up `7C09` object record and reporting it.
     pub(crate) fn decode_with_record_sources(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         bytes: &[u8],
         sources: &[Vec<crate::wire::records::SourceExtent>],
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<
+        (
+            Self,
+            Vec<(
+                cadmpeg_ir::unknown::UnknownRecord,
+                cadmpeg_ir::report::loss::LossNote,
+                cadmpeg_ir::ArenaClasses,
+            )>,
+        ),
+        cadmpeg_core::CodecError,
+    > {
         let consolidated_records = crate::wire::records::consolidated_records_in_sources(
             bytes,
             sources.iter().map(|source| source.iter()),
         )?;
-        let mut native = Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)?;
+        let (mut native, give_ups) =
+            Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)?;
         native.sampled_parameter_maps =
             parameter_map::derive(ctx, bytes, sources, &consolidated_records)?;
-        Ok(native)
+        Ok((native, give_ups))
     }
 
     fn decode_with_records(
@@ -8412,7 +8425,82 @@ impl CatiaNative {
         bytes: &[u8],
         consolidated_records: &[ConsolidatedRecord],
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<
+        (
+            Self,
+            Vec<(
+                cadmpeg_ir::unknown::UnknownRecord,
+                cadmpeg_ir::report::loss::LossNote,
+                cadmpeg_ir::ArenaClasses,
+            )>,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        /// Give up one undecodable `7C09` object record as a
+        /// `catia.object_record` part (§4.5): the record's own u32 length
+        /// frames its extent, which is retained and reported here while the
+        /// walk continues at its end. The loss mirrors the shared part
+        /// boundary's shape so the §4.5 contract checks read it directly.
+        fn give_up_object_record(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            bytes: &[u8],
+            skip: &SkippedRecord,
+            paired_entity_pos: Option<usize>,
+        ) -> Result<
+            (
+                cadmpeg_ir::unknown::UnknownRecord,
+                cadmpeg_ir::report::loss::LossNote,
+                cadmpeg_ir::ArenaClasses,
+            ),
+            cadmpeg_core::CodecError,
+        > {
+            const LABEL: &str = "catia.object_record";
+            let offset = u64_from_index(skip.pos);
+            let length = u64_from_index(skip.len);
+            let extent = bytes.get(skip.pos..skip.pos + skip.len).ok_or_else(|| {
+                CodecError::malformed("given-up object record runs past the image")
+            })?;
+            let mut address = Vec::new();
+            for field in [LABEL.as_bytes(), "".as_bytes()] {
+                address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+                address.extend_from_slice(field);
+            }
+            address.extend_from_slice(&offset.to_be_bytes());
+            let id = cadmpeg_ir::ids::UnknownId::try_from(format!(
+                "catia:source:part#{}",
+                cadmpeg_ir::hash::sha256_hex(&address)
+            ))
+            .map_err(CodecError::malformed)?;
+            ctx.charge_entities(1, "given-up CATIA object record")?;
+            ctx.retain_bytes(length, "given-up CATIA object record bytes")?;
+            let mut dropped = vec![format!("catia:outer:object-record#{:010}", skip.pos)];
+            if let Some(entity_pos) = paired_entity_pos {
+                dropped.push(format!("catia:outer:entity-record#{entity_pos:010}"));
+            }
+            dropped.sort();
+            let provenance =
+                cadmpeg_ir::SourceProvenance::root("catia", offset).with_byte_len(length)?;
+            let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note(format!(
+                    "part {LABEL} stream=\"\" offset={offset} length={length}: {}; dropped=[{}]",
+                    skip.reason,
+                    dropped.join(", ")
+                ))
+                .with_provenance(provenance);
+            loss.dropped = dropped;
+            let unknown = cadmpeg_ir::unknown::UnknownRecord::retained(
+                id,
+                offset,
+                extent.to_vec(),
+                Vec::new(),
+            );
+            let classes = ctx
+                .depth()
+                .required_scope()
+                .classes()
+                .collect::<cadmpeg_ir::ArenaClasses>();
+            Ok((unknown, loss, classes))
+        }
         let outer_directory = container::parse_outer_stream_directory(bytes);
         let outer_container_declarations = match outer_directory.as_ref() {
             Some(outer) => container::outer_container_declarations(bytes, outer),
@@ -8477,10 +8565,26 @@ impl CatiaNative {
             .collect::<std::collections::HashMap<_, _>>();
         let mut entity_records = Vec::new();
         let mut object_graphs = Vec::new();
-        for graph in parsed_object_graphs {
-            let entities = entity_runs
-                .remove(&(graph.pos, graph.records.len()))
+        let mut give_ups: Vec<(
+            cadmpeg_ir::unknown::UnknownRecord,
+            cadmpeg_ir::report::loss::LossNote,
+            cadmpeg_ir::ArenaClasses,
+        )> = Vec::new();
+        for (graph, skipped) in parsed_object_graphs {
+            let mut entities = entity_runs
+                .remove(&(graph.pos, graph.records.len() + skipped.len()))
                 .unwrap_or_default();
+            // Drop the entities paired with given-up records so the surviving
+            // pairing stays positional; their would-be identities join the
+            // give-up loss.
+            let mut skipped_entity_pos: HashMap<usize, usize> = HashMap::new();
+            let mut skipped_indices: Vec<usize> = skipped.iter().map(|skip| skip.index).collect();
+            skipped_indices.sort_unstable();
+            for index in skipped_indices.into_iter().rev() {
+                if index < entities.len() {
+                    skipped_entity_pos.insert(index, entities.remove(index).pos);
+                }
+            }
             let finjpl_segment = containing_finjpl_segment(
                 u64_from_index(graph.pos),
                 u64_from_index(graph.total_len),
@@ -8503,6 +8607,14 @@ impl CatiaNative {
 
             entity_records.append(&mut entities);
             object_graphs.push(graph);
+            for skip in &skipped {
+                give_ups.push(give_up_object_record(
+                    ctx,
+                    bytes,
+                    skip,
+                    skipped_entity_pos.get(&skip.index).copied(),
+                )?);
+            }
         }
         let mut catalogs_by_offset = HashMap::new();
         for catalog in &catalogs {
@@ -8792,7 +8904,7 @@ impl CatiaNative {
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         let e5_curve_supports = e5_curve_support::derive(ctx, bytes)?;
-        Ok(Self {
+        let native = Self {
             display_colors: Vec::new(),
             sampled_parameter_maps: Vec::new(),
             alias_rows,
@@ -8838,7 +8950,8 @@ impl CatiaNative {
             zero_entity_records,
             zero_entity_support_runs,
             zero_entity_vertex_incidences,
-        })
+        };
+        Ok((native, give_ups))
     }
 
     /// Store this namespace while moving child arenas out of their typed owners.
@@ -8857,15 +8970,17 @@ impl CatiaNative {
 mod test_only;
 /// Remove inventories nested inside another frame.
 fn filter_nested_inventory(
-    graphs: &mut Vec<object_graph::ObjectGraph>,
+    graphs: &mut Vec<(object_graph::ObjectGraph, Vec<object_graph::SkippedRecord>)>,
     blocks: &mut Vec<value_block::ValueBlock>,
     catalogs: &mut Vec<catalog::Catalog>,
 ) {
-    let graph_owners = ExtentOwners::new(graphs.iter().map(|graph| (graph.pos, graph.total_len)));
+    let graph_owners =
+        ExtentOwners::new(graphs.iter().map(|(graph, _)| (graph.pos, graph.total_len)));
     blocks.retain(|block| !graph_owners.contains(block.pos, block.total_len()));
     let block_owners = ExtentOwners::new(blocks.iter().map(|block| (block.pos, block.total_len())));
-    graphs.retain(|graph| !block_owners.contains(graph.pos, graph.total_len));
-    let graph_owners = ExtentOwners::new(graphs.iter().map(|graph| (graph.pos, graph.total_len)));
+    graphs.retain(|(graph, _)| !block_owners.contains(graph.pos, graph.total_len));
+    let graph_owners =
+        ExtentOwners::new(graphs.iter().map(|(graph, _)| (graph.pos, graph.total_len)));
     catalogs.retain(|catalog| {
         !graph_owners.contains(catalog.pos, catalog.total_len)
             && !block_owners.contains(catalog.pos, catalog.total_len)

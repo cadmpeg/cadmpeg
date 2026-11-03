@@ -946,10 +946,7 @@ fn decode_retains_nx_arrangement_configurations() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].configuration, configurations[0].id);
     assert_eq!(uses[0].name, "Model");
-    assert_eq!(
-        result.ir().model.configurations[0].properties["active_attribute_use"],
-        uses[0].id
-    );
+    assert!(result.ir().model.configurations[0].properties.is_empty());
     let attributes = result
         .ir()
         .native
