@@ -13,6 +13,7 @@ mod ownership;
 mod previews;
 mod synthesis;
 pub(crate) mod target;
+mod write_error;
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
