@@ -5794,6 +5794,8 @@ pub(crate) fn store(
             ctx,
         )
         .map(|losses| projection_losses.extend(losses))?;
+        annotations::project(ir, &annotations, &admitted.decoded, &entries, &colors, ctx)
+            .map(|losses| projection_losses.extend(losses))?;
         renumber_features(ir);
     }
     let namespace = ir.native.namespace_mut("iges");
