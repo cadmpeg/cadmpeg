@@ -437,6 +437,9 @@ pub(crate) struct SurfaceScan {
     /// Typed fixed-prefix rows from the separate invisible and construction
     /// surface namespace.
     pub(crate) nonvisible_rows: Vec<SurfaceRow>,
+    /// Owners named by the rows of complete counted frames in the selected
+    /// material model geometry namespace.
+    pub(crate) row_owners: Vec<crate::surface::owners::SurfaceRowOwner>,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
     pub(crate) cross_section_rows: Vec<SurfaceRow>,
@@ -2817,6 +2820,12 @@ pub(crate) fn scan_bytes<'a>(
         .sort_by_key(|left| left.offset);
     let mut surface_rows = surface_rows(&model_geometry_sections)?;
     surface_rows.extend(legacy_geometry.rows);
+    let surface_row_owners = collect_section_records_result(
+        model_geometry_sections.iter(),
+        |bytes| Ok(crate::surface::owners::row_owners(bytes)),
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )?;
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
     let cross_section_surface_rows = cross_section_surface_rows(sections)?;
     let nonvisible_surface_parameters = surface_parameters(
@@ -3122,6 +3131,7 @@ pub(crate) fn scan_bytes<'a>(
         surfaces: SurfaceScan {
             rows: surface_rows,
             nonvisible_rows: nonvisible_surface_rows,
+            row_owners: surface_row_owners,
             cross_section_rows: cross_section_surface_rows,
             parameters: surface_parameters,
             nonvisible_parameters: nonvisible_surface_parameters,

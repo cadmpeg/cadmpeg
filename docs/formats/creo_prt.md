@@ -581,6 +581,18 @@ reference. A complete classification requires a bijection between the stored
 contours and those loops. A missing or ambiguous join does not classify a
 loop. Several outer contours on one carrier do not by themselves assign each
 inner contour to a distinct bounded face instance.
+
+The row tail ends with the `topol_ref_data` members `srf_flip_dat`, `list_id`,
+and `list_type`. A named prototype states them by name. In a positional row of
+a complete frame, the last bytes before the next row's `e3` opener, or before
+the named-record header that ends the frame, are `e1 <list_id> <list_type>`:
+a null `srf_flip_dat`, then `list_id` as a compact integer, a three-byte
+`f5 <XX> <YY>` identifier, or null `f6`. `list_type` is the data type of the
+row's owner and `list_id` is the owner's identifier. `list_type = 62` is the
+`type` of a `body_array` entry, and `list_id` is its `body_id`.
+`list_type = 39` is the `data_type` of a `qlt_array` entry, and `list_id` is
+its `quilt_id`. A null `list_id` with `list_type = f6` names no owner. Any other
+tail leaves the row's owner unresolved.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -3013,6 +3025,16 @@ admitted face group with no shared topology uses its own shell in the same
 region. A component with no admitted face or solved edge, or a body-count
 mismatch, leaves native topology records available without neutral body
 assignment.
+
+In an ND layout, the surface-row owners give the body grouping when the
+selected count does not equal the admitted component count or a component has
+no admitted face or solved edge. A component is owned by a body when each of
+its faces has one visible row and every such row names that body. A component
+is unowned when none of its faces has a visible row; it is not a body, and its
+references remain native. Owned components that name one body form that body.
+The grouping requires at least one owning body, no more owning bodies than the
+selected count, and an admitted face or solved edge in each body. A component
+that is neither owned nor unowned leaves body ownership unresolved.
 
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 
