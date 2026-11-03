@@ -221,6 +221,23 @@ pub(super) fn plan(
     // write the neutral content without its native link (#237).
     null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
     cascade_validation_errors(&mut projected, &mut losses)?;
+    // D13: the synthesis base is the active configuration. A document with no
+    // active configuration still writes its base state instead of refusing at
+    // the semantic support gate below. design::prepare repeats this for the
+    // native lanes; the fidelity path keeps the decoder's association.
+    if !projected.model.configurations.is_empty()
+        && !projected
+            .model
+            .configurations
+            .iter()
+            .any(|configuration| configuration.active)
+    {
+        projected.model.configurations[0].active = true;
+        losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+            "configuration {}: no configuration was active; the base configuration acts",
+            projected.model.configurations[0].id
+        )));
+    }
     let retained_native = projected
         .native
         .namespace("sldprt")
