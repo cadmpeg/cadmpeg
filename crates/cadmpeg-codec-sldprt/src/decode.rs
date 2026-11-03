@@ -969,9 +969,7 @@ fn append_design_losses(
                                     .any(|name| record.properties.contains_key(*name))
                             })
                             .map(|record| record.id.as_str())
-                            .any(|stated| {
-                                feature.native_ref.as_deref() == Some(stated)
-                            })
+                            .any(|stated| feature.native_ref.as_deref() == Some(stated))
                     })
             })
             .count();
@@ -3099,12 +3097,11 @@ fn build_geometry_ir(
     {
         // The builder withheld model content that the retained block records
         // still hold. Mark those records, not the enclosing source image.
-        for block in scan.blocks.iter().filter(|block| {
-            matches!(
-                block.family,
-                container::PayloadFamily::Parasolid
-            )
-        }) {
+        for block in scan
+            .blocks
+            .iter()
+            .filter(|block| matches!(block.family, container::PayloadFamily::Parasolid))
+        {
             let id = cadmpeg_ir::ids::UnknownId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
                 block.offset,
@@ -4282,26 +4279,22 @@ fn build_metadata_ir(
         }
     }
     let mut pmi_losses = Vec::new();
-    let mut histories = match crate::history::histories(
-        ctx,
-        scan,
-        &mut annotations,
-        &mut pmi_losses,
-    ) {
-        Ok(histories) => histories,
-        #[cfg(test)]
-        Err(error) if crate::history::take_metadata_failure_fired() => {
-            // Class-level metadata failure (§4.1): no design history part
-            // could be located. Design stays in scope only when other design
-            // parts decode below.
-            let _ = error;
-            Vec::new()
-        }
-        #[cfg(test)]
-        Err(error) => return Err(error),
-        #[cfg(not(test))]
-        Err(error) => return Err(error),
-    };
+    let mut histories =
+        match crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses) {
+            Ok(histories) => histories,
+            #[cfg(test)]
+            Err(error) if crate::history::take_metadata_failure_fired() => {
+                // Class-level metadata failure (§4.1): no design history part
+                // could be located. Design stays in scope only when other design
+                // parts decode below.
+                let _ = error;
+                Vec::new()
+            }
+            #[cfg(test)]
+            Err(error) => return Err(error),
+            #[cfg(not(test))]
+            Err(error) => return Err(error),
+        };
     let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
