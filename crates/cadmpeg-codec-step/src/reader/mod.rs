@@ -582,11 +582,18 @@ fn decode_exchange_mode(
                 session.typed_records.remove(id);
             }
         }
+        // A record the damage reached is dropped with its given-up part
+        // by rule 2 and named on the part loss; retaining it here would
+        // add a second home beside the stubs the helper mints.
+        let reached = drops::damage_reached(exchange, session.ctx)?;
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
                 continue;
             }
             if resurrected.contains(&id) {
+                continue;
+            }
+            if reached.contains(&id) {
                 continue;
             }
             let mut unknown_id = opaque_record_id(id, record)?;
@@ -610,6 +617,9 @@ fn decode_exchange_mode(
                 continue;
             }
             if resurrected.contains(&id) {
+                continue;
+            }
+            if reached.contains(&id) {
                 continue;
             }
             count_unknown_kind(&mut counts, record);
@@ -750,18 +760,12 @@ fn decode_exchange_mode(
     );
 
     session.body.notes.push(accounting_note);
-    // A damaged decode reports its stranded instances through the parts
-    // that stranded them; the opaque census below only describes clean
-    // decodes.
-    if exchange.dead_instances().is_empty() {
-        for (name, count) in counts {
-            let message =
-                format!("preserved {count} {name} instance(s) as named opaque STEP records");
-            session
-                .body
-                .losses
-                .push(StepLossCode::OpaqueRecordPreserved.note(message));
-        }
+    for (name, count) in counts {
+        let message = format!("preserved {count} {name} instance(s) as named opaque STEP records");
+        session
+            .body
+            .losses
+            .push(StepLossCode::OpaqueRecordPreserved.note(message));
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok(session.into_result(
@@ -883,6 +887,13 @@ fn retain_unowned_carriers(
             insert_retained_identity(&mut owned, pcurve.as_str());
         }
     }
+    // A carrier the damage stranded keeps the record it built: referenced
+    // by a live statement, it is not an unowned carrier.
+    let stranded = if exchange.dead_instances().is_empty() {
+        BTreeSet::new()
+    } else {
+        live_referenced(exchange)
+    };
     let mut unowned_pcurves = BTreeSet::new();
     for (&id, record) in exchange.records() {
         if record
@@ -890,6 +901,7 @@ fn retain_unowned_carriers(
             .iter()
             .any(|partial| partial.name == "PCURVE")
             && !owned.contains(ids::data(kind!("pcurve"), id).as_str())
+            && !stranded.contains(&id)
         {
             unowned_pcurves.insert(id);
         }
@@ -1011,49 +1023,16 @@ fn retain_unowned_carriers(
         .filter(|id| !unowned_pcurves.contains(id));
     let protected = record_closure(protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(unowned_pcurves.iter().copied(), exchange, ctx)?;
-    let deleted_pcurves = ir
-        .model
-        .pcurves
-        .iter()
-        .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
-        .count();
-    let deleted_points = ir
-        .model
-        .points
-        .iter()
-        .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
-        .count();
-    let deleted_curves = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
-        .count();
-    let deleted_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
-        .count();
-    let deleted_procedural_curves = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
-        .count();
-    let deleted_procedural_surfaces = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
-        .count();
+    // The census names actual removals: a carrier the damage stranded is
+    // kept below, so a predicate count would overstate the deletions.
+    let before_pcurves = ir.model.pcurves.len();
+    let before_points = ir.model.points.len();
+    let before_curves = ir.model.curves.len();
+    let before_surfaces = ir.model.surfaces.len();
+    let before_procedural_curves = ir.model.procedural_curves.len();
+    let before_procedural_surfaces = ir.model.procedural_surfaces.len();
     // A carrier the damage stranded keeps the record it built: referenced
     // by a live statement, it is not an unowned carrier.
-    let stranded = if exchange.dead_instances().is_empty() {
-        BTreeSet::new()
-    } else {
-        live_referenced(exchange)
-    };
     let stranded_ref =
         |identity: &str| step_instance_id(identity).is_some_and(|id| stranded.contains(&id));
     ir.model
@@ -1085,13 +1064,16 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(**id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    // A damaged decode reports its stranded carriers through the parts that
-    // stranded them; the retention census below only describes clean decodes.
-    if exchange.dead_instances().is_empty() {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
-            "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-        )));
-    }
+    let deleted_pcurves = before_pcurves - ir.model.pcurves.len();
+    let deleted_points = before_points - ir.model.points.len();
+    let deleted_curves = before_curves - ir.model.curves.len();
+    let deleted_surfaces = before_surfaces - ir.model.surfaces.len();
+    let deleted_procedural_curves = before_procedural_curves - ir.model.procedural_curves.len();
+    let deleted_procedural_surfaces =
+        before_procedural_surfaces - ir.model.procedural_surfaces.len();
+    losses.push(StepLossCode::DecodeWarning.note(format!(
+        "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
+    )));
     Ok(())
 }
 

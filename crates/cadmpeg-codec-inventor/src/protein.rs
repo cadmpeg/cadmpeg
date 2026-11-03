@@ -14,14 +14,9 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 #[derive(Debug)]
 pub(crate) enum ProteinState<'a> {
     Absent,
-    Empty {
-        stream: CompoundStreamId,
-    },
+    Empty { stream: CompoundStreamId },
     Package(ProteinEnvelope<'a>),
-    Malformed {
-        stream: CompoundStreamId,
-        detail: String,
-    },
+    Malformed { source: View<'a>, detail: String },
 }
 
 #[derive(Debug)]
@@ -32,6 +27,7 @@ pub(crate) struct ProteinEnvelope<'a> {
     payload: View<'a>,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct ProteinInstanceRecords {
     pub(crate) entry_name: String,
     pub(crate) records: Vec<cadmpeg_protein::DecodedRecord>,
@@ -62,7 +58,7 @@ pub(crate) fn parse<'a>(
             payload,
         }),
         Err(error) => ProteinState::Malformed {
-            stream: stream.id(),
+            source,
             detail: crate::issue_detail(error)?,
         },
     })
@@ -122,11 +118,11 @@ pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _probe = parse_stream(ctx, source);
 }
 
-pub(crate) fn decode_instances_with_issue(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn decode_instances_with_issue<'a>(
+    ctx: &DecodeContext<'a>,
     output: &mut PartOutput,
-    package: &ProteinEnvelope<'_>,
-) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
+    package: &ProteinEnvelope<'a>,
+) -> Result<(Vec<(ProteinInstanceRecords, View<'a>)>, Option<String>), CodecError> {
     let catalog = match cadmpeg_protein::SchemaCatalog::load(ctx, package.payload) {
         Ok(catalog) => catalog,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -173,7 +169,7 @@ pub(crate) fn decode_instances_with_issue(
                 rejected: outcome.rejected,
             })
         })?;
-        instances.extend(staged);
+        instances.extend(staged.map(|records| (records, extent)));
     }
     Ok((instances, None))
 }

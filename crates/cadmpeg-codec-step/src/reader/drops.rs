@@ -218,20 +218,16 @@ pub(super) fn model_instances(ir: &CadIr) -> BTreeSet<u64> {
     instances
 }
 
-/// Walk the undirected instance graph from the dead instances and ledger
-/// every reached instance's would-be model records, except the records
-/// the decode holds. Instances the decode holds are excluded, so a held
-/// record is never named; reached instances without a model record name
-/// harmless no-ops the comparison ignores.
-pub(super) fn ledger_stranded_drops(
+/// Every instance the damage reaches through the undirected instance
+/// graph from the dead instances: the records rule 2 drops with the
+/// given-up parts. Empty for a clean decode.
+pub(super) fn damage_reached(
     exchange: &Exchange,
-    ir: &CadIr,
-    ledger: &mut DropLedger,
     ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeSet<u64>, CodecError> {
     let dead = exchange.dead_instances();
     if dead.is_empty() {
-        return Ok(());
+        return Ok(BTreeSet::new());
     }
     let mut neighbours: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
     let mut link = |first: u64, second: u64| {
@@ -259,6 +255,25 @@ pub(super) fn ledger_stranded_drops(
             }
         }
     }
+    Ok(reached)
+}
+
+/// Walk the undirected instance graph from the dead instances and ledger
+/// every reached instance's would-be model records, except the records
+/// the decode holds. Instances the decode holds are excluded, so a held
+/// record is never named; reached instances without a model record name
+/// harmless no-ops the comparison ignores.
+pub(super) fn ledger_stranded_drops(
+    exchange: &Exchange,
+    ir: &CadIr,
+    ledger: &mut DropLedger,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let reached = damage_reached(exchange, ctx)?;
+    if reached.is_empty() {
+        return Ok(());
+    }
+    let dead = exchange.dead_instances();
     let held = model_instances(ir);
     for &id in &reached {
         if held.contains(&id) {

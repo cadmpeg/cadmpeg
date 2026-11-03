@@ -142,7 +142,6 @@ pub(super) struct GeometryReportFacts<'inputs> {
 /// Reports each model-wide geometric phase that stopped at its local work
 /// bound. The phase skipped its remaining items; decode continued.
 fn push_bounded_completion_losses(
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     losses: &mut Vec<LossNote>,
     ir: &CadIr,
     completion_budget: CompletionBudgetStatus,
@@ -225,7 +224,6 @@ fn push_bounded_completion_losses(
                 .then_some("support-UV lane geometry slices"),
         ];
         push_report_loss(losses, NxLossCode::IntersectionPcurveCompletionBounded, {
-            source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
             format_args!(
             "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
             JoinedLabels { labels: &bounded_phases, separator: " and " },
@@ -245,7 +243,6 @@ fn push_bounded_completion_losses(
 
     if adaptive_geometry_exhausted {
         push_report_loss(losses, NxLossCode::GeometryAdaptiveWorkBounded, {
-            source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
             format_args!(
                 "Model-wide adaptive geometry certification stopped at its {}-unit work bound; \
              unresolved adaptive geometry certification results were left untyped.",
@@ -259,7 +256,7 @@ pub(super) fn build_geometry_report(
     scan: &Scan,
     geometry_report_facts: &GeometryReportFacts<'_>,
     ir: &CadIr,
-    model: &crate::native::model::NativeModel,
+    model: Option<&crate::native::model::NativeModel>,
 ) -> DecodeBody {
     let &GeometryReportFacts {
         counts,
@@ -272,7 +269,8 @@ pub(super) fn build_geometry_report(
         notes,
     } = geometry_report_facts;
 
-    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
+    let has_untransferred_attribute_fields = model
+        .is_some_and(|model| model.has_untransferred_parasolid_attribute_fields());
     let mut losses = Vec::new();
 
     push_report_loss(
@@ -317,7 +315,6 @@ pub(super) fn build_geometry_report(
 
     if counts.intersection_rejections.total() > 0 {
         push_report_loss(&mut losses, NxLossCode::IntersectionRecordsOpaque, {
-            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
             format_args!(
             "{} surface-intersection record(s) without a unique identity, unambiguous supports, and a complete validated CHART_s and \
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
@@ -337,7 +334,6 @@ pub(super) fn build_geometry_report(
     }
 
     push_bounded_completion_losses(
-        &mut scan.source_untyped(),
         &mut losses,
         ir,
         completion_budget,
@@ -365,11 +361,10 @@ pub(super) fn build_geometry_report(
         );
     }
 
-    append_design_intent_losses(&mut scan.source_untyped(), ir, &mut losses);
+    append_design_intent_losses(ir, &mut losses);
 
     if has_untransferred_attribute_fields {
         push_report_loss(&mut losses, NxLossCode::AttributeValueUnresolved, {
-            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
             format_args!(
                 "A referenced Parasolid attribute value was not transferred because its \
                       complete value relation did not resolve.",
@@ -391,11 +386,7 @@ pub(super) fn build_geometry_report(
     }
 }
 
-pub(crate) fn append_design_intent_losses(
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
-    ir: &CadIr,
-    losses: &mut Vec<LossNote>,
-) {
+pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
     let mut current_body_ids = Vec::new();
     for body in &ir.model.bodies {
         current_body_ids.push(body.id.clone());
@@ -491,7 +482,6 @@ pub(crate) fn append_design_intent_losses(
             counts: &native_feature_kinds,
         };
         push_report_loss(losses, NxLossCode::FeatureNativeKindRetained, {
-            source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
             "NX feature-history operation(s) remain native-only because their complete neutral \
                  operation semantics are not decoded: {kinds}."
@@ -881,7 +871,6 @@ pub(crate) fn append_design_intent_losses(
         .count();
     if unresolved_sketch_feature_count != 0 {
         push_report_loss(losses, NxLossCode::SketchGraphUnresolved, {
-            source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
                  {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
@@ -1021,7 +1010,6 @@ mod tests {
 
             let mut losses = Vec::new();
             super::push_bounded_completion_losses(
-                &mut cadmpeg_ir::ArenaClasses::default(),
                 &mut losses,
                 &unresolved_intersection_ir(),
                 completion_budget,
