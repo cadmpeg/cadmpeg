@@ -190,7 +190,44 @@ fn check_format(format: &str) {
                         ));
                     }
                     let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
-                    let restricted = restrict_to_held(&uncut_document, &comparable, &missing);
+                    let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);
+                    // #209 §1.1 with the #224 ruling 1: a cut decode derives
+                    // scope from the cut bytes, not by copying the uncut
+                    // decode. The cut scope is a subset of the uncut scope,
+                    // and it agrees with §1.1 on the cut decode's own records
+                    // and parts. A class whose every part was cut off may flip
+                    // to false; a class with any held record or located part
+                    // may not.
+                    let cut_scope = document.get("scope").cloned().unwrap_or_default();
+                    let uncut_scope = uncut_document.get("scope").cloned().unwrap_or_default();
+                    for class in ["model", "design"] {
+                        if cut_scope.get(class).and_then(serde_json::Value::as_bool) == Some(true)
+                            && uncut_scope.get(class).and_then(serde_json::Value::as_bool)
+                                != Some(true)
+                        {
+                            findings.push(format!(
+                                "{format}: {} cut at {percent}% holds scope {class} the uncut decode lacks",
+                                fixture.path.display()
+                            ));
+                        }
+                    }
+                    let requested: Vec<&str> = ["model", "design"]
+                        .into_iter()
+                        .filter(|class| {
+                            cut_scope.get(class).and_then(serde_json::Value::as_bool) == Some(true)
+                        })
+                        .collect();
+                    for finding in cadmpeg_test_support::data_checks::conformance::scope_findings(
+                        &document, &report, &requested,
+                    ) {
+                        findings.push(format!(
+                            "{format}: {} cut at {percent}% scope disagrees with its own records: {finding}",
+                            fixture.path.display()
+                        ));
+                    }
+                    restricted["scope"] = serde_json::Value::Null;
+                    let mut document = document.clone();
+                    document["scope"] = serde_json::Value::Null;
                     match Allowances::given_up(&uncut_document, &report) {
                         Ok(allowances) => {
                             if let Some(mismatch) =
