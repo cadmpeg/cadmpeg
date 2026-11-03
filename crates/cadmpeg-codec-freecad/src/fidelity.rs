@@ -125,10 +125,32 @@ pub(crate) fn mark_untyped(
         .map_err(CodecError::malformed)
 }
 
+/// The class whose content a property's bytes carry: shape payloads are
+/// model; document-level and design-owned properties are design.
+pub(crate) fn property_class(
+    objects: &[crate::native::ObjectRecord],
+    property: &crate::native::PropertyRecord,
+) -> cadmpeg_ir::ArenaClass {
+    use cadmpeg_ir::ArenaClass;
+    if property.type_name == "Part::PropertyPartShape" {
+        ArenaClass::Model
+    } else if property.owner == crate::native::native_id("document", "0")
+        || objects.iter().any(|object| {
+            object.id().as_str() == property.owner
+                && crate::design::is_design_kind(&object.type_name)
+        })
+    {
+        ArenaClass::Design
+    } else {
+        ArenaClass::Model
+    }
+}
+
 /// Charge missing content at the admission that retained only its evidence.
 pub(crate) fn mark_unreadable(
     ir: &cadmpeg_ir::CadIr,
     fidelity: &mut SourceFidelity,
+    failed_members: &std::collections::BTreeSet<String>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::ArenaClass;
     let Some(native) = ir.native.namespace("fcstd") else {
@@ -136,20 +158,7 @@ pub(crate) fn mark_unreadable(
     };
     let objects = native.arena_as::<crate::native::ObjectRecord>("objects")?;
     let properties = native.arena_as::<crate::native::PropertyRecord>("properties")?;
-    let class = |property: &crate::native::PropertyRecord| {
-        if property.type_name == "Part::PropertyPartShape" {
-            ArenaClass::Model
-        } else if property.owner == crate::native::native_id("document", "0")
-            || objects.iter().any(|object| {
-                object.id().as_str() == property.owner
-                    && crate::design::is_design_kind(&object.type_name)
-            })
-        {
-            ArenaClass::Design
-        } else {
-            ArenaClass::Model
-        }
-    };
+    let class = |property: &crate::native::PropertyRecord| property_class(&objects, property);
     for property in &properties {
         if matches!(
             property.body,
@@ -178,6 +187,7 @@ pub(crate) fn mark_unreadable(
                 matches!(key.as_str(), "file" | "File")
                     && !name.is_empty()
                     && !entries.iter().any(|entry| entry.name() == name)
+                    && failed_members.contains(name)
             });
         let map_missing = property.values().iter().any(|value| {
             matches!(value.tag.as_str(), "ElementMap" | "ElementMap2")

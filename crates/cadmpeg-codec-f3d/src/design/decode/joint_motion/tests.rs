@@ -314,6 +314,7 @@ fn malformed_rest_lanes_keep_limits() {
                     DesignAssemblyAlignmentForm::qualified(
                         [1, 2].map(|index| DesignAssemblyOperandFrame {
                             reference_record_index: index, reference_offset: Some(0),
+                            null_construction: false,
                             transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                             transform_offset: Some(0),
                         }),

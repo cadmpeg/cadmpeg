@@ -5675,11 +5675,13 @@ pub(crate) fn resolve_face_appearance_bindings(
             None
         };
         for face in faces {
-            if let Some(color) = assignment.color {
-                if let Some(index) = face_indices.get(face.as_str()).copied() {
-                    let target = &mut ir.model.faces[index];
-                    if target.color.is_none() {
-                        target.color = Some(color);
+            if appearance.is_none() {
+                if let Some(color) = assignment.color {
+                    if let Some(index) = face_indices.get(face.as_str()).copied() {
+                        let target = &mut ir.model.faces[index];
+                        if target.color.is_none() {
+                            target.color = Some(color);
+                        }
                     }
                 }
             }
