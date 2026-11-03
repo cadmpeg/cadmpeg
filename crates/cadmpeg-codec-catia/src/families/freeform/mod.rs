@@ -29,7 +29,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, neutral_model_is_admissible, preserve_raw_payload,
-    quintic_jet_pcurve,
+    prune_to_admissible, quintic_jet_pcurve,
 };
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
@@ -558,6 +558,7 @@ pub(super) fn try_decode_freeform_surfaces(
             .map(|record| record.object_id))
         .collect::<Vec<_>>();
         let mut topology_ir = CadIr::empty();
+        let mut prune_losses = Vec::new();
         let mut topology_annotations = AnnotationBuilder::new().copy_transaction();
         let payload_stream = if scan.brep.is_some() {
             "MainDataStream+SurfacicReps"
@@ -586,8 +587,31 @@ pub(super) fn try_decode_freeform_surfaces(
             };
             drop(graph);
             if transferred {
+                // Topology admission drops only the records a finding names,
+                // and the records that need them, with a validation loss
+                // naming them. A candidate that still does not admit does not
+                // transfer.
                 match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
-                    Ok(admissible) => admissible,
+                    Ok(report) => {
+                        if report.is_ok() {
+                            true
+                        } else {
+                            match prune_to_admissible(
+                                ctx,
+                                &mut topology_ir,
+                                &unknowns,
+                                &mut prune_losses,
+                            ) {
+                                Ok((dropped, pruned)) => {
+                                    for id in &dropped {
+                                        topology_annotations.remove_entity(id);
+                                    }
+                                    pruned.is_ok()
+                                }
+                                Err(limit) => return Some(Err(limit)),
+                            }
+                        }
+                    }
                     Err(limit) => return Some(Err(limit)),
                 }
             } else {
@@ -786,6 +810,7 @@ pub(super) fn try_decode_freeform_surfaces(
             false
         };
         let mut losses = Vec::new();
+        losses.extend(prune_losses);
         if !wire_topology_transferred {
             if topology_transferred {
                 losses.push((CatiaLossCode::TopologyB5GaugeSubstituted).note(format!(
