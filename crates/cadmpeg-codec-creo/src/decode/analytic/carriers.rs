@@ -638,7 +638,7 @@ fn projected_loop_polygon(
     valid_parameter_polygon(&polygon).then_some(polygon)
 }
 
-fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
+pub(in crate::decode) fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
     use cadmpeg_ir::math::{
         planar::{orientation, point_segment_distance},
         Point2,
@@ -699,7 +699,10 @@ fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> bool {
     cadmpeg_ir::math::planar::segments_intersect(a, b, c, d, EPS_AGREE * scale)
 }
 
-fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> bool {
+pub(in crate::decode) fn polygon_strictly_contains_polygon(
+    outer: &[[f64; 2]],
+    inner: &[[f64; 2]],
+) -> bool {
     inner
         .iter()
         .copied()
@@ -713,7 +716,7 @@ fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> 
         })
 }
 
-fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
+pub(in crate::decode) fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
     let Some(origin) = polygon.first() else {
         return false;
     };
