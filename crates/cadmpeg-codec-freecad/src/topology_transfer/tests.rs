@@ -1130,9 +1130,8 @@ Co 1001000 +2 0 *
             .iter()
             .find(|appearance| appearance.schema.as_deref()
                 == Some("FCStd ViewProvider line style"))
-            .and_then(|appearance| appearance.properties.get("line_width"))
-            .map(|value| value.get()),
-        Some(2.5)
+            .map(|appearance| appearance.properties.is_empty()),
+        Some(true)
     );
     assert_eq!(
         result
@@ -1143,8 +1142,22 @@ Co 1001000 +2 0 *
             .find(
                 |appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider point style")
             )
-            .and_then(|appearance| appearance.properties.get("point_size"))
-            .map(|value| value.get()),
+            .map(|appearance| appearance.properties.is_empty()),
+        Some(true)
+    );
+    let presentation = result
+        .ir()
+        .model
+        .view_presentations
+        .iter()
+        .find(|presentation| presentation.object.as_deref() == Some("fcstd:native:object#Shape"))
+        .expect("shape view presentation holds the primitive sizes");
+    assert_eq!(
+        presentation.line_width.map(|size| size.get()),
+        Some(2.5)
+    );
+    assert_eq!(
+        presentation.point_size.map(|size| size.get()),
         Some(4.0)
     );
     assert_eq!(result.ir().model.bodies[0].visible, Some(false));
