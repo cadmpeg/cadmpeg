@@ -701,18 +701,30 @@ fn an_altered_source_image_does_not_replay() {
     fidelity
         .mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, untyped)
         .expect("the altered image keeps its untyped classes");
-    // A tampered image fails the digest gate, and the patch baseline then
-    // refuses the corrupt archive instead of emitting it: neither replay nor
-    // a corrupt patch leaves this gate.
-    let error = F3dCodec
+    // A tampered image fails the digest gate, and the patch baseline
+    // cannot read the corrupt archive. Neither replay nor a corrupt patch
+    // leaves this gate: §5.0 selects synthesis from the intact document.
+    let plan = F3dCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
             TargetRequest::Inherit,
         )
-        .expect_err("a tampered image must fail loudly rather than replay");
+        .expect("a tampered image falls back to synthesis rather than replay");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(_)),
-        "an altered source image must not replay, got {error}"
+        !matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                | cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "an altered source image must not replay or patch, got {:?}",
+        plan.report().write_path()
+    );
+    assert!(
+        matches!(
+            plan.report().synthesis_cause(),
+            Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { .. })
+        ),
+        "a tampered image selects synthesis through an explicit patch decline"
     );
 }
 

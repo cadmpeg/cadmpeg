@@ -101,16 +101,22 @@ fn generated_source_less_reduces_translucent_direct_color_with_a_loss() {
 }
 
 #[test]
-fn generated_source_less_rejects_empty_display_name_as_not_implemented() {
+fn generated_source_less_writes_an_empty_display_name() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].name = Some(String::new());
 
-    let error = F3dCodec
+    let mut bytes = Vec::new();
+    F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("an empty display name is document content and is written");
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the empty display name");
+    assert_eq!(output.ir().model.bodies.len(), 1);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("display name"))
+        output.ir().model.bodies[0].name.as_deref().is_none_or(str::is_empty),
+        "an empty display name decodes to no name or the empty name, never to an invented one"
     );
 }
 

@@ -48,8 +48,33 @@ const WRITTEN: &[&str] = &[
     "persistent_subentity_tags",
 ];
 
+/// Rebuild ASM history chain links from the retained state order. A
+/// coherent chain is left untouched; an edited chain is relinked instead of
+/// refused. Node identities, owners and payloads are content and are kept.
+fn relink_history_chains(histories: &mut [crate::history_records::AsmHistory]) {
+    for history in histories {
+        if history.states().is_empty() || crate::history::graph_is_coherent(history) {
+            continue;
+        }
+        let node_indices: Vec<i64> = history
+            .states()
+            .iter()
+            .map(|state| state.node_index)
+            .collect();
+        let mut previous: Option<i64> = None;
+        for (position, state) in history.states_mut().iter_mut().enumerate() {
+            state.previous_ref = previous;
+            state.next_ref = node_indices.get(position + 1).copied();
+            previous = Some(state.node_index);
+        }
+    }
+}
+
 pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let mut original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    // W2: chain links are source layout, not content. Rebuild them from the
+    // retained state order instead of refusing an edited chain.
+    relink_history_chains(&mut original.asm_histories);
     validate_input(target, &original)?;
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
@@ -133,6 +158,67 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         recipe.recipe_index = *ordinal;
         *ordinal += 1;
     }
+    // The sort above reorders the type table the retained dynamic class tags
+    // name. Point every retained sketch record at the position of the type
+    // that registers it; a record no remaining type registers is dropped
+    // under W1 and reported through the native dispositions.
+    macro_rules! remap_sketch_tags {
+        ($records:expr) => {{
+            let mut kept = Vec::new();
+            for mut record in std::mem::take($records) {
+                let tag = native
+                    .design_types
+                    .iter()
+                    .position(|design_type| {
+                        design_type.entities.values().any(|entity| {
+                            *entity == u64::from(record.record_index)
+                        })
+                    })
+                    .and_then(|ordinal| ordinal.checked_add(256))
+                    .filter(|code| *code <= 999);
+                match tag {
+                    Some(code) => {
+                        record.class_tag = code
+                            .to_string()
+                            .try_into()
+                            .map_err(CodecError::Malformed)?;
+                        kept.push(record);
+                    }
+                    None => {}
+                }
+            }
+            *$records = kept;
+        }};
+    }
+    remap_sketch_tags!(&mut native.sketch_points);
+    remap_sketch_tags!(&mut native.sketch_curve_identities);
+    remap_sketch_tags!(&mut native.sketch_relations);
+    remap_sketch_tags!(&mut native.sketch_texts);
+    // W1: a header is omitted only with a sketch record that is actually
+    // dropped. Retained sketch records keep their headers.
+    let retained_sketch_records = native
+        .sketch_points
+        .iter()
+        .map(|record| record.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .collect::<std::collections::BTreeSet<_>>();
     let omitted_sketch_records = original
         .sketch_points
         .iter()
@@ -155,6 +241,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .map(|record| record.record_index),
         )
+        .filter(|index| !retained_sketch_records.contains(index))
         .collect::<std::collections::BTreeSet<_>>();
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
@@ -370,6 +457,43 @@ pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
+/// Terminal §5.0 reduction: shed every native record the Design generator
+/// reads, keeping only the BREP-anchored carriers. The neutral parameters,
+/// configurations and joints those records projected are cleared with them,
+/// so no stale neutral record outlives its native copy. Every omission is
+/// reported through the dispositions the export wrapper charges.
+pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
+    let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let kept = F3dNative {
+        body_native_keys: native.body_native_keys,
+        body_visibilities: native.body_visibilities,
+        edge_continuities: native.edge_continuities,
+        edge_ownerships: native.edge_ownerships,
+        face_native_keys: native.face_native_keys,
+        face_sidedness: native.face_sidedness,
+        vertex_ownerships: native.vertex_ownerships,
+        wire_topologies: native.wire_topologies,
+        transform_hints: native.transform_hints,
+        tolerant_edge_tails: native.tolerant_edge_tails,
+        tolerant_vertex_tails: native.tolerant_vertex_tails,
+        tolerant_coedge_parameters: native.tolerant_coedge_parameters,
+        creation_timestamps: native.creation_timestamps,
+        persistent_design_links: native.persistent_design_links,
+        persistent_subentity_tags: native.persistent_subentity_tags,
+        persistent_references: native.persistent_references,
+        lost_edge_references: native.lost_edge_references,
+        ..F3dNative::default()
+    };
+    target.model.parameters.clear();
+    target.model.configurations.clear();
+    target.model.assembly_joints.clear();
+    target.native.0.remove("f3d");
+    super::design::with_context(|ctx| {
+        kept.store(ctx, target.native.namespace_mut("f3d"))?;
+        Ok(())
+    })
+}
+
 pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     native.body_native_keys.retain(|record| {
@@ -531,6 +655,31 @@ pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions 
                         NativeDisposition::Regenerated
                     };
                     result.set_record("f3d", arena, record.id(), disposition);
+                }
+            }
+            // W3: the arena declaration states what the writer did with the
+            // arena. Any regenerated record regenerates the arena; a carried
+            // record writes it; an arena with no carried record is dropped.
+            // The per-record exceptions and the omission losses name the
+            // dropped records.
+            let mut written = false;
+            let mut regenerated = false;
+            for record in before {
+                match result.record_disposition("f3d", arena, record.id()) {
+                    NativeDisposition::Written => written = true,
+                    NativeDisposition::Regenerated => regenerated = true,
+                    NativeDisposition::Dropped => {}
+                }
+            }
+            if regenerated || written {
+                if let Some(space) = result.namespaces.get_mut("f3d") {
+                    if let Some(entry) = space.arenas.get_mut(arena) {
+                        entry.disposition = if regenerated {
+                            NativeDisposition::Regenerated
+                        } else {
+                            NativeDisposition::Written
+                        };
+                    }
                 }
             }
         }
