@@ -45,6 +45,7 @@ fn counted_lists_preserve_logical_order_across_reordered_extents() {
             ctx,
             &bytes,
             &sources,
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)

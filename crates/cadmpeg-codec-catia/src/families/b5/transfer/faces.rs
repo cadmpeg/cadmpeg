@@ -562,7 +562,14 @@ mod tests {
         let bytes =
             crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
         let mut graph = crate::test_support::with_service_context(|ctx| {
-            super::super::super::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+            super::super::super::graph::parse(
+                ctx,
+                &bytes,
+                &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
+                    &bytes,
+                ),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         })
         .expect("service decode")
         .expect("native triangle graph");

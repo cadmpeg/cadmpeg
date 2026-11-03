@@ -5,6 +5,8 @@
 
 use cadmpeg_ir::codec::Codec;
 
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
+
 use super::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_guide_curve_stream_with_count,
     a6_freeform_curve_stream, a8_catpart, a8_freeform_curve_stream,
@@ -352,7 +354,12 @@ fn decode_geometry_fallback_transfers_an_inline_a8_pole_grid() {
 fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topology() {
     let stream = a8_inline_surface_stream_with_native_vertex_chain();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service resource budget")
     .expect("generated A8 topology");
