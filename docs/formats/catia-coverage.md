@@ -862,13 +862,13 @@ carrier, and transfer must preserve native traversal order. The carrier
 geometry is unchanged. The unresolved ownership and orientation relation is
 tracked in OS-05.
 
-Four authored controls exercise positive and negative cylinder and direct NURBS
+Four fixtures exercise positive and negative cylinder and direct NURBS
 faces. Each has one three-edge outer loop. The negative fixtures reverse UV
 winding and select primary `03`; the positive fixtures select primary `05`.
 Their carrier surfaces are equal across each pair. The NURBS fixture does not
 establish complete boundary-length geometry.
 
-Four further authored controls retain line and arc revolution profiles with
+Four further fixtures retain line and arc revolution profiles with
 positive and negative loop controls. The line pair transfers one four-edge face
 and preserves equal carrier and construction payloads across the pair. The arc
 pair preserves its existing topology refusal. Revolution measurements retain
@@ -931,43 +931,20 @@ limit containment, both reference-scalar copies, controls, and map terminals
 before it retains site data. Arbitrary frame-bounded continuation bytes no
 longer qualify as a complete rolling-ball carrier.
 
-The earlier typed scope resolves 183 source tails: 170 absent scalar jets and 13 explicit
-scalar jets. All 5,265 quintic samples stay inside their endpoint value range
+The typed scope resolves absent and explicit scalar jets. All 5,265 quintic samples stay inside their endpoint value range
 and retain the stored decreasing direction. Source parameter domains and six
 records with exact source knots support the parameter interpretation. All four
 NIST maps fit all four candidate source-curve domains, so no target is assigned
 from that relation. Raw tail controls retain their source polarity.
 
-The complete 79-input source review contains 185 numeric continuations. Native
-retention covers 184 single-extent frames: 171 absent scalar jets and 13 explicit
-scalar jets. One additional 207-byte explicit continuation crosses physical
-extents and remains source-only. The earlier 183-record scope excludes one
-record from its timed-out input; its original counts remain a separate result.
-All retained continuations preserve the exact scalar words, control, branch,
+Native retention covers single-extent frames with absent and explicit scalar
+jets. A continuation that crosses physical extents remains source-only. All
+retained continuations preserve the exact scalar words, control, branch,
 terminal, current and maximal bounds, and complete source frame. Compact prefix
 length follows the encoded integers, including the seven-byte `K=64` prefix.
 
-The spray-bottle source has nine explicit scalar jets with 58 station values.
-Every value lies in the independent class-`15` curve domain, and the union of
-the nine value intervals covers its eleven knots within `1e-12`. The four NIST
-jets have 36 values inside their respective preceding class-`15` curve domains
-and eight bit-exact knot matches. Intervening records are retained; preceding
-order and domain containment do not establish a curve identity or part binding.
 The direct-limit comparison is a raw-coordinate diagnostic; it does not prove
 a common frame or a millimeter unit.
-
-The E5 source review closes five class-`d8` carriers in `part1.CATPart`, including
-their complete 63-byte tails and signed senses. That input has no compact
-class-`32` carrier. This verifies the parallel field order but supplies no
-same-carrier mapping from compact control `03` or `05` to a signed E5 sense.
-
-Fresh checked STEP siblings match the native face/edge/vertex counts:
-`clothes-basket` has 700/2,242/1,470 and `spray-bottle` has 198/424/228. Independent
-bijections preserve every typed face-edge and edge-vertex incidence with its
-multiplicity, and every ordered loop-corner cycle modulo rotation and reversal.
-Both encodings classify outer loops on 686 basket faces and all 198 spray faces;
-the remaining fourteen basket faces gain no outer/inner classification. These
-topological results do not establish metric or parameterization equivalence.
 
 The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
 witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
@@ -987,22 +964,6 @@ forms and the complete terminal match the typed native data. The first
 31,420-record population has repeated header values in every source and
 decreasing values in physical-offset order in 29 sources. The eyebolt and
 spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
-
-The complete current native population contains 42,728 five-reference frames.
-Every raw value, reference form, frame flag, header width and token, and terminal
-joins exactly to its independently closed source frame. The apartman input
-contributes 10,016 records; excluding that earlier timed-out input yields the
-32,712-record population above. These are native source records, not counts of
-transferred neutral edges.
-
-Fresh checked eyebolt and spring STEP siblings match the native topology at
-134/268/136 and 84/166/84 faces/edges/vertices. Independent bijections preserve
-all typed face-edge and edge-vertex incidences, their multiplicities, and every
-ordered loop-corner cycle modulo rotation and reversal. The quoted native
-four-edge subgraphs close through four explicit endpoint records of degree
-two, and all eight terminals are `21`. This rejects an alternating cycle-position
-selector without assigning the terminal's writer meaning. The topology checks
-do not establish metric or parameterization equivalence.
 
 ## Gap-search temporary storage
 
@@ -1029,7 +990,7 @@ Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
 the one-byte backward-distance or owned-child forms. These are source-byte
 grammar checks; the four operand roles remain unassigned, and the existing
 five-reference parser abstains on this production. A separate native arena
-retains all 131 four-reference records with their complete frames, source
+retains every four-reference record with their complete frames, source
 coordinates, header tokens, flags, reference values and forms, and terminal
 bytes. It adds no fifth operand or neutral edge.
 

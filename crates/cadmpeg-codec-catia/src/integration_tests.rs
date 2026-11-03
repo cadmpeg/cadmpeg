@@ -772,6 +772,16 @@ fn scoped_standalone_definition_chains_stay_native() {
         .find(|entity| entity.entity_id == 3)
         .expect("native definition-chain entity");
     assert!(entity.definition_chain_value().is_some());
+    let retained = crate::loss::CatiaLossCode::HistoryDefinitionChainsRetained.kind();
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == retained)
+            .count(),
+        1
+    );
     assert_valid(&result);
 }
 

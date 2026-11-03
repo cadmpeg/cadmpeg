@@ -106,6 +106,28 @@ use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, Consol
 
 mod wire_views;
 
+/// Collects source records with fallible growth, charging each on arrival.
+fn admit_records<T>(
+    ctx: &DecodeContext<'_>,
+    records: impl Iterator<Item = Result<T, CodecError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut admitted = Vec::new();
+    for record in records {
+        ctx.charge_entities(1, operation)?;
+        admitted.try_reserve(1).map_err(|_| {
+            CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                1,
+                operation,
+            ))
+        })?;
+        admitted.push(record?);
+    }
+    Ok(admitted)
+}
+
 fn slice_is_empty<T>(values: &&[T]) -> bool {
     values.is_empty()
 }

@@ -606,6 +606,7 @@ fn build_plan(
         };
         let mut face_senses =
             admitted!(ctx.alloc_filled(graph.faces.len(), Sense::Forward, "catia b5 face senses"));
+        let mut withheld_faces = Vec::new();
         for (index, face) in graph.faces.iter().enumerate() {
             if matches!(
                 graph.surfaces.get(&face.surface),
@@ -618,15 +619,19 @@ fn build_plan(
                         | B5Surface::Revolution { .. }
                 )
             ) {
-                face_senses[index] = faces::native_carrier_face_sense(graph, face)?;
-                if face
+                let unflipped = face
                     .loops
                     .iter()
-                    .any(|id| loop_orientation.get(id).is_none_or(|loop_| loop_.flipped))
-                {
-                    return None;
+                    .all(|id| loop_orientation.get(id).is_some_and(|loop_| !loop_.flipped));
+                match faces::native_carrier_face_sense(graph, face) {
+                    Some(sense) if unflipped => face_senses[index] = sense,
+                    _ => withheld_faces.push(face.object_id),
                 }
             }
+        }
+        if !withheld_faces.is_empty() {
+            refusal.push_b5_faces_withheld(&withheld_faces);
+            return None;
         }
         let vertex_tolerances = admitted!(transfer_vertex_tolerances(
             ctx,

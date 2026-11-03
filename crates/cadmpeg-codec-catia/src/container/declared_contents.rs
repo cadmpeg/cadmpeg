@@ -134,7 +134,7 @@ fn printable_name(text: &[u8]) -> Option<String> {
     })
 }
 
-fn content_name(data: &[u8], matches_descriptor: impl Fn(&str) -> bool) -> Option<String> {
+fn content_name(data: &[u8]) -> Option<String> {
     let texts = text_records(data)?;
     let (target, properties) = texts.split_last()?;
     let (storage, leading) = properties.split_last()?;
@@ -152,11 +152,7 @@ fn content_name(data: &[u8], matches_descriptor: impl Fn(&str) -> bool) -> Optio
             return None;
         }
     }
-    if target.len() + 2 > usize::from(u16::MAX) {
-        return None;
-    }
-    let name = printable_name(target)?;
-    matches_descriptor(&name).then_some(name)
+    printable_name(target)
 }
 
 pub(super) fn resolve(
@@ -174,12 +170,7 @@ pub(super) fn resolve(
         return None;
     }
     let range = contiguous_descriptor_range(descriptor, outer.inner, data.len())?;
-    let target = content_name(data.get(range)?, |name| {
-        outer
-            .descriptors
-            .iter()
-            .any(|candidate| names.matches(data, candidate, name))
-    })?;
+    let target = content_name(data.get(range)?)?;
     let mut streams = outer
         .descriptors
         .iter()

@@ -10,7 +10,7 @@ use crate::unique_index::UniqueIndex;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const RETAIN_BINDING: &str = "retain CATIA sketch source bindings";
 
@@ -67,8 +67,7 @@ pub(crate) struct CatiaLocalPointPair {
 }
 
 struct Groups<'a> {
-    ids: UniqueIndex<&'a str, &'a CatiaDesignObject>,
-    owners: UniqueIndex<(&'a str, u32), &'a CatiaDesignObject>,
+    owners: HashMap<(&'a str, u32), &'a CatiaDesignObject>,
     fields: HashMap<(&'a str, u32), Vec<&'a CatiaObjectRecord>>,
 }
 
@@ -83,33 +82,38 @@ impl<'a> Groups<'a> {
                     .push(object);
             }
         }
-        Self {
-            ids: UniqueIndex::collect(groups.iter().map(|g| (g.id.as_str(), g))),
-            owners: UniqueIndex::collect(
-                groups
-                    .iter()
-                    .map(|g| ((g.parent.as_str(), g.owner_entity_id), g)),
-            ),
-            fields,
-        }
+        let ids = UniqueIndex::collect(groups.iter().map(|g| (g.id.as_str(), g)));
+        let unique_owners = UniqueIndex::collect(
+            groups
+                .iter()
+                .map(|g| ((g.parent.as_str(), g.owner_entity_id), g)),
+        );
+        let owners = groups
+            .iter()
+            .filter(|group| {
+                let key = (group.parent.as_str(), group.owner_entity_id);
+                unique_owners.get(&key).is_some()
+                    && ids.get(group.id.as_str()).is_some()
+                    && fields.get(&key).is_some_and(|records| {
+                        records.len() == group.fields.len()
+                            && records.iter().zip(&group.fields).all(|(record, id)| {
+                                record.id == *id
+                                    && record.design_object.as_deref() == Some(group.id.as_str())
+                            })
+                    })
+            })
+            .map(|group| ((group.parent.as_str(), group.owner_entity_id), group))
+            .collect();
+        Self { owners, fields }
     }
 
     fn owner(&self, graph: &str, identity: u32) -> Option<&'a CatiaDesignObject> {
-        let group = *self.owners.get(&(graph, identity))?;
-        self.ids.get(group.id.as_str())?;
-        let fields = self.fields.get(&(graph, identity))?;
-        (fields.len() == group.fields.len()
-            && fields.iter().zip(&group.fields).all(|(record, id)| {
-                record.id == *id && record.design_object.as_deref() == Some(group.id.as_str())
-            }))
-        .then_some(group)
+        self.owners.get(&(graph, identity)).copied()
     }
 
     fn containing(&self, object: &CatiaObjectRecord) -> Option<&'a CatiaDesignObject> {
         let group = self.owner(&object.parent, object.owner_entity_id()?)?;
-        (object.design_object.as_deref() == Some(group.id.as_str())
-            && group.fields.contains(&object.id))
-        .then_some(group)
+        (object.design_object.as_deref() == Some(group.id.as_str())).then_some(group)
     }
 }
 
@@ -138,12 +142,21 @@ fn text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
     Ok(value.to_owned())
 }
 
-fn summary(ctx: &DecodeContext<'_>, values: &mut Vec<String>, id: &str) -> Result<(), CodecError> {
-    if !values.iter().any(|value| value == id) {
-        retain::<String>(ctx)?;
-        values.push(text(ctx, id)?);
+#[derive(Default)]
+struct Summary {
+    seen: HashSet<String>,
+    values: Vec<String>,
+}
+
+impl Summary {
+    fn add(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<(), CodecError> {
+        if !self.seen.contains(id) {
+            retain::<String>(ctx)?;
+            self.values.push(text(ctx, id)?);
+            self.seen.insert(id.to_owned());
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn member_target(
@@ -216,6 +229,8 @@ fn membership(
         groups: Vec::new(),
         children: Vec::new(),
     };
+    let mut member_groups = Summary::default();
+    let mut member_children = Summary::default();
     for (ordinal, item) in items.iter().enumerate() {
         let ListItem::Reference { value, offset } = item else {
             return Ok(None);
@@ -223,9 +238,9 @@ fn membership(
         retain::<CatiaSketchMember>(ctx)?;
         let target = member_target(ctx, &group.parent, *value, pairs, groups)?;
         if let Some(target) = &target {
-            summary(ctx, &mut result.groups, &target.group)?;
+            member_groups.add(ctx, &target.group)?;
             if let Some(child) = &target.child {
-                summary(ctx, &mut result.children, child)?;
+                member_children.add(ctx, child)?;
             }
         }
         result.items.push(CatiaSketchMember {
@@ -235,6 +250,8 @@ fn membership(
             target,
         });
     }
+    result.groups = member_groups.values;
+    result.children = member_children.values;
     Ok(Some(Box::new(result)))
 }
 

@@ -93,7 +93,7 @@ fn fields(payload: &[u8]) -> Option<Fields> {
     })
 }
 
-fn valid_payload(record: &CatiaConsolidatedFourReferenceEdge) -> bool {
+pub(super) fn valid_payload(record: &CatiaConsolidatedFourReferenceEdge) -> bool {
     fields(&record.frame.payload).is_some_and(|parsed| {
         parsed.operands == record.operands
             && parsed.terminal == record.terminal
@@ -162,43 +162,15 @@ pub(super) fn derive(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedFourReferenceEdge>, CodecError> {
-    let Some((record, payload, parsed)) = candidates(bytes, records).next() else {
-        return Ok(Vec::new());
-    };
-    let count = candidates(bytes, records).count();
-    ctx.charge_entities(u64_from_index(count), "admit CATIA four-reference edges")?;
-    let first = admit(ctx, 0, record, payload, parsed)?;
-    let mut output = ctx.alloc_filled(count, first, "CATIA four-reference edge records")?;
-    for (ordinal, (target, (record, payload, parsed))) in output
-        .iter_mut()
-        .zip(candidates(bytes, records))
-        .enumerate()
-    {
-        *target = admit(ctx, ordinal, record, payload, parsed)?;
-    }
-    Ok(output)
-}
-
-#[cfg(test)]
-pub(super) fn validate(
-    records: &[CatiaConsolidatedFourReferenceEdge],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (ordinal, record) in records.iter().enumerate() {
-        let order_valid = ordinal == 0
-            || (
-                records[ordinal - 1].source_index,
-                records[ordinal - 1].source_offset,
-            ) < (record.source_index, record.source_offset);
-        if record.id != format!("catia:consolidated:four-reference-edge#{ordinal}")
-            || !valid_payload(record)
-            || !order_valid
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "invalid four-reference edge source identity or payload".to_owned(),
-            ));
-        }
-    }
-    Ok(())
+    super::admit_records(
+        ctx,
+        candidates(bytes, records)
+            .enumerate()
+            .map(|(ordinal, (record, payload, parsed))| {
+                admit(ctx, ordinal, record, payload, parsed)
+            }),
+        "admit CATIA four-reference edges",
+    )
 }
 
 #[cfg(test)]

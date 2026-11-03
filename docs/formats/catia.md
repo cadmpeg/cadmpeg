@@ -58,7 +58,7 @@ The outer logical stream named `Data` carries model-container declarations. An a
 
 `CATPrtCont` declares either `CATProdCont` or `CATFeatCont` as its base class. `CATProdCont` declares `CATFeatCont` as its base class. These ordered string pairs encode class ancestry. A base-class declaration supplies no ownership edge between serialized object graphs. Graph ownership requires a selected physical stream that uniquely contains the graph's complete extent.
 
-The declaration identifier has four big-endian `u32` words. Its metadata stream name is `{w0:x}_{w1:x}_{w2:08x}_{w3:x}`. The length-framed directory name stores a `u16le` byte length, UTF-16LE text, a two-byte NUL, and one zero padding byte before the descriptor. The length includes the NUL and excludes the length cell and padding. The complete name frame lies after the preceding descriptor and its extents. The length cell is not part of the name.
+The declaration identifier has four big-endian `u32` words. Its metadata stream name is `{w0:x}_{w1:x}_{w2:08x}_{w3:x}`. The length-framed directory name stores a `u16le` byte length, UTF-16LE text, a two-byte NUL, and one zero padding byte before the descriptor. The length includes the NUL and excludes the length cell and padding. The complete name frame lies after the preceding descriptor and its extents.
 
 The metadata property table starts with `total_size:u32be`, `identity:u32be`, and `count:u32be` (12 bytes). Each counted record starts with `size:u32be`, `identity:u32be`, `value_type:u16be`, and `value_bytes:u32be` (14 bytes). The record size is 14 plus `value_bytes`; the records close at `total_size`. Type 2 stores an even-length UTF-16BE value ending in NUL. The content-reference table is a sequence of type-2 records: zero or more unprefixed `Cont_` names of other declared containers, `0003` plus `CATPropertySets`, `0003` plus `CATStorageProperty`, then the unprefixed content stream name. `CATPropertySets` is optional only when no leading name is present. A leading name selects no content and need not name a directory stream. All text ends in UTF-16BE NUL. The final name exactly selects one length-framed directory descriptor. Numeric table and property identities supply no graph ownership edge. The graph's complete physical extent must lie in the selected content stream; the UUID metadata stream is not its graph storage.
 
@@ -321,7 +321,7 @@ ff secondary_count:u32le
 00 00 00 mode:u8
 ```
 
-The fixed header is 19 bytes. The marker occupies bytes zero through five. The entry count starts at byte `+6`, the secondary sentinel at `+10`, the secondary count at `+11`, the three reserved zero bytes at `+15`, and the mode at `+18`. A raw XYZ row is 12 bytes, with X, Y, and Z at `+0`, `+4`, and `+8`. The mode-zero scalar prefix is five bytes: its delimiter is at `+0` and its scalar count starts at `+1`.
+The [layout table](../layouts/catia.md) gives the offsets of the fixed header (`indexed_visualization_point_header`), the raw XYZ row (`indexed_visualization_point_row`), and the mode-zero scalar prefix (`indexed_visualization_scalar_prefix`).
 
 For mode `1`, `coordinate:f32le[entry_count][3]` follows the header directly. Table entry `h` is the world-space XYZ coordinate of trim handle `h`. `secondary_count` is no greater than `entry_count` and differs from it by at most one.
 

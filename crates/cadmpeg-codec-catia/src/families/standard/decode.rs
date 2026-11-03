@@ -3363,18 +3363,7 @@ fn merge_standard_limit_curves_from_records(
     }
 }
 
-#[cfg(test)]
-pub(super) fn standard_object_evidence_from_streams(
-    ctx: &DecodeContext<'_>,
-    streams: &[impl AsRef<[u8]>],
-    tags: &HashSet<u32>,
-    edge_tags: &HashSet<u32>,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
-    standard_object_evidence_with_selected_faces(ctx, streams, tags, edge_tags, None, refusal)
-}
-
-fn standard_object_evidence_with_selected_faces(
+pub(super) fn standard_object_evidence_with_selected_faces(
     ctx: &DecodeContext<'_>,
     streams: &[impl AsRef<[u8]>],
     tags: &HashSet<u32>,

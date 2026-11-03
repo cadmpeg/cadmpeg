@@ -715,18 +715,20 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
         if search >= data.len() {
             return None;
         }
-        let relative = data[search..].windows(E5_MARKER.len()).position(|bytes| {
-            bytes[..2] == [0xe5, 0x0d] && matches!(bytes[2], 0x03 | 0x13 | 0x83)
-        })?;
+        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
+            search = end;
+            continue;
+        }
+        let relative = data[search..]
+            .windows(E5_MARKER.len())
+            .position(|bytes| bytes == E5_MARKER)?;
         let start = search + relative;
         let Some(end) = e5_frame_end(data, start) else {
             search = start + 1;
             continue;
         };
         search = end;
-        if data[start + 2] == 0x03 {
-            return Some(start..end);
-        }
+        return Some(start..end);
     })
 }
 

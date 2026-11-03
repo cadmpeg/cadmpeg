@@ -6,7 +6,8 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::{
-    rolling_ball_tail_prefix as prefix, rolling_ball_tail_scalar_branch as scalar_branch,
+    a_family_frame as a_frame, rolling_ball_tail_prefix as prefix,
+    rolling_ball_tail_scalar_branch as scalar_branch,
     rolling_ball_tail_unmapped_suffix as unmapped,
 };
 use crate::wire::bytes::compact_int;
@@ -255,13 +256,16 @@ fn source_scalar_matches(
     }
 }
 
-fn valid_record(record: &CatiaRollingBallContinuation) -> bool {
+fn tail_offset(width: ConsolidatedFrameWidth, tail_start: usize) -> u64 {
+    u64_from_index(a_frame::LEN + usize::from(u8::from(width)) + tail_start)
+}
+
+pub(super) fn valid_record(record: &CatiaRollingBallContinuation) -> bool {
     let width = record.frame.width();
     header_valid(width, record.frame.header_token())
         && fields(&record.frame.payload).is_some_and(|parsed| {
-            let header = 7 + usize::from(u8::from(width));
             record.site_count == u64_from_index(parsed.count)
-                && record.tail_offset == u64_from_index(header + parsed.tail_start)
+                && record.tail_offset == tail_offset(width, parsed.tail_start)
                 && record.current_u_bits == [parsed.current[0], parsed.current[1]]
                 && record.current_v_bits == [parsed.current[2], parsed.current[3]]
                 && record.reference_scalar_bits == parsed.current[4]
@@ -365,7 +369,7 @@ fn admit(
         source_offset: u64_from_index(source.source_range().start),
         frame,
         site_count: u64_from_index(parsed.count),
-        tail_offset: u64_from_index(7 + usize::from(u8::from(source.width())) + parsed.tail_start),
+        tail_offset: tail_offset(source.width(), parsed.tail_start),
         current_u_bits: [parsed.current[0], parsed.current[1]],
         current_v_bits: [parsed.current[2], parsed.current[3]],
         reference_scalar_bits: parsed.current[4],
@@ -382,44 +386,13 @@ pub(super) fn derive(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaRollingBallContinuation>, CodecError> {
-    let mut source = candidates(bytes, records);
-    let Some((r, p, f)) = source.next() else {
-        return Ok(Vec::new());
-    };
-    let count = source.count() + 1;
-    ctx.charge_entities(
-        u64_from_index(count),
+    super::admit_records(
+        ctx,
+        candidates(bytes, records)
+            .enumerate()
+            .map(|(ordinal, (r, p, f))| admit(ctx, ordinal, r, p, &f)),
         "admit CATIA rolling-ball continuations",
-    )?;
-    let first = admit(ctx, 0, r, p, &f)?;
-    let mut result = ctx.alloc_filled(count, first, "CATIA continuation records")?;
-    for (ordinal, (target, (r, p, f))) in result
-        .iter_mut()
-        .zip(candidates(bytes, records))
-        .enumerate()
-    {
-        *target = admit(ctx, ordinal, r, p, &f)?;
-    }
-    Ok(result)
-}
-
-#[cfg(test)]
-pub(super) fn validate(
-    records: &[CatiaRollingBallContinuation],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (i, r) in records.iter().enumerate() {
-        if r.id != format!("catia:consolidated:rolling-ball-continuation#{i}")
-            || !valid_record(r)
-            || (i > 0
-                && (records[i - 1].source_index, records[i - 1].source_offset)
-                    >= (r.source_index, r.source_offset))
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "invalid rolling-ball continuation source identity or fields".to_owned(),
-            ));
-        }
-    }
-    Ok(())
+    )
 }
 
 #[cfg(test)]

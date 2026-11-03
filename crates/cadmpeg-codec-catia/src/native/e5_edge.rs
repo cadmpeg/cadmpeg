@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source E5 edge operands and their allocation terminals.
 
-use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -41,23 +41,7 @@ pub(super) fn derive(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<CatiaE5EdgeRecord>, CodecError> {
-    let mut source = records(bytes);
-    let Some(first) = source.next() else {
-        return Ok(Vec::new());
-    };
-    let count = source.count() + 1;
-    let minimum = header::LEN + 1 + 5 + 1;
-    if bounded_len(u64_from_index(count), minimum, bytes.len()).is_none() {
-        return Err(CodecError::malformed(
-            "E5 edge count exceeds its source bytes",
-        ));
-    }
-    ctx.charge_entities(u64_from_index(count), "admit CATIA E5 edge records")?;
-    let mut output = ctx.alloc_filled(count, first, "CATIA E5 edge records")?;
-    for (destination, source) in output.iter_mut().zip(records(bytes)) {
-        *destination = source;
-    }
-    Ok(output)
+    super::admit_records(ctx, records(bytes).map(Ok), "admit CATIA E5 edge records")
 }
 
 #[cfg(test)]
@@ -75,6 +59,7 @@ mod tests {
 
     #[test]
     fn unused_physical_edges_keep_repeated_persistent_ids_and_terminal_forms() {
+        let stride = frame(&[0x01], 7).len();
         let mut bytes = Vec::new();
         for terminal in [0x01, 0x02, 0x21, 0x22, 0x25, 0x29, 0x2a] {
             bytes.extend(frame(&[terminal], 7));
@@ -83,12 +68,15 @@ mod tests {
             .expect("bounded source records");
         assert_eq!(records.len(), 7);
         for (index, record) in records.iter().enumerate() {
-            assert_eq!(record.id, format!("catia:e5:edge-use#{}", index * 20));
+            assert_eq!(record.id, format!("catia:e5:edge-use#{}", index * stride));
             assert_eq!(
                 record.byte_offset,
-                cadmpeg_core::decode::u64_from_index(index * 20)
+                cadmpeg_core::decode::u64_from_index(index * stride)
             );
-            assert_eq!(record.byte_len, 20);
+            assert_eq!(
+                record.byte_len,
+                cadmpeg_core::decode::u64_from_index(stride)
+            );
             assert_eq!(record.record_id, 7);
             assert_eq!(record.object_references, [13, 10, 16, 14, 15]);
         }
@@ -129,7 +117,10 @@ mod tests {
             .expect("bounded source operands");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].object_references, [12_140_032, 10, 16, 14, 15]);
-        assert_eq!(records[0].byte_len, 22);
+        assert_eq!(
+            records[0].byte_len,
+            cadmpeg_core::decode::u64_from_index(bytes.len())
+        );
     }
 
     #[test]
@@ -166,6 +157,7 @@ mod tests {
         append_e5_record(&mut bytes, 0xc0, 11, &[0; 64]);
         let first_offset = bytes.len();
         bytes.extend(frame(&[0x21], 7));
+        let second_offset = bytes.len();
         bytes.extend(frame(&[0x22], 9));
         assert!(crate::test_support::with_entity_limit(1, |ctx| derive(ctx, &bytes)).is_err());
         let admitted = crate::test_support::with_entity_limit(2, |ctx| derive(ctx, &bytes))
@@ -179,7 +171,7 @@ mod tests {
         );
         assert_eq!(
             admitted[1].byte_offset,
-            cadmpeg_core::decode::u64_from_index(first_offset + 20)
+            cadmpeg_core::decode::u64_from_index(second_offset)
         );
         assert!(
             crate::test_support::with_entity_limit(0, |ctx| derive(ctx, &[]))
@@ -193,11 +185,15 @@ mod tests {
         let fake = frame(&[0x21], 7);
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xc0, 8, &fake);
+        let edge_offset = bytes.len();
         bytes.extend(frame(&[0x22], 9));
         let records = crate::test_support::with_service_context(|ctx| derive(ctx, &bytes))
             .expect("bounded physical records");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].record_id, 9);
-        assert_eq!(records[0].byte_offset, 33);
+        assert_eq!(
+            records[0].byte_offset,
+            cadmpeg_core::decode::u64_from_index(edge_offset)
+        );
     }
 }

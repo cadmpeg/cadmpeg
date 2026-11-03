@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical source records carrying complete NURBS limit programs.
 
-use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -139,28 +139,11 @@ pub(super) fn derive(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<CatiaE5NurbsLimitRecord>, CodecError> {
-    let mut source = records(bytes);
-    let Some(first) = source.next() else {
-        return Ok(Vec::new());
-    };
-    let count = source.count() + 1;
-    if bounded_len(
-        u64_from_index(count),
-        header::LEN + CurveLimits::LEN,
-        bytes.len(),
+    super::admit_records(
+        ctx,
+        records(bytes).map(Ok),
+        "admit CATIA E5 NURBS limit programs",
     )
-    .is_none()
-    {
-        return Err(CodecError::malformed(
-            "E5 limit-program count exceeds source bytes",
-        ));
-    }
-    ctx.charge_entities(u64_from_index(count), "admit CATIA E5 NURBS limit programs")?;
-    let mut output = ctx.alloc_filled(count, first, "CATIA E5 NURBS limit programs")?;
-    for (target, source) in output.iter_mut().zip(records(bytes)) {
-        *target = source;
-    }
-    Ok(output)
 }
 
 #[cfg(test)]

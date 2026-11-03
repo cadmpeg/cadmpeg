@@ -21,7 +21,7 @@ use crate::families::standard::decode::standard_limit_curve_point_parameter;
 use crate::families::standard::decode::standard_line_pair_solution_is_simple;
 use crate::families::standard::decode::standard_line_pair_solution_is_simple_cached;
 use crate::families::standard::decode::standard_native_support_endpoint_pair;
-use crate::families::standard::decode::standard_object_evidence_from_streams;
+use crate::families::standard::decode::standard_object_evidence_with_selected_faces;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains;
 use crate::families::standard::decode::standard_surface_evidence;
@@ -215,11 +215,12 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        standard_object_evidence_from_streams(
+        standard_object_evidence_with_selected_faces(
             ctx,
             &[stream.clone(), stream.clone()],
             &HashSet::from([10]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -236,11 +237,12 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let face_payload = conflicting.len() - 4;
     conflicting[face_payload + 1] = 0x8d;
     let evidence = crate::test_support::with_service_context(|ctx| {
-        standard_object_evidence_from_streams(
+        standard_object_evidence_with_selected_faces(
             ctx,
             &[stream, conflicting],
             &HashSet::from([10]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -357,11 +359,12 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     append_b5_record(&mut stream, 0x2d, 120, &revolution);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        standard_object_evidence_from_streams(
+        standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::from([120]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })

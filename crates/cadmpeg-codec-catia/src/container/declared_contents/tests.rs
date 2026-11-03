@@ -66,23 +66,20 @@ fn malformed_or_duplicate_content_properties_do_not_resolve() {
     let range = contiguous_descriptor_range(metadata, 0, data.len()).unwrap();
     let original = &data[range];
     assert_eq!(
-        content_name(original, |name| name.starts_with("Cont_")).as_deref(),
+        content_name(original).as_deref(),
         Some("Cont_4bbc295c_1048_62eb7b6f_1825")
     );
     for (index, value) in [(3, 0), (11, 4), (21, 0), (25, 0), (original.len() - 1, 1)] {
         let mut malformed = original.to_vec();
         malformed[index] = value;
-        assert!(
-            content_name(&malformed, |name| name.starts_with("Cont_")).is_none(),
-            "offset {index}"
-        );
+        assert!(content_name(&malformed).is_none(), "offset {index}");
     }
     let mut duplicate = original.to_vec();
     duplicate.extend_from_slice(&original[114..]);
     let size = u32::try_from(duplicate.len()).unwrap();
     duplicate[..4].copy_from_slice(&size.to_be_bytes());
     duplicate[8..12].copy_from_slice(&4u32.to_be_bytes());
-    assert!(content_name(&duplicate, |name| name.starts_with("Cont_")).is_none());
+    assert!(content_name(&duplicate).is_none());
 }
 
 #[test]
@@ -115,7 +112,7 @@ fn two_record_metadata_has_the_same_explicit_content_link() {
     compact[..4].copy_from_slice(&size.to_be_bytes());
     compact[8..12].copy_from_slice(&2u32.to_be_bytes());
     assert_eq!(
-        content_name(&compact, |name| name == "Cont_4bbc295c_1048_62eb7b6f_1825").as_deref(),
+        content_name(&compact).as_deref(),
         Some("Cont_4bbc295c_1048_62eb7b6f_1825")
     );
 }
@@ -155,7 +152,6 @@ fn leading_container_names_select_no_content() {
     let range = contiguous_descriptor_range(&outer.descriptors[1], 0, data.len()).unwrap();
     let original = &data[range];
     let leading = text_record("Cont_0_51ac_66443b70_3eab9".encode_utf16());
-    let target = |name: &str| name == "Cont_4bbc295c_1048_62eb7b6f_1825";
     for names in [
         vec![leading.clone()],
         vec![leading.clone(), leading.clone()],
@@ -163,7 +159,7 @@ fn leading_container_names_select_no_content() {
         let count = u32::try_from(names.len()).unwrap() + 3;
         let table = table_with_leading(&names, &original[12..], count);
         assert_eq!(
-            content_name(&table, target).as_deref(),
+            content_name(&table).as_deref(),
             Some("Cont_4bbc295c_1048_62eb7b6f_1825")
         );
     }
@@ -175,10 +171,10 @@ fn leading_container_names_select_no_content() {
         text_record("Cont_".encode_utf16()),
     ] {
         let table = table_with_leading(&[name], &original[12..], 4);
-        assert!(content_name(&table, target).is_none());
+        assert!(content_name(&table).is_none());
     }
     let without_sets = table_with_leading(&[leading], &original[60..], 3);
-    assert!(content_name(&without_sets, target).is_none());
+    assert!(content_name(&without_sets).is_none());
 }
 
 #[test]
@@ -201,31 +197,4 @@ fn an_overlapping_descriptor_candidate_cannot_own_a_name_prefix() {
     overlap.desc_offset -= 1;
     outer.descriptors.push(overlap);
     assert!(outer_container_declarations(&data, &outer).is_empty());
-}
-
-#[test]
-fn a_name_wider_than_the_directory_length_field_is_rejected_before_lookup() {
-    let (data, outer, _) = source();
-    let range = contiguous_descriptor_range(&outer.descriptors[1], 0, data.len()).unwrap();
-    let original = &data[range];
-    let mut table = original[..12].to_vec();
-    table.extend_from_slice(&original[60..114]);
-    let mut value = Vec::new();
-    for _ in 0..32767 {
-        value.extend_from_slice(&[0, b'x']);
-    }
-    value.extend_from_slice(&[0, 0]);
-    let width = u32::try_from(value.len()).unwrap();
-    table.extend_from_slice(&(14 + width).to_be_bytes());
-    table.extend_from_slice(&16u32.to_be_bytes());
-    table.extend_from_slice(&2u16.to_be_bytes());
-    table.extend_from_slice(&width.to_be_bytes());
-    table.extend(value);
-    let size = u32::try_from(table.len()).unwrap();
-    table[..4].copy_from_slice(&size.to_be_bytes());
-    table[8..12].copy_from_slice(&2u32.to_be_bytes());
-    assert!(content_name(&table, |_| panic!(
-        "u16 directory length cannot name this target"
-    ))
-    .is_none());
 }

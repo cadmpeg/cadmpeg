@@ -267,7 +267,8 @@ fn continuation_source_indices_keep_logical_and_physical_frame_identity() {
         ),
         (1, 0, u64::try_from(second).expect("offset"))
     );
-    super::validate(&rows).expect("strict source order");
+    crate::native::test_only::test_load::validate_rolling_ball_continuations(&rows)
+        .expect("strict source order");
 }
 
 #[test]

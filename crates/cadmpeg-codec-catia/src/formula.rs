@@ -542,6 +542,21 @@ pub(crate) fn transfer_parameters(
                 .is_some_and(|entity| entity.definition_chain_value().is_some())
         })
         .count();
+    let transferred_native_refs = parameters
+        .iter()
+        .filter_map(|candidate| candidate.parameter.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let native_only_definition_chain_count = native
+        .entity_records
+        .iter()
+        .filter(|entity| {
+            graph_scope.contains(entity.object_graph.as_str())
+                && !transferred_native_refs.contains(entity.id.as_str())
+                && entity
+                    .definition_chain_value()
+                    .is_some_and(|chain| definition_chain_typed_value(chain).is_some())
+        })
+        .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
         annotation_builder.derived(candidate.parameter.id.as_str(), "properties")?;
@@ -562,6 +577,7 @@ pub(crate) fn transfer_parameters(
     Ok(FormulaTransfer {
         typed_parameter_count,
         definition_chain_parameter_count,
+        native_only_definition_chain_count,
         relation_program_parameter_count,
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
@@ -570,50 +586,62 @@ pub(crate) fn transfer_parameters(
     })
 }
 
-fn definition_chain_parameter_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    entity: &crate::native::entity_record::CatiaEntityRecord,
+fn definition_chain_typed_value(
     chain: &crate::native::CatiaDefinitionChainValue,
-) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
-    let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
+) -> Option<(
+    FormulaParameterType,
+    TypedParameterEvaluation,
+    Option<u64>,
+    Option<u32>,
+)> {
+    if chain.selector.value.is_empty() {
+        return None;
+    }
+    match &chain.value {
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            let Some((parameter_type, evaluation)) =
-                typed_parameter_evaluation(&chain.role.value, evaluation)
-            else {
-                return Ok(None);
-            };
-            (parameter_type, evaluation, Some(*opcode_offset), None)
+            let (parameter_type, evaluation) =
+                typed_parameter_evaluation(&chain.role.value, evaluation)?;
+            Some((parameter_type, evaluation, Some(*opcode_offset), None))
         }
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
             if canonical_parameter_type(&chain.role.value)
                 == Some(FormulaParameterType::Boolean) =>
         {
-            (
+            let boolean = match value {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
+            Some((
                 FormulaParameterType::Boolean,
-                TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
-                    0 => false,
-                    1 => true,
-                    _ => return Ok(None),
-                })),
+                TypedParameterEvaluation::Value(ParameterValue::Boolean(boolean)),
                 None,
                 Some(*value),
-            )
+            ))
         }
-        _ => return Ok(None),
-    };
-    if chain.selector.value.is_empty() {
-        return Ok(None);
+        _ => None,
     }
+}
+
+fn definition_chain_parameter_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &crate::native::entity_record::CatiaEntityRecord,
+    chain: &crate::native::CatiaDefinitionChainValue,
+) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
+    let Some((parameter_type, evaluation, evaluation_opcode_offset, atom_value)) =
+        definition_chain_typed_value(chain)
+    else {
+        return Ok(None);
+    };
     let id = match neutral_parameter_id(&entity.id) {
         Ok(id) => id,
         Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name = String::new();
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -677,7 +705,7 @@ fn definition_chain_parameter_candidate(
             id,
             owner: None,
             ordinal: 0,
-            name,
+            name: String::new(),
             expression,
             display: None,
             value,
@@ -696,6 +724,7 @@ fn definition_chain_parameter_candidate(
 pub(crate) struct FormulaTransfer {
     pub(crate) typed_parameter_count: usize,
     pub(crate) definition_chain_parameter_count: usize,
+    pub(crate) native_only_definition_chain_count: usize,
     pub(crate) relation_program_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,

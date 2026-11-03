@@ -368,9 +368,7 @@ unqualified signed-member rule.
 **Conflict.** B5 `native_carrier_face_sense` still assigns neutral face sense
 from the unique outer loop's first control across its admitted carriers,
 with an additional cone chart-parity factor. That positive rule lacks a
-complete outward-orientation contract. The authored cylinder, NURBS,
-revolution, and torus controls exercise the implementation hypothesis; they
-do not prove it as a native format law. Standard-family topology can use a
+complete outward-orientation contract. Standard-family topology can use a
 different, independently constrained orientation route.
 
 ### OS-06. Object-stream edge terminal controls
@@ -385,7 +383,7 @@ different, independently constrained orientation route.
 
 **Question.** Which inline entity-body bytes are `E6 <bits:u64le>` binary64 fields, so that an `EA` among their value bytes is not an identity delimiter?
 
-**Known.** `catia.md` §7.3 "An object graph is preceded by" defines the entity-table run, its `DE` separator, and the unique strictly increasing identity path. Inside an inline body, only `32` five-byte atoms and `FE F6` fixed frames hide `EA` bytes from the path. In a NIST part, a complete 432-record run is followed by `DE`, a 432-record `7C08` graph, a `7C0B` value block, and its `7C02` catalog in the declared `CATPrtCont` content stream. The final inline record has two `EA` candidates above the previous identity: the identity at body offset 7 and an `EA` that is the eighth byte of `E6 5f 66 99 cb a9 13 ea bf`. The path is not unique, so the graph is not detected and the part has no modeling scope. When every inline `E6` begins a nine-byte field, four other complete graph runs lose identities, because some inline bodies have an `E6` byte that is not a binary64 tag before their identity.
+**Known.** `catia.md` §7.3 "An object graph is preceded by" defines the entity-table run, its `DE` separator, and the unique strictly increasing identity path. Inside an inline body, only `32` five-byte atoms and `FE F6` fixed frames hide `EA` bytes from the path. A complete record run can precede `DE`, a `7C08` graph with the same record count, a `7C0B` value block, and its `7C02` catalog in the declared `CATPrtCont` content stream, while its final inline record has two `EA` candidates above the previous identity: the identity at body offset 7 and an `EA` that is the eighth byte of a nine-byte `E6` field. The path is then not unique, so the graph is not detected and the part has no modeling scope. When every inline `E6` begins a nine-byte field, other complete graph runs lose identities, because some inline bodies have an `E6` byte that is not a binary64 tag before their identity.
 
 **Need.** We must know the inline-body production that starts a binary64 field. Without it, the identity path stays ambiguous and the graph remains outside the modeling scope.
 

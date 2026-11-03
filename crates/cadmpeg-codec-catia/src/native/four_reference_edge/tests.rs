@@ -178,7 +178,8 @@ fn bounded_sources_keep_logical_offsets_and_physical_frame_identity() {
         ),
         (1, 0, u64::try_from(second).expect("offset"))
     );
-    super::validate(&rows).expect("source identity order");
+    crate::native::test_only::test_load::validate_four_reference_edges(&rows)
+        .expect("source identity order");
 }
 
 #[test]
