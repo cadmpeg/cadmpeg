@@ -44,12 +44,12 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, DatabaseIssueRecord, DatabaseRecord, DesignViewRepresentationRecord,
-    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
+    AssemblyPlacementRecord, DatabaseRecord, DesignViewRepresentationRecord,
+    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetRecord,
+    PropertyValueKind, RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
-use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
+use crate::property_set::PropertyValue;
 use crate::protein::ProteinState;
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
@@ -93,9 +93,12 @@ fn decode_container<'a>(
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
     let presentation_inventory =
         crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
-    let design_inventory = crate::design::inventory(ctx, &container.rse)?;
-    let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
-    let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
+    let design_inventory =
+        crate::design::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let sketch_inventory =
+        crate::sketch::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let feature_inventory =
+        crate::feature::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let mut ir = CadIr::empty();
     // Design projection derives only design-class records (features,
     // sketches, parameters) and the native records behind them, so a geometry
@@ -115,159 +118,32 @@ fn decode_container<'a>(
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
     let mut property_set_count = 0;
-    let mut property_sections = Vec::new();
-    let mut properties = Vec::new();
     let mut property_count = 0;
     let mut preview_ordinal = 0;
-    let mut property_set_issues = Vec::new();
     for descriptor in &container.property_sets {
-        if descriptor.source.is_some() {
-            if let Some(stream) = property_streams::stage(
-                ctx,
-                &mut assembly_inventory.parts,
-                descriptor,
-                &mut preview_ordinal,
-            )? {
-                property_set_count += usize::from(stream.header_formed);
-                for (section_ordinal, section) in stream.sections {
-                    property_count += section.properties.len();
-                    for property in &section.properties {
-                        let native_id = format!(
-                            "inventor:property:value#{}-{section_ordinal}-{}",
-                            descriptor.stream.directory_id(),
-                            property.id
-                        );
-                        let scalar_value = property.value.scalar_text();
-                        metadata.consider(
-                            &section.fmtid,
-                            property.id,
-                            property.name.as_deref(),
-                            scalar_value.as_deref(),
-                            &native_id,
-                        );
-                    }
-                }
-            }
-            continue;
-        }
-
-        match &descriptor.state {
-            PropertySetState::Malformed(detail) => {
-                admit_native_items(ctx, 1)?;
-                property_set_issues.push(project_property_set_issue(
-                    descriptor.stream.directory_id(),
-                    &descriptor.path,
-                    detail,
-                ));
-            }
-            PropertySetState::Parsed(property_set) => {
-                if !crate::property_set::source_admission::stage_header(
-                    ctx,
-                    &mut assembly_inventory.parts,
-                    descriptor,
-                    property_set,
-                )? {
-                    continue;
-                }
-                property_set_count += 1;
-                for (section_ordinal, section) in property_set.sections.iter().enumerate() {
-                    let set_name = property_set_name(section);
-                    let identity_matches = set_name
-                        .as_deref()
-                        .and_then(known_property_set_fmtid)
-                        .is_none_or(|expected| expected == section.fmtid);
-                    if !identity_matches {
-                        admit_native_items(ctx, 1)?;
-                        let id = format!(
-                            "inventor:property:set-identity#{}-{section_ordinal}",
-                            descriptor.stream.directory_id()
-                        );
-                        property_set_issues.push(PropertySetIssueRecord {
-                            id,
-                            path: descriptor.path.clone(),
-                            directory_id: descriptor.stream.directory_id(),
-                            detail: "embedded property-set name does not match its FMTID".into(),
-                        });
-                    }
-                    admit_native_items(ctx, 1)?;
-                    let section_id = format!(
-                        "inventor:property:section#{}-{section_ordinal}",
-                        descriptor.stream.directory_id()
+        if let Some(stream) = property_streams::stage(
+            ctx,
+            &mut assembly_inventory.parts,
+            descriptor,
+            &mut preview_ordinal,
+        )? {
+            property_set_count += usize::from(stream.header_formed);
+            for (section_ordinal, section) in stream.sections {
+                property_count += section.properties.len();
+                for property in &section.properties {
+                    let native_id = format!(
+                        "inventor:property:value#{}-{section_ordinal}-{}",
+                        descriptor.stream.directory_id(),
+                        property.id
                     );
-                    property_sections.push(PropertySectionRecord {
-                        id: section_id,
-                        set_path: descriptor.path.clone(),
-                        ordinal: record_ordinal(
-                            section_ordinal,
-                            "Inventor property section ordinal",
-                        )?,
-                        fmtid: hex(&section.fmtid),
-                        code_page: section.code_page,
-                        offsets_ordered: section.offsets_ordered,
-                        dictionary_entries: cadmpeg_core::decode::u64_from_index(
-                            section.dictionary_entries,
-                        ),
-                        property_count: cadmpeg_core::decode::u64_from_index(
-                            section.properties.len(),
-                        ),
-                    });
-                    for property in &section.properties {
-                        admit_native_items(ctx, 1)?;
-                        let property_name = property.name.clone().or_else(|| {
-                            identity_matches
-                                .then_some(set_name.as_deref())
-                                .flatten()
-                                .and_then(|set_name| built_in_property_name(set_name, property.id))
-                                .map(str::to_owned)
-                        });
-                        let native_id = format!(
-                            "inventor:property:value#{}-{section_ordinal}-{}",
-                            descriptor.stream.directory_id(),
-                            property.id
-                        );
-                        let scalar_value = property.value.scalar_text();
-                        metadata.consider(
-                            &section.fmtid,
-                            property.id,
-                            property_name.as_deref(),
-                            scalar_value.as_deref(),
-                            &native_id,
-                        );
-                        if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
-                            if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let asset = project_preview_asset(
-                                    ctx,
-                                    &mut admitted_entities,
-                                    preview_ordinal,
-                                    &native_id,
-                                    bytes,
-                                    media_type,
-                                )?;
-                                preview_ordinal += 1;
-                                ir.model.assets.push(asset);
-                            }
-                        }
-                        property_count += 1;
-                        properties.push(PropertyRecord {
-                            id: native_id,
-                            set_path: descriptor.path.clone(),
-                            section_ordinal: record_ordinal(
-                                section_ordinal,
-                                "Inventor property section ordinal",
-                            )?,
-                            fmtid: hex(&section.fmtid),
-                            property_id: property.id,
-                            name: property_name,
-                            value_kind: property_value_kind(&property.value),
-                            scalar_value,
-                            raw_len: cadmpeg_core::decode::u64_from_index(
-                                property.raw.window().len(),
-                            ),
-                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
-                                property.raw.window(),
-                            ),
-                        });
-                    }
+                    let scalar_value = property.value.scalar_text();
+                    metadata.consider(
+                        &section.fmtid,
+                        property.id,
+                        property.name.as_deref(),
+                        scalar_value.as_deref(),
+                        &native_id,
+                    );
                 }
             }
         }
@@ -385,20 +261,6 @@ fn decode_container<'a>(
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    let mut database_issues = Vec::new();
-    for descriptor in &container.rse.databases {
-        if descriptor.source.is_some() {
-            continue;
-        }
-        if let Some(detail) = descriptor.issue_detail() {
-            admit_native_items(ctx, 1)?;
-            database_issues.push(DatabaseIssueRecord {
-                id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
-                band: descriptor.band.value(),
-                detail,
-            });
-        }
-    }
     let segment_registry = match &container.rse.registry {
         ParsedState::Parsed(registry) => registry
             .entries
@@ -418,7 +280,7 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Absent | ParsedState::Unavailable => Vec::new(),
     };
     let source_revision_count = match container.rse.revision_source {
         Some(source) => revision_parts::stage(ctx, &mut assembly_inventory.parts, source)?,
@@ -445,16 +307,8 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable => Vec::new(),
     };
-    if let ParsedState::Unavailable(detail) = &container.rse.registry {
-        structural_issues.push(structural_issue(ctx, "segment_registry", detail)?);
-    }
-    if container.rse.revision_source.is_none() {
-        if let ParsedState::Unavailable(detail) = &container.rse.revisions {
-            structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
-        }
-    }
     let source_meta_type_count = container.rse.source_meta_type_count;
     let projection = rse_native_projection::project(ctx, &container)?;
     structural_issues.extend(projection.identity_issues);
@@ -553,14 +407,12 @@ fn decode_container<'a>(
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
-    namespace.set_arena(ctx, "database_issues", &database_issues)?;
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
     namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
-    namespace.set_arena(ctx, "property_sections", &property_sections)?;
-    namespace.set_arena(ctx, "properties", &properties)?;
-    namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
+    namespace.set_arena::<PropertySectionRecord>(ctx, "property_sections", &[])?;
+    namespace.set_arena::<PropertyRecord>(ctx, "properties", &[])?;
     protein.install(ctx, namespace)?;
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
@@ -604,7 +456,6 @@ fn decode_container<'a>(
         &design_inventory.parameter_tables,
     )?;
     namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
-    namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
     namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
@@ -614,7 +465,6 @@ fn decode_container<'a>(
         "pm_dc_sketch_constraints",
         &sketch_inventory.constraints,
     )?;
-    namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
     let pattern_operands = feature_inventory.pattern_operands.native_records()?;
     if !pattern_operands.is_empty() {
         namespace.set_arena(ctx, "pm_dc_pattern_operands", &pattern_operands)?;
@@ -673,7 +523,6 @@ fn decode_container<'a>(
         &feature_inventory.kernel_entity_links,
     )?;
     namespace.set_arena(ctx, "pm_dc_work_planes", &feature_inventory.work_planes)?;
-    namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
@@ -779,7 +628,7 @@ fn decode_container<'a>(
         stored_body_losses = projection.losses;
     }
     if !ctx.container_only() {
-        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
+        document_native_projection::project(ctx, &mut ir, &ufrx, &mut losses)?;
     }
     let composite_links = if delivered == DecodeDepth::Full {
         crate::feature::composite::links(
@@ -947,18 +796,6 @@ fn decode_container<'a>(
                 segment_bulk_issues.len()
             )));
         }
-        if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
-                "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
-                design_inventory.issues.len()
-            )));
-        }
-        if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
-        }
         let unnamed_labels = feature_inventory
             .labels
             .iter()
@@ -977,12 +814,6 @@ fn decode_container<'a>(
         if replaced_names != 0 {
             losses.push(InventorLossCode::FeatureLabelNameReplaced.note(format!(
                 "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
-            )));
-        }
-        if !feature_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
-                "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
             )));
         }
         if unresolved.features != 0 {
@@ -1138,12 +969,6 @@ fn decode_container<'a>(
                 "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
                 container.rse.unpaired_metadata.len(),
                 container.rse.unpaired_bulk.len()
-            )));
-        }
-        if !property_set_issues.is_empty() {
-            losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
-                "{} OLE property-set stream(s) are malformed.",
-                property_set_issues.len()
             )));
         }
         if metadata.unmapped != 0 {
@@ -1482,10 +1307,6 @@ fn decode_container<'a>(
             design_parameter_count,
         ),
         (
-            crate::coverage::DESIGN_RECORD_ISSUES,
-            design_inventory.issues.len(),
-        ),
-        (
             crate::coverage::PM_DC_SKETCHES,
             sketch_inventory.sketches.len(),
         ),
@@ -1504,10 +1325,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_SKETCH_CONSTRAINTS,
             sketch_inventory.constraints.len(),
-        ),
-        (
-            crate::coverage::SKETCH_RECORD_ISSUES,
-            sketch_inventory.issues.len(),
         ),
         (
             crate::coverage::PM_DC_FEATURES,
@@ -1532,10 +1349,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_ENTITY_STYLE_LINKS,
             feature_inventory.entity_style_links.len(),
-        ),
-        (
-            crate::coverage::FEATURE_RECORD_ISSUES,
-            feature_inventory.issues.len(),
         ),
         (
             crate::coverage::FEATURES_TRANSFERRED,
@@ -1815,35 +1628,6 @@ fn admit_kernel_annotation(
             .map_err(CodecError::from)?;
     }
     Ok(())
-}
-
-fn project_property_set_issue(
-    directory_id: u32,
-    path: &str,
-    detail: &str,
-) -> PropertySetIssueRecord {
-    PropertySetIssueRecord {
-        id: format!("inventor:property:set-issue#{directory_id}"),
-        path: path.to_owned(),
-        directory_id,
-        detail: detail.to_owned(),
-    }
-}
-
-fn project_preview_asset(
-    ctx: &DecodeContext<'_>,
-    admitted_entities: &mut u64,
-    ordinal: usize,
-    native_id: &str,
-    bytes: &[u8],
-    media_type: &str,
-) -> Result<Asset, CodecError> {
-    ctx.admit_entities(
-        *admitted_entities + 1,
-        admitted_entities,
-        "admit Inventor preview asset entity",
-    )?;
-    form_preview_asset(ctx, ordinal, native_id, bytes, media_type)
 }
 
 fn form_preview_asset(
@@ -2479,14 +2263,6 @@ fn normalize_property_name(name: &str) -> String {
         .filter(|character| character.is_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect()
-}
-
-fn property_set_name(section: &PropertySection<'_>) -> Option<String> {
-    section
-        .properties
-        .iter()
-        .find(|property| property.id == 255)
-        .and_then(|property| property.value.scalar_text())
 }
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {

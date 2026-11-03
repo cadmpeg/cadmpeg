@@ -42,12 +42,6 @@ pub(crate) enum InventorLossCode {
     RseMetadataStreamMalformed,
     /// `RSe` bulk streams have invalid envelope or zlib framing.
     RseBulkStreamMalformed,
-    /// Typed design records are malformed or outside the implemented branch.
-    DesignRecordMalformed,
-    /// Typed sketch records could not be parsed exactly.
-    SketchRecordMalformed,
-    /// Typed feature records could not be parsed exactly.
-    FeatureRecordMalformed,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -186,8 +180,6 @@ pub(crate) enum InventorLossCode {
     SketchGraphOpen,
     /// `RSe` contains unpaired metadata or bulk streams.
     RseStreamUnpaired,
-    /// OLE property-set streams are malformed.
-    PropertySetStreamMalformed,
     /// Property values have no neutral metadata mapping.
     MetadataPropertyUnmapped,
     /// The Protein asset catalog could not be decoded.
@@ -246,9 +238,6 @@ impl InventorLossCode {
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
-        Self::DesignRecordMalformed,
-        Self::SketchRecordMalformed,
-        Self::FeatureRecordMalformed,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -316,7 +305,6 @@ impl InventorLossCode {
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
-        Self::PropertySetStreamMalformed,
         Self::MetadataPropertyUnmapped,
         Self::ProteinCatalogUndecodable,
         Self::ProteinAssetRejected,
@@ -354,9 +342,6 @@ impl InventorLossCode {
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
-            Self::DesignRecordMalformed => "design.record-malformed",
-            Self::SketchRecordMalformed => "sketch.record-malformed",
-            Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
@@ -438,7 +423,6 @@ impl InventorLossCode {
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
-            Self::PropertySetStreamMalformed => "property-set.stream-malformed",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
             Self::ProteinCatalogUndecodable => "protein.catalog-undecodable",
             Self::ProteinAssetRejected => "protein.asset-rejected",
@@ -485,11 +469,7 @@ impl InventorLossCode {
             Self::DrawingRecordMalformed
             | Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
-            | Self::DesignRecordMalformed
-            | Self::SketchRecordMalformed
-            | Self::FeatureRecordMalformed
             | Self::RseStreamUnpaired
-            | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
@@ -626,9 +606,6 @@ mod tests {
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",
-                "design.record-malformed",
-                "sketch.record-malformed",
-                "feature.record-malformed",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
@@ -696,7 +673,6 @@ mod tests {
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
-                "property-set.stream-malformed",
                 "metadata.property-unmapped",
                 "protein.catalog-undecodable",
                 "protein.asset-rejected",

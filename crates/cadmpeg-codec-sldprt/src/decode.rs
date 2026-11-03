@@ -69,7 +69,7 @@ struct EvaluatedFeatureState<'a> {
 /// Some localized feature-manager records have no neutral tree-node role. The
 /// native definition preserves those records, but they do not describe a
 /// modeling operation. Operation evidence is carried by the state edges,
-/// source content, or source properties; without it, a native record is only
+/// source content, or the native record; without it, a native record is only
 /// a retained tree item and must not create an operation-completeness loss.
 fn native_feature_has_operation_evidence(
     state: &EvaluatedFeatureState<'_>,
@@ -83,7 +83,6 @@ fn native_feature_has_operation_evidence(
     ) && (!state.dependencies.is_empty()
         || !state.outputs.is_empty()
         || !state.feature.source_content.is_empty()
-        || !state.feature.source_properties.is_empty()
         || native.is_some_and(|native| {
             native
                 .feature_histories
@@ -371,11 +370,6 @@ fn decode_result(
                 if projected.contains(marker.id()) {
                     continue;
                 }
-                if ctx.depth().required_scope().design {
-                    body.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
-                        "sketch-input entity {} has no neutral geometry or constraint projection; its typed native marker is retained", marker.id()
-                    )));
-                }
                 if matches!(
                     marker.kind(),
                     crate::records::SketchInputKind::Native(_)
@@ -569,7 +563,6 @@ fn append_design_losses(
     use cadmpeg_ir::features::{
         ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
     };
-    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = match ir.native.namespace("sldprt") {
         None => None,
@@ -964,10 +957,22 @@ fn append_design_losses(
             .features
             .iter()
             .filter(|feature| {
-                feature
-                    .source_properties
-                    .get("dependencies_decoded")
-                    .is_some_and(|value| value == "false")
+                feature.dependencies.is_empty()
+                    && native.as_ref().is_some_and(|native| {
+                        native
+                            .feature_histories
+                            .iter()
+                            .flat_map(|history| &history.features)
+                            .filter(|record| {
+                                crate::history::project::FEATURE_REFERENCE_PROPERTIES
+                                    .iter()
+                                    .any(|name| record.properties.contains_key(*name))
+                            })
+                            .map(|record| record.id.as_str())
+                            .any(|stated| {
+                                feature.native_ref.as_deref() == Some(stated)
+                            })
+                    })
             })
             .count();
         let state = if inferred > 0 {
@@ -1128,33 +1133,6 @@ fn append_design_losses(
     if native_constraints > 0 {
         report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
                 "{native_constraints} planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
-            )));
-    }
-
-    let native_sketch_geometry = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count()
-        + ir.model
-            .spatial_sketch_entities
-            .iter()
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Native { .. }
-                )
-            })
-            .count();
-    if native_sketch_geometry > 0 {
-        report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
-                "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
             )));
     }
 
@@ -3109,6 +3087,31 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let mut retention = retention::Retention::default();
+    if brep.untyped_model
+        || brep.stats.unknown_surface_faces != 0
+        || brep.stats.unknown_procedural_supports != 0
+        || brep.stats.unknown_curve_edges != 0
+        || brep.stats.ambiguous_pcurve_parameters != 0
+        || brep.stats.off_surface_nurbs_pcurves != 0
+        || !brep.stats.surface_solver_capped.is_empty()
+        || brep.stats.unresolved_face_colors != 0
+        || brep.stats.unclaimed_faces != 0
+    {
+        // The builder withheld model content that the retained block records
+        // still hold. Mark those records, not the enclosing source image.
+        for block in scan.blocks.iter().filter(|block| {
+            matches!(
+                block.family,
+                container::PayloadFamily::Parasolid
+            )
+        }) {
+            let id = cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+                block.offset,
+            );
+            retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Model);
+        }
+    }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let (display_sections, _) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(scan, classification, metadata_header.as_ref())?);
@@ -3184,6 +3187,10 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::resolved_features::projections::fill_parameter_native_refs(
+        &mut ir.model.parameters,
+        &ir.model.features,
+    );
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
@@ -4275,7 +4282,26 @@ fn build_metadata_ir(
         }
     }
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut histories = match crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+    ) {
+        Ok(histories) => histories,
+        #[cfg(test)]
+        Err(error) if crate::history::take_metadata_failure_fired() => {
+            // Class-level metadata failure (§4.1): no design history part
+            // could be located. Design stays in scope only when other design
+            // parts decode below.
+            let _ = error;
+            Vec::new()
+        }
+        #[cfg(test)]
+        Err(error) => return Err(error),
+        #[cfg(not(test))]
+        Err(error) => return Err(error),
+    };
     let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
@@ -4434,6 +4460,10 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::resolved_features::projections::fill_parameter_native_refs(
+        &mut ir.model.parameters,
+        &ir.model.features,
+    );
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
@@ -4774,15 +4804,31 @@ fn build_metadata_ir(
         native.document_metadata.push(metadata);
         native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     }
+    // Scope follows located parts, not populated arenas (§1.1, §4.1). A
+    // class whose parts were found but failed stays in scope; its failed
+    // parts are given up, so their classes enter unrepresented.
+    let model_parts_located = scan.sections().any(|section| {
+        section
+            .ps_streams()
+            .iter()
+            .any(|stream| crate::parasolid::is_body_stream(&stream.header))
+    });
+    let design_parts_located = !native.feature_histories.is_empty()
+        || !native.feature_input_lanes.is_empty()
+        || !native.pmi_dimensions.is_empty()
+        || !ir.model.sketches.is_empty()
+        || !ir.model.sketch_entities.is_empty();
     ir.scope = ContentScope {
         model: ir
             .model
             .populated_arena(cadmpeg_ir::document::ArenaClass::Model)
-            .is_some(),
+            .is_some()
+            || model_parts_located,
         design: ir
             .model
             .populated_arena(cadmpeg_ir::document::ArenaClass::Design)
-            .is_some(),
+            .is_some()
+            || design_parts_located,
     };
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown

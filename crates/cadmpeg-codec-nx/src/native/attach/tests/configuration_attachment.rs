@@ -57,13 +57,7 @@ fn configuration_attachment_preserves_active_relation() {
         ))
     );
     assert_eq!(configuration.name.as_deref(), Some("Primary"));
-    assert_eq!(
-        configuration
-            .properties
-            .get("active_attribute_use")
-            .map(String::as_str),
-        Some("nx:arrangements:attribute-use#0")
-    );
+    assert!(configuration.properties.is_empty());
 }
 
 #[test]

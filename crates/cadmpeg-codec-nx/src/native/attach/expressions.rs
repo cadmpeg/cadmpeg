@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::feature_projection::insert_parameter_property;
 use super::{
     Angle, AnnotationBuilder, BTreeMap, CadIr, CodecError, DecodeContext, DistinctMembers,
     Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
@@ -12,14 +11,9 @@ pub(in crate::native) fn attach_expression_parameters(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     expressions: &[crate::native::om::ParameterFormula],
-    declarations: &[crate::native::om::ExpressionDeclaration],
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let mut declaration_index = BTreeMap::new();
-    for declaration in declarations {
-        declaration_index.insert(declaration.id.as_str(), declaration);
-    }
     let mut tables = BTreeMap::<&str, Vec<&crate::native::om::ParameterFormula>>::new();
     for expression in expressions {
         let table = expression.source_table.as_str();
@@ -174,7 +168,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     losses.push(crate::loss::NxLossCode::ExpressionParameterIncomplete.note(format!("Expression {} identifier {name:?} has no unique neutral parameter; the source text remains held.", expression.id)));
                 }
             }
-            let mut bound_expression =
+            let bound_expression =
                 cadmpeg_ir::features::Expression::from_spans(&expression.expression, spans)
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             let value = expression.value.and_then(|value| match &expression.unit {
@@ -194,42 +188,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
-            // Stored bare numbers are source-unit literals. Normalize their
-            // spelling along with the parameter cache; do not replace an
-            // authored formula or token reference with its evaluated value.
-            if expression.expression.trim().parse::<f64>().is_ok() {
-                if let Some(value) = &value {
-                    bound_expression = value.literal_expression();
-                }
-            }
-            let mut properties = BTreeMap::new();
-            insert_parameter_property(
-                &mut properties,
-                format_args!("unit"),
-                expression.unit.property_name(),
-            )?;
-            annotations
-                .derived(id.as_str(), "properties")
-                .map_err(cadmpeg_core::CodecError::from)?;
-            if let Some(declaration) = expression
-                .declaration
-                .as_deref()
-                .and_then(|id| declaration_index.get(id))
-            {
-                insert_parameter_property(
-                    &mut properties,
-                    format_args!("declaration"),
-                    declaration.id.clone(),
-                )?;
-                insert_parameter_property(
-                    &mut properties,
-                    format_args!("declaration_object_id"),
-                    declaration.object_id.to_string(),
-                )?;
-                annotations
-                    .derived(id.as_str(), "properties")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-            }
+            let properties = BTreeMap::new();
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "NX expression parameter ordinal {ordinal} exceeds u32"

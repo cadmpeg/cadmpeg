@@ -569,21 +569,6 @@ fn decode_retains_typed_nx_numeric_expression() {
         expressions[0].declaration.as_deref(),
         Some(declarations[0].id.as_str())
     );
-    let parameter = result
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.name == expressions[0].name.as_str())
-        .expect("required invariant");
-    assert_eq!(
-        parameter.properties.get("declaration"),
-        Some(&declarations[0].id)
-    );
-    assert_eq!(
-        parameter.properties.get("declaration_object_id"),
-        Some(&"258".to_string())
-    );
     let om_records = result
         .source_fidelity()
         .retained_records()
@@ -961,10 +946,7 @@ fn decode_retains_nx_arrangement_configurations() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].configuration, configurations[0].id);
     assert_eq!(uses[0].name, "Model");
-    assert_eq!(
-        result.ir().model.configurations[0].properties["active_attribute_use"],
-        uses[0].id
-    );
+    assert!(result.ir().model.configurations[0].properties.is_empty());
     let attributes = result
         .ir()
         .native

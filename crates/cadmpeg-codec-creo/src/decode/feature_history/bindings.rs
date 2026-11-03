@@ -4,21 +4,19 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{
     features::{FeatureId, ParameterValue},
     CadIr,
 };
 
-use crate::loss::CreoLossCode;
-
 /// A single source-owned quantity and a single operation slot of that quantity
-/// form an unambiguous link. Multiple candidates require additional source
-/// field semantics; equality of evaluated numbers never establishes a link.
-pub(in crate::decode) fn bind_owned_dimensions(
-    ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+/// form an unambiguous link: the row's slot identity (its `external_id` and
+/// `dimension_type` in the parameter properties) selects the quantity's only
+/// literal slot. Rows that share their quantity with another row or slot
+/// stay free owned parameters with no loss: both rows and slots transfer, so
+/// no source fact is withheld. Equality of evaluated numbers never
+/// establishes a link.
+pub(in crate::decode) fn bind_owned_dimensions(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut owners = BTreeMap::<FeatureId, Vec<_>>::new();
     for parameter in &ir.model.parameters {
         if let Some(owner) = &parameter.owner {
@@ -65,25 +63,17 @@ pub(in crate::decode) fn bind_owned_dimensions(
                     .and_then(|value| value.get("value"))
                     .and_then(serde_json::Value::as_f64);
                 let cache = parameter.value.as_ref().and_then(number);
+                // Rule E (#209 §2.5): a bound dimension whose stored station
+                // value disagrees with its dimension value marks the feature
+                // stale. Staleness is stored state, so no loss is charged.
                 if old.zip(cache).is_some_and(|(old, cache)| {
                     (old - cache).abs() > 64.0 * f64::EPSILON * old.abs().max(cache.abs()).max(1.0)
                 }) {
                     feature.needs_recompute = true;
-                    losses.push(CreoLossCode::EvaluationStale.note(format!(
-                        "Feature {} source evaluation at {} disagrees with dimension-table parameter {}; the parameter binding is canonical and the solved geometry requires recomputation.",
-                        feature.id, path, parameter.id
-                    )));
                 }
                 definition
                     .bind_dimension(path, parameter.id.clone())
                     .map_err(CodecError::malformed)?;
-            } else if !parameters.is_empty() && !slots.is_empty() {
-                for parameter in parameters {
-                    losses.push(CreoLossCode::NeutralRecordUnprojected.note(format!(
-                        "Parameter {} belongs to feature {}, but its operation slot is not identified by the decoded dimension-table fields; no binding was inferred from matching numbers.",
-                        parameter.id, feature.id
-                    )));
-                }
             }
         }
         feature.evaluation.set_definition(definition);
@@ -187,13 +177,11 @@ mod tests {
             reference: None,
             distance: Length::new(3.0).expect("fixture value is valid").into(),
         });
-        let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
+        bind_owned_dimensions(&mut ir).expect("fixture value is valid");
         assert!(
             matches!(ir.model.features[0].definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance: Dimension::Parameter(id), .. }) if id == &ir.model.parameters[0].id)
         );
         assert!(!ir.model.features[0].needs_recompute);
-        assert!(losses.is_empty());
     }
 
     #[test]
@@ -202,12 +190,8 @@ mod tests {
             reference: None,
             distance: Length::new(2.0).expect("fixture value is valid").into(),
         });
-        let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
+        bind_owned_dimensions(&mut ir).expect("fixture value is valid");
         assert!(ir.model.features[0].needs_recompute);
-        assert!(losses
-            .iter()
-            .any(|loss| loss.code == CreoLossCode::EvaluationStale.kind()));
         assert!(matches!(
             ir.model.features[0].definition(),
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -227,8 +211,7 @@ mod tests {
                 .expect("fixture value is valid")
                 .into(),
         });
-        let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
+        bind_owned_dimensions(&mut ir).expect("fixture value is valid");
         assert!(matches!(
             ir.model.features[0].definition(),
             FeatureDefinition::Operation(FeatureOperation::PlanarPatch {
@@ -236,8 +219,6 @@ mod tests {
                 width: Dimension::Literal(_)
             })
         ));
-        assert!(losses.iter().any(|loss| loss.code
-            == CreoLossCode::NeutralRecordUnprojected.kind()
-            && loss.message.contains(ir.model.parameters[0].id.as_str())));
+        assert!(!ir.model.features[0].needs_recompute);
     }
 }
