@@ -121,7 +121,9 @@ pub(crate) fn histories(
         };
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
-                return Ok(histories);
+                // A non-history XML block (document metadata, envelopes)
+                // is not a feature history; it does not end the scan.
+                continue;
             }
             let stream = section.source_stream();
             let parent = format!("sldprt:history:feature-history#{source}");
