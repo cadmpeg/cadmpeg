@@ -378,6 +378,7 @@ mod native_gui_projection_tests {
             rendered.xml.as_bytes(),
             &sources,
             &rendered.origins,
+            None,
         )
         .unwrap();
         assert!(projected

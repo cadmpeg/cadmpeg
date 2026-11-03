@@ -2,9 +2,9 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    attributes, coordinates, count, entity, fem, fonts, real, shape, structure, text, BTreeSet,
-    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
-    Value, ARENAS,
+    attributes, coordinates, count, entity, fem, fonts, levels, macros, real, shape, structure,
+    text, BTreeSet, CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport,
+    NativeRecord, Targets, Value, ARENAS,
 };
 
 fn encode(
@@ -24,6 +24,10 @@ fn encode(
         }
         "groups" | "associativities" => structure::encode(&mut fields, type_code, form)?,
         "fem_entities" => fem::encode(&mut fields, type_code, form)?,
+        "macro_definitions" | "macro_instances" => {
+            macros::encode(arena, &mut fields, type_code, form)?
+        }
+        "definition_levels" => levels::encode(&mut fields, type_code, form)?,
         "flashes" => {
             let mut parameters = coordinates(fields.value("reference_point"), 2)?;
             parameters.extend([
