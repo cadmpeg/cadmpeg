@@ -138,14 +138,14 @@ fn through_schema(
     if old.len() != attribute.values.len() {
         return Ok(None);
     }
+    if old == attribute.values {
+        // The neutral values still equal their projection, so the native XML
+        // is already their encoding. Edited values fall through to the scalar
+        // rewrite below; unexpressible edits take the omission loss.
+        return xml::native_named(&property, names);
+    }
     if matches!(original.family, crate::native::PropertyFamily::Link) {
-        // Link targets project one to one from the native link records.
-        // When the neutral values still equal that projection, the native
-        // XML is already their encoding; an edited link regenerates
-        // elsewhere, never by scalar rewrite.
-        if old == attribute.values {
-            return xml::native_named(&property, names);
-        }
+        // An edited link regenerates elsewhere, never by scalar rewrite.
         return Ok(None);
     }
     let Some(values) = property.values_mut() else {

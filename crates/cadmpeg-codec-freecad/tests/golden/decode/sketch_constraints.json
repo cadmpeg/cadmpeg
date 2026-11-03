@@ -147,6 +147,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -171,6 +199,34 @@
             {
               "kind": "string",
               "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000001"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -207,6 +263,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#DimensionalRelations:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#DimensionalRelations:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#DimensionalRelations:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DimensionalRelations:AttacherType",
@@ -221,6 +295,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#DimensionalRelations:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#DimensionalRelations:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#DimensionalRelations:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#DimensionalRelations:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#DimensionalRelations:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DimensionalRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -369,6 +487,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#GeometricRelations:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#GeometricRelations:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#GeometricRelations:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#GeometricRelations:AttacherType",
@@ -383,6 +519,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#GeometricRelations:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#GeometricRelations:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#GeometricRelations:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#GeometricRelations:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#GeometricRelations:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#GeometricRelations:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#GeometricRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -531,6 +711,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#InactiveRelation:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#InactiveRelation:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#InactiveRelation:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#InactiveRelation:AttacherType",
@@ -545,6 +743,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#InactiveRelation:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#InactiveRelation:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#InactiveRelation:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#InactiveRelation:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#InactiveRelation:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#InactiveRelation:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InactiveRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -693,6 +935,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#InternalAlignmentRelations:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#InternalAlignmentRelations:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#InternalAlignmentRelations:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#InternalAlignmentRelations:AttacherType",
@@ -707,6 +967,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#InternalAlignmentRelations:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#InternalAlignmentRelations:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#InternalAlignmentRelations:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#InternalAlignmentRelations:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#InternalAlignmentRelations:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#InternalAlignmentRelations:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#InternalAlignmentRelations"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -855,6 +1159,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#OpticalRelation:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#OpticalRelation:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#OpticalRelation:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#OpticalRelation:AttacherType",
@@ -869,6 +1191,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#OpticalRelation:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#OpticalRelation:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#OpticalRelation:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#OpticalRelation:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#OpticalRelation:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#OpticalRelation:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#OpticalRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -1017,6 +1383,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#SplineWeightRelation:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#SplineWeightRelation:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#SplineWeightRelation:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#SplineWeightRelation:AttacherType",
@@ -1031,6 +1415,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#SplineWeightRelation:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#SplineWeightRelation:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#SplineWeightRelation:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#SplineWeightRelation:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#SplineWeightRelation:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#SplineWeightRelation:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SplineWeightRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -1179,6 +1607,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#SymmetryRelation:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#SymmetryRelation:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#SymmetryRelation:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#SymmetryRelation:AttacherType",
@@ -1193,6 +1639,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#SymmetryRelation:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#SymmetryRelation:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#SymmetryRelation:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#SymmetryRelation:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#SymmetryRelation:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#SymmetryRelation:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#SymmetryRelation"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -7058,498 +7548,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DimensionalRelations:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GeometricRelations:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InactiveRelation:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#InternalAlignmentRelations:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OpticalRelation:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SplineWeightRelation:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SymmetryRelation:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

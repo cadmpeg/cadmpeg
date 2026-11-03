@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6311,
-      "payload_sha256": "9c9bbb73e1a7c03fc5832f7c9379c97a01120b69642797618ee900fcd7dc078d"
+      "payload_len": 6282,
+      "payload_sha256": "f48293fe3c99d3e37ccabab8d886d935fbcd484b94d441c42575f336308acb73"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -32,8 +32,8 @@
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 2846,
-      "payload_sha256": "69a02f5ea861843799b4f128363e48763ddc72f668a14e1336db9c8f92ef3bfc"
+      "payload_len": 2877,
+      "payload_sha256": "b59139aae808a2bd17a0bc01f520c22d1cdf0f4b3ae115ec94c36842e7d78dc7"
     }
   ],
   "report": {
@@ -45,7 +45,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 13,
+        "attributes": 19,
         "bodies": 1,
         "coedges": 30,
         "colliders": 0,
@@ -57,12 +57,13 @@
         "faces": 8,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 1,
         "loops": 9,
         "mass_properties": 0,
         "native.fcstd.applications": 2,
         "native.fcstd.attachments": 1,
         "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 7,
         "native.fcstd.gui_documents": 1,
@@ -212,7 +213,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -232,7 +233,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -252,7 +253,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -272,7 +273,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -292,7 +293,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -312,7 +313,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -332,7 +333,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -352,7 +353,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -372,7 +373,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -392,7 +393,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -412,7 +413,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -432,7 +433,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -452,7 +453,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -472,7 +473,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -492,7 +493,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -502,7 +503,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:25 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:25 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -562,7 +563,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:26 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:26 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -622,7 +623,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:27 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:27 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -682,7 +683,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:28 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:28 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -742,7 +743,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:29 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:29 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -802,7 +803,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:30 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:30 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -862,7 +863,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:31 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:31 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -922,7 +923,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:32 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:32 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -982,7 +983,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1002,7 +1003,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1022,7 +1023,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1042,7 +1043,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1062,7 +1063,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1072,27 +1073,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1 independent visibility/channel gates are reduced to the effective native provider state",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1112,7 +1093,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1132,7 +1113,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1152,7 +1133,27 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1 independent channel gates have no native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1212,7 +1213,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#ColoredModel:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.properties`: fcstd:native:property#ColoredModel:ExpressionEngine, fcstd:native:property#ColoredModel:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -1243,7 +1244,10 @@
               }
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#ColoredModel:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -1304,7 +1308,7 @@
             "objects": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:object#ColoredModel": "written",
+                "fcstd:native:object#ColoredModel": "regenerated",
                 "fcstd:native:object#CorpusMetadata": "written"
               }
             },
@@ -1325,21 +1329,20 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#ColoredModel:Label": "written",
-                "fcstd:native:property#ColoredModel:Label2": "written",
-                "fcstd:native:property#ColoredModel:Placement": "regenerated",
+                "fcstd:native:property#ColoredModel:Label": "regenerated",
+                "fcstd:native:property#ColoredModel:Label2": "regenerated",
                 "fcstd:native:property#ColoredModel:Shape": "regenerated",
                 "fcstd:native:property#ColoredModel:ShapeMaterial": "written",
-                "fcstd:native:property#ColoredModel:Visibility": "written",
+                "fcstd:native:property#ColoredModel:Visibility": "regenerated",
                 "fcstd:native:property#ColoredModel:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "written",

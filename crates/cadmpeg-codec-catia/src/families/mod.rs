@@ -27,6 +27,13 @@ pub(crate) struct FamilyOutput {
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
     pub(crate) admitted_model_entities: u64,
+    /// Sampled `a8 03 25` maps the route decoded for its geometry projection.
+    /// `Some` when the route derived them from its scan; `finish_decode`
+    /// stores them as the native `sampled_parameter_maps` arena instead of
+    /// deriving them a second time. Routes without a B5 geometry projection
+    /// answer `None`.
+    pub(crate) sampled_parameter_maps:
+        Option<Vec<crate::native::parameter_map::CatiaSampledParameterMap>>,
 }
 
 pub(crate) struct FamilyEntityAdmission<'a, 'b> {

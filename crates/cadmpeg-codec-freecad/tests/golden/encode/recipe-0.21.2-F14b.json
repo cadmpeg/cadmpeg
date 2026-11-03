@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 23073,
-      "payload_sha256": "61e2287f1d07f66431f3f02313dbb2e96ce90e8da98fbe990c7800f929a6c1a6"
+      "payload_len": 23157,
+      "payload_sha256": "e4c1721662f224b58c73380b2c0b2708c8dba128341060cd9872eb6404339b93"
     },
     {
       "name": "AdditiveBox.brp",
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 31,
+        "attributes": 34,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -322,13 +322,13 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#AdditiveBox:AttacherType": "regenerated",
                 "fcstd:native:property#AdditiveBox:AttachmentOffset": "regenerated",
                 "fcstd:native:property#AdditiveBox:Height": "regenerated",

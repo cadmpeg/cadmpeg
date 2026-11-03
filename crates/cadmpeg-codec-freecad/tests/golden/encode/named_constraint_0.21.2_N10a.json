@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 22431,
-      "payload_sha256": "8bd743ac4b13d13b7bf55410c1f62f009301432d2a6d4b6fe623744be5e3fa14"
+      "payload_len": 22469,
+      "payload_sha256": "5658277e95a23eaf70e2f6e656c9ff12d2f8be74d6bb913219141b20b67bc49c"
     },
     {
       "name": "Body.brp",
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 23,
+        "attributes": 26,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -316,13 +316,13 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#Body:Group": "regenerated",
                 "fcstd:native:property#Body:Label": "regenerated",
                 "fcstd:native:property#Body:Label2": "regenerated",

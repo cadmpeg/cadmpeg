@@ -66,9 +66,14 @@ fn synthesize_displaced(
     target: &ResolvedWrite<'_>,
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
-    let synthesis = target.for_synthesis()?;
+    // An off-catalog `Inherit` resolves to the catalog default with a
+    // displacement loss; a missing default still synthesizes.
+    let message = target
+        .for_synthesis()
+        .ok()
+        .and_then(|synthesis| synthesis.resolution().displacement_message());
     let mut body = synthesized_body(input, cause)?;
-    if let Some(message) = synthesis.resolution().displacement_message() {
+    if let Some(message) = message {
         body.losses
             .push(F3dLossCode::SourceDialectDisplaced.note(message));
     }
@@ -98,33 +103,12 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
-        return Err(CodecError::Malformed(
-            "retained F3D source image has no bytes".into(),
-        ));
+        return Ok(Preservation::SourceImageUnavailable);
     };
     let expected = &fidelity.decode_digest;
-    let authored = super::synthesis::write(input.ir)?;
-    let omitted_native = input
-        .has_foreign_native_content(cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT))
-        || input.ir.native.namespace("f3d").is_some_and(|namespace| {
-            namespace.arenas().iter().any(|(arena, records)| {
-                !records.is_empty()
-                    && records.iter().any(|record| {
-                        authored
-                            .native_dispositions
-                            .record_disposition("f3d", arena, record.id())
-                            == cadmpeg_ir::codec::write::NativeDisposition::Dropped
-                    })
-            })
-        });
-    if !authored.losses.is_empty() || omitted_native || !authored.preservation_compatible {
-        return Ok(Preservation::PatchDeclined {
-            reason: "retained layout cannot carry content omitted by document synthesis".into(),
-        });
-    }
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = match F3dCodec::write_preserved_bytes(
+    match F3dCodec::write_preserved_bytes(
         input.ir,
         data,
         expected,
@@ -133,19 +117,15 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         &mut bytes,
         &mut notes,
     ) {
-        Ok(path) => path,
-        Err(error) if super::synthesis::declines(&error) => {
-            return Ok(Preservation::PatchDeclined {
-                reason: error.to_string(),
-            });
-        }
-        Err(error) => return Err(error),
-    };
-    Ok(Preservation::Written {
-        bytes,
-        write_path,
-        notes,
-    })
+        Ok(path) => Ok(Preservation::Written {
+            bytes,
+            write_path: path,
+            notes,
+        }),
+        Err(error) => Ok(Preservation::PatchDeclined {
+            reason: error.to_string(),
+        }),
+    }
 }
 
 fn preserved_body(
@@ -211,7 +191,6 @@ fn synthesized_body(
         coverage,
         losses: synthesis_losses,
         native_dispositions,
-        preservation_compatible: _,
     } = super::synthesis::write(input.ir)?;
     let synthesis_cause = match &cause {
         SynthesisCause::PatchDeclined { reason } => {
