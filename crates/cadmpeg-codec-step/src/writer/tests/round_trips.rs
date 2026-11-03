@@ -277,7 +277,7 @@ fn align_sheet_edge_to_pcurve(
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::surface(&mut e, g.solved().expect("solved surface"))
+    crate::geometry::surface(&mut e, "", g.solved().expect("solved surface"))
         .expect("surface geometry is writable");
     e.into_lines().expect("finite reals").join("\n")
 }
@@ -447,7 +447,7 @@ fn negative_cone_nested_trim_keeps_outer_local_ranges() {
 /// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::curve(&mut e, g.solved().expect("solved curve"))
+    crate::geometry::curve(&mut e, "", g.solved().expect("solved curve"))
         .expect("curve geometry is writable");
     e.into_lines().expect("finite reals").join("\n")
 }
