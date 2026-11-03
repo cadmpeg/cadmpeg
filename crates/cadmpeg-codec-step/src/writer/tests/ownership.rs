@@ -13,7 +13,7 @@ use cadmpeg_ir::{
 };
 
 #[test]
-fn support_ownership_survives_the_absence_of_projected_topology() {
+fn orphaned_carriers_are_written_as_roots_whatever_role_they_carry() {
     for role in [
         cadmpeg_ir::SourceGeometryRole::Support,
         cadmpeg_ir::SourceGeometryRole::Independent,
@@ -38,14 +38,16 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
         )
         .unwrap();
         let written = std::str::from_utf8(&bytes).unwrap();
-        let support = role == cadmpeg_ir::SourceGeometryRole::Support;
-        assert_eq!(written.contains("PLANE("), !support);
-        assert_eq!(
-            report
+        // No live record references the carrier: its owners did not survive
+        // the decode, so the support role is vacuous and the plane is
+        // written as a root (#233 §5.1: carriers reappear).
+        assert!(written.contains("PLANE("), "{role:?} carrier is written");
+        assert!(
+            !report
                 .losses
                 .iter()
                 .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()),
-            support
+            "{role:?} carrier names no unwritten loss"
         );
     }
 }

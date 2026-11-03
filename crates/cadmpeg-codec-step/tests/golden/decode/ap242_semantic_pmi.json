@@ -53,7 +53,7 @@
           "targets": [
             {
               "kind": "shape_aspect",
-              "source_id": "#6"
+              "source_id": "[\"DATUM_FEATURE\",\"datum surface\",\"\",\"\"]"
             }
           ]
         },
@@ -71,7 +71,7 @@
           "targets": [
             {
               "kind": "shape_aspect",
-              "source_id": "#6"
+              "source_id": "[\"DATUM_FEATURE\",\"datum surface\",\"\",\"\"]"
             }
           ]
         },
@@ -96,7 +96,7 @@
           "targets": [
             {
               "kind": "shape_aspect",
-              "source_id": "#6"
+              "source_id": "[\"DATUM_FEATURE\",\"datum surface\",\"\",\"\"]"
             }
           ]
         },
@@ -109,7 +109,7 @@
           "targets": [
             {
               "kind": "shape_aspect",
-              "source_id": "#7"
+              "source_id": "[\"DATUM\",\"\",\"A\",\"\"]"
             }
           ]
         },

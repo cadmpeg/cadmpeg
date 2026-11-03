@@ -134,7 +134,10 @@
             "value": 50.0
           },
           "target": {
-            "kind": "unresolved"
+            "bodies": [
+              "step:data:body#38"
+            ],
+            "kind": "bodies"
           }
         },
         {
@@ -149,7 +152,10 @@
             }
           },
           "target": {
-            "kind": "unresolved"
+            "bodies": [
+              "step:data:body#38"
+            ],
+            "kind": "bodies"
           }
         },
         {
@@ -160,7 +166,10 @@
             "value": 0.0
           },
           "target": {
-            "kind": "unresolved"
+            "bodies": [
+              "step:data:body#38"
+            ],
+            "kind": "bodies"
           }
         },
         {
@@ -171,7 +180,10 @@
             "value": 51.0
           },
           "target": {
-            "kind": "unresolved"
+            "bodies": [
+              "step:data:body#38"
+            ],
+            "kind": "bodies"
           }
         }
       ],
