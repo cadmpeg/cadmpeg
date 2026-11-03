@@ -4145,6 +4145,27 @@ are its result-edge identities only when every crv_id is unique. An absent or
 ambiguous row set does not select edges.
 Positional replay geometry and edge arrays use the same agreement rule,
 including empty arrays; an empty and a nonempty state conflict.
+In the binary feature graph, the `BasFullData` section stores
+`Sld_BasFullData`, which owns one `dim_array` field:
+`e0 00 dim_array\0 f8 <count> f7 <class> fb`, followed by `count` elements.
+A null element is `e1`. The first non-null element is the `dtl_named_item`
+prototype, which labels each field:
+`e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 <name>
+e0 01 type\0 <type> e0 01 dim_type\0 <dim_type> e0 01 feat_id\0 <feat_id>
+e0 01 attr_arr\0 f8 <n> <attributes> e0 00 dim_dat_ptr\0 e3
+e0 02 value\0 <value> e0 02 bck_value\0 <bck_value>`, followed by the
+remaining fields. An `f1` framing byte can precede a prototype value; the value
+starts after it. A later element stores the same fields without labels,
+framing bytes, or the `attr_arr` count:
+`e2 e2 <name> <type> <dim_type> <feat_id> <attributes> e3 <value> <bck_value>`.
+A dimension element has the null name `e1` and type `08`. `dim_type` is a
+compact integer. `feat_id` is a compact integer or `f6`, the null feature
+identifier. Each attribute is a compact integer, `c0..df XX YY`, or `eb`
+followed by four bytes; `f5` is a one-byte attribute prefix, and `e4` repeats
+the preceding attribute. `value` uses the frame-slot scalar lane of §9.1.
+A dimension element with `dim_type` 3 and `feat_id` equal to a round feature
+id states a design radius of that round. The legacy constant-radius rule
+applies to the set of these elements.
 
 For a class-913 cylindrical slot fillet, the first two `geoms_affected`
 identifiers are the axial cap planes. The remaining identifiers are tangent
