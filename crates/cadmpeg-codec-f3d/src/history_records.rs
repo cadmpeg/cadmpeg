@@ -539,8 +539,6 @@ struct AsmHistoryRecordWireRef<'a> {
     revision_id: Option<i64>,
     index: u64,
     name: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    framing_error: Option<&'a str>,
     #[serde(skip_serializing_if = "<[i64]>::is_empty")]
     entity_references: &'a [i64],
     frame: &'a crate::records::source_frame::SourceFrame,
@@ -548,25 +546,19 @@ struct AsmHistoryRecordWireRef<'a> {
 
 impl Serialize for AsmHistoryRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (index, name, framing_error, entity_references) = match &self.framing {
-            AsmHistoryRecordFraming::Framed {
-                index,
-                name,
-                entity_references,
-            } => (*index, name.as_str(), None, entity_references.as_slice()),
-            AsmHistoryRecordFraming::Opaque { error } => {
-                (0, "opaque_history_payload", Some(error.as_str()), &[][..])
-            }
-        };
+        let AsmHistoryRecordFraming::Framed {
+            index,
+            name,
+            entity_references,
+        } = &self.framing;
         AsmHistoryRecordWireRef {
             id: &self.id,
             parent: &self.parent,
             byte_offset: self.byte_offset,
             revision_id: self.revision_id,
-            index,
+            index: *index,
             name,
-            framing_error,
-            entity_references,
+            entity_references: entity_references.as_slice(),
             frame: &self.raw_bytes,
         }
         .serialize(serializer)
@@ -580,24 +572,12 @@ pub(crate) enum AsmHistoryRecordFraming {
         name: String,
         entity_references: Vec<i64>,
     },
-    Opaque {
-        error: String,
-    },
 }
 
 impl AsmHistoryRecord {
     pub(crate) fn name(&self) -> &str {
-        match &self.framing {
-            AsmHistoryRecordFraming::Framed { name, .. } => name,
-            AsmHistoryRecordFraming::Opaque { .. } => "opaque_history_payload",
-        }
-    }
-
-    pub(crate) fn framing_error(&self) -> Option<&str> {
-        match &self.framing {
-            AsmHistoryRecordFraming::Framed { .. } => None,
-            AsmHistoryRecordFraming::Opaque { error } => Some(error),
-        }
+        let AsmHistoryRecordFraming::Framed { name, .. } = &self.framing;
+        name
     }
 }
 
@@ -625,13 +605,6 @@ struct AsmHistoryRecordWire {
     /// Snapshot-local record ordinal. This is not the revision identity.
     index: u64,
     name: String,
-    /// Framing failure that forced this span to remain opaque.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_framing_error"
-    )]
-    framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_references: Vec<i64>,
@@ -642,28 +615,16 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
     type Error = String;
 
     fn try_from(wire: AsmHistoryRecordWire) -> Result<Self, Self::Error> {
-        let framing = match wire.framing_error {
-            None => AsmHistoryRecordFraming::Framed {
-                index: wire.index,
-                name: wire.name,
-                entity_references: wire.entity_references,
-            },
-            Some(error) => {
-                if wire.index != 0
-                    || wire.name != "opaque_history_payload"
-                    || !wire.entity_references.is_empty()
-                {
-                    return Err("framing_error requires index 0, name opaque_history_payload, and empty entity_references".into());
-                }
-                AsmHistoryRecordFraming::Opaque { error }
-            }
-        };
         Ok(Self {
             id: wire.id,
             parent: wire.parent,
             revision_id: wire.revision_id,
             byte_offset: wire.byte_offset,
-            framing,
+            framing: AsmHistoryRecordFraming::Framed {
+                index: wire.index,
+                name: wire.name,
+                entity_references: wire.entity_references,
+            },
             raw_bytes: wire.frame,
         })
     }
@@ -672,16 +633,11 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
 #[cfg(test)]
 impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
     fn from(record: AsmHistoryRecord) -> Self {
-        let (index, name, framing_error, entity_references) = match record.framing {
-            AsmHistoryRecordFraming::Framed {
-                index,
-                name,
-                entity_references,
-            } => (index, name, None, entity_references),
-            AsmHistoryRecordFraming::Opaque { error } => {
-                (0, "opaque_history_payload".into(), Some(error), Vec::new())
-            }
-        };
+        let AsmHistoryRecordFraming::Framed {
+            index,
+            name,
+            entity_references,
+        } = record.framing;
         Self {
             id: record.id,
             parent: record.parent,
@@ -689,7 +645,6 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
             revision_id: record.revision_id,
             index,
             name,
-            framing_error,
             entity_references,
             frame: record.raw_bytes,
         }
@@ -899,16 +854,11 @@ mod tests {
     fn history_record_borrowed_wire_matches_owned_wire_bytes() {
         use super::{AsmHistoryRecord, AsmHistoryRecordFraming, AsmHistoryRecordWire};
 
-        for framing in [
-            AsmHistoryRecordFraming::Framed {
-                index: 4,
-                name: "edge".into(),
-                entity_references: vec![7, -1],
-            },
-            AsmHistoryRecordFraming::Opaque {
-                error: "invalid frame".into(),
-            },
-        ] {
+        for framing in [AsmHistoryRecordFraming::Framed {
+            index: 4,
+            name: "edge".into(),
+            entity_references: vec![7, -1],
+        }] {
             let record = AsmHistoryRecord {
                 id: "f3d:native:history_record#1".into(),
                 parent: "f3d:native:state#1".into(),
@@ -1059,28 +1009,20 @@ mod tests {
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
         let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
-        let wire = |fields: serde_json::Value| {
-            let mut wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7,
-                "index":0, "byte_offset":12, "frame":frame});
-            for (key, value) in fields.as_object().expect("record fields") {
-                wire[key] = value.clone();
-            }
-            wire
-        };
-        for fields in [
-            serde_json::json!({"name":"edge", "entity_references":[7, -1]}),
-            serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame"}),
-        ] {
-            let wire = wire(fields);
-            let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-        }
+        let wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7,
+            "index":0, "byte_offset":12, "name":"edge", "entity_references":[7, -1], "frame":frame});
+        let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
         for fields in [
             serde_json::json!({"name":"edge", "framing_error":"invalid frame"}),
             serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame",
                 "entity_references":[7]}),
         ] {
-            let error = serde_json::from_value::<super::AsmHistoryRecord>(wire(fields))
+            let mut refused = wire.clone();
+            for (key, value) in fields.as_object().expect("record fields") {
+                refused[key] = value.clone();
+            }
+            let error = serde_json::from_value::<super::AsmHistoryRecord>(refused)
                 .unwrap_err()
                 .to_string();
             assert!(error.contains("framing_error"));
@@ -1089,23 +1031,12 @@ mod tests {
     #[test]
     fn history_record_framing_keeps_typed_metadata_without_parser_bytes_or_location() {
         let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
-        for (name, error, references) in [
-            ("edge", None, vec![7, -1]),
-            ("opaque_history_payload", Some("invalid frame"), vec![]),
-        ] {
-            let mut wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7, "index":0,
-                "name":name, "frame":frame});
-            if let Some(error) = error {
-                wire["framing_error"] = error.into();
-            }
-            if !references.is_empty() {
-                wire["entity_references"] = serde_json::json!(references);
-            }
-            let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-            assert!(record.byte_offset.is_none());
-            assert!(record.raw_bytes.data().is_none());
-        }
+        let wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7, "index":0,
+            "name":"edge", "entity_references":[7, -1], "frame":frame});
+        let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        assert!(record.byte_offset.is_none());
+        assert!(record.raw_bytes.data().is_none());
         let wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7, "index":0,
             "name":"edge", "framing_error":"invalid frame", "frame":frame});
         assert!(serde_json::from_value::<super::AsmHistoryRecord>(wire)
@@ -1130,7 +1061,6 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_carrier, i64, "carrier");
 cadmpeg_core::named_optional_field!(deserialize_previous_state_id, i64, "previous_state_id");
 cadmpeg_core::named_optional_field!(deserialize_revision_id, i64, "revision_id");
-cadmpeg_core::named_optional_field!(deserialize_framing_error, String, "framing_error");
 cadmpeg_core::named_optional_field!(deserialize_old_ref, i64, "old_ref");
 cadmpeg_core::named_optional_field!(deserialize_new_ref, i64, "new_ref");
 

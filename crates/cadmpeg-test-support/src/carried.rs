@@ -10,11 +10,14 @@
 //! Variants are read syntactically from CADIR JSON through the generated
 //! enum registry (`data/variant_registry.json`): externally-tagged values
 //! contribute their key or bare spelling, internally and adjacently tagged
-//! values contribute their tag value. The same reading serves observation
-//! (what X's decodes hold) and containment (what a record holds), so the
-//! two sides can never disagree about a spelling. A tag value claimed by
-//! several enums resolves to all of them; the ambiguity is measured by
-//! [`ambiguity_sample`].
+//! values contribute their tag value. A bare string attributes only a unit
+//! variant, and a single-key object only a variant with a payload: a unit
+//! variant never serializes as `{"Variant": ...}`, so a structural map such
+//! as an edge carrier `{"curve": <id>}` attributes nothing. The same reading
+//! serves observation (what X's decodes hold) and containment (what a record
+//! holds), so the two sides can never disagree about a spelling. A tag value
+//! claimed by several enums resolves to all of them; the ambiguity is
+//! measured by [`ambiguity_sample`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
@@ -101,6 +104,17 @@ fn variant_maps() -> &'static VariantMaps {
                 .get("variants")
                 .and_then(Value::as_object)
                 .expect("enum holds variants");
+            let objects: Option<BTreeSet<String>> =
+                definition
+                    .get("object_variants")
+                    .and_then(Value::as_array)
+                    .map(|names| {
+                        names
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    });
             for (variant, spelling) in variants {
                 let spelling = spelling.as_str().unwrap_or(variant);
                 let qualified = format!("{name}::{variant}");
@@ -115,14 +129,22 @@ fn variant_maps() -> &'static VariantMaps {
                         }
                     }
                     _ => {
-                        maps.units
-                            .entry(spelling.to_owned())
-                            .or_default()
-                            .push(qualified.clone());
-                        maps.keys
-                            .entry(spelling.to_owned())
-                            .or_default()
-                            .push(qualified);
+                        // Without the generated payload list (a stale
+                        // registry), keep the legacy reading: every
+                        // spelling attributes both forms.
+                        let object = objects.as_ref().is_none_or(|set| set.contains(variant));
+                        if objects.is_none() || !object {
+                            maps.units
+                                .entry(spelling.to_owned())
+                                .or_default()
+                                .push(qualified.clone());
+                        }
+                        if objects.is_none() || object {
+                            maps.keys
+                                .entry(spelling.to_owned())
+                                .or_default()
+                                .push(qualified);
+                        }
                     }
                 }
             }
@@ -377,5 +399,42 @@ mod tests {
     #[test]
     fn ambiguity_reports_shared_spellings() {
         let _ = ambiguity_sample(&json!({"kind": "plane"}));
+    }
+
+    #[test]
+    fn structural_single_key_maps_attribute_no_variant() {
+        // An edge carrier is a struct, not an externally-tagged enum. The
+        // release cross-closure misread `{"curve": <id>}` as
+        // `VariableBlendSupportKind::Curve` (a unit variant, which never
+        // serializes as a single-key object) and dropped every carried edge
+        // from the required set: `step:data:edge#19` in ap203_sheet.p21,
+        // `iges:model:edge#D55:D35:1` in explicit_tetrahedron_solid.igs, and
+        // the coedges that need them.
+        let carrier = json!({"carrier": {"curve": "step:data:curve#17"}});
+        assert!(json_variants(&carrier).is_empty(), "{carrier:?}");
+        let projected = json!({
+            "carrier": {"curve": "iges:model:curve#D21"},
+            "end": "iges:model:vertex#D55:D33:2",
+            "id": "iges:model:edge#D55:D35:1",
+            "start": "iges:model:vertex#D55:D33:1",
+        });
+        assert!(json_variants(&projected).is_empty(), "{projected:?}");
+    }
+
+    #[test]
+    fn bare_unit_spellings_still_attribute() {
+        assert!(json_variants(&json!("curve")).contains("VariableBlendSupportKind::Curve"));
+        assert!(json_variants(&json!("forward")).contains("Sense::Forward"));
+    }
+
+    #[test]
+    fn payload_single_key_objects_still_attribute() {
+        // `ModelEvaluationIdentity::Curve` carries a payload, so its
+        // single-key object form is genuine.
+        let identity = json!({"Curve": {"lane": "model"}});
+        assert!(
+            json_variants(&identity).contains("ModelEvaluationIdentity::Curve"),
+            "{identity:?}"
+        );
     }
 }

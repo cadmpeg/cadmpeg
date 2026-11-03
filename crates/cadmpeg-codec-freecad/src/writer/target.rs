@@ -69,12 +69,26 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        super::CAPACITY_FIELDS.is_empty(),
+        "FreeCAD declares no capacity rows"
+    );
+    debug_assert!(
+        super::REDUCED_FIELDS.is_empty(),
+        "FreeCAD stores no reduced fields yet"
+    );
     let allocation_arena = cadmpeg_core::decode::DecodeArena::new();
     let allocation_policy = cadmpeg_core::decode::DecodePolicy {
         limits: input.limits,
         ..cadmpeg_core::decode::DecodePolicy::default()
     };
     let allocation_context = DecodeContext::for_encode(&allocation_arena, &allocation_policy);
+    // Synthesis visits every input record, so the caller's entity ceiling
+    // applies to the input record count before any building (#217 §5.0).
+    allocation_context.charge_entities(
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+        "write FCStd records",
+    )?;
     let mut reason = None;
     if let Some(fidelity) = input
         .fidelity
@@ -96,6 +110,25 @@ pub(crate) fn plan(
         } else {
             reason = Some("the retained typed document layout is unavailable".into());
         }
+    }
+    // Synthesis authors the recorded schema grammars only. A preserved
+    // off-catalog dialect has no synthesis vocabulary: it patches from its
+    // retained image or refuses as an unsupported target (#238 §5.0).
+    let synthesizable = [
+        crate::dialect::FcstdDialect::Schema2,
+        crate::dialect::FcstdDialect::Schema3,
+        crate::dialect::FcstdDialect::Schema4,
+    ];
+    if !synthesizable
+        .iter()
+        .any(|known| known.id().as_str() == resolved.target_id().as_str())
+    {
+        return Err(CodecError::UnsupportedTarget(Box::new(
+            cadmpeg_core::target::TargetRefusal::unknown_explicit(
+                resolved.target_id().as_str(),
+                cadmpeg_core::target::TargetCatalog::new(crate::dialect::TARGETS, Some(0)),
+            ),
+        )));
     }
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
@@ -123,35 +156,13 @@ pub(crate) fn plan(
     Ok(body)
 }
 
-/// Native `fcstd` arenas this writer handles itself: property values patch
-/// `Document.xml`, entry payloads are repacked, and the writer refuses its own
-/// unsupported object, extension and unreadable-entry edits.
-const CARRIED_NATIVE_ARENAS: &[&str] = &["entries", "extensions", "objects", "properties"];
-
-/// Fingerprint of typed native arenas whose edits this layout optimization
-/// does not carry. It may decline layout reuse; neutral agreement is checked
-/// independently by projecting the current typed graph.
-pub(crate) fn document_local_sha256(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<String, CodecError> {
-    let records = ir
-        .native
-        .namespace("fcstd")
-        .map(|namespace| {
-            namespace
-                .arenas()
-                .iter()
-                .filter(|(arena, _)| !CARRIED_NATIVE_ARENAS.contains(&arena.as_str()))
-                .collect::<std::collections::BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
-    cadmpeg_ir::hash::canonical_json_sha256(ctx, &records).map_err(Into::into)
-}
-
-/// Decline the retained-layout optimization after an uncarried edit.
+/// Admit the retained layout only for an unedited document.
 ///
-/// Such an edit is authored by the synthesized path instead.
+/// Patch preserves layout and identities; it never supplies content. Any
+/// difference between the current document and a fresh decode of its
+/// retained image — neutral or native — declines to synthesis with a
+/// `PatchDeclined` reason (#238). A missing image declines the same way;
+/// it never fails the write.
 fn admit_unedited(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -161,23 +172,8 @@ fn admit_unedited(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    if let Some(namespace) = ir.native.namespace("fcstd") {
-        if namespace
-            .arena_as::<crate::native::ObjectRecord>("objects")?
-            .iter()
-            .any(|object| {
-                crate::design::is_design_kind(&object.type_name)
-                    && !crate::design::is_design_object(&object.type_name)
-            })
-        {
-            return Err(CodecError::UnsupportedContent(
-                "unknown construction runtime types require typed native synthesis".into(),
-            ));
-        }
-    }
-
     // The gate admits the retained layout only when the retained image still
-    // digests to the source baseline and decodes to the current fingerprint.
+    // digests to the source baseline and decodes to the current document.
     // A missing image declines to synthesis; it never fails the write.
     let Some(image) = fidelity
         .retained_record(crate::fidelity::SOURCE_IMAGE)
@@ -187,54 +183,76 @@ fn admit_unedited(
             "the retained FCStd source image is unavailable".into(),
         ));
     };
-    let current = document_local_sha256(ctx, ir)?;
+    let current = cadmpeg_ir::hash::document_local_sha256(
+        ctx,
+        ir,
+        ir.source.as_ref(),
+        "fcstd",
+        crate::fidelity::SOURCE_IMAGE,
+    )?;
     let replays = cadmpeg_ir::hash::retained_image_replays(
         image,
         &fidelity.decode_digest,
         current.as_str(),
         ir.scope,
         limits,
-        |decode_ctx, root| {
+        |_, _| {
+            // The writer plans from Full-depth documents (REQUEST), so the
+            // replay decodes the image at Full even when the document scope
+            // is narrower; the scope-derived depth would drop held records.
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy {
+                limits,
+                ..cadmpeg_core::decode::DecodePolicy::default()
+            };
+            let (fresh_ctx, fresh_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes_at(
+                image,
+                &arena,
+                &policy,
+                cadmpeg_core::decode::DecodeDepth::Full,
+            )
+            .map_err(|_| {
+                CodecError::UnsupportedContent(
+                    "the retained FCStd source image refused to decode".into(),
+                )
+            })?;
             let fresh =
-                cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, decode_ctx, root)
+                cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, &fresh_ctx, fresh_root)
                     .map_err(|failure| match failure {
                         cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
                         _ => CodecError::UnsupportedContent(
                             "the retained FCStd source image refused to decode".into(),
                         ),
                     })?;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (hash_ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let fresh_hash = document_local_sha256(&hash_ctx, fresh.ir())?;
+            let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+            let hash_policy = cadmpeg_core::decode::DecodePolicy::default();
+            let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &hash_arena,
+                &hash_policy,
+            )?;
+            let fresh_hash = cadmpeg_ir::hash::document_local_sha256(
+                &hash_ctx,
+                fresh.ir(),
+                fresh.ir().source.as_ref(),
+                "fcstd",
+                crate::fidelity::SOURCE_IMAGE,
+            )?;
             hash_ctx.finish_session()?;
             Ok(fresh_hash)
         },
     );
     if !replays {
         return Err(CodecError::UnsupportedContent(
-            "current uncarried typed records require FCStd graph regeneration".into(),
-        ));
-    }
-    projection::agrees(ctx, ir).map_err(|error| match error {
-        CodecError::Malformed(_) | CodecError::Truncated { .. } => CodecError::UnsupportedContent(
-            format!("current typed projection is unavailable: {error}"),
-        ),
-        error => error,
-    })?;
-    let findings = crate::validate_native(ctx, ir)?;
-    if !findings.is_empty() {
-        return Err(CodecError::UnsupportedContent(
-            "the retained layout no longer agrees with its typed native records".into(),
+            "the current document no longer matches its retained image".into(),
         ));
     }
     Ok(())
 }
 
 /// Write the resolved retained layout using source images from fidelity.
-/// [`admit_unedited`] separately proves that its current typed projection
-/// agrees with every held neutral arena; the fingerprint selects layout only.
+/// [`admit_unedited`] admits only an unedited document; the fingerprint
+/// selects layout only.
 fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(&mut bytes, resolution)?;

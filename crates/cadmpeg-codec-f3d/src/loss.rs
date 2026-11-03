@@ -128,8 +128,6 @@ pub(crate) enum F3dLossCode {
     RecipePrefixUntyped,
     /// Ordering one owner scope's Design parameters exceeded its local work cap.
     ParameterOrderBudgetExceeded,
-    /// An ASM history span stays opaque because record framing failed.
-    HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
     DesignBodyBindingUnresolved,
     /// Design body-map pairs name a body outside the current model.
@@ -503,7 +501,6 @@ impl F3dLossCode {
         Self::HistoryBindingWorkExceeded,
         Self::RecipeSideSearchBudgetExceeded,
         Self::ParameterOrderBudgetExceeded,
-        Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
         Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
@@ -717,7 +714,6 @@ impl F3dLossCode {
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
             Self::RecipePrefixUntyped => "dimension.recipe-prefix-untyped",
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
-            Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
@@ -925,7 +921,6 @@ impl F3dLossCode {
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
-            | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MissingGeometryStream
             | Self::XrefCycle
@@ -1113,7 +1108,6 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
-            | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
@@ -1387,7 +1381,6 @@ mod tests {
                 "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
                 "parameter.order-budget-exceeded",
-                "history.record-framing-failed",
                 "design.body-binding-unresolved",
                 "design.history-only-body-omitted",
                 "appearance.reference-image-native",

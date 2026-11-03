@@ -6029,6 +6029,9 @@ fn append_surface_entities(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
     let wrapped = domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
+    if wrapped.is_some() {
+        entities[surface_index].status = EntityStatus::PhysicallyDependent;
+    }
     if !ir
         .model
         .faces
