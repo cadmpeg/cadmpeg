@@ -179,9 +179,8 @@ fn missing_units_owner_drops_the_record_with_its_identity() {
     let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
     assert_eq!(entities.len(), 1);
     assert!(!exported.regenerated.contains(id));
-    assert_eq!(exported.losses.len(), 1);
-    assert!(exported.losses[0].message.contains(id));
-    assert!(exported.losses[0]
-        .message
-        .contains("iges:entity:directory#missing"));
+    // #234 drops the IGES-specific passthrough charge: the export report
+    // names the omitted record through `export/native.records-omitted`,
+    // computed from the dropped native disposition.
+    assert!(exported.losses.is_empty());
 }
