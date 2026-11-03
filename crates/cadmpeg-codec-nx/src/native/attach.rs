@@ -1283,7 +1283,14 @@ fn attach_jpeg_preview_assets(
             source_offset,
             Some("JPEG_PREVIEW_ASSET"),
         );
+        annotations.note(
+            native_ref.as_str(),
+            &stream,
+            source_offset,
+            Some("JPEG_PREVIEW"),
+        );
         annotations.exactness(id.as_str(), Exactness::ByteExact);
+        annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
         annotations
             .derived(id.as_str(), "id")
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -1300,6 +1307,15 @@ fn attach_jpeg_preview_assets(
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain NX JPEG preview asset",
+        )?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "retain NX JPEG preview source",
+        )?;
+        push_native_unknown(
+            ctx,
+            unknowns,
+            UnknownRecord::retained(native_ref.clone(), source_offset, bytes.to_vec(), Vec::new()),
         )?;
         ir.model.assets.push(
             Asset::try_new(
