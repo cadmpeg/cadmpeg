@@ -1811,8 +1811,14 @@ fn sampled_map_offset_uses_active_reference_range_inside_full_pcurve_domain() {
     };
     let records = HashMap::from([(1, &line), (4, &map)]);
     let pcurves = BTreeMap::from([(2, object_stream_pcurve(7, vec![2.0, 3.0], None))]);
+    let maps = crate::families::b5::parameter_map::SampledParameterMapIndex::from_payloads(
+        records
+            .values()
+            .filter(|record| record.family == 0xa8 && record.class == 0x25)
+            .map(|record| (record.object_id, record.payload.as_slice())),
+    );
     let parsed = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_extrusion_directrix(ctx, &offset, &records, &pcurves)
+        super::super::parse_extrusion_directrix(ctx, &offset, &records, &pcurves, &maps)
     })
     .expect("bounded directrix parse")
     .expect("active map interval closes");
@@ -1852,7 +1858,7 @@ fn sampled_map_offset_uses_active_reference_range_inside_full_pcurve_domain() {
     let mut wrong = offset;
     wrong.payload[2..10].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::test_support::with_service_context(|ctx| {
-        super::super::parse_extrusion_directrix(ctx, &wrong, &records, &pcurves)
+        super::super::parse_extrusion_directrix(ctx, &wrong, &records, &pcurves, &maps)
     })
     .expect("bounded directrix parse")
     .is_none());

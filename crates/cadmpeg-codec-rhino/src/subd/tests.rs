@@ -475,7 +475,7 @@ fn proxy_userdata(
     }
     let payload_start = bytes.len();
     bytes.extend_from_slice(&anonymous(&body));
-    let payload_range = payload_start..bytes.len();
+    let payload_range = payload_start + 12..bytes.len() - 4;
     let descriptor = ClassUserdata {
         range: payload_range.clone(),
         version: (2, 2),

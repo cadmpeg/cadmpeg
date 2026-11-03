@@ -559,7 +559,12 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
                 }
             }
             Value::Object(fields) => {
-                for value in fields.values_mut() {
+                for (key, value) in fields.iter_mut() {
+                    // An `id` field declares the record's identity; only other
+                    // fields name references that can dangle (§5.2).
+                    if key == "id" {
+                        continue;
+                    }
                     walk(value, required, ids);
                 }
             }
@@ -573,34 +578,69 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
 }
 
 /// Applies each reduced row's storage rule to the matching record paths.
+///
+/// Paths use the collapsed `[]` spelling of [`record_paths`] and
+/// [`project_document`] (`model.bodies[].color`). A row names a value
+/// position; when that value is a container, the row's storage applies to
+/// every scalar below it, so per-channel numbers quantize while tags and
+/// other non-numeric leaves pass through [`apply_storage`] unchanged.
 fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
-    fn walk(value: &mut Value, trail: &mut Vec<String>, reduced: &[ReducedProbe]) {
+    fn apply_row(value: &mut Value, row: &ReducedProbe) {
         match value {
             Value::Array(items) => {
                 for item in items {
-                    walk(item, trail, reduced);
+                    apply_row(item, row);
                 }
             }
             Value::Object(fields) => {
+                for child in fields.values_mut() {
+                    apply_row(child, row);
+                }
+            }
+            _ => {
+                *value = apply_storage(row.storage, value, row.normalize);
+            }
+        }
+    }
+    fn walk(value: &mut Value, trail: &mut String, reduced: &[ReducedProbe]) {
+        let position = trail.clone();
+        if !position.is_empty()
+            && reduced
+                .iter()
+                .any(|row| position == row.path || position.ends_with(&format!(".{}", row.path)))
+        {
+            for row in reduced {
+                if position == row.path || position.ends_with(&format!(".{}", row.path)) {
+                    apply_row(value, row);
+                }
+            }
+            return;
+        }
+        match value {
+            Value::Array(items) => {
+                let base = trail.len();
+                trail.push_str("[]");
+                for item in items {
+                    walk(item, trail, reduced);
+                }
+                trail.truncate(base);
+            }
+            Value::Object(fields) => {
                 for (key, child) in fields {
-                    trail.push(key.clone());
-                    let trail_text = trail.join(".");
-                    for row in reduced {
-                        if trail_text == row.path || trail_text.ends_with(&format!(".{}", row.path))
-                        {
-                            let stored = apply_storage(row.storage, child, row.normalize);
-                            *child = stored;
-                        }
+                    let base = trail.len();
+                    if !trail.is_empty() {
+                        trail.push('.');
                     }
+                    trail.push_str(key);
                     walk(child, trail, reduced);
-                    trail.pop();
+                    trail.truncate(base);
                 }
             }
             _ => {}
         }
     }
     let mut adjusted = before.clone();
-    walk(&mut adjusted, &mut Vec::new(), reduced);
+    walk(&mut adjusted, &mut String::new(), reduced);
     adjusted
 }
 

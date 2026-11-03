@@ -808,7 +808,22 @@ fn product_metadata_does_not_replace_a_typed_vendor_construction_object() {
     assert!(properties
         .iter()
         .all(|property| property.name != "ScaleVector"));
-    assert!(output.ir().model.features.is_empty());
+    let vendor = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Vendor"))
+        .expect("vendor construction object keeps its neutral feature");
+    assert!(
+        matches!(
+            vendor.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+            ) if kind.as_str() == "Vendor::PartDesign::PadLike"
+        ),
+        "the vendor construction object keeps its Native kind"
+    );
     assert_eq!(output.ir().model.product_definitions.len(), 2);
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, decoded.ir(), output.ir());
 }

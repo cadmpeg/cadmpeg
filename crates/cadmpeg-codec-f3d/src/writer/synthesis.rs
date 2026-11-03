@@ -23,7 +23,6 @@ pub(super) struct Synthesized {
     pub(super) coverage: ArenaDispositions,
     pub(super) losses: Vec<LossNote>,
     pub(super) native_dispositions: NativeDispositions,
-    pub(super) preservation_compatible: bool,
 }
 
 /// Author an archive from the document, reducing unsupported records locally.
@@ -60,27 +59,11 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
             "the document has no body representable by the F3D writer; wrote an empty geometry carrier",
         ));
     }
-    let typed_native = |ir: &CadIr| {
-        ir.native
-            .namespace("f3d")
-            .map(|namespace| {
-                namespace
-                    .arenas()
-                    .iter()
-                    .filter(|(name, records)| name.as_str() != "unknowns" && !records.is_empty())
-                    .map(|(name, records)| (name.clone(), records.clone()))
-                    .collect::<std::collections::BTreeMap<_, _>>()
-            })
-            .unwrap_or_default()
-    };
-    let preservation_compatible =
-        target.model == prepared.model && typed_native(target) == typed_native(&prepared);
     Ok(Synthesized {
         bytes,
         coverage,
         losses,
         native_dispositions,
-        preservation_compatible,
     })
 }
 
