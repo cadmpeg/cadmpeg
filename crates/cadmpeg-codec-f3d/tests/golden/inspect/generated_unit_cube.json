@@ -34,7 +34,7 @@
     {
       "attributes": {
         "acis_save_format_version": "23100",
-        "asm_entity_count": "7",
+        "asm_entity_count": "2",
         "asm_flags": "3",
         "asm_magic": "ASM BinaryFile8",
         "asm_width": "8",
@@ -45,7 +45,7 @@
         "resnor": "0.0000000001",
         "save_date": "Thu Jan  1 00:00:00 1970",
         "scale": "60",
-        "sha256": "49723fbcaf884191a70fd1bb6f56c0f4c02401a8c39f6433c94d597742781e64",
+        "sha256": "bc9b01590170a38fe169eae3f9704a82e6f2db33d420d5407909c180d5d12c30",
         "solved_record_len": "8627"
       },
       "compression": "stored",
