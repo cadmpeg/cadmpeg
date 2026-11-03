@@ -33,6 +33,7 @@ fn sampled_paths(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
 mod conformance;
 mod golden_data;
 mod support;
+mod w_closure;
 
 mod cut_short;
 mod damaged_part;

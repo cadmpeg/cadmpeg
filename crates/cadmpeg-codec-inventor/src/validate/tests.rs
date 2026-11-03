@@ -312,7 +312,6 @@ fn empty_data() -> super::NativeData {
     super::NativeData {
         storage_bands: Vec::new(),
         databases: Vec::new(),
-        database_issues: Vec::new(),
         registry: Vec::new(),
         revisions: Vec::new(),
         pairs: Vec::new(),
@@ -328,7 +327,6 @@ fn empty_data() -> super::NativeData {
         property_sets: Vec::new(),
         property_sections: Vec::new(),
         properties: Vec::new(),
-        property_issues: Vec::new(),
         protein: super::ProteinRecord::Absent { id: String::new() },
         protein_assets: Vec::new(),
         protein_rejections: Vec::new(),

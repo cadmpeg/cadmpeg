@@ -38,7 +38,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::assemble::{
     annotate, cgm_source, cgm_source_key, circle_parameter_range_from_surface_branch,
     insert_unresolved_carrier_loss, neutral_model_is_admissible, ordered_range,
-    preserve_raw_payload, quintic_jet_pcurve, rational_pcurve_arc,
+    preserve_raw_payload, prune_to_admissible, quintic_jet_pcurve, rational_pcurve_arc,
 };
 use crate::container::ContainerScan;
 use crate::families::{FamilyEntityAdmission, FamilyOutput};
@@ -265,6 +265,7 @@ parameter_range: None,
             ));
         }
         let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
+        let mut prune_losses = Vec::new();
         let mut topology_annotations = annotations.copy_transaction();
         let mut original_curves = Vec::new();
         let mut unused_surfaces = Vec::new();
@@ -284,8 +285,31 @@ refusal,
                 Err(error) => return Some(Err(error)),
             };
             if transferred {
+                // Topology admission drops only the records a finding names,
+                // and the records that need them, with a validation loss
+                // naming them. A candidate that still does not admit does not
+                // transfer.
                 match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
-                    Ok(admissible) => admissible,
+                    Ok(report) => {
+                        if report.is_ok() {
+                            true
+                        } else {
+                            match prune_to_admissible(
+                                ctx,
+                                &mut topology_ir,
+                                &unknowns,
+                                &mut prune_losses,
+                            ) {
+                                Ok((dropped, pruned)) => {
+                                    for id in &dropped {
+                                        topology_annotations.remove_entity(id);
+                                    }
+                                    pruned.is_ok()
+                                }
+                                Err(limit) => return Some(Err(limit)),
+                            }
+                        }
+                    }
                     Err(limit) => return Some(Err(limit)),
                 }
             } else {
@@ -322,6 +346,7 @@ refusal,
             }
         }
         let mut losses = Vec::new();
+        losses.extend(prune_losses);
         if !topology_transferred {
             losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
         }

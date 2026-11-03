@@ -735,7 +735,10 @@ pub(crate) fn surface_alias_tag_map(
     segments: &[crate::container::FinjplSegment],
 ) -> HashMap<u32, Option<u32>> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(data);
-    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
+    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots)
+        .into_iter()
+        .map(|(graph, _)| graph)
+        .collect::<Vec<_>>();
     let mut value_blocks = value_block::parse(data);
     value_blocks.retain(|block| {
         !object_graphs
@@ -878,18 +881,23 @@ pub(crate) fn parse(data: &[u8]) -> Option<ObjectGraph> {
 /// Parse every length-closed `7C08` object graph in source order.
 pub(crate) fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     parse_all_with_paired_roots(data, &std::collections::HashMap::new())
+        .into_iter()
+        .map(|(graph, _)| graph)
+        .collect()
 }
 
 /// Parse every length-closed object graph, admitting opaque childless records
 /// only when a preceding entity-table run selects the exact root and record
 /// cardinality.
+/// Every length-closed `7C08` object graph with the `7C09` records it gave
+/// up, in source order.
 pub(crate) fn parse_all_with_paired_roots(
     data: &[u8],
     paired_roots: &std::collections::HashMap<usize, usize>,
-) -> Vec<ObjectGraph> {
+) -> Vec<(ObjectGraph, Vec<SkippedRecord>)> {
     let catalogs = catalog::parse(data).catalogs;
     let value_blocks = value_block::parse(data);
-    let mut roots = Vec::<ObjectGraph>::new();
+    let mut roots = Vec::<(ObjectGraph, Vec<SkippedRecord>)>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, data) {
         let Some(marker_tail) = pos.checked_add(1) else {
@@ -906,12 +914,18 @@ pub(crate) fn parse_all_with_paired_roots(
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let graph = if let Some(graph) = parse_candidate(data, pos, false) {
-            Some(graph)
-        } else if let Some(expected_count) = paired_roots.get(&pos) {
-            parse_candidate(data, pos, true).filter(|graph| graph.records.len() == *expected_count)
-        } else {
-            None
+        let (graph, skipped) = parse_candidate(data, pos, false);
+        let (graph, skipped) = match graph {
+            Some(graph) => (Some(graph), skipped),
+            None => match paired_roots.get(&pos) {
+                Some(expected_count) => {
+                    let (graph, skipped) = parse_candidate(data, pos, true);
+                    let admitted = graph
+                        .filter(|graph| graph.records.len() + skipped.len() == *expected_count);
+                    (admitted, skipped)
+                }
+                None => (None, skipped),
+            },
         };
         let Some(graph) = graph else {
             continue;
@@ -919,9 +933,9 @@ pub(crate) fn parse_all_with_paired_roots(
         if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
             enclosing_end = enclosing_end.max(graph_end);
         }
-        roots.push(graph);
+        roots.push((graph, skipped));
     }
-    for graph in &mut roots {
+    for (graph, _) in &mut roots {
         bind_catalog(graph, &catalogs, &value_blocks);
     }
     roots
@@ -951,23 +965,59 @@ fn bind_catalog(
     graph.catalog_pos = Some(schema.pos);
 }
 
+/// One `7C09` object record given up inside an otherwise admitted `7C08`
+/// object graph (§4.5): the record's own u32 length frames its extent, so a
+/// payload that fails to decode gives up this record and the walk continues
+/// at its end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SkippedRecord {
+    /// Serialized record index within the graph.
+    pub(crate) index: usize,
+    /// Byte offset of the `7C09` marker.
+    pub(crate) pos: usize,
+    /// Complete framed extent from the record's own u32 length.
+    pub(crate) len: usize,
+    /// Why the payload could not be decoded.
+    pub(crate) reason: &'static str,
+}
+
 fn parse_candidate(
     data: &[u8],
     pos: usize,
     allow_opaque_childless_records: bool,
-) -> Option<ObjectGraph> {
-    let total_len = usize::try_from(View::u32_le_at(data, pos + 2)?).ok()?;
-    let end = pos.checked_add(total_len)?;
+) -> (Option<ObjectGraph>, Vec<SkippedRecord>) {
+    let (mut graph, skipped) = (None, Vec::new());
+    let total_len = match View::u32_le_at(data, pos + 2) {
+        Some(length) => match usize::try_from(length).ok() {
+            Some(total_len) => total_len,
+            None => return (None, skipped),
+        },
+        None => return (None, skipped),
+    };
+    let end = match pos.checked_add(total_len) {
+        Some(end) => end,
+        None => return (None, skipped),
+    };
     if total_len < 15 || end > data.len() {
-        return None;
+        return (None, skipped);
     }
     let mut at = pos + 6;
     let mut records = Vec::new();
+    let mut skipped = skipped;
     while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
-        let record_len = usize::try_from(View::u32_le_at(data, at + 2)?).ok()?;
-        let record_end = at.checked_add(record_len)?;
+        let record_len = match View::u32_le_at(data, at + 2) {
+            Some(length) => match usize::try_from(length).ok() {
+                Some(record_len) => record_len,
+                None => return (None, skipped),
+            },
+            None => return (None, skipped),
+        };
+        let record_end = match at.checked_add(record_len) {
+            Some(record_end) => record_end,
+            None => return (None, skipped),
+        };
         if record_len < 6 || record_end > end {
-            return None;
+            return (None, skipped);
         }
         let head_start = at + 6;
         let mut children = data[head_start..record_end]
@@ -984,23 +1034,59 @@ fn parse_candidate(
             });
         let child = children.next();
         if child.is_some() && children.next().is_some() {
-            return None;
+            skipped.push(SkippedRecord {
+                index: records.len(),
+                pos: at,
+                len: record_len,
+                reason: "two 7C0A children",
+            });
+            at = record_end;
+            continue;
         }
-        let body = data.get(head_start..record_end)?;
+        let body = match data.get(head_start..record_end) {
+            Some(body) => body,
+            None => return (None, skipped),
+        };
         let (lead, body_form) = match child {
             Some((child, _)) => {
-                let head_bytes = data.get(head_start..child)?;
-                let lead = *head_bytes.first()?;
+                let head_bytes = match data.get(head_start..child) {
+                    Some(head_bytes) => head_bytes,
+                    None => return (None, skipped),
+                };
+                let lead = match head_bytes.first() {
+                    Some(lead) => *lead,
+                    None => return (None, skipped),
+                };
                 let head = decode_head(head_bytes);
-                let payload = decode_payload(&data[child + 6..record_end])?;
-                (lead, ObjectRecordBody::Nested { head, payload })
+                match decode_payload(&data[child + 6..record_end]) {
+                    Some(payload) => (lead, ObjectRecordBody::Nested { head, payload }),
+                    None => {
+                        skipped.push(SkippedRecord {
+                            index: records.len(),
+                            pos: at,
+                            len: record_len,
+                            reason: "7C0A payload undecodable",
+                        });
+                        at = record_end;
+                        continue;
+                    }
+                }
             }
             None if inline::parse(body).is_some()
                 || (allow_opaque_childless_records && !body.is_empty()) =>
             {
                 (body[0], ObjectRecordBody::Inline(body.to_vec()))
             }
-            None => return None,
+            None => {
+                skipped.push(SkippedRecord {
+                    index: records.len(),
+                    pos: at,
+                    len: record_len,
+                    reason: "childless 7C09 body undecodable",
+                });
+                at = record_end;
+                continue;
+            }
         };
         records.push(ObjectRecord {
             pos: at,
@@ -1010,12 +1096,15 @@ fn parse_candidate(
         });
         at = record_end;
     }
-    (!records.is_empty() && at == end).then_some(ObjectGraph {
-        pos,
-        total_len,
-        catalog_pos: None,
-        records,
-    })
+    if !records.is_empty() && at == end {
+        graph = Some(ObjectGraph {
+            pos,
+            total_len,
+            catalog_pos: None,
+            records,
+        });
+    }
+    (graph, skipped)
 }
 
 /// Occupant of the object head owner slot.

@@ -64,6 +64,7 @@ fn native_finjpl_segment_retains_its_bytes() {
             &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
     })
     .expect("decode the native namespace");
     assert_eq!(native.finjpl_segments.len(), 1);
@@ -885,6 +886,7 @@ fn native_value_block_resolves_one_catalog_schema_selection() {
             &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
     })
     .expect("decode the native namespace");
     assert_eq!(native.value_blocks.len(), 1);
@@ -920,6 +922,7 @@ fn alias_row_links_to_its_object_graph_record() {
             &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
     })
     .expect("decode the native namespace");
     assert!(native.alias_rows[0].object_graph.is_some());

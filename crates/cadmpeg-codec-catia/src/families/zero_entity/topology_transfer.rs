@@ -1469,7 +1469,8 @@ mod tests {
             &mut no_root_ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
         let mut annotations = AnnotationBuilder::new();
         let root = ZeroEntityOwnershipRoot {
             face_roster_pos: 1,
@@ -1516,7 +1517,8 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]
@@ -1631,7 +1633,8 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("check that the neutral model is admissible"));
+        .expect("check that the neutral model is admissible")
+        .is_ok());
     }
 
     #[test]
