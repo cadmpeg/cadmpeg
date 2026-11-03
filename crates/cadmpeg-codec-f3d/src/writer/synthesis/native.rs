@@ -133,6 +133,67 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         recipe.recipe_index = *ordinal;
         *ordinal += 1;
     }
+    // The sort above reorders the type table the retained dynamic class tags
+    // name. Point every retained sketch record at the position of the type
+    // that registers it; a record no remaining type registers is dropped
+    // under W1 and reported through the native dispositions.
+    macro_rules! remap_sketch_tags {
+        ($records:expr) => {{
+            let mut kept = Vec::new();
+            for mut record in std::mem::take($records) {
+                let tag = native
+                    .design_types
+                    .iter()
+                    .position(|design_type| {
+                        design_type.entities.values().any(|entity| {
+                            *entity == u64::from(record.record_index)
+                        })
+                    })
+                    .and_then(|ordinal| ordinal.checked_add(256))
+                    .filter(|code| *code <= 999);
+                match tag {
+                    Some(code) => {
+                        record.class_tag = code
+                            .to_string()
+                            .try_into()
+                            .map_err(CodecError::Malformed)?;
+                        kept.push(record);
+                    }
+                    None => {}
+                }
+            }
+            *$records = kept;
+        }};
+    }
+    remap_sketch_tags!(&mut native.sketch_points);
+    remap_sketch_tags!(&mut native.sketch_curve_identities);
+    remap_sketch_tags!(&mut native.sketch_relations);
+    remap_sketch_tags!(&mut native.sketch_texts);
+    // W1: a header is omitted only with a sketch record that is actually
+    // dropped. Retained sketch records keep their headers.
+    let retained_sketch_records = native
+        .sketch_points
+        .iter()
+        .map(|record| record.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .collect::<std::collections::BTreeSet<_>>();
     let omitted_sketch_records = original
         .sketch_points
         .iter()
@@ -155,6 +216,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .map(|record| record.record_index),
         )
+        .filter(|index| !retained_sketch_records.contains(index))
         .collect::<std::collections::BTreeSet<_>>();
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
@@ -366,6 +428,43 @@ pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
     super::body_keys::reconcile(target, &mut native)?;
     super::design::with_context(|ctx| {
         native.store(ctx, target.native.namespace_mut("f3d"))?;
+        Ok(())
+    })
+}
+
+/// Terminal §5.0 reduction: shed every native record the Design generator
+/// reads, keeping only the BREP-anchored carriers. The neutral parameters,
+/// configurations and joints those records projected are cleared with them,
+/// so no stale neutral record outlives its native copy. Every omission is
+/// reported through the dispositions the export wrapper charges.
+pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
+    let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let kept = F3dNative {
+        body_native_keys: native.body_native_keys,
+        body_visibilities: native.body_visibilities,
+        edge_continuities: native.edge_continuities,
+        edge_ownerships: native.edge_ownerships,
+        face_native_keys: native.face_native_keys,
+        face_sidedness: native.face_sidedness,
+        vertex_ownerships: native.vertex_ownerships,
+        wire_topologies: native.wire_topologies,
+        transform_hints: native.transform_hints,
+        tolerant_edge_tails: native.tolerant_edge_tails,
+        tolerant_vertex_tails: native.tolerant_vertex_tails,
+        tolerant_coedge_parameters: native.tolerant_coedge_parameters,
+        creation_timestamps: native.creation_timestamps,
+        persistent_design_links: native.persistent_design_links,
+        persistent_subentity_tags: native.persistent_subentity_tags,
+        persistent_references: native.persistent_references,
+        lost_edge_references: native.lost_edge_references,
+        ..F3dNative::default()
+    };
+    target.model.parameters.clear();
+    target.model.configurations.clear();
+    target.model.assembly_joints.clear();
+    target.native.0.remove("f3d");
+    super::design::with_context(|ctx| {
+        kept.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
 }
