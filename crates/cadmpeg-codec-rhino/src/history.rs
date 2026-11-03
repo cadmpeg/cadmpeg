@@ -19,20 +19,20 @@ use cadmpeg_core::CodecError;
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
 const ANONYMOUS: u32 = 0x4000_8000;
-const HISTORY_CLASS: Uuid = Uuid::from_canonical([
+pub(crate) const HISTORY_CLASS: Uuid = Uuid::from_canonical([
     0xec, 0xd0, 0xfd, 0x2f, 0x20, 0x88, 0x49, 0xdc, 0x96, 0x41, 0x9c, 0xf7, 0xa2, 0x8f, 0xfa, 0x6b,
 ]);
 const VALUE_CAP: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RecordType {
+pub(crate) enum RecordType {
     HistoryParameters,
     FeatureParameters,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryValue {
-    id: i32,
+    pub(crate) id: i32,
     pub(crate) value: Value,
 }
 
@@ -145,14 +145,14 @@ struct NativeHistoryRecord<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,
-    id: Uuid,
-    version: i32,
-    command_id: Uuid,
-    descendants: Vec<Uuid>,
-    antecedents: Vec<Uuid>,
+    pub(crate) id: Uuid,
+    pub(crate) version: i32,
+    pub(crate) command_id: Uuid,
+    pub(crate) descendants: Vec<Uuid>,
+    pub(crate) antecedents: Vec<Uuid>,
     pub(crate) values: Vec<HistoryValue>,
-    record_type: RecordType,
-    copy_on_replace: bool,
+    pub(crate) record_type: RecordType,
+    pub(crate) copy_on_replace: bool,
 }
 
 /// Result of scanning the history-record table.

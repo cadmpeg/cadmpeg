@@ -347,7 +347,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
             Some(&body.id)
         );
     }
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
     assert_valid_document(result.ir());
 
     let mut corrupted = result.ir().clone();
@@ -526,10 +526,11 @@ fn transfers_stored_and_external_part_feature_families() {
         .iter()
         .filter(|record| record.type_name == "Part::Part2DObjectPython")
         .all(|record| !record.neutral()));
-    assert!(
-        result.report().losses.is_empty(),
-        "stored, imported and vendor-native features report no loss: {:?}",
-        result.report().losses
+    crate::test_support::assert_design_fragment_scope(&result);
+    assert_eq!(
+        result.report().losses.len(),
+        1,
+        "stored, imported and vendor-native features report only the scope loss"
     );
     assert!(result.source_fidelity().unrepresented().is_empty());
     let objects = result
@@ -604,7 +605,7 @@ fn transfers_datum_frames_from_persisted_placements() {
                 && *frame.y_axis().as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
                 && *frame.z_axis().as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -619,7 +620,20 @@ fn reports_attributable_native_design_blockers() {
             &DecodeOptions::default(),
         )
         .expect("native feature");
-    assert_eq!(result.report().losses.len(), 1);
+    // #209 §1.1: the fragment holds no model part, so the wrapper also
+    // charges depth.not-delivered for the missing model class.
+    assert_eq!(
+        result.ir().scope,
+        cadmpeg_ir::document::ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(
+        result.report().losses[1].code.local_code(),
+        "depth.not-delivered"
+    );
     assert_eq!(
         result.report().losses[0].severity,
         cadmpeg_ir::report::Severity::Blocking

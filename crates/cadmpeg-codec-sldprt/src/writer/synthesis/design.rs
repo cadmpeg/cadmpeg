@@ -33,11 +33,19 @@ pub(super) fn prepare(
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
+    let orphaned =
+        crate::history::write::parameters::orphaned_scalar_parameters(ir, native.as_ref())
+            .map_err(|error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SLDPRT orphaned scalar scan failed: {error}"
+                ))
+            })?;
     crate::history::write::features::synthesize_neutral_features(
         &ir.model,
         &ir.model.parameters,
         &ir.model.bodies,
         &mut native,
+        &orphaned,
     )?;
     sketches(ir, native.as_ref(), losses)?;
     // A dropped sketch retains its feature and solved output, with an explicit loss.
@@ -46,6 +54,7 @@ pub(super) fn prepare(
         &ir.model.parameters,
         &ir.model.bodies,
         &mut native,
+        &orphaned,
     )?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;

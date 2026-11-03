@@ -308,7 +308,8 @@ class of the carrier. It refuses a selection
 of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
 and `--output`) writes it to a file. `--limits service` selects the smaller
 work allowance of a measurement pass. A CADIR document decoded at container
-depth holds no geometry; `measure` refuses it with `insufficient_depth`.
+depth holds no geometry; `measure` prints the neutral-scope note and measures
+the empty model, exiting 0.
 
 ## Inputs and outputs
 
@@ -441,8 +442,8 @@ on a semantic refusal of the input. Exit 2 is operational on every command.
   `check` (failed check), `diff` (models differ), and `inspect cmp` (files
   differ). `inspect cmp` exits 1 if the files are not identical, including
   length-only (Unix cmp contract). `dump` and `measure` exit 1 on a semantic
-  refusal of the input: `strict_decode_rejected` under `--no-salvage`,
-  `unsupported_dialect`, or `insufficient_depth`.
+  refusal of the input: `strict_decode_rejected` under `--no-salvage` or
+  `unsupported_dialect`.
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
 

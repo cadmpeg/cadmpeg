@@ -176,14 +176,44 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
+            let source = bytes.clone();
             semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
                 match outcome {
-                SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
-                ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+                    // A7 (#237): no encode golden records a refusal. Legacy history
+                    // without an active configuration is written with the base
+                    // state selected as active, not refused.
+                    SemanticOutcome::Refused { error } => panic!("body_history: refused: {error}"),
+                    SemanticOutcome::Written { report, bytes } => {
+                        written_count += 1;
+                        assert!(
+                            !matches!(report.write_path(), WritePath::VerbatimReplay { .. }),
+                            "fixture {name}: semantic roundtrip did not run a writer"
+                        );
+                        let rewritten = SldprtCodec
+                            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                            .expect("written legacy history decodes");
+                        assert_eq!(
+                            rewritten
+                                .ir()
+                                .model
+                                .configurations
+                                .iter()
+                                .filter(|configuration| configuration.active)
+                                .count(),
+                            1,
+                            "fixture {name}: the writer selects exactly one active configuration"
+                        );
+                        let mut rewritten_ir = rewritten.ir().clone();
+                        assert_eq!(
+                            depths(&mut rewritten_ir),
+                            vec![12.5],
+                            "fixture {name}: the legacy blind depth survives the write"
+                        );
+                        if written_measures_agree(&name, &source, bytes) {
+                            measured_count += 1;
+                        }
+                    }
+                }
             });
             continue;
         }

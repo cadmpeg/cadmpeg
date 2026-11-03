@@ -565,7 +565,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
-        } if first_id == first.id() && second_id == second.id() && parameter_id.parameter() == Some(&parameter)
+        } if first_id == second.id() && second_id == first.id() && parameter_id.parameter() == Some(&parameter)
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 

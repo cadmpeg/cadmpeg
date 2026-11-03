@@ -68,12 +68,13 @@ fn archive_session_crc_failures_keep_unreachable_losses_and_root_refusal() {
         } else {
             let result = result.unwrap();
             for code in [
-                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code,
                 crate::F3dLossCode::XrefMemberUndecoded.note("").code,
             ] {
                 assert!(result.report().losses.iter().any(|loss| {
-                    loss.code == code
-                        && loss.severity == cadmpeg_ir::report::Severity::Error
+                    loss.code == code && loss.severity == cadmpeg_ir::report::Severity::Error
                 }));
             }
         }

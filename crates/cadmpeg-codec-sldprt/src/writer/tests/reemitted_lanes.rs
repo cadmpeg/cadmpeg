@@ -54,6 +54,8 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
         &[],
         crate::writer::ClassLayouts::Authored,
         &std::collections::BTreeSet::new(),
+        // Emission mechanics: authored bytes are rewritten from the records.
+        crate::writer::SourceTrust::Authored,
     )
     .map(|(payload, _)| payload)
     .unwrap();
@@ -96,6 +98,8 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         crate::writer::ClassLayouts::Authored,
         &std::collections::BTreeSet::new(),
+        // Emission mechanics: authored bytes are rewritten from the records.
+        crate::writer::SourceTrust::Authored,
     )
     .map(|(payload, _)| payload)
     .unwrap();
@@ -111,6 +115,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         crate::writer::ClassLayouts::Authored,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Authored,
     )
     .map(|(payload, _)| payload)
     .unwrap_err();

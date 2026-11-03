@@ -101,16 +101,25 @@ fn generated_source_less_reduces_translucent_direct_color_with_a_loss() {
 }
 
 #[test]
-fn generated_source_less_rejects_empty_display_name_as_not_implemented() {
+fn generated_source_less_writes_an_empty_display_name() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].name = Some(String::new());
 
-    let error = F3dCodec
+    let mut bytes = Vec::new();
+    F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("an empty display name is document content and is written");
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the empty display name");
+    assert_eq!(output.ir().model.bodies.len(), 1);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("display name"))
+        output.ir().model.bodies[0]
+            .name
+            .as_deref()
+            .is_none_or(str::is_empty),
+        "an empty display name decodes to no name or the empty name, never to an invented one"
     );
 }
 
@@ -723,22 +732,30 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .to_string()
         .contains("asm_delta_states contains duplicate record ids"));
 
+    // W2: chain links are source layout. A broken chain is relinked where
+    // the history is carried; a history whose states hold retained payloads
+    // is omitted under W1 with its loss instead of refused.
     let (mut broken_chain, _, _) = decoded.into_parts();
     broken_chain.source = None;
     broken_chain
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states_mut()[0].next_ref = Some(99);
-    let error = F3dCodec
+    let mut repaired = Vec::new();
+    let report = F3dCodec
         .plan(
             EncodeInput::new(&broken_chain, None),
             TargetRequest::Inherit,
         )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unresolved history links must be rejected");
-    assert!(error
-        .to_string()
-        .contains("not a coherent doubly linked state chain"));
+        .and_then(|plan| plan.write_to(&mut repaired))
+        .expect("a broken history chain is omitted with its loss, not refused");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(repaired), &DecodeOptions::default())
+        .expect("history without retained payloads decodes");
+    assert!(f3d_native(round_trip.ir()).asm_histories.is_empty());
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "native.records-omitted" && loss.message.contains("asm_histories")
+    }));
 }
 
 #[test]

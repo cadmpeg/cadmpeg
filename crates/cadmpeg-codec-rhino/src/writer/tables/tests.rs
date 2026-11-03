@@ -92,7 +92,7 @@ fn native_layer_fields_follow_the_current_neutral_link_and_edits() {
     assert_eq!(native.field("neutral_ref"), None);
     assert_eq!(written.native_ref.as_deref(), Some(native.id()));
     assert_eq!(
-        super::super::native_dispositions(&ir)
+        super::super::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
             .expect("layer disposition")
             .record_disposition("rhino", "layers", NATIVE),
         NativeDisposition::Regenerated
@@ -104,7 +104,7 @@ fn native_layer_fields_follow_the_current_neutral_link_and_edits() {
         "matching names do not establish a native link"
     );
     assert_eq!(
-        super::super::native_dispositions(&ir)
+        super::super::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
             .expect("unlinked disposition")
             .record_disposition("rhino", "layers", NATIVE),
         NativeDisposition::Dropped
