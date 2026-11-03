@@ -40,6 +40,7 @@ pub(in crate::writer) fn write(
     feature: &Feature,
     object: &mut Object,
     names: &HashMap<String, String>,
+    schema: &str,
 ) -> Result<FeatureOutput, CodecError> {
     let definition = ir
         .resolved_feature_definition(feature.evaluation.definition())
@@ -63,6 +64,17 @@ pub(in crate::writer) fn write(
         boolean(object, "Suppressed", suppressed);
     }
     if feature.needs_recompute {
+        if schema == "2" {
+            // The schema 2 grammar carries no recompute marker, so the
+            // writer reports the stored staleness instead of dropping it
+            // (#209 §2.5).
+            output.losses.push(
+                cadmpeg_ir::codec::write::ExportLossCode::EvaluationStale.note(format!(
+                    "feature {} needs recompute and the schema 2 grammar carries no recompute marker",
+                    feature.id
+                )),
+            );
+        }
         object
             .declaration_attributes
             .insert("Touched".into(), "1".into());
