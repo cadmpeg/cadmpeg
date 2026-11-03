@@ -38,7 +38,7 @@ pub use crate::validate::ValidatedFinding;
 pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
-pub use error::{CapacityField, EncodeError};
+pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage};
 pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
@@ -518,6 +518,9 @@ impl ExportPlan {
 /// Encoder for canonical versioned CADIR JSON.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CadirEncoder;
+
+/// CADIR stores every value exactly; no JSON path is reduced (#232 §5.2).
+pub const REDUCED_FIELDS: &[ReducedField] = &[];
 
 impl EncoderBackend for CadirEncoder {
     const REUSES_SOURCE: bool = false;

@@ -1519,7 +1519,8 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         &mut ir,
         &[]
     )
-    .expect("check that the neutral model is admissible"));
+    .expect("check that the neutral model is admissible")
+    .is_ok());
     assert_eq!(
         ir.model
             .faces

@@ -8,11 +8,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
-    admit_kernel_annotation, decode_container, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
-    structural_issue,
+    admit_kernel_annotation, decode_container, form_preview_asset, project_protein_records,
+    project_protein_state, project_root_product, project_ufrx_embedded_reference,
+    project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
+    project_ufrx_representation, project_ufrx_state, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -28,30 +27,11 @@ use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
     AssemblyPlacementRecordWire, StructuralIssueRecord,
 };
-use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
-
-#[test]
-fn property_set_name_is_absent_without_property_255() {
-    let bytes = [];
-    let section = PropertySection {
-        fmtid: [0; 16],
-        code_page: None,
-        offsets_ordered: true,
-        dictionary_entries: 0,
-        properties: vec![Property {
-            id: 1,
-            name: None,
-            value: PropertyValue::Empty { type_code: 0 },
-            raw: View::over_retained(&bytes),
-        }],
-    };
-    assert!(property_set_name(&section).is_none());
-}
 
 fn fixture_container<'a>(arena: &'a DecodeArena, bytes: &'a [u8]) -> InventorContainer<'a> {
     let (setup_ctx, root) = DecodeContext::from_root_bytes(bytes, arena, &DecodePolicy::service())
@@ -255,51 +235,13 @@ fn kernel_annotation_is_admitted() {
 }
 
 #[test]
-fn property_set_issue_record_keeps_path_and_detail() {
-    let record = project_property_set_issue(7, "PropertySet", "malformed");
-    assert_eq!(record.id, "inventor:property:set-issue#7");
-    assert_eq!(record.path, "PropertySet");
-    assert_eq!(record.detail, "malformed");
-}
-
-#[test]
-fn preview_asset_refuses_entity_limit_before_creation() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor preview asset entity"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let asset = project_preview_asset(
-        &ctx,
-        &mut 0_u64,
-        0,
-        "inventor:property:value#1-0-17",
-        b"image",
-        "image/png",
-    )
-    .expect("admitted preview");
-    assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
-    assert_eq!(
-        asset.native_ref.as_deref(),
-        Some("inventor:property:value#1-0-17")
-    );
-}
-
-#[test]
 fn preview_asset_charges_its_retained_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        form_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor preview asset"
@@ -311,9 +253,13 @@ fn absent_protein_state_names_the_root() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(matches!(
-        project_protein_state(&ctx, &ProteinState::Absent).expect("admitted state"),
-        crate::native::protein::ProteinRecord::Absent { id } if id == "inventor:protein:state#root"
+        project_protein_state(&ctx, &mut output, &ProteinState::Absent).expect("admitted state"),
+        Some(crate::native::protein::ProteinRecord::Absent { id }) if id == "inventor:protein:state#root"
     ));
 }
 
@@ -346,25 +292,42 @@ fn protein_rejection_instance() -> Vec<ProteinInstanceRecords> {
 
 #[test]
 fn protein_asset_record_is_projected() {
+    use cadmpeg_core::decode::View;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let records = project_protein_records(&ctx, protein_asset_instance()).expect("admitted asset");
+    let instances = protein_asset_instance()
+        .into_iter()
+        .map(|records| (records, View::over_retained(b"instance")))
+        .collect();
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
+    let records = project_protein_records(&ctx, &mut output, instances).expect("admitted asset");
     assert_eq!(records.assets.len(), 1);
-    assert!(records.rejections.is_empty());
-    assert!(records.issues.is_empty());
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
-fn protein_rejection_record_is_projected() {
+fn rejected_protein_instance_gives_up_its_part() {
+    use cadmpeg_core::decode::View;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let records =
-        project_protein_records(&ctx, protein_rejection_instance()).expect("admitted rejection");
+    let instances = protein_rejection_instance()
+        .into_iter()
+        .map(|records| (records, View::over_retained(b"instance")))
+        .collect();
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
+    let records = project_protein_records(&ctx, &mut output, instances).expect("rejected instance");
     assert!(records.assets.is_empty());
-    assert_eq!(records.rejections.len(), 1);
-    assert!(records.issues.is_empty());
+    let (_, _, _, losses) = output.into_parts();
+    crate::test_support::assert_single_part_give_up(&losses, "inventor.protein_instance");
 }
 
 #[test]
@@ -415,24 +378,6 @@ fn structural_issue_keeps_scope_and_detail() {
     let issue = structural_issue(&ctx, "scope", "bad").expect("admitted issue");
     assert_eq!(issue.scope, "scope");
     assert_eq!(issue.detail, "bad");
-}
-
-#[test]
-fn protein_conversion_failure_becomes_an_issue() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let wire = serde_json::from_value(serde_json::json!({
-        "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
-        "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
-            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-    }))
-    .expect("Protein asset wire fixture");
-    let mut issues = Vec::new();
-    assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
-        .expect("admit the Protein asset")
-        .is_none());
-    assert_eq!(issues.len(), 1);
 }
 
 #[test]
@@ -952,48 +897,48 @@ fn external_references_stream() -> Vec<u8> {
 }
 
 #[test]
-fn protein_admission_keeps_later_assets_and_rejections() {
+fn protein_admission_keeps_assets_and_gives_up_rejected_instances() {
+    use cadmpeg_core::decode::View;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
-    let assets = ["bad.bin", "assets/InstanceProperties.bin"]
-        .into_iter()
-        .filter_map(|entry_name| {
-            let wire = serde_json::from_value(serde_json::json!({
-                "id": "asset", "entry_name": entry_name, "ordinal": 3,
-                "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
-                    "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-            }))
-            .expect("Protein asset wire fixture");
-            crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
-                .expect("admit the Protein asset")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(assets.len(), 1);
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].scope, "asset");
-    assert!(issues[0].detail.contains("entry_name"));
-    let rejections = ["bad.bin", "assets/InstanceProperties.bin"]
-        .into_iter()
-        .filter_map(|entry_name| {
-            crate::decode::admit_protein_rejection(
-                &ctx,
-                crate::native::protein::ProteinRejectionRecordWire {
-                    id: "rejection".into(),
-                    entry_name: entry_name.into(),
+    fn asset(ordinal: u64) -> cadmpeg_protein::DecodedRecord {
+        serde_json::from_value(serde_json::json!({
+            "ordinal": ordinal, "logical_offset": 0, "schema": "GenericSchema",
+            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {}
+        }))
+        .expect("Protein asset fixture")
+    }
+    let instances = vec![
+        (
+            crate::protein::ProteinInstanceRecords {
+                entry_name: "assets/InstanceProperties.bin".into(),
+                records: vec![asset(3)],
+                rejected: vec![cadmpeg_protein::RejectedRecord {
                     ordinal: 4,
                     detail: "invalid record".into(),
-                },
-                &mut issues,
-            )
-            .expect("admit the Protein rejection")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(rejections.len(), 1);
-    assert_eq!(issues.len(), 2);
-    assert_eq!(issues[1].scope, "rejection");
-    assert!(issues[1].detail.contains("entry_name"));
+                }],
+            },
+            View::over_retained(b"first"),
+        ),
+        (
+            crate::protein::ProteinInstanceRecords {
+                entry_name: "assets/InstanceProperties.bin".into(),
+                records: vec![asset(5)],
+                rejected: Vec::new(),
+            },
+            View::over_retained(b"second"),
+        ),
+    ];
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
+    let records = crate::decode::project_protein_records(&ctx, &mut output, instances)
+        .expect("admit the Protein assets");
+    assert_eq!(records.assets.len(), 2);
+    let (_, _, _, losses) = output.into_parts();
+    crate::test_support::assert_single_part_give_up(&losses, "inventor.protein_instance");
 }
 
 #[test]

@@ -1186,12 +1186,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         ],
     };
     let tessellations = crate::test_support::with_decode_context(|ctx| {
-        super::display_jt_tessellations(
-            &mut cadmpeg_ir::ArenaClasses::default(),
-            ctx,
-            &inputs,
-            &mut Vec::new(),
-        )
+        super::display_jt_tessellations(ctx, &inputs, &mut Vec::new())
     })
     .expect("complete scene binding");
     assert_eq!(tessellations.len(), 2);
@@ -1285,12 +1280,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         crate::test_support::with_decode_context_over(
             &[],
             |policy| policy.limits.max_retained_bytes = limit,
-            |ctx| match super::display_jt_tessellations(
-                &mut cadmpeg_ir::ArenaClasses::default(),
-                ctx,
-                &inputs,
-                &mut Vec::new(),
-            ) {
+            |ctx| match super::display_jt_tessellations(ctx, &inputs, &mut Vec::new()) {
                 Ok(tessellations) => {
                     assert!(admitted);
                     assert_eq!(tessellations.len(), 2);

@@ -5,7 +5,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
-use crate::property_set::{PropertySection, PropertySetDescriptor};
+use super::property_sections::PropertySection;
+use crate::property_set::PropertySetDescriptor;
 
 pub(super) struct PropertyStreamProjection<'a> {
     pub(super) header_formed: bool,
@@ -20,9 +21,7 @@ pub(super) fn stage<'a>(
     descriptor: &PropertySetDescriptor<'a>,
     preview_ordinal: &mut usize,
 ) -> Result<Option<PropertyStreamProjection<'a>>, CodecError> {
-    let source = descriptor
-        .source
-        .ok_or_else(|| CodecError::malformed("held property syntax has no source stream"))?;
+    let source = descriptor.source;
     ctx.decode_part(
         output,
         source,
@@ -33,7 +32,6 @@ pub(super) fn stage<'a>(
                     ctx,
                     stream_stage,
                     descriptor,
-                    None,
                 )?;
             let mut sections = Vec::new();
             for ordinal in 0..count {
