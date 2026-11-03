@@ -106,6 +106,39 @@ pub(crate) fn regenerate(
         if lane.classes.is_empty() && lane.names.is_empty() && lane.sketch_entities.is_empty() {
             continue;
         }
+        // A lane whose typed sketch entities no longer state the kinds their
+        // payload bytes parse to carries stale framing, not content: the
+        // records contradict their own bytes, so synthesis omits the lane
+        // with its loss instead of emitting bytes its records contradict.
+        // The patch path declines such a lane only against trustworthy
+        // source bytes; authored bytes are rewritten from the typed records.
+        if !lane.native_payload.is_empty()
+            && super::write_prepare::generated_native_lane(
+                &source.feature_histories,
+                &lane.id,
+                lane.configuration.clone(),
+                lane.native_payload.to_vec(),
+            )
+            .is_ok_and(|expected| {
+                let mut entities = lane.sketch_entities.clone();
+                entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
+                let mut expected_entities = expected.sketch_entities.clone();
+                expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
+                !super::write_prepare::sketch_entity_kinds_match(&entities, &expected_entities)
+            })
+        {
+            dispositions.set_record(
+                "sldprt",
+                "feature_input_lanes",
+                &lane.id,
+                NativeDisposition::Dropped,
+            );
+            losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                "native feature-input lane {}: its sketch entities no longer match their payload bytes; the lane was omitted",
+                lane.id
+            )));
+            continue;
+        }
         let mut output = super::native_selection_write::events(lane, &native.feature_histories)?;
         let consumed = output
             .events

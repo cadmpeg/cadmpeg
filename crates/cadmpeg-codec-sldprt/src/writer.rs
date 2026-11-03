@@ -54,6 +54,35 @@ pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
     })
 }
 
+/// Whether the retained source image still matches its decode baseline.
+///
+/// A patch replays or rewrites the original source bytes, so lane agreement
+/// binds only while the image is the original container. A repacked or
+/// synthetic envelope (authored fixtures, cross-format synthesis) carries no
+/// trustworthy source bytes: the writer authors lane bytes from the typed
+/// records without declining on disagreement.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SourceTrust {
+    Trustworthy,
+    Authored,
+}
+
+/// The trust the retained image earns: it matches its decode baseline digest.
+pub(crate) fn trust_source_image(
+    decode_digest: &cadmpeg_ir::hash::digest::Sha256Digest,
+    image: Option<&[u8]>,
+) -> SourceTrust {
+    match image {
+        Some(bytes)
+            if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes).as_str()
+                == decode_digest.as_str() =>
+        {
+            SourceTrust::Trustworthy
+        }
+        _ => SourceTrust::Authored,
+    }
+}
+
 /// What one semantic write produced.
 pub(crate) struct SemanticOutput {
     /// The dialect classified from the final section payloads through the same
@@ -76,6 +105,9 @@ pub(crate) fn write_semantic_with_records(
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
+        trust_source_image(&fidelity.decode_digest, source_image(retained_records))
+    });
     write_semantic_at(
         ir,
         annotations,
@@ -87,6 +119,7 @@ pub(crate) fn write_semantic_with_records(
         },
         None,
         None,
+        trust,
         writer,
     )
 }
@@ -99,6 +132,7 @@ pub(super) fn write_semantic_at(
     class_layouts: ClassLayouts,
     sw_version: Option<&str>,
     prepared_native: Option<SldprtNative>,
+    source_trust: SourceTrust,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
@@ -113,6 +147,39 @@ pub(super) fn write_semantic_at(
             .map(SldprtNative::load)
             .transpose()?,
     };
+    // A patch replays the original source bytes, so a lane whose typed
+    // sketch entities contradict those bytes declines the patch. Authored
+    // bytes carry no such promise: their lanes are rewritten from the typed
+    // records instead.
+    if !prepared_design && source_trust == SourceTrust::Trustworthy {
+        if let Some(native) = native.as_ref() {
+            for lane in &native.feature_input_lanes {
+                if lane.native_payload.is_empty() {
+                    continue;
+                }
+                let expected =
+                    crate::resolved_features::write_prepare::generated_native_lane(
+                        &native.feature_histories,
+                        &lane.id,
+                        lane.configuration.clone(),
+                        lane.native_payload.to_vec(),
+                    )?;
+                let mut entities = lane.sketch_entities.clone();
+                entities.sort_by_key(|entity| entity.ordinal());
+                let mut expected_entities = expected.sketch_entities.clone();
+                expected_entities.sort_by_key(|entity| entity.ordinal());
+                if !crate::resolved_features::write_prepare::sketch_entity_kinds_match(
+                    &entities,
+                    &expected_entities,
+                ) {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "feature-input lane {} sketch entities do not match their native payload",
+                        lane.id
+                    )));
+                }
+            }
+        }
+    }
     let input_active_configuration = active_configuration_intent(ir);
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_for_write(&normalized);
