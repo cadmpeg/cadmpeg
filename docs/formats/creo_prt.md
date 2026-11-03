@@ -2771,9 +2771,11 @@ at a token boundary. `12` retains its positive pi/2 value. The stream uses the
 bounded preceding-scalar repeats and signed first-coordinate explicit values.
 Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
 <tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
-and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
-`1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
-`3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
+`33 B C` gives `bc B C C C C C C`, and `1b B C` gives
+`3c B C 00 00 00 00 00`. The seven-byte form `1d <tail6>` gives
+`3c <tail6> 00`; the eight-byte form `1e <tail7>` gives `3d <tail7>`. The
+four-byte form `ea B0 B1 B2` gives `B0 B1 B2 00 00 00 00 00`, as in the frame-slot
+lane (§9.1). Each occupies one scalar slot. The form `00 <literal> <low>`
 replaces the literal's low IEEE byte with `low`; the literal is an angle or one
 of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
 `3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
