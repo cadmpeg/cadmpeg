@@ -327,6 +327,7 @@ pub(super) fn plan(
             curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
+    geometry::resolve_placements(&mut projected, &mut losses);
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses);

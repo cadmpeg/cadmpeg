@@ -45,13 +45,9 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
     Ok(supports)
 }
 
-pub(super) fn is_support(
-    id: &str,
-    source: Option<&cadmpeg_ir::SourceObjectAssociation>,
-    construction_supports: &BTreeSet<String>,
-) -> bool {
-    let role = source.and_then(|source| source.geometry_role);
-    role == Some(cadmpeg_ir::SourceGeometryRole::Support)
-        || (role != Some(cadmpeg_ir::SourceGeometryRole::Independent)
-            && construction_supports.contains(id))
+/// Whether the carrier is an explicitly independent root: it keeps its own
+/// root beside any construction that references it.
+pub(super) fn is_independent(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
+    source.and_then(|source| source.geometry_role)
+        == Some(cadmpeg_ir::SourceGeometryRole::Independent)
 }
