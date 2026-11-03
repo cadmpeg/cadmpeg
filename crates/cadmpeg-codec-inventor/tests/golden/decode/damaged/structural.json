@@ -44,10 +44,10 @@
       "inventor": {
         "active_carrier": [
           {
+            "brep_segments": null,
             "carrier_len": null,
             "carrier_sha256": null,
             "delta_state": null,
-            "detail": null,
             "enabled": null,
             "family": null,
             "header_kind": null,
@@ -67,9 +67,7 @@
         "assembly_occurrences": [],
         "assembly_placements": [],
         "body_native_keys": [],
-        "database_issues": [],
         "databases": [],
-        "design_record_issues": [],
         "design_view_representations": [],
         "design_view_visibility": [],
         "edge_continuities": [],
@@ -78,7 +76,6 @@
         "external_references": [],
         "face_native_keys": [],
         "face_sidedness": [],
-        "feature_record_issues": [],
         "mesh_surface_sentinels": [],
         "meta_sections": [],
         "meta_types": [],
@@ -108,12 +105,10 @@
         "pm_graphics_style_collections": [],
         "properties": [],
         "property_sections": [],
-        "property_set_issues": [],
         "property_sets": [],
         "protein": [
           {
             "declared_len": null,
-            "detail": null,
             "directory_id": null,
             "entry_count": 0,
             "id": "inventor:protein:state#root",
@@ -122,24 +117,13 @@
         ],
         "protein_assets": [],
         "protein_entries": [],
-        "protein_rejections": [],
         "revisions": [],
         "rse_records": [],
         "segment_bulk": [],
-        "segment_bulk_issues": [],
         "segment_meta": [],
-        "segment_meta_issues": [],
         "segment_pairs": [],
         "segment_registry": [],
-        "sketch_record_issues": [],
         "storage_bands": [],
-        "structural_issues": [
-          {
-            "detail": "truncated input during segment count at space 0 offset 0",
-            "id": "inventor:rse:structural-issue#segment_registry",
-            "scope": "segment_registry"
-          }
-        ],
         "tolerant_coedge_parameters": [],
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
@@ -165,7 +149,11 @@
         ],
         "ufrx_model_states": [],
         "ufrx_occurrences": [],
-        "unknowns": [],
+        "unknowns": [
+          {
+            "id": "inventor:source:part#574c22861635fa29586680965b71913ca7f48e60c7a1293bee067eeb1ff013ab"
+          }
+        ],
         "unpaired_segments": [],
         "vertex_ownerships": [],
         "wire_topologies": []
@@ -173,7 +161,7 @@
     },
     "scope": {
       "design": true,
-      "model": true
+      "model": false
     },
     "source": {
       "attributes": {
@@ -214,14 +202,12 @@
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
       "design_parameters_transferred": 0,
-      "design_record_issues": 0,
       "embedded_references": 0,
       "external_references": 0,
       "face_color_appearances": 0,
-      "feature_record_issues": 0,
       "feature_result_topologies_transferred": 0,
       "features_transferred": 0,
-      "kernel_unknown_records": 0,
+      "kernel_unknown_records": 1,
       "kernel_unknown_surface_faces": 0,
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
@@ -250,21 +236,17 @@
       "protein_appearances": 0,
       "protein_assets": 0,
       "protein_entries": 0,
-      "protein_rejections": 0,
       "rse_databases": 0,
       "rse_meta_types": 0,
       "rse_records": 0,
       "rse_registry_entries": 0,
       "rse_revisions": 0,
       "rse_segment_bulk": 0,
-      "rse_segment_bulk_issues": 0,
       "rse_segment_meta": 0,
-      "rse_segment_meta_issues": 0,
       "rse_segment_pairs": 0,
       "rse_storage_bands": 0,
       "sketch_constraints_transferred": 0,
       "sketch_entities_transferred": 0,
-      "sketch_record_issues": 0,
       "sketches_transferred": 0,
       "ufrx_model_states": 0,
       "ufrx_occurrences": 0
@@ -308,6 +290,33 @@
         },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part inventor.segment_registry stream=\"RSeStorage/RSeSegInfo\" offset=0 length=0: truncated input during segment count at space 0 offset 0; dropped=[]",
+        "provenance": {
+          "format": "inventor",
+          "offset": 0,
+          "stream": "RSeStorage/RSeSegInfo"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the inventor decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -315,7 +324,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": true
+        "model": false
       }
     }
   },
@@ -323,21 +332,22 @@
     "annotations": {},
     "decode_digest": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d",
     "retained_records": {
-      "inventor:source:image#whole": {
+      "inventor:source:part#574c22861635fa29586680965b71913ca7f48e60c7a1293bee067eeb1ff013ab": {
         "bytes": {
-          "byte_len": 1536,
-          "retention": "digest",
-          "sha256": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d"
+          "data": "",
+          "retention": "inline"
         },
         "offset": 0,
-        "stream": "inventor:source",
+        "stream": "RSeStorage/RSeSegInfo",
         "untyped": [
-          "model"
+          "model",
+          "design"
         ]
       }
     },
     "unrepresented": [
-      "model"
+      "model",
+      "design"
     ]
   }
 }
