@@ -98,6 +98,72 @@ pub(super) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)
     )
 }
 
+const CANVAS_GEOMETRY_ENTITIES: &[u64] = &[10];
+const CANVAS_ASSET_ENTITIES: &[u64] = &[20];
+const CANVAS_SCOPE_ENTITIES: &[u64] = &[30];
+const CANVAS_PLANE_ENTITIES: &[u64] = &[40];
+const CANVAS_COMPONENT_ENTITIES: &[u64] = &[50];
+const CANVAS_EMPTY_ENTITIES: &[u64] = &[];
+
+/// The base sketch-dimension type table extended with the Canvas record rows.
+/// Row order is the dynamic class-tag order, so the Canvas tags computed in
+/// [`generated_design_canvas_bulkstream`] resolve here.
+pub(crate) fn generated_design_canvas_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension);
+    types.extend_from_slice(&[
+        (
+            "c0a00000-0000-4000-8000-000000000001",
+            "",
+            1,
+            "Design",
+            CANVAS_GEOMETRY_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000002",
+            "",
+            1,
+            "Design",
+            CANVAS_EMPTY_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000003",
+            "",
+            1,
+            "Design",
+            CANVAS_ASSET_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000004",
+            "",
+            1,
+            "Design",
+            CANVAS_SCOPE_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000005",
+            "",
+            1,
+            "Design",
+            CANVAS_EMPTY_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000006",
+            "",
+            1,
+            "Body",
+            CANVAS_PLANE_ENTITIES,
+        ),
+        (
+            "c0a00000-0000-4000-8000-000000000007",
+            "",
+            1,
+            "Fusion",
+            CANVAS_COMPONENT_ENTITIES,
+        ),
+    ]);
+    design_metastream_with_records(&types, records)
+}
+
 pub(super) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
@@ -1870,6 +1936,148 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     out.extend_from_slice(b"272");
     out.extend_from_slice(&1205_u32.to_le_bytes());
 
+    (out, records)
+}
+
+/// A Canvas record run and scope frame: the geometry, paired same-index,
+/// asset and scope records followed by the paired scope header. All joins use
+/// record indexes, so the run is relocatable; the scope frame holds no
+/// absolute stream offsets. Class tags follow the base type table so every
+/// listed record resolves through the primary index.
+pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    const GEOMETRY_INDEX: u32 = 10;
+    const ASSET_INDEX: u32 = 20;
+    const SCOPE_INDEX: u32 = 30;
+    const PLANE_SUFFIX: u32 = 40;
+    const COMPONENT_SUFFIX: u32 = 50;
+    const FIRST_COMPANION: u32 = 34;
+
+    fn tag(base_rows: usize, ordinal: usize) -> [u8; 3] {
+        let tag = 256 + base_rows + ordinal;
+        assert!(tag < 1000, "synthetic Canvas class tag fits three digits");
+        let text = tag.to_string();
+        assert!(
+            text.len() == 3,
+            "synthetic Canvas class tag is three digits"
+        );
+        [text.as_bytes()[0], text.as_bytes()[1], text.as_bytes()[2]]
+    }
+
+    let base_rows = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension).len();
+    let geometry_tag = tag(base_rows, 0);
+    let paired_tag = tag(base_rows, 1);
+    let asset_tag = tag(base_rows, 2);
+    let scope_tag = tag(base_rows, 3);
+    let paired_scope_tag = tag(base_rows, 4);
+
+    fn header_at(run: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
+        run[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
+        run[at + 4..at + 7].copy_from_slice(&tag);
+        run[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
+    }
+
+    fn header(out: &mut Vec<u8>, tag: [u8; 3], index: u32) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(&tag);
+        out.extend_from_slice(&index.to_le_bytes());
+    }
+
+    fn marked_reference(out: &mut Vec<u8>, index: u32) {
+        out.push(1);
+        out.extend_from_slice(&index.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let run_at = u64::try_from(out.len()).expect("synthetic Canvas run offset");
+
+    // Geometry, paired same-index, and asset records, matching the unit
+    // Canvas record layout.
+    let mut run = vec![0; 284];
+    header_at(&mut run, 0, geometry_tag, GEOMETRY_INDEX);
+    header_at(&mut run, 219, paired_tag, GEOMETRY_INDEX);
+    header_at(&mut run, 249, asset_tag, ASSET_INDEX);
+    for (at, value) in [
+        (26, 0.0f64),
+        (34, 0.0),
+        (42, 1.0),
+        (50, 0.0),
+        (181, 0.0),
+        (189, 1.0),
+        (197, 1.0),
+        (205, 1.0),
+        (98, 1.0),
+        (130, 1.0),
+    ] {
+        run[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    run[69..73].copy_from_slice(&1.0f32.to_le_bytes());
+    fn reference(run: &mut [u8], at: usize, index: u32) {
+        run[at] = 1;
+        run[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+    reference(&mut run, 58, PLANE_SUFFIX);
+    reference(&mut run, 146, SCOPE_INDEX);
+    reference(&mut run, 157, COMPONENT_SUFFIX);
+    reference(&mut run, 169, ASSET_INDEX);
+    run[180] = 1;
+    run[213..217].copy_from_slice(&1u32.to_le_bytes());
+    run[217..219].copy_from_slice(&u16::from(b'L').to_le_bytes());
+    reference(&mut run, 238, COMPONENT_SUFFIX);
+    run[270..274].copy_from_slice(&5u32.to_le_bytes());
+    for (ordinal, unit) in "a.png".encode_utf16().enumerate() {
+        let at = 274 + ordinal * 2;
+        run[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    out.extend_from_slice(&run);
+
+    // Scope frame: header, ten zero bytes, the compact Canvas prologue
+    // geometry reference, padding, one reference-table entry naming the
+    // geometry record, untyped history state, the kind, the feature ordinal,
+    // the 98-byte Canvas tail, and the paired scope header.
+    let scope_at = out.len();
+    header(&mut out, scope_tag, SCOPE_INDEX);
+    out.extend_from_slice(&[0; 10]);
+    out.push(1);
+    out.extend_from_slice(&GEOMETRY_INDEX.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&1u32.to_le_bytes());
+    marked_reference(&mut out, GEOMETRY_INDEX);
+    out.extend_from_slice(&u32::MAX.to_le_bytes());
+    out.extend_from_slice(&6u32.to_le_bytes());
+    out.extend_from_slice(
+        &"Canvas"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    // The 98-byte tail opens with the feature ordinal, so no separate
+    // ordinal word precedes it.
+    fn tail_reference(tail: &mut [u8], at: usize, index: u32) {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+    let mut tail = vec![0; 98];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[12..16].copy_from_slice(&1u32.to_le_bytes());
+    tail_reference(&mut tail, 16, SCOPE_INDEX);
+    tail_reference(&mut tail, 30, FIRST_COMPANION);
+    tail[42..46].copy_from_slice(&u32::MAX.to_le_bytes());
+    tail[46..50].copy_from_slice(&7u32.to_le_bytes());
+    tail[50..58].copy_from_slice(&1.5f64.to_le_bytes());
+    tail[58..62].copy_from_slice(&7u32.to_le_bytes());
+    tail_reference(&mut tail, 62, 35);
+    tail_reference(&mut tail, 75, 36);
+    tail_reference(&mut tail, 86, SCOPE_INDEX);
+    out.extend_from_slice(&tail);
+    header(&mut out, paired_scope_tag, SCOPE_INDEX);
+
+    records.push((u64::from(GEOMETRY_INDEX), run_at));
+    records.push((u64::from(ASSET_INDEX), run_at + 249));
+    records.push((
+        u64::from(SCOPE_INDEX),
+        u64::try_from(scope_at).expect("scope offset"),
+    ));
     (out, records)
 }
 
