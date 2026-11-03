@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive, XREF_ROLE};
 use crate::{F3dCodec, F3zDecodedMember, F3zMemberKind, F3zSession};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -13,8 +13,8 @@ fn archive_session_and_member_results_are_send_sync() {
 
 #[test]
 fn archive_session_open_lists_stable_paths_roles_sizes_and_references() {
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
-    let leaf = f3d_without_brep("part-design", "leaf.f3d", &[]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
+    let leaf = f3d_with_identity_xrefs("part-design", "leaf.f3d", &[]);
     let bytes = f3z_archive(
         "root.f3d",
         &[
@@ -88,7 +88,7 @@ fn archive_session_expanded_member_traces_avoid_reexecution() {
     let leaf = crate::test_support::zip_test::f3d_with_smbh_and_protein(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
     );
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[("left.f3d", XREF_ROLE), ("right.f3d", XREF_ROLE)],
@@ -131,8 +131,8 @@ fn archive_session_expanded_member_traces_avoid_reexecution() {
 
 #[test]
 fn archive_session_changed_allowance_decision_reexecutes_member() {
-    let leaf = f3d_without_brep("part-design", "leaf.f3d", &[]);
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
+    let leaf = f3d_with_identity_xrefs("part-design", "leaf.f3d", &[]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root), ("leaf.f3d", &leaf)]);
     let policy = DecodePolicy {
         limits: cadmpeg_core::decode::ResourceLimits {
@@ -165,7 +165,7 @@ fn archive_session_changed_allowance_decision_reexecutes_member() {
 
 #[test]
 fn archive_session_formatted_space_diagnostic_reexecutes_after_relocation() {
-    let leaf = f3d_without_brep("part-design", "leaf.f3d", &[]);
+    let leaf = f3d_with_identity_xrefs("part-design", "leaf.f3d", &[]);
     let bytes = f3z_archive("leaf.f3d", &[("leaf.f3d", &leaf)]);
     let arena = DecodeArena::new();
     let (ctx, view) =
@@ -195,7 +195,7 @@ fn archive_session_formatted_space_diagnostic_reexecutes_after_relocation() {
 
 #[test]
 fn archive_session_rebinds_typed_member_truncation_location() {
-    let leaf = f3d_without_brep("part-design", "leaf.f3d", &[]);
+    let leaf = f3d_with_identity_xrefs("part-design", "leaf.f3d", &[]);
     let bytes = f3z_archive("leaf.f3d", &[("leaf.f3d", &leaf)]);
     let arena = DecodeArena::new();
     let (ctx, view) =

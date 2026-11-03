@@ -108,9 +108,16 @@ fn xref_table_from_ir(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(XrefTable::default());
     };
+    let references: Vec<XrefReference> = load_arena(ctx, namespace, "xref_references")?;
+    let unplaced_references = references
+        .iter()
+        .filter(|reference| !xref::has_projected_placement(reference, &ir.model.occurrences))
+        .map(|reference| reference.id.clone())
+        .collect();
     Ok(XrefTable {
         designs: load_arena(ctx, namespace, "xref_designs")?,
-        references: load_arena(ctx, namespace, "xref_references")?,
+        references,
+        unplaced_references,
         ..Default::default()
     })
 }
@@ -212,6 +219,18 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
+        let unplaced_members = self
+            .component_path_tables
+            .iter()
+            .filter(|(_, table)| !table.unplaced_references.is_empty())
+            .map(|(boundary, _)| boundary.clone())
+            .collect();
+        omit_unbound_member_joints(
+            &mut parent_ir.model,
+            &unplaced_members,
+            !table.unplaced_references.is_empty(),
+            &mut parent_report.losses,
+        );
         let (legacy, qualified): (Vec<_>, Vec<_>) =
             table.references.iter().cloned().partition(|reference| {
                 reference
@@ -506,6 +525,82 @@ impl MergeSession<'_, '_> {
             ));
         }
         Ok(merged)
+    }
+}
+
+fn omit_unbound_member_joints(
+    model: &mut Model,
+    unplaced_members: &std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    unplaced_root: bool,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
+    if unplaced_members.is_empty() && !unplaced_root {
+        return;
+    }
+    let parents = model
+        .occurrences
+        .iter()
+        .filter_map(|occurrence| {
+            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+                return None;
+            };
+            Some((occurrence.id.clone(), parent.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut ancestors = unplaced_members.clone();
+    for member in unplaced_members {
+        let mut current = member;
+        for _ in 0..parents.len() {
+            let Some(parent) = parents.get(current) else {
+                break;
+            };
+            ancestors.insert(parent.clone());
+            current = parent;
+        }
+    }
+    let mut omitted = std::collections::BTreeSet::new();
+    model.assembly_joints.retain(|joint| {
+        let unresolved = joint.connectors().any(|connector| {
+            let OperandContainer::Occurrence { occurrence, occurrence_path } = &connector.operand.container else {
+                return matches!(connector.operand.container, OperandContainer::External { .. });
+            };
+            if occurrence_path.is_empty() && connector.operand.subelements.is_empty() {
+                return false;
+            }
+            if unplaced_root { return true; }
+            let mut current = occurrence;
+            for _ in 0..=parents.len() {
+                if ancestors.contains(current) { return true; }
+                let Some(parent) = parents.get(current) else { break };
+                current = parent;
+            }
+            false
+        });
+        if unresolved {
+            omitted.insert(joint.id.clone());
+            losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+                "joint {} stays native because its operand path has no complete placement binding in an archive with an omitted external placement",
+                joint.id
+            )));
+        }
+        !unresolved
+    });
+    for feature in &mut model.features {
+        if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { joint }) if omitted.contains(joint))
+        {
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: feature
+                        .source_tag
+                        .clone()
+                        .unwrap_or_else(|| "Assemble".to_owned())
+                        .into(),
+                    parameters: std::collections::BTreeMap::new(),
+                }));
+        }
     }
 }
 
@@ -2047,6 +2142,7 @@ mod tests {
     mod fidelity;
     mod occurrence;
     mod sketches;
+    mod unplaced;
 
     use super::define_member;
 

@@ -3,7 +3,8 @@
 use super::*;
 use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{
-    f3d_with_redirections_json, f3z_archive_with_design_description, redirections_json,
+    f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
+    f3z_archive_with_design_description, redirections_json,
 };
 use serde_json::{json, Value};
 
@@ -18,8 +19,17 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
         let mut table: serde_json::Value =
             serde_json::from_str(&redirections_json("root.f3d", &targets)).unwrap();
         table["references"][0]["type"] = "DERIVED".into();
-        let root =
-            f3d_with_redirections_json("assembly-design", &serde_json::to_vec(&table).unwrap());
+        let placements = if mixed {
+            vec![("child.f3d", XREF_ROLE)]
+        } else {
+            Vec::new()
+        };
+        let root = f3d_with_reference_table_and_identity_xrefs(
+            "assembly-design",
+            "root.f3d",
+            &placements,
+            &serde_json::to_vec(&table).unwrap(),
+        );
         let child = f3d_with_smbh(&synthetic_geometry_smbh());
         let description = serde_json::to_vec(&json!({
             "name": "Autodesk Design Description", "version": "0.1",

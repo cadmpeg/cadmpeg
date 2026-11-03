@@ -580,7 +580,7 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
 
 #[test]
 fn history_only_consumed_member_keeps_the_inserted_design_body() {
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+    use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive, XREF_ROLE};
     use crate::test_support::component_body_test::{
         history_only_pairs_with_cluster, HistoryOnlyContainer as Container,
     };
@@ -596,7 +596,7 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
     };
     let consumed = document(false);
     let inserted = document(true);
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly",
         "root.f3d",
         &[("consumed.f3d", XREF_ROLE), ("inserted.f3d", XREF_ROLE)],

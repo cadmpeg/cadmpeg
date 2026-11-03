@@ -2,7 +2,7 @@
 //! Optional archive recovery and required-member admission boundaries.
 
 use crate::test_support::assembly_test::{
-    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+    f3d_with_identity_xrefs, f3d_with_text_brep_stream, f3z_archive, XREF_ROLE,
 };
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
@@ -140,7 +140,7 @@ fn unreadable_required_members_still_refuse_the_document() {
 #[test]
 fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[("component.f3d", XREF_ROLE)],
@@ -183,13 +183,13 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
         &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
         b"invalid SAT stream",
     );
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
     );
-    let first = f3d_without_brep("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
-    let second = f3d_without_brep("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
+    let first = f3d_with_identity_xrefs("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
+    let second = f3d_with_identity_xrefs("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[

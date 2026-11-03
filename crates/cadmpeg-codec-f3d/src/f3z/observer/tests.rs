@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::test_support::assembly_test::{
-    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+    f3d_with_identity_xrefs, f3d_with_text_brep_stream, f3z_archive, XREF_ROLE,
 };
 use crate::F3dCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -31,13 +31,13 @@ fn archive_with_shared_failing_member() -> Vec<u8> {
         &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
         b"invalid SAT stream",
     );
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
     );
-    let first = f3d_without_brep("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
-    let second = f3d_without_brep("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
+    let first = f3d_with_identity_xrefs("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
+    let second = f3d_with_identity_xrefs("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
     f3z_archive(
         "root.f3d",
         &[
@@ -154,7 +154,7 @@ impl F3zMemberObserver for ClassifyEvents {
 
 #[test]
 fn observer_classifies_each_member_once_including_unreadable_members() {
-    let model = f3d_without_brep("design", "root.f3d", &[]);
+    let model = f3d_with_identity_xrefs("design", "root.f3d", &[]);
     let bytes = f3z_archive(
         "root.f3d",
         &[("root.f3d", &model), ("unreadable.f3d", b"invalid ZIP")],

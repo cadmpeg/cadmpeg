@@ -13,11 +13,11 @@ fn scans_of(scans: &[String], source: &[u8]) -> usize {
 
 #[test]
 fn archive_session_open_scans_each_nested_member_once() {
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
     let leaf = crate::test_support::zip_test::f3d_with_deflated_smbh(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
     );
-    let unused = f3d_without_brep("part-design", "unused.f3d", &[]);
+    let unused = f3d_with_identity_xrefs("part-design", "unused.f3d", &[]);
     let members = [
         ("root.f3d", root.as_slice()),
         ("leaf.f3d", leaf.as_slice()),

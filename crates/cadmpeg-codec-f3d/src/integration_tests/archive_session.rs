@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::test_support::archive_session::{assert_equal, decode};
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
@@ -11,8 +11,8 @@ use std::io::Cursor;
 
 fn archive() -> Vec<u8> {
     let leaf = f3d_with_smbh(&synthetic_geometry_smbh());
-    let child = f3d_without_brep("assembly-design", "child.f3d", &[("leaf.f3d", XREF_ROLE)]);
-    let root = f3d_without_brep(
+    let child = f3d_with_identity_xrefs("assembly-design", "child.f3d", &[("leaf.f3d", XREF_ROLE)]);
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[

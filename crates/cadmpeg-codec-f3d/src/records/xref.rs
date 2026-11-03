@@ -298,8 +298,8 @@ pub(crate) struct XrefReference {
     /// The independent `neutronData` property value. It is retained exactly
     /// and is never inferred from or aliased to `neutron_role`.
     pub(crate) neutron_data: String,
-    /// Source Design occurrence transform in centimetres. `None` is the
-    /// serialized identity-placement form.
+    /// Source Design occurrence transform in centimetres. An admitted
+    /// `placement_source` with `None` stores the identity-placement form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

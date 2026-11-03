@@ -124,12 +124,12 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
 #[test]
 fn saved_edge_loss_counts_final_archive_ownership_once() {
     use crate::loss::F3dLossCode;
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::codec::DecodeBody;
     use cadmpeg_ir::report::decode::DecodeTransfer;
 
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[]);
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -1018,22 +1018,22 @@ fn imported_definition_bodies_keep_their_definition_frame() {
 
 #[test]
 fn shared_members_check_cycles_for_each_instance_path() {
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive};
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::products::PrototypeReference;
     use std::io::Cursor;
 
-    let root = f3d_without_brep(
+    let root = f3d_with_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &[("first.f3d", "first-role"), ("second.f3d", "second-role")],
     );
-    let first = f3d_without_brep(
+    let first = f3d_with_identity_xrefs(
         "assembly-design",
         "first.f3d",
         &[("second.f3d", "child-role")],
     );
-    let second = f3d_without_brep(
+    let second = f3d_with_identity_xrefs(
         "assembly-design",
         "second.f3d",
         &[("first.f3d", "child-role")],
@@ -1182,7 +1182,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         DesignComponentOccurrence, DesignComponentOccurrenceDraft,
         DesignComponentOccurrencePlacement,
     };
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{
@@ -1194,7 +1194,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     const FIRST: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const SECOND: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const ROOT_KEY: &str = "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[]);
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -1204,7 +1204,8 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     let archive = &session.archive;
     let reference: XrefReference = serde_json::from_value(serde_json::json!({
         "id":"f3d:xref:reference#0", "ordinal":0, "from":"root.f3d",
-        "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":""
+        "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":"",
+        "transform":crate::xref::IDENTITY_ROWS
     }))
     .unwrap();
     let table = crate::xref::XrefTable {

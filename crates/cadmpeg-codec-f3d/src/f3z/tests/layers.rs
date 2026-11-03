@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::test_support::assembly_test::{
-    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+    f3d_with_identity_xrefs, f3d_with_text_brep_stream, f3z_archive, XREF_ROLE,
 };
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
@@ -20,7 +20,7 @@ use std::io::Cursor;
 #[test]
 fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -250,7 +250,7 @@ fn f3z_kernel_loss_is_derived_from_its_archive_member_layer() {
         .find(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
         .expect("the bare member charges its kernel loss")
         .clone();
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -398,8 +398,8 @@ fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
 
 #[test]
 fn merged_member_losses_keep_their_xref_context() {
-    let component = f3d_without_brep("component-design", "comp.f3d", &[]);
-    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let component = f3d_with_identity_xrefs("component-design", "comp.f3d", &[]);
+    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[

@@ -49,7 +49,7 @@ fn archive_observer_preparation_precedes_member_decode() {
 
 #[test]
 fn archive_session_crc_failures_keep_unreachable_losses_and_root_refusal() {
-    let root = f3d_without_brep("part-design", "root.f3d", &[]);
+    let root = f3d_with_identity_xrefs("part-design", "root.f3d", &[]);
     let original = f3z_archive("root.f3d", &[("root.f3d", &root), ("unused.f3d", &root)]);
     for name in ["root.f3d", "unused.f3d"] {
         let mut bytes = original.clone();

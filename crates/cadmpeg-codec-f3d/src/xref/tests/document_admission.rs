@@ -303,7 +303,16 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::F3dLossCode::BodylessDesignCarrier.kind()));
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| { loss.code == crate::loss::F3dLossCode::XrefOccurrenceUnplaced.kind() })
+            .count(),
+        1
+    );
     assert!(decoded
         .report()
         .losses

@@ -284,6 +284,8 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
+    /// An external reference has no admitted occurrence placement.
+    XrefOccurrenceUnplaced,
     /// Legacy placement identities remain in their complete native frames.
     XrefPlacementMetadataNative,
     /// A legacy placement role has no containing reference-table entry.
@@ -559,6 +561,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefOccurrenceUnplaced,
         Self::XrefPlacementMetadataNative,
         Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementCurrentPose,
@@ -762,6 +765,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
@@ -990,6 +994,7 @@ impl F3dLossCode {
             | Self::MeshAttributeNotTransferred
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
@@ -1081,6 +1086,7 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
@@ -1399,6 +1405,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.occurrence-unplaced",
                 "xref.placement-metadata-native",
                 "xref.placement-role-unbound",
                 "xref.placement-current-pose",

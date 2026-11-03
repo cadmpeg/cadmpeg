@@ -11,6 +11,7 @@ use crate::records::feature::assembly_features::DesignComponentOccurrence;
 #[derive(Default)]
 pub(crate) struct LocalOccurrencePaths {
     paths: BTreeMap<(String, Vec<String>), Option<OccurrenceId>>,
+    unplaced_external: Vec<String>,
 }
 
 impl LocalOccurrencePaths {
@@ -19,6 +20,12 @@ impl LocalOccurrencePaths {
         external: &[crate::records::xref::XrefReference],
         occurrences: &[Occurrence],
     ) -> Self {
+        let external_references = external;
+        let unplaced_external = external
+            .iter()
+            .filter(|reference| !crate::xref::has_projected_placement(reference, occurrences))
+            .map(|reference| reference.id.clone())
+            .collect();
         let carriers = native
             .iter()
             .map(|carrier| (carrier.id.as_str(), carrier))
@@ -35,7 +42,10 @@ impl LocalOccurrencePaths {
             .iter()
             .map(|occurrence| (&occurrence.id, occurrence))
             .collect::<BTreeMap<_, _>>();
-        let mut result = Self::default();
+        let mut result = Self {
+            unplaced_external,
+            ..Self::default()
+        };
         for leaf in occurrences {
             let mut keys = Vec::new();
             let mut current = leaf;
@@ -83,6 +93,24 @@ impl LocalOccurrencePaths {
             }
             result.insert(stream, keys, &leaf.id);
         }
+        for reference in external_references {
+            if crate::xref::has_projected_placement(reference, occurrences) {
+                continue;
+            }
+            let Some(source) = &reference.placement_source else {
+                continue;
+            };
+            let Some(guid) = &source.occurrence_guid else {
+                continue;
+            };
+            result.paths.insert(
+                (
+                    source.stream.clone(),
+                    vec![guid.as_str().to_ascii_lowercase()],
+                ),
+                None,
+            );
+        }
         result
     }
 
@@ -95,6 +123,12 @@ impl LocalOccurrencePaths {
                 }
             })
             .or_insert_with(|| Some(id.clone()));
+    }
+
+    pub(crate) fn requires_external_binding(&self, stream: &str) -> bool {
+        self.unplaced_external
+            .iter()
+            .any(|reference| crate::ids::same_native_occurrence(reference, stream))
     }
 
     pub(crate) fn ambiguous(&self, stream: &str, keys: &[String]) -> bool {
@@ -202,6 +236,7 @@ mod tests {
     fn an_ambiguous_feature_occurrence_retains_the_native_operation_with_a_loss() {
         let id = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
         let paths = LocalOccurrencePaths {
+            unplaced_external: Vec::new(),
             paths: BTreeMap::from([(
                 (
                     "f3d:Design/BulkStream.dat".to_owned(),

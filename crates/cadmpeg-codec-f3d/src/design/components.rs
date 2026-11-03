@@ -2127,28 +2127,53 @@ mod tests {
             root_ordinal_start: 1,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
-        for (owner, stream, unresolved) in [
-            (DOCUMENT_ROOT, STREAM, false),
-            (999, STREAM, true),
-            (COMPONENT_ROOT, STREAM, true),
-            (DOCUMENT_ROOT, "f3d:OtherDesign/BulkStream.dat", true),
-        ] {
-            let mut table = external_owner_table(owner);
-            table.references[0]
-                .placement_source
-                .as_mut()
-                .unwrap()
-                .stream = stream.to_owned();
-            let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
-            assert_eq!(projection.occurrences.len(), 1);
-            assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
-            assert_eq!(projection.occurrences[0].transform.rows()[0][3], 20.0);
-            assert_eq!(projection.losses.len(), usize::from(unresolved));
-            if unresolved {
+        for world_carrier in [false, true] {
+            for (owner, stream, unresolved) in [
+                (DOCUMENT_ROOT, STREAM, false),
+                (999, STREAM, true),
+                (COMPONENT_ROOT, STREAM, true),
+                (DOCUMENT_ROOT, "f3d:OtherDesign/BulkStream.dat", true),
+            ] {
+                let mut table = external_owner_table(owner);
+                table.references[0]
+                    .placement_source
+                    .as_mut()
+                    .unwrap()
+                    .stream = stream.to_owned();
+                if world_carrier {
+                    let mut rows = crate::xref::IDENTITY_ROWS;
+                    rows[0][3] = 4.0;
+                    table.references[0].current_pose =
+                        Some(crate::records::xref::XrefCurrentPose {
+                            carrier_record_index: 99,
+                            frame_bytes: cadmpeg_ir::native::bytes::NativeBytes::default(),
+                            transform: Some(rows.try_into().unwrap()),
+                        });
+                }
+                let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
+                let placed = !unresolved || world_carrier;
+                assert_eq!(projection.occurrences.len(), usize::from(placed));
+                if placed {
+                    assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
+                    assert_eq!(
+                        projection.occurrences[0].transform.rows()[0][3],
+                        if world_carrier { 40.0 } else { 20.0 }
+                    );
+                }
                 assert_eq!(
-                    projection.losses[0].code,
-                    crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
+                    projection.losses.len(),
+                    usize::from(unresolved) + usize::from(world_carrier)
                 );
+                if unresolved {
+                    assert_eq!(
+                        projection.losses[0].code,
+                        if world_carrier {
+                            crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
+                        } else {
+                            crate::loss::F3dLossCode::XrefOccurrenceUnplaced.kind()
+                        }
+                    );
+                }
             }
         }
     }
