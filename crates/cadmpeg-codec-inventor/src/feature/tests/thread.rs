@@ -233,7 +233,6 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
-        issues: Vec::new(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -241,7 +240,6 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let expected_face = properties[0].id();
     let inventory = FeatureInventory {
@@ -257,7 +255,6 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
-        issues: Vec::new(),
         ..Default::default()
     };
     let arena = DecodeArena::new();

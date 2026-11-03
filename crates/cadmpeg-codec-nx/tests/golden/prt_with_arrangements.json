@@ -46,9 +46,6 @@
             "name": "Model",
             "native_ref": "nx:arrangements-1:configuration#0",
             "ordinal": 0,
-            "properties": {
-              "active_attribute_use": "nx:arrangements:active-attribute-use#0"
-            },
             "source_index": 0
           },
           {

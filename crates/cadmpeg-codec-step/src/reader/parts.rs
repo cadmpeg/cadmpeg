@@ -32,7 +32,8 @@ pub(crate) fn decode_parsed(
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    let mut decoded = super::decode_exchange(input, exchange, diagnostics, ctx, packaging)?;
+    let analyzed = super::decode_exchange(input, exchange, diagnostics, ctx, packaging)?;
+    let mut decoded = analyzed.decoded;
     let (model, mut native, fidelity, mut losses) = parts.into_parts();
     // STEP parse callbacks return their records without staging neutral
     // content; only the native stubs, fidelity and losses leave the parts.
@@ -63,5 +64,12 @@ pub(crate) fn decode_parsed(
     }
     decoded.source_fidelity.append(fidelity)?;
     decoded.body.losses.append(&mut losses);
+    // The reader names each given-up part's drops after the stages run; the
+    // part losses arrive here, so the amendment lands on the merged report.
+    super::drops::amend_record_unreadable(
+        &mut decoded.body.losses,
+        &analyzed.damage_ledger,
+        &analyzed.damage_starts,
+    );
     Ok(decoded)
 }
