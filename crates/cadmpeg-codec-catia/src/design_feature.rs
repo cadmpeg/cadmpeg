@@ -260,6 +260,9 @@ pub(crate) fn transfer_design_features(
         .map(|record| (record.id.as_str(), record)))
     .collect::<std::collections::HashMap<_, _>>();
     let mut transfer = DesignFeatureTransfer::default();
+    // Objects with more than one exact feature candidate stay unresolved: one
+    // object cannot safely occupy two neutral feature identities.
+    let mut ambiguous = std::collections::HashSet::new();
 
     for object in native
         .design_objects
@@ -279,17 +282,133 @@ pub(crate) fn transfer_design_features(
             (None, None, Some(candidate)) => {
                 transfer_reference_plane(ctx, ir, &mut transfer, &candidate)?;
             }
-            _ => {
-                // One object cannot safely occupy two neutral feature identities.
+            (plane, sketch, reference) => {
                 // Leave all declarations unresolved so the feature-id map cannot
                 // overwrite one transfer with another.
+                if [plane.is_some(), sketch.is_some(), reference.is_some()]
+                    .into_iter()
+                    .filter(|present| *present)
+                    .count()
+                    > 1
+                {
+                    ambiguous.insert(object.id.clone());
+                }
             }
         }
     }
 
+    // A design object that declares a feature class through its separator-form
+    // owner declaration, but whose class the plane and sketch admissions do not
+    // cover, transfers as a native operation at its history position instead
+    // of remaining unresolved. Objects without an owner class declare no
+    // feature and stay native.
+    for object in native
+        .design_objects
+        .iter()
+        .filter(|object| graph_scope.contains(object.parent.as_str()))
+    {
+        let Some(owner_class) = object.owner_class.as_ref() else {
+            continue;
+        };
+        // An empty owner-class name declares no feature.
+        if owner_class.name.is_empty() {
+            continue;
+        }
+        if transfer.feature_ids.contains_key(object.id.as_str())
+            || ambiguous.contains(object.id.as_str())
+        {
+            continue;
+        }
+        transfer_native_feature(ctx, ir, &mut transfer, object, owner_class.name.as_str())?;
+    }
+
     transfer.assign_feature_parents(ir, native)?;
     transfer.assign_feature_dependencies(ir, native);
+    densify_feature_ordinals(ir, native)?;
     Ok(transfer)
+}
+
+/// Assign dense `Feature.ordinal` values in source order (§2.2).
+///
+/// Features transfer with their owner's first field byte offset as the
+/// ordinal; renumbering 0 … n−1 in that order runs after parents and
+/// dependencies are assigned, whose ordinal comparisons the byte-offset order
+/// already satisfies.
+fn densify_feature_ordinals(
+    ir: &mut CadIr,
+    native: &CatiaNative,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let offsets = native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object.first_field_byte_offset))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut order: Vec<(u64, FeatureId)> = Vec::new();
+    for feature in &ir.model.features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(offset) = offsets.get(native_ref).copied() else {
+            continue;
+        };
+        order.push((offset, feature.id.clone()));
+    }
+    order.sort();
+    let mut dense = std::collections::HashMap::new();
+    for (ordinal, (_, id)) in order.into_iter().enumerate() {
+        let ordinal = u64::try_from(ordinal).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("CATIA feature ordinal exceeds u64")
+        })?;
+        dense.insert(id, ordinal);
+    }
+    for feature in &mut ir.model.features {
+        if let Some(ordinal) = dense.get(&feature.id).copied() {
+            feature.ordinal = ordinal;
+        }
+    }
+    Ok(())
+}
+
+/// One design object whose owner-declared class has no typed neutral
+/// operation, retained at its history position with its native class.
+fn transfer_native_feature(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut CadIr,
+    transfer: &mut DesignFeatureTransfer,
+    object: &CatiaDesignObject,
+    kind: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let feature_id = FeatureId::from(neutral_history_id(
+        &object.id,
+        &cadmpeg_ir::identity_component!("feature"),
+    )?);
+    ctx.charge_entities(1, "admit CATIA native design feature")?;
+    let map_feature_id = feature_id.clone();
+    let native_ref = object.id.clone();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        needs_recompute: false,
+        id: feature_id,
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(kind.to_owned()),
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::from(kind),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: Some(native_ref),
+    });
+    transfer
+        .feature_ids
+        .insert(object.id.clone(), map_feature_id);
+    Ok(())
 }
 
 fn transfer_principal_plane(

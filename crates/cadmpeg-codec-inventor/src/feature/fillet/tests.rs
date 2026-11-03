@@ -382,7 +382,6 @@ pub(crate) fn project_native_fixture(
             display_name: "PmBRepSegment".into(),
             role: crate::design::scope::BrepSegmentRole::Document,
         }],
-        issues: Vec::new(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -390,7 +389,6 @@ pub(crate) fn project_native_fixture(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(

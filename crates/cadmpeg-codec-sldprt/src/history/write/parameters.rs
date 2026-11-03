@@ -211,27 +211,38 @@ fn sync_neutral_parameters(
         let Some(native_ref) = parameter.native_ref.as_deref() else {
             continue;
         };
-        let location = native
-            .feature_input_lanes
-            .iter()
-            .enumerate()
-            .find_map(|(lane_index, lane)| {
-                lane.scalars
-                    .iter()
-                    .position(|scalar| scalar.id == native_ref)
-                    .map(|scalar_index| (lane_index, scalar_index))
-            })
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "SLDPRT parameter {} references missing scalar {native_ref}",
-                    parameter.id.as_str()
-                ))
-            })?;
-        let lane = &mut native.feature_input_lanes[location.0];
+        let location =
+            native
+                .feature_input_lanes
+                .iter()
+                .enumerate()
+                .find_map(|(lane_index, lane)| {
+                    lane.scalars
+                        .iter()
+                        .position(|scalar| scalar.id == native_ref)
+                        .map(|scalar_index| (lane_index, scalar_index))
+                });
+        let Some((lane_index, scalar_index)) = location else {
+            // A parameter linked to its dimension record rather than a lane
+            // scalar has no lane value to synchronize.
+            if native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .any(|record| record.id.as_str() == native_ref)
+            {
+                continue;
+            }
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT parameter {} references missing scalar {native_ref}",
+                parameter.id.as_str()
+            )));
+        };
+        let lane = &mut native.feature_input_lanes[lane_index];
         let scalar_name = lane
             .names
             .iter()
-            .find(|name| name.id == lane.scalars[location.1].name)
+            .find(|name| name.id == lane.scalars[scalar_index].name)
             .map(|name| name.value.as_str());
         if scalar_name != Some(parameter.name.as_str()) {
             // (P): changing a counted scalar name relocates following lane records.
@@ -240,7 +251,7 @@ fn sync_neutral_parameters(
                 parameter.id
             )));
         }
-        let scalar = &mut lane.scalars[location.1];
+        let scalar = &mut lane.scalars[scalar_index];
         let value = match parameter.value.as_ref() {
             Some(ParameterValue::Length(length)) => length.get() / 1000.0,
             Some(ParameterValue::Angle(angle)) => angle.get(),

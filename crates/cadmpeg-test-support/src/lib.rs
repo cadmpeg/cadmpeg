@@ -12,6 +12,7 @@ use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
 
 pub mod admissibility;
 pub mod assembly;
+pub mod base;
 pub mod bytes;
 pub mod comparison;
 pub mod compound;
@@ -31,6 +32,7 @@ pub mod roundtrip;
 pub mod solids;
 pub mod unknown_keys;
 pub mod wire;
+pub mod writer_closure;
 pub mod zip_fixture;
 
 /// A service-policy decode context for a test that creates native records

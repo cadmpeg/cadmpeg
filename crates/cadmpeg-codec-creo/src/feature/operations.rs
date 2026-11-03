@@ -316,7 +316,8 @@ pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     pub(crate) depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
     pub(crate) offset: usize,
-    /// Byte offset including the optional stored-name prefix.
+    /// Byte offset of the timed state holding the name: the `e2` timestamp
+    /// opener precedes it, and the name itself starts at `offset`.
     pub(crate) state_offset: usize,
 }
 
@@ -539,6 +540,22 @@ fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTre
     conflicting
 }
 
+/// Whether six bytes form a plausible `modif_time` timestamp: `tm_sec`,
+/// `tm_min`, `tm_hour`, `tm_mday`, `tm_mon`, `tm_year` (years since 1900).
+/// The bounds admit every observed save-session stamp and reject
+/// display-name bytes occupying the same position.
+fn plausible_modif_time(stamp: &[u8]) -> bool {
+    let [sec, min, hour, mday, mon, year] = stamp else {
+        return false;
+    };
+    *sec <= 61
+        && *min <= 59
+        && *hour <= 23
+        && (1..=31).contains(mday)
+        && *mon <= 11
+        && (60..=140).contains(year)
+}
+
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
 pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
@@ -576,19 +593,33 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
         while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
             offset += 1;
         }
-        let state_offset = offset;
+        let mut state_offset = offset;
         let stored_family = &payload[offset..separator];
-        let family = stored_family;
-        if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
+        if stored_family.is_empty()
+            || stored_family.first() == Some(&b' ')
+            || stored_family.last() == Some(&b' ')
+        {
             continue;
         }
-        let (stored_name_prefix, family) = match family {
-            [prefix @ (b'o' | b'x' | b'y' | b'z'), first, ..] if first.is_ascii_uppercase() => {
-                offset += 1;
-                (Some(*prefix), &family[1..])
-            }
-            _ => (None, family),
-        };
+        // The byte before a timed display name is `tm_year` (years since
+        // 1900), not a stored-name prefix: a V2 state is `e2 <sec> <min>
+        // <hour> <mday> <mon> <tm_year> <name>`, so a year in the
+        // alphanumeric range glues onto the walked-back family. When the
+        // opener `e2` sits six bytes back and the six bytes ending at the
+        // candidate start form a plausible timestamp, the first byte is
+        // the year and the name starts after it. `f1`-led (`item_name`)
+        // and bare creation-style names never carry a prefix.
+        if offset >= 6
+            && payload[offset - 6] == 0xe2
+            && plausible_modif_time(&payload[offset - 5..offset + 1])
+        {
+            offset += 1;
+            state_offset = offset;
+        }
+        let family = &payload[offset..separator];
+        if family.is_empty() {
+            continue;
+        }
         let digits = &payload[separator + separator_bytes.len()..];
         let Some(end) = digits.iter().position(|byte| *byte == 0) else {
             continue;
@@ -635,7 +666,7 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
                 bytes: name_bytes,
                 keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
                     .unwrap_or(IdKeyword::Id),
-                prefix: stored_name_prefix,
+                prefix: None,
             },
             recipe,
             display_state_conflict: false,
@@ -702,6 +733,39 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
             conflicting_display_features.contains(&operation.feature_id);
     }
     result
+}
+
+/// Whether the `MdlStatus` payload ends mid-state: bytes after the last
+/// complete state name a state that never terminates.
+///
+/// A cut ` id <digits>` never reaches its NUL terminator, and a cut family
+/// name (with its `tm_year` byte) never reaches its ` id ` separator.
+/// Anything else — including trailing recipe records — is a complete end.
+pub(crate) fn trailing_partial_state(payload: &[u8]) -> bool {
+    let tail = match payload.iter().rposition(|&byte| byte == 0) {
+        Some(nul) => &payload[nul + 1..],
+        None => payload,
+    };
+    if tail.is_empty() {
+        return false;
+    }
+    if tail.windows(4).any(|window| window == b" id ")
+        || tail.windows(4).any(|window| window == b" ID ")
+    {
+        return true;
+    }
+    if tail.len() < 4
+        || !tail
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return false;
+    }
+    let text = std::str::from_utf8(tail).unwrap_or("");
+    // A cut timed name keeps its `tm_year` byte before the family name, so
+    // there is no prefix to strip: the word starts at the family name.
+    text.starts_with(|c: char| c.is_ascii_uppercase())
+        && text.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ')
 }
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.

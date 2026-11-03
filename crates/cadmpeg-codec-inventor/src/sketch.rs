@@ -15,6 +15,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId},
     scalar::{Angle, FiniteReal, Length, PositiveReal},
+    source_fidelity::parts::PartOutput,
 };
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
@@ -24,8 +25,7 @@ use crate::pmdc::{
     content_header, inventor_id, reference_list, state_content_header, Cursor, PmDcContentHeader,
     PmDcReference, PmDcReferenceList,
 };
-use crate::record_identity::{push_record, Located, RecordPayload};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_identity::{admit_record_part, push_record, Located, RecordPayload};
 use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 
 pub(crate) mod curve;
@@ -196,7 +196,6 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
-    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -666,6 +665,7 @@ pub(crate) struct PmDcDirectionPayload {
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
+    parts: &mut PartOutput,
 ) -> Result<SketchInventory, CodecError> {
     let mut inventory = SketchInventory {
         sketches: Vec::new(),
@@ -673,7 +673,6 @@ pub(crate) fn inventory(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -695,9 +694,17 @@ pub(crate) fn inventory(
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
                 continue;
             };
-            let result = match tag {
+            let token = segment.pair.token.as_str();
+            // Each record parses inside its own part: a failure gives up the
+            // record payload and admits nothing (§4.5). An unimplemented
+            // spline kind is unsupported content, not a silent skip.
+            match tag {
                 SketchRecordTag::Sketch => {
-                    parse_sketch(record.payload, version).and_then(|value| {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_sketch(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.sketches,
@@ -706,24 +713,32 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc sketch record",
-                        )
-                    })
+                        )?;
+                    }
                 }
-                SketchRecordTag::Spline => match spline::parse(ctx, record.payload, version) {
-                    Ok(value) => push_record(
-                        ctx,
-                        &mut inventory.entities,
-                        value,
-                        record.type_id,
-                        segment.pair.token.key(),
-                        record.ordinal,
-                        "admit Inventor PmDc spline record",
-                    ),
-                    Err(CodecError::NotImplemented(_)) => continue,
-                    Err(error) => Err(error),
-                },
-                SketchRecordTag::Entity(entity) => parse_entity(entity, record.payload, version)
-                    .and_then(|value| {
+                SketchRecordTag::Spline => {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            spline::parse(ctx, record.payload, version)
+                        })?
+                    {
+                        push_record(
+                            ctx,
+                            &mut inventory.entities,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc spline record",
+                        )?;
+                    }
+                }
+                SketchRecordTag::Entity(entity) => {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_entity(entity, record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.entities,
@@ -732,10 +747,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc sketch entity record",
-                        )
-                    }),
+                        )?;
+                    }
+                }
                 SketchRecordTag::Transform => {
-                    parse_transform(record.payload, version).and_then(|value| {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_transform(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.transforms,
@@ -744,11 +764,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc transform record",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 SketchRecordTag::Direction => {
-                    parse_direction(record.payload, version).and_then(|value| {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_direction(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.directions,
@@ -757,11 +781,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc direction record",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 SketchRecordTag::Constraint(constraint) => {
-                    parse_constraint(constraint, record.payload, version).and_then(|value| {
+                    if let Some(value) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_constraint(constraint, record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.constraints,
@@ -770,23 +798,9 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc sketch constraint record",
-                        )
-                    })
+                        )?;
+                    }
                 }
-            };
-            if let Err(error) = result {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
-                }
-                ctx.charge_entities(1, "admit Inventor PmDc sketch issue")?;
-                inventory.issues.push(RecordIssue {
-                    family: RecordIssueFamily::Sketch {
-                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
-                    },
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
             }
         }
     }
@@ -3313,7 +3327,6 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -3358,7 +3371,6 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -3408,7 +3420,6 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -3473,7 +3484,6 @@ mod tests {
                 1,
             )],
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -3555,6 +3565,20 @@ mod tests {
         payload: &[u8],
         policy: DecodePolicy,
     ) -> Result<SketchInventory, CodecError> {
+        inventory_with_record_and_parts(type_id, payload, policy).map(|(inventory, _)| inventory)
+    }
+
+    fn inventory_with_record_and_parts(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<
+        (
+            SketchInventory,
+            cadmpeg_ir::source_fidelity::parts::PartOutput,
+        ),
+        CodecError,
+    > {
         let bytes = primary_envelope_fixture();
         let payload = payload.to_vec();
         let arena = DecodeArena::new();
@@ -3573,7 +3597,11 @@ mod tests {
         table.records[0].type_id = type_id;
         table.records[0].payload = View::over_retained(&payload);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+            &ctx,
+        );
+        inventory(&ctx, &container.rse, &mut parts).map(|inventory| (inventory, parts))
     }
 
     #[test]
@@ -3591,10 +3619,19 @@ mod tests {
     }
 
     #[test]
-    fn sketch_parse_issue_is_recorded() {
-        let admitted = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-            .expect("truncated transform becomes an issue");
-        assert_eq!(admitted.issues.len(), 1);
+    fn sketch_parse_issue_is_given_up_as_a_part() {
+        let (admitted, parts) =
+            inventory_with_record_and_parts(TRANSFORM_TYPE, &[], DecodePolicy::service())
+                .expect("truncated transform gives up its part");
+        assert!(admitted.transforms.is_empty());
+        let (_, _, _, losses) = parts.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+        assert!(
+            losses[0].message.contains("inventor.rse_record_body"),
+            "{}",
+            losses[0].message
+        );
     }
 
     #[test]
@@ -3605,15 +3642,14 @@ mod tests {
             inventory_with_record(TRANSFORM_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor PmDc sketch issue"
+                    && limit.operation == "part native entity"
         ));
-        assert_eq!(
-            inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-                .expect("build the record inventory")
-                .issues
-                .len(),
-            1
-        );
+        let (_, parts) =
+            inventory_with_record_and_parts(TRANSFORM_TYPE, &[], DecodePolicy::service())
+                .expect("build the record inventory");
+        let (_, _, _, losses) = parts.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
     }
 
     #[test]
@@ -3644,7 +3680,6 @@ mod tests {
                     + admitted.constraints.len(),
                 1
             );
-            assert!(admitted.issues.is_empty());
         }
     }
 
@@ -4261,7 +4296,6 @@ mod tests {
             transforms: vec![transform],
             directions: vec![direction],
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         (inventory, sketch)
     }

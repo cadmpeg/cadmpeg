@@ -128,6 +128,10 @@ fn encode_outcome(
 }
 
 /// Compares every fixture's encode outcome against `tests/golden/encode/`.
+///
+/// A refusal fails: every decodable fixture encodes at every target, so the
+/// harness keeps no refusal goldens. Update mode rewrites the `.bin` and
+/// `.report.json` goldens and removes a refusal file an earlier harness left.
 fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/encode");
     check_encode_branch_at(&dir, fixtures, update)
@@ -170,27 +174,9 @@ fn check_encode_branch_at(dir: &Path, fixtures: &[(String, Vec<u8>)], update: bo
                     }
                 }
                 Some(Err(message)) => {
-                    produced.insert(format!("{name}.{target}.err.txt"));
-                    let written = format!("{message}\n");
-                    if update {
-                        write_golden(&refusal, written.as_bytes());
-                        remove_golden(&archive);
-                        remove_golden(&report);
-                        continue;
-                    }
-                    match std::fs::read_to_string(&refusal) {
-                        Ok(expected) if expected.replace("\r\n", "\n") == written => {}
-                        Ok(expected) => failures.push(format!(
-                            "fixture `{name}` target {target}: refusal differs from {}\n    golden: {}\n    actual: {}",
-                            refusal.display(),
-                            expected.trim_end(),
-                            written.trim_end()
-                        )),
-                        Err(error) => failures.push(format!(
-                            "fixture `{name}` target {target}: cannot read {} ({error}); regenerate with `{REGENERATE}`",
-                            refusal.display()
-                        )),
-                    }
+                    failures.push(format!(
+                        "fixture `{name}` target {target} refused to encode: {message}"
+                    ));
                 }
             }
         }

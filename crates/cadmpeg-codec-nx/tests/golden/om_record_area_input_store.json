@@ -50,15 +50,10 @@
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
-              "input_block.0": "nx:om-data-blocks-0:block#1",
-              "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000000-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
+              "object_index.3": "null"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -91,7 +86,7 @@
               "tokens": [
                 {
                   "kind": "text",
-                  "value": "25 mm"
+                  "value": "25"
                 }
               ]
             },
@@ -100,9 +95,6 @@
             "native_ref": "nx:om-entry-0:expression#399",
             "ordinal": 0,
             "owner": "nx:om-entry-0:feature#equations-372",
-            "properties": {
-              "unit": "millimeter"
-            },
             "value": {
               "kind": "length",
               "value": 25.0
@@ -446,7 +438,7 @@
       },
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -497,17 +489,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -521,7 +502,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": true,
-          "model": false
+          "model": true
         }
       }
     },
@@ -544,7 +525,6 @@
               "native_ref": "derived",
               "ordinal": "derived",
               "owner": "derived",
-              "properties": "derived",
               "value": "derived"
             },
             "scope": "fields"
@@ -690,15 +670,6 @@
           },
           "offset": 467,
           "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAD2AQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACqAQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAD+T03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAGZlYXR1cmUtcmVjb3Jkc4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/qqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYFcAQAAZAEAAIcBAACqAQAAAgAAAAAAAAAAAQAABAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXMEACoCC5kEHChOdW1iZXIgW21tXSkgbGVuZ3RoOiAyNTsgAEZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
           "untyped": []
         }
       },

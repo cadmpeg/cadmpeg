@@ -80,10 +80,7 @@ pub(super) struct TopologyBudgets<'inputs> {
 }
 
 pub(super) fn emit_topology(
-    reporting: (
-        &mut cadmpeg_ir::ArenaClasses,
-        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
+    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     topology_stream: &TopologyStream<'_>,
@@ -91,7 +88,6 @@ pub(super) fn emit_topology(
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_>,
 ) -> Result<EndpointWitnesses, CodecError> {
-    let (source_untyped, topology_losses) = reporting;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
@@ -722,7 +718,7 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face") },
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
             ));
             continue;
         }
@@ -1097,7 +1093,7 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face") },
+                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
                 ));
                 continue;
             };
@@ -1121,7 +1117,7 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
+                { format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
                 pending.xmt) },
             ));
         }

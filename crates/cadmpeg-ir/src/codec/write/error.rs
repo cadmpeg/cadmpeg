@@ -25,6 +25,31 @@ pub struct CapacityField {
     pub helper: &'static str,
 }
 
+/// How a writer stores a JSON path in reduced form (#232 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReducedStorage {
+    /// 8-bit channel.
+    U8Channel,
+    /// 32-bit float.
+    F32,
+    /// Decimal with `0` fractional digits.
+    Decimal(u32),
+    /// Named normalization the target imposes, with the loss it charges.
+    Normalized {
+        /// Loss code the normalized write charges.
+        loss: &'static str,
+    },
+}
+
+/// One JSON path a writer stores in reduced form (#232 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReducedField {
+    /// JSON path within the writer's record kind.
+    pub path: &'static str,
+    /// Storage the target applies.
+    pub storage: ReducedStorage,
+}
+
 /// Failures permitted when writing document content.
 ///
 /// Callers can name all three public types and consume a proof that the

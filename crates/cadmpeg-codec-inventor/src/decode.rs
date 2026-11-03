@@ -23,7 +23,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -34,7 +34,6 @@ use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
     ProteinAssetRecord, ProteinAssetRecordWire, ProteinEntryRecord, ProteinRecord,
-    ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
@@ -44,12 +43,12 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, DatabaseIssueRecord, DatabaseRecord, DesignViewRepresentationRecord,
-    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
+    AssemblyPlacementRecord, DatabaseRecord, DesignViewRepresentationRecord,
+    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetRecord,
+    PropertyValueKind, RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
-use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
+use crate::property_set::PropertyValue;
 use crate::protein::ProteinState;
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
@@ -93,9 +92,12 @@ fn decode_container<'a>(
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
     let presentation_inventory =
         crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
-    let design_inventory = crate::design::inventory(ctx, &container.rse)?;
-    let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
-    let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
+    let design_inventory =
+        crate::design::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let sketch_inventory =
+        crate::sketch::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let feature_inventory =
+        crate::feature::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let mut ir = CadIr::empty();
     // Design projection derives only design-class records (features,
     // sketches, parameters) and the native records behind them, so a geometry
@@ -115,164 +117,37 @@ fn decode_container<'a>(
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
     let mut property_set_count = 0;
-    let mut property_sections = Vec::new();
-    let mut properties = Vec::new();
     let mut property_count = 0;
     let mut preview_ordinal = 0;
-    let mut property_set_issues = Vec::new();
     for descriptor in &container.property_sets {
-        if descriptor.source.is_some() {
-            if let Some(stream) = property_streams::stage(
-                ctx,
-                &mut assembly_inventory.parts,
-                descriptor,
-                &mut preview_ordinal,
-            )? {
-                property_set_count += usize::from(stream.header_formed);
-                for (section_ordinal, section) in stream.sections {
-                    property_count += section.properties.len();
-                    for property in &section.properties {
-                        let native_id = format!(
-                            "inventor:property:value#{}-{section_ordinal}-{}",
-                            descriptor.stream.directory_id(),
-                            property.id
-                        );
-                        let scalar_value = property.value.scalar_text();
-                        metadata.consider(
-                            &section.fmtid,
-                            property.id,
-                            property.name.as_deref(),
-                            scalar_value.as_deref(),
-                            &native_id,
-                        );
-                    }
-                }
-            }
-            continue;
-        }
-
-        match &descriptor.state {
-            PropertySetState::Malformed(detail) => {
-                admit_native_items(ctx, 1)?;
-                property_set_issues.push(project_property_set_issue(
-                    descriptor.stream.directory_id(),
-                    &descriptor.path,
-                    detail,
-                ));
-            }
-            PropertySetState::Parsed(property_set) => {
-                if !crate::property_set::source_admission::stage_header(
-                    ctx,
-                    &mut assembly_inventory.parts,
-                    descriptor,
-                    property_set,
-                )? {
-                    continue;
-                }
-                property_set_count += 1;
-                for (section_ordinal, section) in property_set.sections.iter().enumerate() {
-                    let set_name = property_set_name(section);
-                    let identity_matches = set_name
-                        .as_deref()
-                        .and_then(known_property_set_fmtid)
-                        .is_none_or(|expected| expected == section.fmtid);
-                    if !identity_matches {
-                        admit_native_items(ctx, 1)?;
-                        let id = format!(
-                            "inventor:property:set-identity#{}-{section_ordinal}",
-                            descriptor.stream.directory_id()
-                        );
-                        property_set_issues.push(PropertySetIssueRecord {
-                            id,
-                            path: descriptor.path.clone(),
-                            directory_id: descriptor.stream.directory_id(),
-                            detail: "embedded property-set name does not match its FMTID".into(),
-                        });
-                    }
-                    admit_native_items(ctx, 1)?;
-                    let section_id = format!(
-                        "inventor:property:section#{}-{section_ordinal}",
-                        descriptor.stream.directory_id()
+        if let Some(stream) = property_streams::stage(
+            ctx,
+            &mut assembly_inventory.parts,
+            descriptor,
+            &mut preview_ordinal,
+        )? {
+            property_set_count += usize::from(stream.header_formed);
+            for (section_ordinal, section) in stream.sections {
+                property_count += section.properties.len();
+                for property in &section.properties {
+                    let native_id = format!(
+                        "inventor:property:value#{}-{section_ordinal}-{}",
+                        descriptor.stream.directory_id(),
+                        property.id
                     );
-                    property_sections.push(PropertySectionRecord {
-                        id: section_id,
-                        set_path: descriptor.path.clone(),
-                        ordinal: record_ordinal(
-                            section_ordinal,
-                            "Inventor property section ordinal",
-                        )?,
-                        fmtid: hex(&section.fmtid),
-                        code_page: section.code_page,
-                        offsets_ordered: section.offsets_ordered,
-                        dictionary_entries: cadmpeg_core::decode::u64_from_index(
-                            section.dictionary_entries,
-                        ),
-                        property_count: cadmpeg_core::decode::u64_from_index(
-                            section.properties.len(),
-                        ),
-                    });
-                    for property in &section.properties {
-                        admit_native_items(ctx, 1)?;
-                        let property_name = property.name.clone().or_else(|| {
-                            identity_matches
-                                .then_some(set_name.as_deref())
-                                .flatten()
-                                .and_then(|set_name| built_in_property_name(set_name, property.id))
-                                .map(str::to_owned)
-                        });
-                        let native_id = format!(
-                            "inventor:property:value#{}-{section_ordinal}-{}",
-                            descriptor.stream.directory_id(),
-                            property.id
-                        );
-                        let scalar_value = property.value.scalar_text();
-                        metadata.consider(
-                            &section.fmtid,
-                            property.id,
-                            property_name.as_deref(),
-                            scalar_value.as_deref(),
-                            &native_id,
-                        );
-                        if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
-                            if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let asset = project_preview_asset(
-                                    ctx,
-                                    &mut admitted_entities,
-                                    preview_ordinal,
-                                    &native_id,
-                                    bytes,
-                                    media_type,
-                                )?;
-                                preview_ordinal += 1;
-                                ir.model.assets.push(asset);
-                            }
-                        }
-                        property_count += 1;
-                        properties.push(PropertyRecord {
-                            id: native_id,
-                            set_path: descriptor.path.clone(),
-                            section_ordinal: record_ordinal(
-                                section_ordinal,
-                                "Inventor property section ordinal",
-                            )?,
-                            fmtid: hex(&section.fmtid),
-                            property_id: property.id,
-                            name: property_name,
-                            value_kind: property_value_kind(&property.value),
-                            scalar_value,
-                            raw_len: cadmpeg_core::decode::u64_from_index(
-                                property.raw.window().len(),
-                            ),
-                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
-                                property.raw.window(),
-                            ),
-                        });
-                    }
+                    let scalar_value = property.value.scalar_text();
+                    metadata.consider(
+                        &section.fmtid,
+                        property.id,
+                        property.name.as_deref(),
+                        scalar_value.as_deref(),
+                        &native_id,
+                    );
                 }
             }
         }
     }
-    let protein = project_protein_state(ctx, &container.protein)?;
+    let protein = project_protein_state(ctx, &mut assembly_inventory.parts, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
         ProteinState::Package(package) => crate::protein::decode_instances_with_issue(
             ctx,
@@ -283,21 +158,21 @@ fn decode_container<'a>(
             (Vec::new(), None)
         }
     };
+    let staged_instances: Vec<crate::protein::ProteinInstanceRecords> = protein_instances
+        .iter()
+        .map(|(records, _)| records.clone())
+        .collect();
     let material_catalog =
-        crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
+        crate::materials::project_catalog(ctx, &staged_instances, &mut admitted_entities)?;
     let ProteinNativeRecords {
         assets: protein_assets,
-        rejections: protein_rejections,
-        issues: protein_issues,
-    } = project_protein_records(ctx, protein_instances)?;
+    } = project_protein_records(ctx, &mut assembly_inventory.parts, protein_instances)?;
     let mut ufrx_issues = Vec::new();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
     let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_issues)?;
-    let protein_admission_issue_count = protein_issues.len();
     let ufrx_issue_count = ufrx_issues.len();
-    let mut structural_issues = protein_issues;
-    structural_issues.extend(ufrx_issues);
+    let mut structural_issues = ufrx_issues;
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -385,20 +260,6 @@ fn decode_container<'a>(
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    let mut database_issues = Vec::new();
-    for descriptor in &container.rse.databases {
-        if descriptor.source.is_some() {
-            continue;
-        }
-        if let Some(detail) = descriptor.issue_detail() {
-            admit_native_items(ctx, 1)?;
-            database_issues.push(DatabaseIssueRecord {
-                id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
-                band: descriptor.band.value(),
-                detail,
-            });
-        }
-    }
     let segment_registry = match &container.rse.registry {
         ParsedState::Parsed(registry) => registry
             .entries
@@ -418,7 +279,7 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Absent | ParsedState::Unavailable => Vec::new(),
     };
     let source_revision_count = match container.rse.revision_source {
         Some(source) => revision_parts::stage(ctx, &mut assembly_inventory.parts, source)?,
@@ -445,16 +306,8 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable => Vec::new(),
     };
-    if let ParsedState::Unavailable(detail) = &container.rse.registry {
-        structural_issues.push(structural_issue(ctx, "segment_registry", detail)?);
-    }
-    if container.rse.revision_source.is_none() {
-        if let ParsedState::Unavailable(detail) = &container.rse.revisions {
-            structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
-        }
-    }
     let source_meta_type_count = container.rse.source_meta_type_count;
     let projection = rse_native_projection::project(ctx, &container)?;
     structural_issues.extend(projection.identity_issues);
@@ -553,17 +406,24 @@ fn decode_container<'a>(
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
-    namespace.set_arena(ctx, "database_issues", &database_issues)?;
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
     namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
-    namespace.set_arena(ctx, "property_sections", &property_sections)?;
-    namespace.set_arena(ctx, "properties", &properties)?;
-    namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
-    protein.install(ctx, namespace)?;
+    namespace.set_arena::<PropertySectionRecord>(ctx, "property_sections", &[])?;
+    namespace.set_arena::<PropertyRecord>(ctx, "properties", &[])?;
+    match &protein {
+        Some(record) => record.install(ctx, namespace)?,
+        None => {
+            namespace.set_arena::<ProteinRecord>(ctx, "protein", &[])?;
+            namespace.set_arena::<crate::native::protein::ProteinEntryRecord>(
+                ctx,
+                "protein_entries",
+                &[],
+            )?;
+        }
+    }
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
-    namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
     namespace.set_arena::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences", &[])?;
     namespace.set_arena::<AssemblyPlacementRecord>(ctx, "assembly_placements", &[])?;
@@ -604,7 +464,6 @@ fn decode_container<'a>(
         &design_inventory.parameter_tables,
     )?;
     namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
-    namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
     namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
@@ -614,7 +473,6 @@ fn decode_container<'a>(
         "pm_dc_sketch_constraints",
         &sketch_inventory.constraints,
     )?;
-    namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
     let pattern_operands = feature_inventory.pattern_operands.native_records()?;
     if !pattern_operands.is_empty() {
         namespace.set_arena(ctx, "pm_dc_pattern_operands", &pattern_operands)?;
@@ -673,7 +531,6 @@ fn decode_container<'a>(
         &feature_inventory.kernel_entity_links,
     )?;
     namespace.set_arena(ctx, "pm_dc_work_planes", &feature_inventory.work_planes)?;
-    namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
@@ -779,7 +636,7 @@ fn decode_container<'a>(
         stored_body_losses = projection.losses;
     }
     if !ctx.container_only() {
-        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
+        document_native_projection::project(ctx, &mut ir, &ufrx, &mut losses)?;
     }
     let composite_links = if delivered == DecodeDepth::Full {
         crate::feature::composite::links(
@@ -882,11 +739,6 @@ fn decode_container<'a>(
     let face_color_appearance_count = assembly_inventory.parts.model().appearances.len();
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
-    if protein_admission_issue_count != 0 {
-        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
-            "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
-        )));
-    }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
         .source
@@ -947,18 +799,6 @@ fn decode_container<'a>(
                 segment_bulk_issues.len()
             )));
         }
-        if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
-                "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
-                design_inventory.issues.len()
-            )));
-        }
-        if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
-        }
         let unnamed_labels = feature_inventory
             .labels
             .iter()
@@ -977,12 +817,6 @@ fn decode_container<'a>(
         if replaced_names != 0 {
             losses.push(InventorLossCode::FeatureLabelNameReplaced.note(format!(
                 "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
-            )));
-        }
-        if !feature_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
-                "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
             )));
         }
         if unresolved.features != 0 {
@@ -1140,12 +974,6 @@ fn decode_container<'a>(
                 container.rse.unpaired_bulk.len()
             )));
         }
-        if !property_set_issues.is_empty() {
-            losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
-                "{} OLE property-set stream(s) are malformed.",
-                property_set_issues.len()
-            )));
-        }
         if metadata.unmapped != 0 {
             losses.push(InventorLossCode::MetadataPropertyUnmapped.note(format!(
                 "Retained {} property value(s) without neutral metadata mapping.",
@@ -1159,12 +987,6 @@ fn decode_container<'a>(
                         "The Protein asset catalog could not be decoded: {detail}"
                     )));
                 } else {
-                    if !protein_rejections.is_empty() {
-                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
-                            "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
-                            protein_rejections.len()
-                        )));
-                    }
                     if ir.model.appearances.is_empty() {
                         losses.push(
                             InventorLossCode::ProteinAppearanceAbsent.note(
@@ -1192,11 +1014,7 @@ fn decode_container<'a>(
                     )));
                 }
             }
-            ProteinState::Malformed { .. } => losses.push(
-                InventorLossCode::ProteinStreamMalformed
-                    .note("The Inventor Protein stream is malformed.".to_string()),
-            ),
-            ProteinState::Absent | ProteinState::Empty { .. } => {}
+            ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
             losses.push(
@@ -1422,12 +1240,11 @@ fn decode_container<'a>(
         (crate::coverage::PROPERTY_SETS, property_set_count),
         (crate::coverage::PROPERTIES, property_count),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
-        (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
-        (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
-            crate::coverage::PROTEIN_REJECTIONS,
-            protein_rejections.len(),
+            crate::coverage::PROTEIN_ENTRIES,
+            protein.as_ref().map_or(0, |record| record.entries().len()),
         ),
+        (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
             crate::coverage::PROTEIN_APPEARANCES,
             protein_appearance_count,
@@ -1482,10 +1299,6 @@ fn decode_container<'a>(
             design_parameter_count,
         ),
         (
-            crate::coverage::DESIGN_RECORD_ISSUES,
-            design_inventory.issues.len(),
-        ),
-        (
             crate::coverage::PM_DC_SKETCHES,
             sketch_inventory.sketches.len(),
         ),
@@ -1504,10 +1317,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_SKETCH_CONSTRAINTS,
             sketch_inventory.constraints.len(),
-        ),
-        (
-            crate::coverage::SKETCH_RECORD_ISSUES,
-            sketch_inventory.issues.len(),
         ),
         (
             crate::coverage::PM_DC_FEATURES,
@@ -1532,10 +1341,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_ENTITY_STYLE_LINKS,
             feature_inventory.entity_style_links.len(),
-        ),
-        (
-            crate::coverage::FEATURE_RECORD_ISSUES,
-            feature_inventory.issues.len(),
         ),
         (
             crate::coverage::FEATURES_TRANSFERRED,
@@ -1817,35 +1622,6 @@ fn admit_kernel_annotation(
     Ok(())
 }
 
-fn project_property_set_issue(
-    directory_id: u32,
-    path: &str,
-    detail: &str,
-) -> PropertySetIssueRecord {
-    PropertySetIssueRecord {
-        id: format!("inventor:property:set-issue#{directory_id}"),
-        path: path.to_owned(),
-        directory_id,
-        detail: detail.to_owned(),
-    }
-}
-
-fn project_preview_asset(
-    ctx: &DecodeContext<'_>,
-    admitted_entities: &mut u64,
-    ordinal: usize,
-    native_id: &str,
-    bytes: &[u8],
-    media_type: &str,
-) -> Result<Asset, CodecError> {
-    ctx.admit_entities(
-        *admitted_entities + 1,
-        admitted_entities,
-        "admit Inventor preview asset entity",
-    )?;
-    form_preview_asset(ctx, ordinal, native_id, bytes, media_type)
-}
-
 fn form_preview_asset(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
@@ -1876,21 +1652,25 @@ fn form_preview_asset(
 
 fn project_protein_state(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     state: &ProteinState<'_>,
-) -> Result<ProteinRecord, CodecError> {
+) -> Result<Option<ProteinRecord>, CodecError> {
     admit_native_items(ctx, 1)?;
     let id = "inventor:protein:state#root".to_owned();
     Ok(match state {
-        ProteinState::Absent => ProteinRecord::Absent { id },
-        ProteinState::Empty { stream } => ProteinRecord::Empty {
+        ProteinState::Absent => Some(ProteinRecord::Absent { id }),
+        ProteinState::Empty { stream } => Some(ProteinRecord::Empty {
             id,
             directory_id: stream.directory_id(),
-        },
-        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
-            id,
-            directory_id: stream.directory_id(),
-            detail: detail.to_owned(),
-        },
+        }),
+        ProteinState::Malformed { source, detail, .. } => {
+            // A malformed package gives up its stream part (§4.5).
+            let spec = part_spec("inventor.protein_stream", *source, || "Protein".to_owned())?;
+            ctx.decode_part(output, *source, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail.clone()))
+            })?;
+            None
+        }
         ProteinState::Package(package) => {
             let entries = package
                 .archive
@@ -1910,69 +1690,68 @@ fn project_protein_state(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            ProteinRecord::Package {
+            Some(ProteinRecord::Package {
                 id,
                 directory_id: package.stream.directory_id(),
                 declared_len: package.declared_len,
                 entries,
-            }
+            })
         }
     })
 }
 
 struct ProteinNativeRecords {
     assets: Vec<ProteinAssetRecord>,
-    rejections: Vec<ProteinRejectionRecord>,
-    issues: Vec<StructuralIssueRecord>,
 }
 
 fn project_protein_records(
     ctx: &DecodeContext<'_>,
-    instances: Vec<crate::protein::ProteinInstanceRecords>,
+    output: &mut PartOutput,
+    instances: Vec<(
+        crate::protein::ProteinInstanceRecords,
+        cadmpeg_core::decode::View<'_>,
+    )>,
 ) -> Result<ProteinNativeRecords, CodecError> {
     let mut assets = Vec::new();
-    let mut rejections = Vec::new();
-    let mut issues = Vec::new();
-    for instance in instances {
+    for (instance, extent) in instances {
         if instance.records.is_empty() && instance.rejected.is_empty() {
             continue;
         }
         let entry_digest = sha256_hex(instance.entry_name.as_bytes());
+        // One rejected frame or one unadmittable asset gives up the instance
+        // part; the decoded assets stay admitted.
+        let mut failure = instance.rejected.first().map(|rejected| {
+            format!(
+                "Protein instance record {} was rejected: {}",
+                rejected.ordinal, rejected.detail
+            )
+        });
         for asset in instance.records {
-            let id = format!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal);
-            let entry_name = instance.entry_name.clone();
             let wire = ProteinAssetRecordWire {
-                id,
-                entry_name,
+                id: format!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
+                entry_name: instance.entry_name.clone(),
                 ordinal: asset.ordinal,
                 asset,
             };
-            if let Some(record) = admit_protein_asset(ctx, wire, &mut issues)? {
-                assets.push(record);
+            match ProteinAssetRecord::try_from(wire) {
+                Ok(record) => {
+                    admit_native_items(ctx, 1)?;
+                    assets.push(record);
+                }
+                Err(detail) if failure.is_none() => failure = Some(detail),
+                Err(_) => {}
             }
         }
-        for rejected in instance.rejected {
-            let id = format!(
-                "inventor:protein:rejection#{}-{}",
-                entry_digest, rejected.ordinal
-            );
-            let entry_name = instance.entry_name.clone();
-            let wire = ProteinRejectionRecordWire {
-                id,
-                entry_name,
-                ordinal: rejected.ordinal,
-                detail: rejected.detail,
-            };
-            if let Some(record) = admit_protein_rejection(ctx, wire, &mut issues)? {
-                rejections.push(record);
-            }
+        if let Some(detail) = failure {
+            let spec = part_spec("inventor.protein_instance", extent, || {
+                instance.entry_name.clone()
+            })?;
+            ctx.decode_part(output, extent, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail))
+            })?;
         }
     }
-    Ok(ProteinNativeRecords {
-        assets,
-        rejections,
-        issues,
-    })
+    Ok(ProteinNativeRecords { assets })
 }
 
 /// The loss for occurrences hidden below a root occurrence, which only the
@@ -2355,24 +2134,6 @@ fn admit_ufrx_record<T>(
     }
 }
 
-fn admit_protein_asset(
-    ctx: &DecodeContext<'_>,
-    wire: ProteinAssetRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
-) -> Result<Option<ProteinAssetRecord>, CodecError> {
-    let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinAssetRecord::try_from(wire), &scope, issues)
-}
-
-fn admit_protein_rejection(
-    ctx: &DecodeContext<'_>,
-    wire: ProteinRejectionRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
-) -> Result<Option<ProteinRejectionRecord>, CodecError> {
-    let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
-}
-
 fn structural_issue(
     ctx: &DecodeContext<'_>,
     scope: &str,
@@ -2479,14 +2240,6 @@ fn normalize_property_name(name: &str) -> String {
         .filter(|character| character.is_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect()
-}
-
-fn property_set_name(section: &PropertySection<'_>) -> Option<String> {
-    section
-        .properties
-        .iter()
-        .find(|property| property.id == 255)
-        .and_then(|property| property.value.scalar_text())
 }
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {

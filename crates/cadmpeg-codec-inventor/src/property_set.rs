@@ -16,35 +16,10 @@ const VT_VECTOR: u16 = 0x1000;
 const VT_VARIANT: u16 = 0x000c;
 
 #[derive(Debug)]
-pub(crate) struct PropertySetStream<'a> {
-    pub(crate) version: u16,
-    pub(crate) system_identifier: u32,
-    pub(crate) clsid: [u8; 16],
-    pub(crate) sections: Vec<PropertySection<'a>>,
-}
-
-#[derive(Debug)]
 pub(crate) struct PropertySetDescriptor<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) path: String,
-    pub(crate) state: PropertySetState<'a>,
-    /// Actual opened CFB stream; held syntax descriptors have no source proof.
-    pub(crate) source: Option<View<'a>>,
-}
-
-#[derive(Debug)]
-pub(crate) enum PropertySetState<'a> {
-    Parsed(PropertySetStream<'a>),
-    Malformed(String),
-}
-
-#[derive(Debug)]
-pub(crate) struct PropertySection<'a> {
-    pub(crate) fmtid: [u8; 16],
-    pub(crate) code_page: Option<u16>,
-    pub(crate) offsets_ordered: bool,
-    pub(crate) dictionary_entries: usize,
-    pub(crate) properties: Vec<Property<'a>>,
+    pub(crate) source: View<'a>,
 }
 
 #[derive(Debug)]
@@ -52,7 +27,6 @@ pub(crate) struct Property<'a> {
     pub(crate) id: u32,
     pub(crate) name: Option<String>,
     pub(crate) value: PropertyValue<'a>,
-    pub(crate) raw: View<'a>,
 }
 
 #[derive(Debug)]
@@ -155,15 +129,10 @@ pub(crate) fn inventory<'a>(
         {
             continue;
         }
-        let state = match parse_property_set_stream(ctx, view) {
-            Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
-        };
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
             path: stream.path().into(),
-            state,
-            source: Some(view),
+            source: view,
         });
     }
     Ok(property_sets)
@@ -276,45 +245,6 @@ pub(crate) fn parse_section_directory(
     })
 }
 
-pub(crate) fn parse_property_set_stream<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-) -> Result<PropertySetStream<'a>, CodecError> {
-    let bytes = source.window();
-    if bytes.len() > MAX_STREAM_SIZE {
-        return Err(CodecError::malformed(format_args!(
-            "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
-        )));
-    }
-    let header_source = header_extent(source)?;
-    let PropertySetHeader {
-        version,
-        system_identifier,
-        clsid,
-        mut directories,
-    } = parse_header(header_source)?;
-    let header_end = header_source.window().len();
-    directories.sort_by_key(|left| left.1);
-    let mut previous_end = header_end;
-    for (_, offset) in &directories {
-        previous_end = section_extent(source, *offset, previous_end)?.end() - source.start();
-    }
-    require_zero_range(bytes, previous_end, bytes.len(), "stream suffix")?;
-    let mut previous_end = header_end;
-    let mut sections = Vec::new();
-    for (fmtid, offset) in directories {
-        let section_source = section_extent(source, offset, previous_end)?;
-        previous_end = section_source.end() - source.start();
-        sections.push(parse_section(ctx, section_source, fmtid)?);
-    }
-    Ok(PropertySetStream {
-        version,
-        system_identifier,
-        clsid,
-        sections,
-    })
-}
-
 fn section_extent(
     source: View<'_>,
     offset: usize,
@@ -420,42 +350,6 @@ pub(crate) fn parse_header(source: View<'_>) -> Result<PropertySetHeader, CodecE
     })
 }
 
-/// Property extents are fixed by the section's complete offset table before
-/// any property is parsed.
-fn parse_section<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-    fmtid: [u8; 16],
-) -> Result<PropertySection<'a>, CodecError> {
-    let PropertySectionDirectory {
-        ranges,
-        names,
-        code_page,
-        offsets_ordered,
-    } = parse_section_directory(ctx, source)?;
-    let mut properties = Vec::new();
-    for (id, start, end) in ranges {
-        let raw = source
-            .child(source.start() + start, source.start() + end)
-            .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
-        properties.push(parse_property(
-            ctx,
-            raw,
-            id,
-            names.get(&id).cloned(),
-            code_page,
-        )?);
-    }
-    properties.sort_by_key(|left| left.id);
-    Ok(PropertySection {
-        fmtid,
-        code_page,
-        offsets_ordered,
-        dictionary_entries: names.len(),
-        properties,
-    })
-}
-
 pub(crate) fn parse_property<'a>(
     ctx: &DecodeContext<'a>,
     raw: View<'a>,
@@ -468,12 +362,7 @@ pub(crate) fn parse_property<'a>(
     } else {
         parse_typed_value(ctx, raw, code_page)?
     };
-    Ok(Property {
-        id,
-        name,
-        value,
-        raw,
-    })
+    Ok(Property { id, name, value })
 }
 
 fn parse_code_page(source: View<'_>) -> Result<u16, CodecError> {
@@ -1017,45 +906,13 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    mod source_boundaries;
-    use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use crate::test_support::truncation::located_truncation;
 
-    use super::{
-        has_property_set_header, parse_dictionary, parse_property_set_stream, Cursor,
-        PropertySetStream, PropertyValue, BYTE_ORDER_LE,
-    };
+    use super::{has_property_set_header, parse_dictionary, Cursor, PropertyValue, BYTE_ORDER_LE};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn malformed_property_set_remains_an_inventory_entry() {
-        let mut bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0xfe, 0xff]);
-        let entry_start = 512 + 3 * 128;
-        let name = "ZProperty";
-        bytes[entry_start..entry_start + 64].fill(0);
-        for (index, unit) in name.encode_utf16().enumerate() {
-            let offset = entry_start + index * 2;
-            bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
-        }
-        let name_len =
-            u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16");
-        bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
-        let arena = DecodeArena::new();
-        let (setup, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("compound input fits service policy");
-        let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
-        let inventory = super::inventory(&setup, &snapshot)
-            .expect("malformed property set remains an inventory entry");
-        assert!(matches!(
-            inventory.first().map(|entry| &entry.state),
-            Some(super::PropertySetState::Malformed(_))
-        ));
-    }
-
     #[test]
     fn dictionary_names_decode() {
         let mut bytes = Vec::new();
@@ -1122,23 +979,6 @@ mod tests {
             "A"
         );
     }
-
-    #[test]
-    fn property_set_stream_reads_its_section() {
-        let bytes = fixture();
-        let arena = DecodeArena::new();
-        let (service, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("build the decode context");
-        assert_eq!(
-            parse_property_set_stream(&service, root)
-                .expect("property set admitted")
-                .sections
-                .len(),
-            1
-        );
-    }
-
     #[test]
     fn scalar_text_copies_text_and_formats_numbers() {
         let text = PropertyValue::String {
@@ -1152,60 +992,16 @@ mod tests {
         assert_eq!(text.scalar_text(), Some("scalar".into()));
         assert_eq!(number.scalar_text(), Some("-42".into()));
     }
-
-    #[test]
-    fn property_set_parses_unicode_metadata_and_preview_blob() {
-        let bytes = fixture();
-        let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic property set fits policy");
-        let parsed = parse_property_set_stream(&ctx, root).expect("property set parses");
-        assert_eq!(parsed.sections.len(), 1);
-        let section = &parsed.sections[0];
-        assert_eq!(section.code_page, Some(1200));
-        assert!(matches!(
-            &section.properties[1].value,
-            PropertyValue::String { value, .. } if value == "Synthetic title"
-        ));
-        assert!(matches!(
-            &section.properties[2].value,
-            PropertyValue::Binary { value, .. } if value.window().starts_with(b"\x89PNG\r\n\x1a\n")
-        ));
-    }
-
-    #[test]
-    fn property_set_rejects_duplicate_ids_and_trailing_bytes() {
-        let mut duplicate = fixture();
-        duplicate[60..64].copy_from_slice(&1_u32.to_le_bytes());
-        with_parse(&duplicate, |result| assert!(result.is_err()));
-
-        let mut trailing = fixture();
-        trailing.push(1);
-        with_parse(&trailing, |result| assert!(result.is_err()));
-    }
-
     #[test]
     fn header_probe_requires_version_and_section_count() {
-        let bytes = fixture();
+        let mut bytes = vec![0; 48];
+        bytes[..2].copy_from_slice(&BYTE_ORDER_LE.to_le_bytes());
+        bytes[2..4].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[24..28].copy_from_slice(&1_u32.to_le_bytes());
         assert!(has_property_set_header(&bytes));
         assert!(!has_property_set_header(&bytes[..20]));
         assert!(!has_property_set_header(b"not a property set"));
     }
-
-    #[test]
-    fn property_set_retains_noncanonical_directory_order() {
-        let mut bytes = fixture();
-        let first: [u8; 8] = bytes[56..64].try_into().expect("first directory entry");
-        let second: [u8; 8] = bytes[64..72].try_into().expect("second directory entry");
-        bytes[56..64].copy_from_slice(&second);
-        bytes[64..72].copy_from_slice(&first);
-        let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic property set fits policy");
-        let parsed = parse_property_set_stream(&ctx, root).expect("unordered directory parses");
-        assert!(!parsed.sections[0].offsets_ordered);
-    }
-
     #[test]
     fn a_truncated_property_set_read_is_located_and_names_its_field() {
         let empty: &[u8] = &[];
@@ -1254,127 +1050,4 @@ mod tests {
         };
         assert_eq!(text, "Truncated Unicode string at offset 0");
     }
-
-    /// A one-section stream header naming `offset` as the section's start.
-    fn one_section_header(offset: u32) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&BYTE_ORDER_LE.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&0x0002_0006_u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 16]);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.extend_from_slice(&FMTID_SUMMARY);
-        bytes.extend_from_slice(&offset.to_le_bytes());
-        bytes
-    }
-
-    #[test]
-    fn a_truncated_section_size_is_located_and_names_its_field() {
-        let mut bytes = one_section_header(48);
-        bytes.extend_from_slice(&[0, 0]);
-        with_parse(&bytes, |parsed| {
-            assert_eq!(
-                located_truncation(parsed),
-                "Truncated section size at offset 48"
-            );
-        });
-    }
-
-    #[test]
-    fn a_property_directory_the_section_cannot_hold_is_located_and_names_its_field() {
-        let mut bytes = one_section_header(48);
-        bytes.extend_from_slice(&16_u32.to_le_bytes());
-        bytes.extend_from_slice(&100_u32.to_le_bytes());
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.extend_from_slice(&808_u32.to_le_bytes());
-        with_parse(&bytes, |parsed| {
-            assert_eq!(
-                located_truncation(parsed),
-                "Truncated property id at offset 64"
-            );
-        });
-    }
-
-    fn with_parse(bytes: &[u8], test: impl FnOnce(Result<PropertySetStream<'_>, CodecError>)) {
-        let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic property set fits policy");
-        test(parse_property_set_stream(&ctx, root));
-    }
-
-    fn fixture() -> Vec<u8> {
-        let title = typed_lpwstr("Synthetic title");
-        let preview = typed_blob(b"\x89PNG\r\n\x1a\nsynthetic");
-        let directory_len = 8 + 3 * 8;
-        let code_page_offset = directory_len;
-        let title_offset = code_page_offset + 8;
-        let preview_offset = title_offset + title.len();
-        let section_size = preview_offset + preview.len();
-
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&BYTE_ORDER_LE.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&0x0002_0006_u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 16]);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.extend_from_slice(&FMTID_SUMMARY);
-        bytes.extend_from_slice(&48_u32.to_le_bytes());
-        bytes.extend_from_slice(
-            &(u32::try_from(section_size).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        for (id, offset) in [
-            (1_u32, code_page_offset),
-            (2, title_offset),
-            (17, preview_offset),
-        ] {
-            bytes.extend_from_slice(&id.to_le_bytes());
-            bytes.extend_from_slice(
-                &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
-            );
-        }
-        bytes.extend_from_slice(&2_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&1200_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&title);
-        bytes.extend_from_slice(&preview);
-        bytes
-    }
-
-    fn typed_lpwstr(value: &str) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&0x001f_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        let units = value.encode_utf16().chain([0]).collect::<Vec<_>>();
-        bytes.extend_from_slice(
-            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-        while bytes.len() % 4 != 0 {
-            bytes.push(0);
-        }
-        bytes
-    }
-
-    fn typed_blob(value: &[u8]) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&0x0041_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(
-            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        bytes.extend_from_slice(value);
-        while bytes.len() % 4 != 0 {
-            bytes.push(0);
-        }
-        bytes
-    }
-
-    const FMTID_SUMMARY: [u8; 16] = [
-        0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3,
-        0xd9,
-    ];
 }

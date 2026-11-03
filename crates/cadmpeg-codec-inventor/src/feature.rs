@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
@@ -29,8 +30,7 @@ use crate::pmdc::{
     content_header, inventor_id, reference_list, state_content_header, type_id_string, u32_list,
     Cursor, PmDcContentHeader, PmDcReferenceList, PmDcU32List,
 };
-use crate::record_identity::{push_record, Located, RecordPayload};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_identity::{admit_record_part, push_record, Located, RecordPayload};
 use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 use sheet_metal::refusal::PlateError;
@@ -195,8 +195,6 @@ pub(crate) struct FeatureInventory {
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
-    /// Wire bodies of `PmDc` kernel-body records, which profile selections name.
-    pub(crate) issues: Vec<RecordIssue>,
 }
 
 pub(crate) struct FeatureProjection {
@@ -651,6 +649,7 @@ pub(crate) struct PmDcFeatureTerminatorPayload {
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
+    parts: &mut PartOutput,
 ) -> Result<FeatureInventory, CodecError> {
     let mut inventory = FeatureInventory {
         edge_inputs: edge_selection::inventory(ctx, document)?,
@@ -665,7 +664,6 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
-        issues: Vec::new(),
         ..Default::default()
     };
     for segment in &document.segments {
@@ -707,9 +705,16 @@ pub(crate) fn inventory(
             if segment.kind == SegmentKind::PmBRep && record.type_id != KERNEL_ENTITY_LINK_TYPE {
                 continue;
             }
-            let parsed = match record.type_id {
+            // Each record parses inside its own part: a failure gives up the
+            // record payload and admits nothing (§4.5).
+            let token = segment.pair.token.as_str();
+            match record.type_id {
                 sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_some() => {
-                    sheet_metal::style::parse(ctx, record.payload, version).and_then(|style| {
+                    if let Some(style) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            sheet_metal::style::parse(ctx, record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.sheet_metal_styles,
@@ -718,11 +723,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor sheet-metal style",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 sheet_metal::flange::TYPE => {
-                    sheet_metal::flange::parse(ctx, record.payload, version).and_then(|flange| {
+                    if let Some(flange) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            sheet_metal::flange::parse(ctx, record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.sheet_metal_flanges,
@@ -731,11 +740,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor sheet-metal flange",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 revolve::DIMENSION_TYPE => {
-                    revolve::parse_dimension(ctx, record.payload).and_then(|dimension| {
+                    if let Some(dimension) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            revolve::parse_dimension(ctx, record.payload)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.dimensions,
@@ -744,27 +757,37 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor feature dimension",
-                        )
-                    })
+                        )?;
+                    }
                 }
-                FEATURE_TYPE => parse_feature(record.payload, version).and_then(|feature| {
-                    push_record(
-                        ctx,
-                        &mut inventory.features,
-                        feature,
-                        record.type_id,
-                        segment.pair.token.key(),
-                        record.ordinal,
-                        "admit Inventor PmDc feature record",
-                    )
-                }),
+                FEATURE_TYPE => {
+                    if let Some(feature) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_feature(record.payload, version)
+                        })?
+                    {
+                        push_record(
+                            ctx,
+                            &mut inventory.features,
+                            feature,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc feature record",
+                        )?;
+                    }
+                }
                 RECTANGULAR_PATTERN_FEATURE_TYPE | MIRROR_FEATURE_TYPE => {
                     let family = if record.type_id == RECTANGULAR_PATTERN_FEATURE_TYPE {
                         PmDcPatternFamily::Rectangular
                     } else {
                         PmDcPatternFamily::Mirror
                     };
-                    parse_pattern_feature(record.payload, version, family).and_then(|feature| {
+                    if let Some(feature) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_pattern_feature(record.payload, version, family)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.pattern_features,
@@ -773,11 +796,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc pattern feature record",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 END_OF_FEATURES_TYPE => {
-                    parse_terminator(record.payload, version).and_then(|terminator| {
+                    if let Some(terminator) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_terminator(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.terminators,
@@ -786,11 +813,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc feature terminator record",
-                        )
-                    })
+                        )?;
+                    }
                 }
                 thread::TYPE if thread::definition_version_supported(version) => {
-                    thread::parse(ctx, record.payload, version).and_then(|definition| {
+                    if let Some(definition) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            thread::parse(ctx, record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.thread_definitions,
@@ -799,22 +830,32 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor thread definition",
-                        )
-                    })
+                        )?;
+                    }
                 }
-                FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).and_then(|label| {
-                    push_record(
-                        ctx,
-                        &mut inventory.labels,
-                        label,
-                        record.type_id,
-                        segment.pair.token.key(),
-                        record.ordinal,
-                        "admit Inventor PmDc feature label record",
-                    )
-                }),
-                ENTITY_STYLE_LINK_TYPE => parse_entity_style_link(record.payload, version)
-                    .and_then(|link| {
+                FEATURE_LABEL_TYPE => {
+                    if let Some(label) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_label(ctx, record.payload, version)
+                        })?
+                    {
+                        push_record(
+                            ctx,
+                            &mut inventory.labels,
+                            label,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc feature label record",
+                        )?;
+                    }
+                }
+                ENTITY_STYLE_LINK_TYPE => {
+                    if let Some(link) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_entity_style_link(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.entity_style_links,
@@ -823,10 +864,15 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc entity style link record",
-                        )
-                    }),
-                KERNEL_ENTITY_LINK_TYPE => parse_kernel_entity_link(record.payload, version)
-                    .and_then(|link| {
+                        )?;
+                    }
+                }
+                KERNEL_ENTITY_LINK_TYPE => {
+                    if let Some(link) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_kernel_entity_link(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
                             &mut inventory.kernel_entity_links,
@@ -835,64 +881,66 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc kernel entity link record",
-                        )
-                    }),
-                WORK_PLANE_TYPE => parse_work_plane(record.payload, version).and_then(|plane| {
-                    push_record(
-                        ctx,
-                        &mut inventory.work_planes,
-                        plane,
-                        record.type_id,
-                        segment.pair.token.key(),
-                        record.ordinal,
-                        "admit Inventor PmDc work plane record",
-                    )
-                }),
-                SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
-                    surface.map_or(Ok(()), |surface| {
+                        )?;
+                    }
+                }
+                WORK_PLANE_TYPE => {
+                    if let Some(plane) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_work_plane(record.payload, version)
+                        })?
+                    {
                         push_record(
                             ctx,
-                            &mut inventory.properties,
-                            surface,
+                            &mut inventory.work_planes,
+                            plane,
                             record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                            "admit Inventor PmDc surface record",
-                        )
-                    })
-                }),
-                type_id => feature_property_parser(type_id)
-                    .or_else(|| derived::parser(type_id, record.payload, version))
-                    .map_or_else(
-                        || Ok(()),
-                        |parser| {
-                            parser(ctx, record.payload, version).and_then(|property| {
-                                push_record(
-                                    ctx,
-                                    &mut inventory.properties,
-                                    property,
-                                    record.type_id,
-                                    segment.pair.token.key(),
-                                    record.ordinal,
-                                    "admit Inventor PmDc feature property record",
-                                )
-                            })
-                        },
-                    ),
-            };
-            if let Err(error) = parsed {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
+                            "admit Inventor PmDc work plane record",
+                        )?;
+                    }
                 }
-                ctx.charge_entities(1, "admit Inventor PmDc feature issue")?;
-                inventory.issues.push(RecordIssue {
-                    family: RecordIssueFamily::Feature {
-                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
-                    },
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
+                SURFACE_TYPE => {
+                    if let Some(surface) =
+                        admit_record_part(ctx, parts, record.payload, token, || {
+                            parse_surface(record.payload, version)
+                        })?
+                    {
+                        if let Some(surface) = surface {
+                            push_record(
+                                ctx,
+                                &mut inventory.properties,
+                                surface,
+                                record.type_id,
+                                segment.pair.token.key(),
+                                record.ordinal,
+                                "admit Inventor PmDc surface record",
+                            )?;
+                        }
+                    }
+                }
+                type_id => {
+                    if let Some(parser) = feature_property_parser(type_id)
+                        .or_else(|| derived::parser(type_id, record.payload, version))
+                    {
+                        if let Some(property) =
+                            admit_record_part(ctx, parts, record.payload, token, || {
+                                parser(ctx, record.payload, version)
+                            })?
+                        {
+                            push_record(
+                                ctx,
+                                &mut inventory.properties,
+                                property,
+                                record.type_id,
+                                segment.pair.token.key(),
+                                record.ordinal,
+                                "admit Inventor PmDc feature property record",
+                            )?;
+                        }
+                    }
+                }
             }
         }
         if !has_rectangular_pattern {
@@ -917,49 +965,51 @@ pub(crate) fn inventory(
             {
                 continue;
             }
-            if let Err(error) = inventory.pattern_operands.read(
+            admit_record_part(
                 ctx,
-                segment.pair.token.as_str(),
-                record.ordinal,
-                record.type_id,
+                parts,
                 record.payload,
-                version,
-            ) {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
-                }
-                ctx.charge_entities(1, "admit Inventor PmDc feature issue")?;
-                inventory.issues.push(RecordIssue {
-                    family: RecordIssueFamily::Feature {
-                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
-                    },
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
-            }
+                segment.pair.token.as_str(),
+                || {
+                    inventory.pattern_operands.read(
+                        ctx,
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                        record.type_id,
+                        record.payload,
+                        version,
+                    )
+                },
+            )?;
         }
         for pattern in inventory.pattern_features.iter().filter(|pattern| {
             pattern.identity.segment_token.as_str() == segment.pair.token.as_str()
                 && pattern.family == PmDcPatternFamily::Rectangular
         }) {
-            if let Err(error) = inventory
+            let payload = table
+                .records
+                .iter()
+                .find(|record| record.ordinal == pattern.identity.record_ordinal)
+                .map(|record| record.payload);
+            let Some(payload) = payload else {
+                continue;
+            };
+            if inventory
                 .pattern_operands
                 .validate_suppression(pattern, &inventory.properties)
+                .is_err()
             {
-                ctx.charge_entities(1, "admit Inventor PmDc feature issue")?;
-                inventory.issues.push(RecordIssue {
-                    family: RecordIssueFamily::Feature {
-                        type_id: pattern.identity.type_id.clone(),
-                    },
-                    segment_token: pattern.identity.segment_token.clone(),
-                    record_ordinal: pattern.identity.record_ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
+                // The suppression does not validate: the pattern record
+                // gives up its part.
+                admit_record_part(ctx, parts, payload, segment.pair.token.as_str(), || {
+                    Err::<(), CodecError>(CodecError::malformed(
+                        "Inventor pattern suppression does not validate",
+                    ))
+                })?;
             }
         }
     }
-    mirror::admit_operands(ctx, document, &mut inventory)?;
+    mirror::admit_operands(ctx, document, &mut inventory, parts)?;
     Ok(inventory)
 }
 
@@ -3651,13 +3701,13 @@ fn extrusion_side(
     let termination = match extent {
         EXTENT_DISTANCE | EXTENT_SYMMETRIC_DISTANCE => LinearTermination::Blind {
             length: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                let length = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
                     source,
                     slots.length,
                     index,
                 )?)
                 .ok()?;
-                parameter_binding(source, slots.length, index)?
+                parameter_or_literal(source, slots.length, index, length.into())
             },
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
@@ -3681,8 +3731,7 @@ fn extrusion_side(
     Some(ExtrudeSide {
         termination,
         draft: (taper.get() != 0.0)
-            .then(|| parameter_binding(source, slots.taper, index))
-            .flatten(),
+            .then(|| parameter_or_literal(source, slots.taper, index, taper)),
     })
 }
 
@@ -4098,42 +4147,42 @@ fn project_hole(
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
             drill_point_angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
-                parameter_binding(source, 6, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_or_literal(source, 6, index, angle)
             },
         },
         1 => HoleKind::Countersink {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
-                parameter_binding(source, 5, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
+                parameter_or_literal(source, 5, index, angle)
             },
         },
         2 | 3 if point_angle.get() == 0.0 => HoleKind::Counterbore {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             depth: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
-                parameter_binding(source, 4, index)?
+                let depth = cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_or_literal(source, 4, index, depth)
             },
         },
         2 | 3 => HoleKind::CounterboreDrilled {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             depth: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
-                parameter_binding(source, 4, index)?
+                let depth = cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_or_literal(source, 4, index, depth)
             },
             drill_point_angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
-                parameter_binding(source, 6, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_or_literal(source, 6, index, angle)
             },
         },
         _ => return None,
@@ -4174,8 +4223,8 @@ fn project_hole(
         },
         None,
         Some({
-            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
-            parameter_binding(source, 1, index)?
+            let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
+            parameter_or_literal(source, 1, index, diameter)
         }),
     )
     .ok()?;
@@ -4557,6 +4606,19 @@ fn parameter_binding<Q>(
     )
 }
 
+/// A dimension bound to its owning parameter when the reference resolves,
+/// and to the value already read otherwise. A whole feature never drops on
+/// an unresolvable parameter reference.
+fn parameter_or_literal<Q>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+    value: Q,
+) -> cadmpeg_ir::features::Dimension<Q> {
+    parameter_binding(source, slot, index)
+        .unwrap_or(cadmpeg_ir::features::Dimension::Literal(value))
+}
+
 fn reference_binding<Q>(
     token: &str,
     reference: u32,
@@ -4692,6 +4754,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod helpers;
     mod holes;
     mod sheet_metal;
     mod surface_extrusion;
@@ -4712,14 +4775,10 @@ pub(crate) mod tests {
         FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
         RECTANGULAR_PATTERN_FEATURE_TYPE, WORK_PLANE_TYPE,
     };
-    use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
     use crate::record_identity::Located;
-    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{
-        content, content_at, parse, primary_envelope_fixture,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+    use crate::test_support::test_fixtures::{content, content_at, parse};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferSpec, RadiusSpec},
@@ -4778,7 +4837,6 @@ pub(crate) mod tests {
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
-            issues: Vec::new(),
             ..Default::default()
         };
         let design = crate::design::DesignInventory {
@@ -4788,7 +4846,6 @@ pub(crate) mod tests {
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
-            issues: Vec::new(),
         };
         let sketch = crate::sketch::SketchInventory {
             sketches: Vec::new(),
@@ -4796,7 +4853,6 @@ pub(crate) mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -4885,50 +4941,14 @@ pub(crate) mod tests {
         assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
     }
 
-    fn inventory_with_record(
-        type_id: [u8; 16],
-        payload: &[u8],
-        policy: DecodePolicy,
-    ) -> Result<super::FeatureInventory, CodecError> {
-        with_record(type_id, payload, policy, inventory)
-    }
-
-    /// Run `read` over a `PmDc` segment whose first record has `type_id` and
-    /// `payload`.
-    fn with_record<T>(
-        type_id: [u8; 16],
-        payload: &[u8],
-        policy: DecodePolicy,
-        read: impl FnOnce(&DecodeContext<'_>, &crate::rse::RseInventory<'_>) -> Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
-        let bytes = primary_envelope_fixture();
-        let payload = payload.to_vec();
-        let arena = DecodeArena::new();
-        let (setup_ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("envelope view");
-        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
-        let segment = &mut container.rse.segments[0];
-        segment.kind = SegmentKind::PmDc;
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            panic!("framed bulk fixture");
-        };
-        let RecordFrameState::Framed(table) = &mut bulk.records else {
-            panic!("framed record fixture");
-        };
-        table.records[0].type_id = type_id;
-        table.records[0].payload = View::over_retained(&payload);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        read(&ctx, &container.rse)
-    }
+    use helpers::{inventory_with_record, with_record};
 
     #[test]
     fn an_undecodable_profile_body_is_counted_and_is_no_record_issue() {
         let payload = [0u8; 8];
         let kernel = crate::kernel::KERNEL_RECORD_TYPE_ID;
-        let inventory = inventory_with_record(kernel, &payload, DecodePolicy::service())
+        let _inventory = inventory_with_record(kernel, &payload, DecodePolicy::service())
             .expect("feature inventory");
-        assert!(inventory.issues.is_empty());
         let bodies = with_record(kernel, &payload, DecodePolicy::service(), |ctx, rse| {
             super::profile::decode_profile_bodies(ctx, rse)
         })
@@ -4947,7 +4967,6 @@ pub(crate) mod tests {
             let inventory = inventory_with_record(type_id, &payload, DecodePolicy::service())
                 .expect("unreferenced operand record");
             assert!(inventory.properties.is_empty());
-            assert!(inventory.issues.is_empty());
         }
     }
 
@@ -4965,14 +4984,22 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn feature_parse_issue_is_recorded() {
-        assert_eq!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-                .expect("truncated terminator becomes an issue")
-                .issues
-                .len(),
-            1
-        );
+    fn feature_parse_issue_is_given_up_as_a_part() {
+        let parts = with_record(
+            END_OF_FEATURES_TYPE,
+            &[],
+            DecodePolicy::service(),
+            |ctx, rse| {
+                let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::Inventor,
+                    ctx,
+                );
+                inventory(ctx, rse, &mut parts).map(|_| parts)
+            },
+        )
+        .expect("truncated terminator gives up its part");
+        let (_, _, _, losses) = parts.into_parts();
+        crate::test_support::assert_single_part_give_up(&losses, "inventor.rse_record_body");
     }
 
     #[test]
@@ -4983,15 +5010,23 @@ pub(crate) mod tests {
             inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor PmDc feature issue"
+                    && limit.operation == "part native entity"
         ));
-        assert_eq!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-                .expect("build the record inventory")
-                .issues
-                .len(),
-            1
-        );
+        let parts = with_record(
+            END_OF_FEATURES_TYPE,
+            &[],
+            DecodePolicy::service(),
+            |ctx, rse| {
+                let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::Inventor,
+                    ctx,
+                );
+                inventory(ctx, rse, &mut parts).map(|_| parts)
+            },
+        )
+        .expect("build the record inventory");
+        let (_, _, _, losses) = parts.into_parts();
+        crate::test_support::assert_single_part_give_up(&losses, "inventor.rse_record_body");
     }
 
     pub(crate) fn segment() -> cadmpeg_ir::ids::IdentityKey {
@@ -5532,7 +5567,6 @@ pub(crate) mod tests {
                 1,
                 "{operation}"
             );
-            assert!(admitted.issues.is_empty());
         }
     }
 

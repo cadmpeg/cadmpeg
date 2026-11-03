@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
+use crate::container::Section;
 use crate::container::SectionRole;
 
 use crate::decode::native::CreoArena;
@@ -18,21 +19,37 @@ use super::super::native::annotate;
 use super::super::native::emit_arena;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-/// Retain PSB geometry, thumbnail payloads, and every failed expansion.
+/// Retain PSB geometry, thumbnail payloads, the undecoded `FamilyInf`
+/// driver-table section, and every failed expansion.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. The declared
 /// extent is the record, so a shortened region would retain bytes the source
 /// never stated.
+/// Retained sections with the neutral classes their bytes can hold (§1.3):
+/// geometry and thumbnail sections hold model bytes, the driver-table section
+/// holds design bytes, while a section kept only because its compressed
+/// payload would not expand names both classes.
 pub(super) fn preserve_passthrough_sections(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
-) -> Result<Vec<UnknownRecord>, CodecError> {
+) -> Result<Vec<(UnknownRecord, cadmpeg_ir::ArenaClasses)>, CodecError> {
     let mut unknowns = Vec::new();
+    let driver_table = container::undecoded_driver_table_section(scan).map(Section::offset);
+    let incomplete: std::collections::BTreeSet<usize> = scan
+        .framing
+        .incomplete_sections
+        .iter()
+        .map(|section| section.offset)
+        .collect();
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
+            || section.name() == "NeuPrtSld"
+            || section.name() == "NeuAsmSld"
+            || Some(section.offset()) == driver_table
+            || incomplete.contains(&section.offset())
             || scan
                 .framing
                 .expansion_losses
@@ -102,6 +119,20 @@ pub(super) fn preserve_passthrough_sections(
                     Exactness::ByteExact,
                 )
             }
+        } else if Some(section.offset()) == driver_table {
+            (
+                section_bytes,
+                section.offset(),
+                "familyinf_driver_table",
+                Exactness::Unknown,
+            )
+        } else if section.name() == "NeuPrtSld" || section.name() == "NeuAsmSld" {
+            (
+                section_bytes,
+                section.offset(),
+                "material_display_section",
+                Exactness::Unknown,
+            )
         } else {
             (
                 section_bytes,
@@ -130,11 +161,39 @@ pub(super) fn preserve_passthrough_sections(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain Creo passthrough section",
         )?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            cadmpeg_core::decode::u64_from_index(offset),
-            bytes.to_vec(),
-            Vec::new(),
+        let classes = if expansion_failed {
+            cadmpeg_ir::ArenaClasses::from([
+                cadmpeg_ir::ArenaClass::Model,
+                cadmpeg_ir::ArenaClass::Design,
+            ])
+        } else if Some(section.offset()) == driver_table {
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
+        } else if incomplete.contains(&section.offset()) {
+            // A given-up section's bytes can hold either class; geometry and
+            // thumbnail sections keep their precise class below.
+            match section.role() {
+                SectionRole::PsbGeometry | SectionRole::Thumbnail => {
+                    cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+                }
+                SectionRole::ModelData => {
+                    cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
+                }
+                SectionRole::Metadata | SectionRole::Opaque => cadmpeg_ir::ArenaClasses::from([
+                    cadmpeg_ir::ArenaClass::Model,
+                    cadmpeg_ir::ArenaClass::Design,
+                ]),
+            }
+        } else {
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+        };
+        unknowns.push((
+            UnknownRecord::retained(
+                id,
+                cadmpeg_core::decode::u64_from_index(offset),
+                bytes.to_vec(),
+                Vec::new(),
+            ),
+            classes,
         ));
     }
     Ok(unknowns)
@@ -331,6 +390,6 @@ mod tests {
         })
         .expect("preserve the passthrough sections");
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
+        assert_eq!(records[0].0.id().as_str(), "creo:VisibGeom:section#0");
     }
 }

@@ -101,9 +101,19 @@ fn validate_surface_sweep_profile_edits(
             else {
                 return None;
             };
-            (matches!(profile, PlanarProfileRef::Generated { .. })
-                || !feature.source_properties.contains_key("Profile"))
-            .then_some((feature.id, profile.clone()))
+            let native_states_profile = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_id| {
+                    native
+                        .feature_histories
+                        .iter()
+                        .flat_map(|history| &history.features)
+                        .find(|record| record.id.as_str() == native_id)
+                })
+                .is_some_and(|record| record.properties.contains_key("Profile"));
+            (matches!(profile, PlanarProfileRef::Generated { .. }) || !native_states_profile)
+                .then_some((feature.id, profile.clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {

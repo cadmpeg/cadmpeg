@@ -16,6 +16,7 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -48,7 +49,7 @@ pub(crate) struct Scan<'a> {
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub(crate) streams: Vec<Stream<'a>>,
-    source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
+    untyped_marks: std::cell::RefCell<Vec<(String, cadmpeg_ir::ArenaClasses)>>,
 }
 
 impl<'a> Scan<'a> {
@@ -57,18 +58,40 @@ impl<'a> Scan<'a> {
         Self {
             container,
             streams,
-            source_untyped: std::cell::RefCell::default(),
+            untyped_marks: std::cell::RefCell::default(),
         }
     }
 }
 
 impl Scan<'_> {
-    pub(crate) fn source_untyped(&self) -> std::cell::RefMut<'_, cadmpeg_ir::ArenaClasses> {
-        self.source_untyped.borrow_mut()
+    /// Mark one retained record untyped at its retention site (§1.3).
+    pub(crate) fn note_untyped(
+        &self,
+        id: &str,
+        classes: impl IntoIterator<Item = cadmpeg_ir::ArenaClass>,
+    ) {
+        let classes: cadmpeg_ir::ArenaClasses = classes.into_iter().collect();
+        if classes.is_empty() {
+            return;
+        }
+        let mut marks = self.untyped_marks.borrow_mut();
+        if let Some((_, held)) = marks.iter_mut().find(|(marked, _)| marked == id) {
+            held.extend(classes);
+        } else {
+            marks.push((id.to_owned(), classes));
+        }
     }
 
-    pub(crate) fn mark_untyped(&self, class: cadmpeg_ir::ArenaClass) {
-        self.source_untyped.borrow_mut().insert(class);
+    pub(crate) fn untyped_mark_count(&self) -> usize {
+        self.untyped_marks.borrow().len()
+    }
+
+    pub(crate) fn truncate_untyped_marks(&self, len: usize) {
+        self.untyped_marks.borrow_mut().truncate(len);
+    }
+
+    pub(crate) fn take_untyped_marks(&self) -> Vec<(String, cadmpeg_ir::ArenaClasses)> {
+        std::mem::take(&mut self.untyped_marks.borrow_mut())
     }
 
     /// Count streams with the requested classification.
@@ -112,7 +135,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
-        let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
+        let (ir, annotations, unknowns, native_losses, outcome) =
+            build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
         body.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::container(),
@@ -122,16 +146,16 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
         return decoded(
             ctx,
-            root,
             &scan,
             ir,
             body,
             (annotations, unknowns),
             &mut admitted_entities,
+            outcome,
         );
     }
 
-    if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
+    if let Some((ir, body, annotations, unknowns, outcome)) = try_decode_geometry(
         ctx,
         &scan,
         &dialects,
@@ -141,65 +165,150 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     )? {
         return decoded(
             ctx,
-            root,
             &scan,
             ir,
             body,
             (annotations, unknowns),
             &mut admitted_entities,
+            outcome,
         );
     }
 
-    let (mut ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
+    let (mut ir, annotations, unknowns, native_losses, outcome) =
+        build_metadata_ir(ctx, &scan, &dialects)?;
     // Absence of a B-rep route does not erase independently decoded document
     // content (JT meshes, attributes, products, or design records).
     ir.scope = cadmpeg_ir::ContentScope {
-        model: ir
-            .model
-            .populated_arena(cadmpeg_ir::ArenaClass::Model)
-            .is_some(),
-        design: ir
-            .model
-            .populated_arena(cadmpeg_ir::ArenaClass::Design)
-            .is_some(),
+        model: model_parts_located(&scan, &ir),
+        design: outcome.design_held && design_parts_located(&scan, &ir),
     };
     let mut body = build_container_body(&scan, dialect_losses, notes);
     body.losses.extend(native_losses);
     report_untransferred_streams(&scan, &mut body, TypedNative::Available);
     decoded(
         ctx,
-        root,
         &scan,
         ir,
         body,
         (annotations, unknowns),
         &mut admitted_entities,
+        outcome,
     )
+}
+
+/// How one decode route left the design class, with its given-up parts.
+pub(crate) struct RouteOutcome {
+    /// False only when the class-level attachment failure gave up design.
+    pub(crate) design_held: bool,
+    /// Staged part give-ups: retained bytes, stub records, and losses.
+    pub(crate) parts: PartOutput,
+}
+
+/// Native arenas whose records carry design content: feature history,
+/// expressions, and configurations.
+fn is_design_native_arena(name: &str) -> bool {
+    name.starts_with("feature_")
+        || name.starts_with("expression")
+        || name.starts_with("configuration")
+}
+
+/// Whether one container entry can hold model content.
+fn entry_holds_model(content: crate::container::EntryContent) -> bool {
+    use crate::container::EntryContent::*;
+    matches!(
+        content,
+        ActiveBodyIndex
+            | FastLoadStructure
+            | FastLoadJt
+            | DisplayJt
+            | ExternalReferences
+            | MaterialTexture
+            | PartAttributes
+            | AssetCatalog
+            | NamedOpaqueStream
+    )
+}
+
+/// Whether one container entry can hold design content.
+fn entry_holds_design(content: crate::container::EntryContent) -> bool {
+    use crate::container::EntryContent::*;
+    matches!(content, PartPayload | Arrangements | NamedOpaqueStream)
+}
+
+/// Located model parts (§1.1): kernel streams, display and fast-load
+/// structure, assembly references, and any other retained native record.
+fn model_parts_located(scan: &Scan<'_>, ir: &CadIr) -> bool {
+    scan.has_parasolid()
+        || ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_some()
+        || scan
+            .container
+            .entries
+            .iter()
+            .any(|entry| entry_holds_model(entry.content()))
+        || ir.native.namespace("nx").is_some_and(|namespace| {
+            namespace
+                .arenas()
+                .iter()
+                .any(|(arena, records)| !records.is_empty() && !is_design_native_arena(arena))
+        })
+}
+
+/// Located design parts (§1.1): object-model sections and the arrangement
+/// entries, or any retained design record.
+fn design_parts_located(scan: &Scan<'_>, ir: &CadIr) -> bool {
+    !scan.container.indexed_om_sections().is_empty()
+        || ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
+            .is_some()
+        || scan
+            .container
+            .entries
+            .iter()
+            .any(|entry| entry_holds_design(entry.content()))
+        || ir.native.namespace("nx").is_some_and(|namespace| {
+            namespace
+                .arenas()
+                .iter()
+                .any(|(arena, records)| !records.is_empty() && is_design_native_arena(arena))
+        })
 }
 
 fn decoded(
     ctx: &DecodeContext<'_>,
-    root: View<'_>,
     scan: &Scan<'_>,
     mut ir: CadIr,
     mut body: DecodeBody,
     source: (cadmpeg_ir::Annotations, Vec<UnknownRecord>),
     admitted_entities: &mut u64,
+    outcome: RouteOutcome,
 ) -> Result<Decoded, CodecError> {
     let (annotations, unknowns) = source;
+    let RouteOutcome { design_held, parts } = outcome;
+    let (_staged_model, staged_native, staged_fidelity, staged_losses) = parts.into_parts();
+    // Lanes write the live document; the helper's stages stay empty. Only
+    // give-ups (retained bytes, stub records, losses) arrive here.
+    body.losses.extend(staged_losses);
+    for (format, mut namespace) in staged_native.0 {
+        debug_assert_eq!(format, "nx", "NX parts stage only the NX namespace");
+        let destination = ir.native.namespace_mut("nx");
+        for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
+            destination
+                .arenas_mut()
+                .entry(arena)
+                .or_default()
+                .append(&mut records);
+        }
+    }
     if ctx.container_only() {
         ir.scope = cadmpeg_ir::ContentScope::container();
     } else {
         document_projection::project(ctx, &mut ir, &mut body.losses)?;
-        ir.scope.model = body.transfer.geometry_transferred
-            || ir
-                .model
-                .populated_arena(cadmpeg_ir::ArenaClass::Model)
-                .is_some();
-        ir.scope.design |= ir
-            .model
-            .populated_arena(cadmpeg_ir::ArenaClass::Design)
-            .is_some();
+        ir.scope.model = body.transfer.geometry_transferred || model_parts_located(scan, &ir);
+        ir.scope.design = design_held && design_parts_located(scan, &ir);
     }
     body.transfer.scope = ir.scope;
     ctx.admit_entities(
@@ -208,23 +317,11 @@ fn decoded(
         "admit NX entities",
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations);
+    source_fidelity.append(staged_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
-    if ctx.container_only() && (!scan.container.entries.is_empty() || !scan.streams.is_empty()) {
-        scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
-        scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+    for (id, classes) in scan.take_untyped_marks() {
+        source_fidelity.mark_untyped(&id, classes)?;
     }
-    ctx.retain_bytes(
-        cadmpeg_core::decode::u64_from_index(root.window().len()),
-        "retain NX source image outside CADIR",
-    )?;
-    source_fidelity.insert_retained_record(
-        cadmpeg_ir::ids::UnknownId::mint("nx:source:image#whole").map_err(CodecError::malformed)?,
-        cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
-            "nx:source",
-            root.window().to_vec(),
-        )
-        .with_untyped(scan.source_untyped.borrow().clone()),
-    )?;
     Ok(Decoded {
         ir,
         body,
@@ -235,10 +332,12 @@ fn decoded(
 fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note({ scan.mark_untyped(cadmpeg_ir::ArenaClass::Design); scan.mark_untyped(cadmpeg_ir::ArenaClass::Model); format!(
+        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(
+            format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
-            ) }));
+            ),
+        ));
     }
     for entry in &scan.container.entries {
         let content = entry.content();
@@ -247,35 +346,30 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
-            body.losses.push(NxLossCode::ContainerStreamOpaque.note({ scan.mark_untyped(cadmpeg_ir::ArenaClass::Design); scan.mark_untyped(cadmpeg_ir::ArenaClass::Model); format!(
+            body.losses.push(NxLossCode::ContainerStreamOpaque.note(
+                format!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
-                ) }));
+                ),
+            ));
         }
     }
     for entry in scan.container.bounded_indexed_om_entries() {
-        body.losses.push(NxLossCode::SourceScanBounded.note({
-            scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
-            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
-            format!(
-                "The indexed object-model section search in {} reached its work bound of {}; \
+        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
+            "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
-                entry.name,
-                crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-            )
-        }));
+            entry.name,
+            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
+        )));
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             body.losses
-                .push(NxLossCode::NonParasolidStreamOmitted.note({
-                    scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
-                    format!(
-                        "Non-Parasolid {} stream #{index} was classified but not transferred.",
-                        stream.kind().label()
-                    )
-                }));
+                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
+                    "Non-Parasolid {} stream #{index} was classified but not transferred.",
+                    stream.kind().label()
+                )));
         }
     }
 }
@@ -346,6 +440,7 @@ fn build_metadata_ir(
         cadmpeg_ir::Annotations,
         Vec<UnknownRecord>,
         Vec<LossNote>,
+        RouteOutcome,
     ),
     CodecError,
 > {
@@ -355,19 +450,19 @@ fn build_metadata_ir(
     let mut losses = Vec::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind().is_parasolid() {
-            let unknown = unknown_stream(ctx, si, stream)?;
-            annotations.note(
-                unknown.id().as_str(),
-                &source_stream,
-                cadmpeg_core::decode::u64_from_index(stream.file_offset),
-                Some(stream.kind().label()),
-            );
-            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
-            unknowns.push(unknown);
-        }
+        let unknown = unknown_stream(ctx, si, stream)?;
+        annotations.note(
+            unknown.id().as_str(),
+            &source_stream,
+            cadmpeg_core::decode::u64_from_index(stream.file_offset),
+            Some(stream.kind().label()),
+        );
+        annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+        scan.note_untyped(unknown.id().as_str(), [cadmpeg_ir::ArenaClass::Model]);
+        unknowns.push(unknown);
     }
-    if ctx.container_only() {
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Nx, ctx);
+    let outcome = if ctx.container_only() {
         crate::native::attach_container_layer(
             ctx,
             &mut ir,
@@ -376,26 +471,50 @@ fn build_metadata_ir(
             &mut unknowns,
             TypedNative::ContainerOnly,
         )?;
+        RouteOutcome {
+            design_held: true,
+            parts,
+        }
     } else {
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-        let model = crate::native::model::NativeModel::extract(
-            ctx,
-            &scan.container,
-            &scan.streams,
-            &mut parsed,
-            None,
-        )?;
-        crate::native::attach_annotations(
-            ctx,
-            &mut ir,
-            &model,
-            scan,
-            &mut annotations,
-            &mut unknowns,
-            &mut losses,
-        )?;
-    }
-    Ok((ir, annotations.build(), unknowns, losses))
+        let held = match (|| {
+            let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
+            let model = crate::native::model::NativeModel::extract(
+                ctx,
+                &scan.container,
+                &scan.streams,
+                &mut parsed,
+                None,
+            )?;
+            let held = crate::native::attach_annotations(
+                ctx,
+                &mut ir,
+                &model,
+                scan,
+                &mut annotations,
+                &mut unknowns,
+                &mut losses,
+                &mut parts,
+            )?;
+            crate::native::retain_deltas_gaps(ctx, scan, &model, &mut unknowns)?;
+            Ok(held)
+        })() {
+            Ok(held) => held,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                ir.scope.design = false;
+                losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
+                    "Native object-model extraction failed: {error}. Decoded streams are kept. \
+                     No attachment record was located, so the design class is not delivered."
+                )));
+                false
+            }
+        };
+        RouteOutcome {
+            design_held: held,
+            parts,
+        }
+    };
+    Ok((ir, annotations.build(), unknowns, losses, outcome))
 }
 
 fn build_container_body(

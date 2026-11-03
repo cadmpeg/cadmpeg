@@ -8,7 +8,9 @@ use cadmpeg_ir::geometry::{CompoundCurveConstruction, Curve, ProceduralCurveDefi
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::CadIr;
 
-use super::{class_wrapper_with_direct, native_i32_count, ClassPayload, WritableObjectCurve};
+use super::{
+    class_wrapper_with_direct, native_i32_count, ClassPayload, WritableObjectCurve, WriteError,
+};
 
 /// A curve class body and the bytes written directly at its own chunk level.
 pub(super) struct CurvePayload {
@@ -141,7 +143,7 @@ pub(super) fn payload(
     ir: &CadIr,
     curve: &Curve,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(CurvePayload, bool), CodecError> {
+) -> Result<(CurvePayload, bool), WriteError> {
     let Some(compound) = construction(ir, curve) else {
         return WritableObjectCurve::try_new(curve)
             .and_then(|value| value.payload())
@@ -149,12 +151,14 @@ pub(super) fn payload(
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
-        return Err(CodecError::malformed("cyclic compound curve construction"));
+        return Err(WriteError::Omit(
+            "cyclic compound curve construction".into(),
+        ));
     }
     let result = compound_payload(ir, compound, active);
     active.remove(&curve.id);
     match result {
-        Err(CodecError::UnsupportedContent(_)) if curve.geometry.solved().is_some() => {
+        Err(WriteError::Omit(_)) if curve.geometry.solved().is_some() => {
             WritableObjectCurve::try_new(curve)
                 .and_then(|value| value.payload())
                 .map(|payload| (CurvePayload::leaf(payload), true))
@@ -167,9 +171,9 @@ fn compound_payload(
     ir: &CadIr,
     compound: &CompoundCurveConstruction,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(CurvePayload, bool), CodecError> {
+) -> Result<(CurvePayload, bool), WriteError> {
     if active.len() > crate::curves::MAX_CURVE_DEPTH {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Omit(
             "compound curve nesting exceeds the native decoder's supported depth".into(),
         ));
     }
@@ -185,7 +189,7 @@ fn compound_payload(
             .any(|pair| pair[0].get() >= pair[1].get())
     {
         // (S-entity) Other compound parameter conventions have no native polycurve spelling.
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Omit(
             "compound curve parameters do not define native polycurve child intervals".into(),
         ));
     }

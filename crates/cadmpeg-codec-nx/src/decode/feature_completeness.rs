@@ -177,9 +177,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             if evaluated.contains_key(&parameter.id) || incomplete.contains(&parameter.id) {
                 continue;
             }
-            let unit = parameter.properties.get("unit").map(String::as_str);
             if parameter.value.is_none()
-                || unit.is_some_and(|unit| !matches!(unit, "millimeter" | "inch" | "degree"))
                 || parameter.expression.tokens.iter().any(|token| match token {
                     cadmpeg_ir::features::ExpressionToken::Text(text) => {
                         crate::native::om::expression_parameter_names(text)
@@ -210,12 +208,11 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                 .and_then(|value| parameter.expression.literal_value_as(value))
                 .as_ref()
                 .and_then(scalar);
+            // Authored literals read in neutral units (millimetres, radians):
+            // a bare number authored in another source unit no longer
+            // verifies against its cache.
             let native_value = if let Some(literal) = literal {
-                Some(match unit {
-                    Some("inch") => literal / 25.4,
-                    Some("degree") => literal.to_degrees(),
-                    _ => literal,
-                })
+                Some(literal)
             } else {
                 parameter
                     .expression
@@ -228,21 +225,10 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                     })
                     .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
-            let canonical = native_value.and_then(|value| {
-                unit.map_or(Some(value), |unit| match unit {
-                    "millimeter" => Some(value),
-                    "inch" => Some(value * 25.4),
-                    "degree" => Some(value.to_radians()),
-                    _ => None,
-                })
-            });
-            if let (Some(native), Some(canonical), Some(stored)) = (native_value, canonical, stored)
-            {
-                let tolerance = EXPRESSION_CACHE_RELATIVE_TOLERANCE
-                    * canonical.abs().max(stored.abs()).max(1.0);
-                if canonical.is_finite()
-                    && stored.is_finite()
-                    && (canonical - stored).abs() <= tolerance
+            if let (Some(native), Some(stored)) = (native_value, stored) {
+                let tolerance =
+                    EXPRESSION_CACHE_RELATIVE_TOLERANCE * native.abs().max(stored.abs()).max(1.0);
+                if native.is_finite() && stored.is_finite() && (native - stored).abs() <= tolerance
                 {
                     evaluated.insert(&parameter.id, native);
                     progressed = true;

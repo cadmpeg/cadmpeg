@@ -215,8 +215,7 @@ fn loss_count(losses: &[LossNote], code: IgesLossCode) -> usize {
 
 fn directory_count(ir: &CadIr) -> usize {
     let namespace = ir.native.namespace("iges").expect("iges namespace");
-    let arena = |name: &str| namespace.arenas().get(name).map_or(0, Vec::len);
-    arena("entities") + arena("quarantined_directory_records")
+    namespace.arenas().get("entities").map_or(0, Vec::len)
 }
 
 fn point_ids(ir: &CadIr) -> BTreeSet<String> {
@@ -622,12 +621,12 @@ fn global_record_cut_mid_value_claims_no_version_or_unit() {
 }
 
 #[test]
-fn unmarked_line_before_the_final_line_is_malformed() {
+fn unmarked_line_before_the_final_line_is_given_up() {
     let file = synthetic();
     let complete = file.bytes();
     let without_terminate = file.without_terminate();
     // After the Start card and the first Global card, so classification still
-    // accepts the stream and the refusal comes from section framing.
+    // accepts the stream and the unmarked line becomes its own part.
     let after_two_cards = 81 * 2;
     let after_global = (1 + file.global_card_count) * 81;
     for (label, bytes) in [
@@ -644,9 +643,19 @@ fn unmarked_line_before_the_final_line_is_malformed() {
             insert_line(&complete, after_global, b"short\n"),
         ),
     ] {
-        assert_codec_error(&bytes, label, |error| {
-            matches!(error, CodecError::Malformed(_))
-        });
+        let decoded = decode(&bytes).unwrap_or_else(|error| panic!("{label}: {error:?}"));
+        // #215 rule 1: the unmarked line is one given-up `iges.unmarked_line`
+        // part; the rest of the file still decodes.
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "record.unreadable")
+                .count(),
+            1,
+            "{label}"
+        );
     }
 }
 

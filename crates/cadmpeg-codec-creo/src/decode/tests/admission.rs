@@ -448,11 +448,13 @@ fn decode_annotations_cover_every_emitted_entity() {
 
 #[test]
 fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
+    // The timed states carry their `tm_year` byte before the family name;
+    // the stored name excludes it and no prefix is recorded.
     let data = build_prt(
         "c",
         &[(
             "MdlStatus",
-            b"noise\0xProtrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0ySurface id 45\0"
+            b"noise\0\xe2\x38\x21\x01\x14\x00\x78Protrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0\xe2\x38\x21\x01\x14\x00\x79Surface id 45\0"
                 .to_vec(),
         )],
     );
@@ -465,14 +467,14 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     );
     assert_eq!(
         scan.features.operation_states[0].stored_name().as_deref(),
-        Some("xProtrusion id 40")
+        Some("Protrusion id 40")
     );
     assert_eq!(
         scan.features.operation_states[0].name.identifier_keyword(),
         Some("id")
     );
     assert_eq!(
-        scan.features.operation_states[0].state_offset + 1,
+        scan.features.operation_states[0].state_offset,
         scan.features.operation_states[0].offset
     );
     assert_eq!(scan.features.operation_states[5].feature_id, 40);
@@ -491,7 +493,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(scan.features.operations[2].kind.as_str(), "Datum Plane");
     assert_eq!(scan.features.operations[3].kind.as_str(), "Draft");
     assert_eq!(scan.features.operations[4].kind.as_str(), "Surface");
-    assert_eq!(scan.features.operations[4].stored_name_prefix(), Some(b'y'));
+    assert_eq!(scan.features.operations[4].stored_name_prefix(), None);
 
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -510,11 +512,11 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(feature_40[0].fields().unwrap()["current"], false);
     assert_eq!(
         feature_40[0].fields().unwrap()["stored_name"],
-        "xProtrusion id 40"
+        "Protrusion id 40"
     );
     assert_eq!(
         crate::test_support::native_bytes(&feature_40[0].fields().unwrap()["stored_name_bytes"]),
-        b"xProtrusion id 40"
+        b"Protrusion id 40"
     );
     assert_eq!(feature_40[0].fields().unwrap()["identifier_keyword"], "id");
     assert_eq!(
@@ -557,11 +559,11 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
             .features
             .iter()
             .find(|feature| feature.id.as_str() == "creo:model:feature#45")
-            .expect("state-prefixed feature")
+            .expect("timed-state feature")
             .source_properties
             .get("mdl_stored_name_prefix")
             .map(String::as_str),
-        Some("y")
+        None
     );
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -595,7 +597,13 @@ fn disagreeing_operation_states_do_not_fall_back_to_schema_operations() {
 
 #[test]
 fn decode_preserves_stored_feature_identifier_keyword() {
-    let data = build_prt("c", &[("MdlStatus", b"ySurface ID 45\0".to_vec())]);
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"\xe2\x38\x21\x01\x14\x00\x79Surface ID 45\0".to_vec(),
+        )],
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -614,7 +622,7 @@ fn decode_preserves_stored_feature_identifier_keyword() {
             .source_properties
             .get("mdl_stored_name_prefix")
             .map(String::as_str),
-        Some("y")
+        None
     );
 }
 
@@ -730,4 +738,89 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .losses
         .iter()
         .all(|loss| !loss.message.starts_with("Transferred ")));
+}
+
+#[test]
+fn full_decode_projects_thumbnail_as_asset_with_native_ref() {
+    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode thumbnail"),
+    );
+    assert_eq!(result.ir().model.assets.len(), 1);
+    let asset = &result.ir().model.assets[0];
+    assert_eq!(
+        asset.name.as_ref().map(|name| name.as_str()),
+        Some("THMB_IMG_MAIN")
+    );
+    assert_eq!(
+        asset.media_type.as_ref().map(|media| media.as_str()),
+        Some("image/jpeg")
+    );
+    let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
+        panic!("thumbnail asset is embedded");
+    };
+    assert_eq!(data.as_bytes(), jpeg_payload());
+    let unknowns = result.ir().native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(asset.native_ref.as_deref(), Some(unknowns[0].id.as_str()));
+    let retained = result
+        .source_fidelity()
+        .retained_record(unknowns[0].id.as_str())
+        .expect("retained thumbnail");
+    assert!(retained
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+}
+
+#[test]
+fn full_decode_retains_undecoded_driver_table_section_named_by_loss() {
+    let mut payload = b"drv_tbl_ptr\0\xf7\x05".to_vec();
+    payload.extend_from_slice(b"binary driver-table entity without a decoded grammar");
+    let data = build_prt("c", &[("FamilyInf", payload)]);
+    let scan = container::scan_bytes_ok(data.clone());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "FamilyInf")
+        .expect("FamilyInf section");
+    assert!(matches!(
+        scan.framing.family_table.map(|table| table.pointer),
+        Some(crate::container::FamilyTablePointer::Entity(5))
+    ));
+    let retained_id = format!("creo:FamilyInf:section#{}", section.offset());
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode driver-table pointer"),
+    );
+    assert!(result.ir().model.configurations.is_empty());
+    assert!(result.ir().scope.design);
+    let unknowns = result.ir().native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].id.as_str(), retained_id);
+    let retained = result
+        .source_fidelity()
+        .retained_record(&retained_id)
+        .expect("retained driver-table section");
+    assert!(retained
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::CreoLossCode::ConfigurationDriverUnresolved.kind())
+        .expect("driver-table loss names the retained record");
+    assert!(loss.message.contains(&retained_id), "{loss:#?}");
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
 }

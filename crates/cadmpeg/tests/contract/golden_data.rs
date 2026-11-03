@@ -4,12 +4,18 @@
 //! `FreeCAD` decode goldens pin native arenas by digest, so its checks
 //! decode the corpus fixtures those goldens snapshot.
 
+use cadmpeg_test_support::base::goldens_with_base;
+use cadmpeg_test_support::data_checks::base::{
+    base_binding_findings, base_ordinal_findings, base_property_loss_findings,
+};
 use cadmpeg_test_support::data_checks::properties::property_map_findings;
 use cadmpeg_test_support::data_checks::{
-    decode_goldens, equation_identities, expression_text_findings, feature_ordinal_findings,
-    freecad_stale_findings, never_stale_findings, solidworks_stale_findings,
-    source_attributes_findings, DecodeGolden,
+    creo_stale_findings, decode_goldens, equation_identities, expression_text_findings,
+    feature_ordinal_findings, freecad_stale_findings, never_stale_findings,
+    solidworks_stale_findings, source_attributes_findings, DecodeGolden,
 };
+
+use super::sampled_goldens;
 use serde_json::Value;
 
 fn assert_documents_clean(
@@ -125,6 +131,18 @@ never_stale! {
     nx_rule_e => "cadmpeg-codec-nx", nx_needs_recompute_is_false,
 }
 
+mod creo_rule_e {
+    #[test]
+    fn creo_needs_recompute_matches_charged_staleness() {
+        let goldens = super::sampled_goldens(super::decode_goldens("cadmpeg-codec-creo"));
+        super::assert_documents_clean(
+            "cadmpeg-codec-creo",
+            &goldens,
+            |golden: &super::DecodeGolden| super::creo_stale_findings(&golden.ir, &golden.report),
+        );
+    }
+}
+
 mod sldprt_rule_e {
     #[test]
     fn sldprt_needs_recompute_follows_the_active_configuration() {
@@ -144,6 +162,91 @@ source_byte_free! {
     catia_rule_b => "cadmpeg-codec-catia", catia_source_attributes_hold_no_source_byte_fact,
     creo_rule_b => "cadmpeg-codec-creo", creo_source_attributes_hold_no_source_byte_fact,
     nx_rule_b => "cadmpeg-codec-nx", nx_source_attributes_hold_no_source_byte_fact,
+}
+
+fn assert_pairs_clean(
+    label: &str,
+    base: &str,
+    pairs: &[(DecodeGolden, DecodeGolden)],
+    check: impl Fn(&Value, &Value) -> Vec<String>,
+) {
+    assert!(
+        !pairs.is_empty(),
+        "{label} has no golden at both base {base} and head; \
+         a base check that fails on a codec whose Phase 3 unit has not landed \
+         stays failing and is reported with the codec, not skipped",
+    );
+    let findings: Vec<String> = pairs
+        .iter()
+        .flat_map(|(head, at_base)| {
+            check(&at_base.ir, &head.ir)
+                .into_iter()
+                .map(move |finding| format!("{}: {finding}", head.path))
+        })
+        .collect();
+    assert!(
+        findings.is_empty(),
+        "{} finding(s):\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
+}
+
+/// The §9.4 fixed sample of one codec's base pairs, in head path order.
+fn sampled_pairs(
+    mut pairs: Vec<(DecodeGolden, DecodeGolden)>,
+) -> Vec<(DecodeGolden, DecodeGolden)> {
+    pairs.sort_by(|left, right| left.0.path.cmp(&right.0.path));
+    super::sampled(pairs)
+}
+
+macro_rules! base_data_checks {
+    ($($codec:ident => $crate_name:literal, $namespace:literal, $loss:ident, $bindings:ident, $ordinals:ident),* $(,)?) => {
+        $(mod $codec {
+            const NAMESPACE: &str = $namespace;
+
+            #[test]
+            fn $loss() {
+                let (base, pairs) = super::goldens_with_base($crate_name);
+                let pairs = super::sampled_pairs(pairs);
+                super::assert_pairs_clean($crate_name, &base, &pairs, |at_base, head| {
+                    super::base_property_loss_findings(NAMESPACE, at_base, head)
+                });
+            }
+
+            #[test]
+            fn $bindings() {
+                let (base, pairs) = super::goldens_with_base($crate_name);
+                let pairs = super::sampled_pairs(pairs);
+                super::assert_pairs_clean($crate_name, &base, &pairs, |at_base, head| {
+                    super::base_binding_findings(at_base, head)
+                });
+            }
+
+            #[test]
+            fn $ordinals() {
+                let (base, pairs) = super::goldens_with_base($crate_name);
+                let pairs = super::sampled_pairs(pairs);
+                super::assert_pairs_clean($crate_name, &base, &pairs, |at_base, head| {
+                    super::base_ordinal_findings(at_base, head)
+                });
+            }
+        })*
+    };
+}
+
+base_data_checks! {
+    sat_base => "cadmpeg-codec-sat", "sat", sat_base_properties_lose_nothing, sat_base_bindings_hold, sat_base_ordinals_hold,
+    step_base => "cadmpeg-codec-step", "step", step_base_properties_lose_nothing, step_base_bindings_hold, step_base_ordinals_hold,
+    iges_base => "cadmpeg-codec-iges", "iges", iges_base_properties_lose_nothing, iges_base_bindings_hold, iges_base_ordinals_hold,
+    rhino_base => "cadmpeg-codec-rhino", "rhino", rhino_base_properties_lose_nothing, rhino_base_bindings_hold, rhino_base_ordinals_hold,
+    freecad_base => "cadmpeg-codec-freecad", "fcstd", freecad_base_properties_lose_nothing, freecad_base_bindings_hold, freecad_base_ordinals_hold,
+    f3d_base => "cadmpeg-codec-f3d", "f3d", f3d_base_properties_lose_nothing, f3d_base_bindings_hold, f3d_base_ordinals_hold,
+    sldprt_base => "cadmpeg-codec-sldprt", "sldprt", sldprt_base_properties_lose_nothing, sldprt_base_bindings_hold, sldprt_base_ordinals_hold,
+    inventor_base => "cadmpeg-codec-inventor", "inventor", inventor_base_properties_lose_nothing, inventor_base_bindings_hold, inventor_base_ordinals_hold,
+    catia_base => "cadmpeg-codec-catia", "catia", catia_base_properties_lose_nothing, catia_base_bindings_hold, catia_base_ordinals_hold,
+    creo_base => "cadmpeg-codec-creo", "creo", creo_base_properties_lose_nothing, creo_base_bindings_hold, creo_base_ordinals_hold,
+    nx_base => "cadmpeg-codec-nx", "nx", nx_base_properties_lose_nothing, nx_base_bindings_hold, nx_base_ordinals_hold,
 }
 
 #[cfg(feature = "fcstd")]
@@ -177,6 +280,7 @@ mod freecad_corpus {
                 DecodeGolden {
                     path: path.display().to_string(),
                     ir: serde_json::to_value(decoded.ir()).expect("CADIR JSON"),
+                    report: serde_json::to_value(decoded.report()).expect("report JSON"),
                     fidelity: serde_json::to_value(decoded.source_fidelity())
                         .expect("fidelity JSON"),
                 }

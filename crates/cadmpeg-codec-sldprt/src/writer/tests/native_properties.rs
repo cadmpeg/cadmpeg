@@ -47,12 +47,9 @@ fn source_less_native_algorithm_edit_and_deletion_preserve_canonical_radius_and_
                 .parameters
                 .insert(cadmpeg_core::nonblank_literal!("Radius"), "99mm".into());
         });
-        // This legacy projection copy is deliberately stale. The typed native
-        // home owns Algorithm, including its explicit deletion, under W1/W2.
-        assert_eq!(
-            decoded.ir().model.features[0].source_properties["Algorithm"],
-            "RollingBall"
-        );
+        // The typed native home owns Algorithm, including its explicit
+        // deletion, under W1/W2. The neutral projection keeps no stale copy.
+        assert!(decoded.ir().model.features[0].source_properties.is_empty());
         let plan = SldprtCodec
             .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
             .unwrap();
