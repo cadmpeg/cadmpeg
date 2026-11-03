@@ -27,6 +27,7 @@ mod claims;
 mod closure_ids;
 pub(crate) mod dependencies;
 mod drawing;
+pub(super) mod drops;
 pub(crate) mod geometry;
 mod groups;
 mod index;
@@ -264,6 +265,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         mut self,
         source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
+        damage_ledger: drops::DropLedger,
+        damage_starts: BTreeMap<u64, u64>,
     ) -> AnalyzedExchange {
         // A held class is in scope: occurrences or assets can admit model
         // records after the session scope was derived from the DATA sections.
@@ -281,6 +284,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             },
             matched: self.matched,
             opaque_offsets,
+            damage_ledger,
+            damage_starts,
         }
     }
 }
@@ -289,6 +294,8 @@ pub(crate) struct AnalyzedExchange {
     pub(crate) decoded: Decoded,
     pub(crate) matched: DialectMatch,
     pub(crate) opaque_offsets: BTreeSet<usize>,
+    pub(crate) damage_ledger: drops::DropLedger,
+    pub(crate) damage_starts: BTreeMap<u64, u64>,
 }
 
 struct OpaqueSourceRecord {
@@ -305,7 +312,7 @@ pub(crate) fn decode(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse(input, ctx)?;
-    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging).map(|result| result.decoded)
 }
 
 pub(crate) fn decode_exchange(
@@ -314,7 +321,7 @@ pub(crate) fn decode_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
-) -> Result<Decoded, CodecError> {
+) -> Result<AnalyzedExchange, CodecError> {
     decode_exchange_mode(
         input,
         &mut exchange,
@@ -322,7 +329,6 @@ pub(crate) fn decode_exchange(
         DecodeMode::Decode(packaging),
         ctx,
     )
-    .map(|result| result.decoded)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -349,7 +355,12 @@ fn decode_exchange_mode(
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
         let fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
-        return Ok(session.into_result(fidelity, BTreeSet::new()));
+        return Ok(session.into_result(
+            fidelity,
+            BTreeSet::new(),
+            drops::DropLedger::new(),
+            BTreeMap::new(),
+        ));
     }
 
     let mut header_spans = Vec::new();
@@ -490,6 +501,23 @@ fn decode_exchange_mode(
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
 
+    // Rules 2 and 3 for damaged decodes: the stages above drop what they
+    // cannot build. The ledger below names each given-up part's drops,
+    // resurrects stranded vertices, and emits dead-style appearances.
+    let mut damage_ledger = drops::DropLedger::new();
+    resolve_damage_drops(
+        exchange,
+        &mut session.ir,
+        &mut session.typed_records,
+        &mut damage_ledger,
+        session.ctx,
+    )?;
+    let damage_starts: BTreeMap<u64, u64> = exchange
+        .dead_spans()
+        .iter()
+        .map(|(id, span)| (u64_from_index(span.start), *id))
+        .collect();
+
     session.charge_pending_ir_entities("step_drawing_decode")?;
     let mut drawing = drawing::decode(
         exchange,
@@ -534,6 +562,13 @@ fn decode_exchange_mode(
     let mut opaque_ids = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
+    // A resurrected instance holds its model record; retaining its source
+    // again would double its home.
+    let resurrected = if exchange.dead_instances().is_empty() {
+        BTreeSet::new()
+    } else {
+        drops::model_instances(&session.ir)
+    };
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()
@@ -549,6 +584,9 @@ fn decode_exchange_mode(
         }
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
+                continue;
+            }
+            if resurrected.contains(&id) {
                 continue;
             }
             let mut unknown_id = opaque_record_id(id, record)?;
@@ -571,6 +609,9 @@ fn decode_exchange_mode(
             if session.typed_records.contains(id) {
                 continue;
             }
+            if resurrected.contains(&id) {
+                continue;
+            }
             count_unknown_kind(&mut counts, record);
             let mut links = BTreeSet::new();
             for partial in &record.partials {
@@ -589,6 +630,9 @@ fn decode_exchange_mode(
     } else {
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
+                continue;
+            }
+            if resurrected.contains(&id) {
                 continue;
             }
             count_unknown_kind(&mut counts, record);
@@ -706,15 +750,26 @@ fn decode_exchange_mode(
     );
 
     session.body.notes.push(accounting_note);
-    for (name, count) in counts {
-        let message = format!("preserved {count} {name} instance(s) as named opaque STEP records");
-        session
-            .body
-            .losses
-            .push(StepLossCode::OpaqueRecordPreserved.note(message));
+    // A damaged decode reports its stranded instances through the parts
+    // that stranded them; the opaque census below only describes clean
+    // decodes.
+    if exchange.dead_instances().is_empty() {
+        for (name, count) in counts {
+            let message =
+                format!("preserved {count} {name} instance(s) as named opaque STEP records");
+            session
+                .body
+                .losses
+                .push(StepLossCode::OpaqueRecordPreserved.note(message));
+        }
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok(session.into_result(source_fidelity, opaque_offsets))
+    Ok(session.into_result(
+        source_fidelity,
+        opaque_offsets,
+        damage_ledger,
+        damage_starts,
+    ))
 }
 
 /// Copy source bytes that the decoded document keeps as an opaque record.
@@ -732,6 +787,69 @@ fn insert_retained_identity(identities: &mut BTreeSet<String>, identity: &str) {
         let copy = identity.to_string();
         identities.insert(copy);
     }
+}
+
+/// Resolve the rule 2 and 3 drops of one damaged decode: emit the
+/// appearances of dead styles, build the vertices the damage stranded,
+/// and ledger every stranded record the decode drops.
+fn resolve_damage_drops(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    typed_records: &mut ClaimSets,
+    ledger: &mut drops::DropLedger,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if exchange.dead_instances().is_empty() {
+        return Ok(());
+    }
+    presentation::emit_dead_style_appearances(exchange, ir, ctx)?;
+    emit_stranded_vertices(exchange, ir, typed_records)?;
+    drops::ledger_stranded_drops(exchange, ir, ledger, ctx)?;
+    Ok(())
+}
+
+/// Build the vertices the damage stranded: live vertex points whose
+/// point carrier survived. Shell building never attempts them, so this
+/// pass mints their plain identities.
+fn emit_stranded_vertices(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    typed_records: &mut ClaimSets,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::ids::{PointId, VertexId};
+    use cadmpeg_ir::topology::Vertex;
+
+    let mut emitted = std::collections::HashSet::new();
+    for (&id, record) in exchange.records() {
+        if typed_records.contains(id) {
+            continue;
+        }
+        let point = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "VERTEX_POINT")
+            .and_then(|partial| partial.parameters.iter().find_map(Value::reference));
+        let Some(point) = point else {
+            continue;
+        };
+        let point_id = PointId::from(ids::data(kind!("point"), point));
+        if !ir.model.points.iter().any(|known| known.id == point_id) {
+            continue;
+        }
+        let vertex_id = VertexId::from(ids::data(kind!("vertex"), id));
+        if ir.model.vertices.iter().any(|known| known.id == vertex_id) {
+            continue;
+        }
+        ir.model.vertices.push(Vertex {
+            native_ref: None,
+            id: vertex_id,
+            point: point_id,
+            tolerance: None,
+        });
+        emitted.insert(id);
+    }
+    typed_records.admit(emitted);
+    Ok(())
 }
 
 fn retain_unowned_carriers(
@@ -929,18 +1047,30 @@ fn retain_unowned_carriers(
         .iter()
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
+    // A carrier the damage stranded keeps the record it built: referenced
+    // by a live statement, it is not an unowned carrier.
+    let stranded = if exchange.dead_instances().is_empty() {
+        BTreeSet::new()
+    } else {
+        live_referenced(exchange)
+    };
+    let stranded_ref =
+        |identity: &str| step_instance_id(identity).is_some_and(|id| stranded.contains(&id));
     ir.model
         .pcurves
-        .retain(|pcurve| owned.contains(pcurve.id.as_str()));
-    ir.model
-        .points
-        .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .curves
-        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .surfaces
-        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
+        .retain(|pcurve| owned.contains(pcurve.id.as_str()) || stranded_ref(pcurve.id.as_str()));
+    ir.model.points.retain(|point| {
+        retains_carrier(point.id.as_str(), &removed_closure, &protected)
+            || stranded_ref(point.id.as_str())
+    });
+    ir.model.curves.retain(|curve| {
+        retains_carrier(curve.id.as_str(), &removed_closure, &protected)
+            || stranded_ref(curve.id.as_str())
+    });
+    ir.model.surfaces.retain(|surface| {
+        retains_carrier(surface.id.as_str(), &removed_closure, &protected)
+            || stranded_ref(surface.id.as_str())
+    });
     ir.model
         .procedural_curves
         .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
@@ -955,9 +1085,13 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(**id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    losses.push(StepLossCode::DecodeWarning.note(format!(
-        "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    )));
+    // A damaged decode reports its stranded carriers through the parts that
+    // stranded them; the retention census below only describes clean decodes.
+    if exchange.dead_instances().is_empty() {
+        losses.push(StepLossCode::DecodeWarning.note(format!(
+            "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
+        )));
+    }
     Ok(())
 }
 
@@ -1483,6 +1617,32 @@ fn collect_references(
         _ => {}
     }
     Ok(())
+}
+
+/// Every instance a live statement references.
+fn live_referenced(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut referenced = BTreeSet::new();
+    fn visit(value: &Value, referenced: &mut BTreeSet<u64>) {
+        let mut stack = vec![value];
+        while let Some(value) = stack.pop() {
+            match value {
+                Value::Reference(id) | Value::ExternalReference(id) => {
+                    referenced.insert(*id);
+                }
+                Value::List(values) => stack.extend(values),
+                Value::Typed(_, value) => stack.push(value),
+                _ => {}
+            }
+        }
+    }
+    for record in exchange.records().values() {
+        for partial in &record.partials {
+            for value in &partial.parameters {
+                visit(value, &mut referenced);
+            }
+        }
+    }
+    referenced
 }
 
 /// Record accessors shared by the reader submodules.

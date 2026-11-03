@@ -677,6 +677,7 @@ pub(super) fn admit_operands(
     ctx: &DecodeContext<'_>,
     document: &crate::rse::RseInventory<'_>,
     inventory: &mut super::FeatureInventory,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<(), CodecError> {
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 
@@ -705,14 +706,27 @@ pub(super) fn admit_operands(
             if !needed.contains(&(segment.pair.token.key().as_str(), record.ordinal)) {
                 continue;
             }
-            let parsed = match record.type_id {
-                SELECTION_TYPE => parse_selection(ctx, record.payload, version),
-                OPTIONS_TYPE => parse_options(ctx, record.payload, version),
-                instance_map::TYPE => instance_map::parse(ctx, record.payload, version),
+            let token = segment.pair.token.as_str();
+            let staged = match record.type_id {
+                SELECTION_TYPE => {
+                    super::admit_record_part(ctx, parts, record.payload, token, || {
+                        parse_selection(ctx, record.payload, version)
+                    })?
+                }
+                OPTIONS_TYPE => {
+                    super::admit_record_part(ctx, parts, record.payload, token, || {
+                        parse_options(ctx, record.payload, version)
+                    })?
+                }
+                instance_map::TYPE => {
+                    super::admit_record_part(ctx, parts, record.payload, token, || {
+                        instance_map::parse(ctx, record.payload, version)
+                    })?
+                }
                 _ => continue,
             };
-            match parsed {
-                Ok(Some(property)) => super::push_record(
+            match staged {
+                Some(Some(property)) => super::push_record(
                     ctx,
                     &mut inventory.properties,
                     property,
@@ -721,23 +735,7 @@ pub(super) fn admit_operands(
                     record.ordinal,
                     "admit Inventor mirror operand",
                 )?,
-                Ok(None) => {}
-                Err(error) => {
-                    if matches!(error, CodecError::ResourceLimit(_)) {
-                        return Err(error);
-                    }
-                    ctx.charge_entities(1, "admit Inventor mirror operand issue")?;
-                    inventory.issues.push(crate::record_issue::RecordIssue {
-                        family: crate::record_issue::RecordIssueFamily::Feature {
-                            type_id: crate::record_identity::RecordTypeId::from_bytes(
-                                record.type_id,
-                            ),
-                        },
-                        segment_token: segment.pair.token.key().clone(),
-                        record_ordinal: record.ordinal,
-                        detail: crate::issue_detail(error)?,
-                    });
-                }
+                Some(None) | None => {}
             }
         }
     }
