@@ -55,6 +55,7 @@ fn configuration_partitions_require_explicit_source_identity() {
             (5, vec![second.clone()]),
         ],
         None,
+        false,
     )
     .unwrap();
 
@@ -105,6 +106,7 @@ fn sparse_reordered_source_identities_join_their_own_partitions() {
         &mut ir,
         vec![(5, vec![second.clone()]), (2, vec![first.clone()])],
         None,
+        false,
     )
     .unwrap();
 
@@ -142,6 +144,7 @@ fn native_configuration_without_a_decoded_partition_keeps_unresolved_membership(
         &mut ir,
         vec![(3, vec![body.clone()])],
         Some("Contents/Config-3-Partition"),
+        false,
     )
     .unwrap();
 
@@ -188,6 +191,7 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
         &mut ir,
         vec![(3, vec![body.clone()])],
         Some("Contents/Config-3-Partition"),
+        false,
     )
     .unwrap();
     mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
@@ -235,6 +239,7 @@ fn duplicate_active_names_do_not_adopt_a_partition() {
             &mut ir,
             vec![(3, vec![body])],
             Some("Contents/Config-3-Partition"),
+            false,
         )
         .unwrap();
         assert_eq!(ir.model.configurations[0].source_index, None);
@@ -267,7 +272,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])], None).unwrap();
+    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])], None, false).unwrap();
 
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
@@ -277,6 +282,16 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
         Some([body].as_slice())
     );
     assert!(ir.model.configurations[2].native_ref.is_none());
+}
+
+#[test]
+fn truncated_definition_parts_leave_no_inferred_partition_configuration() {
+    let mut ir = CadIr::empty();
+    let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])], None, true).unwrap();
+
+    assert!(ir.model.configurations.is_empty());
 }
 
 #[test]
@@ -297,6 +312,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         &mut ir,
         vec![(3, vec![body.clone()])],
         Some("Contents/Config-3-Partition"),
+        false,
     )
     .unwrap();
     mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
@@ -348,7 +364,13 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&mut ir, Vec::new(), Some("Contents/Config-3-Partition")).unwrap();
+    assign_configuration_bodies(
+        &mut ir,
+        Vec::new(),
+        Some("Contents/Config-3-Partition"),
+        false,
+    )
+    .unwrap();
     mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
 
     let configuration = &ir.model.configurations[0];

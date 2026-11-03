@@ -8,6 +8,7 @@ use std::num::NonZeroU32;
 use super::reference::{first_matching, references};
 use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
@@ -78,6 +79,10 @@ pub(super) fn decode(
         .collect::<std::collections::BTreeSet<_>>();
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
+    // Aspect links key by content, never by instance number: a rewrite
+    // allocates new numbers, so an instance key can never round-trip
+    // (#209 §2.4).
+    let aspect_keys = aspect_keys(exchange, &shape_aspects, &mut losses);
     let mut annotations = Annotations::default();
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange, ctx)?;
 
@@ -110,7 +115,7 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-                targets: targets([Ok(id)])?,
+                targets: targets(&aspect_keys, [Ok(id)])?,
                 visible: None,
                 definition: PmiDefinition::Datum { identification },
             },
@@ -160,7 +165,7 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-                targets: targets([Ok(id)])?,
+                targets: targets(&aspect_keys, [Ok(id)])?,
                 visible: None,
                 definition: PmiDefinition::DatumTarget {
                     form: datum_target_form(&form),
@@ -223,6 +228,7 @@ pub(super) fn decode(
                     )
                 }),
                 targets: targets(
+                    &aspect_keys,
                     record
                         .parameters()
                         .iter()
@@ -323,7 +329,7 @@ pub(super) fn decode(
             id,
             AnnotationDraft {
                 name,
-                targets: targets(aspect_ids)?,
+                targets: targets(&aspect_keys, aspect_ids)?,
                 visible: None,
                 definition: PmiDefinition::Dimension(definition),
             },
@@ -587,6 +593,7 @@ pub(super) fn decode(
                         )
                     }),
                 targets: targets(
+                    &aspect_keys,
                     refs.iter()
                         .copied()
                         .filter(|id| base_aspects.contains(id))
@@ -744,7 +751,14 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
-    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
+    resolve_feature_for_datum_target_relationships(
+        exchange,
+        &annotations,
+        &aspect_keys,
+        ir,
+        &mut typed,
+        ctx,
+    )?;
     let points_by_source = point_sources(ir);
     let curves_by_source = curve_sources(ir);
     let geometry_sources = GeometrySources {
@@ -761,19 +775,23 @@ pub(super) fn decode(
         ctx,
     )?;
 
-    let targeted_aspects = ir
+    // Claim the aspects the annotations link: the content keys the targets
+    // hold, resolved back to the instances that produced them.
+    let targeted_keys = ir
         .model
         .pmi
         .iter()
         .flat_map(|annotation| &annotation.targets)
         .filter_map(|target| match target {
-            PmiTarget::ShapeAspect { source_id } => {
-                source_id.as_str().strip_prefix('#')?.parse().ok()
-            }
+            PmiTarget::ShapeAspect { source_id } => Some(source_id.clone()),
             _ => None,
         })
         .collect::<std::collections::BTreeSet<_>>();
-    typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
+    typed.extend(
+        aspect_keys
+            .iter()
+            .filter_map(|(id, key)| targeted_keys.contains(key).then_some(*id)),
+    );
     mark_characteristic_representations(exchange, &annotations, &mut typed, ctx)?;
     Ok(StageOutcome {
         value: (),
@@ -842,6 +860,7 @@ fn mark_characteristic_representations(
 fn resolve_feature_for_datum_target_relationships(
     exchange: &Exchange,
     annotations: &Annotations,
+    aspect_keys: &BTreeMap<u64, NonBlankString>,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     ctx: &DecodeContext<'_>,
@@ -857,10 +876,13 @@ fn resolve_feature_for_datum_target_relationships(
         let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
             continue;
         };
+        let Some(key) = aspect_keys.get(&relating) else {
+            continue;
+        };
         push_target(
             basis,
             PmiTarget::ShapeAspect {
-                source_id: super::step_source_id(relating),
+                source_id: key.clone(),
             },
         );
         typed.extend([id, relating]);
@@ -1432,7 +1454,111 @@ fn collect_placement_candidates(
     Ok(())
 }
 
+/// Content keys for every shape-aspect-family instance: the entity kind,
+/// name, datum identification, and datum-target form. An instance number
+/// is source layout (#209 §2.4) and never enters the key.
+fn aspect_keys(
+    exchange: &Exchange,
+    shape_aspects: &std::collections::BTreeSet<u64>,
+    losses: &mut Vec<LossNote>,
+) -> BTreeMap<u64, NonBlankString> {
+    let mut keys = BTreeMap::new();
+    for &id in shape_aspects {
+        let Some(record) = exchange.records().get(&id) else {
+            continue;
+        };
+        let Some(kind) = aspect_kind(record) else {
+            continue;
+        };
+        let name = shape_aspect_parameter(record, 0)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    losses,
+                    id,
+                    "shape aspect name",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .unwrap_or_default();
+        let identification =
+            aspect_identification(record, exchange, losses, id).unwrap_or_default();
+        let form = if kind == "DATUM_TARGET" || kind == "PLACED_DATUM_TARGET_FEATURE" {
+            shape_aspect_parameter(record, 1)
+                .and_then(|value| {
+                    decode_text(
+                        exchange,
+                        value,
+                        losses,
+                        id,
+                        "datum target form",
+                        StepLossCode::MetadataStringInvalid,
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        keys.insert(
+            id,
+            crate::pmi_aspect::aspect_key(kind, &name, &identification, &form),
+        );
+    }
+    keys
+}
+
+/// The aspect entity kind for the link key: the most-derived datum kind,
+/// else the base aspect. A subtype outside the datum family collapses to
+/// its base: the link keeps the name, not the subtype.
+fn aspect_kind(record: &RawRecord) -> Option<&str> {
+    const KINDS: &[&str] = &[
+        "DATUM",
+        "DATUM_FEATURE",
+        "DATUM_TARGET",
+        "PLACED_DATUM_TARGET_FEATURE",
+    ];
+    if let Some(kind) = record.partials.iter().find_map(|partial| {
+        let name = partial.name.as_str();
+        KINDS.contains(&name).then_some(name)
+    }) {
+        return Some(kind);
+    }
+    record
+        .partials
+        .iter()
+        .any(|partial| is_shape_aspect_name(partial.name.as_str()))
+        .then_some("SHAPE_ASPECT")
+}
+
+/// The datum or datum-target identification for the link key, or `None`
+/// when the aspect names none.
+fn aspect_identification(
+    record: &RawRecord,
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+    id: u64,
+) -> Option<String> {
+    let kind = aspect_kind(record)?;
+    let value = match kind {
+        "DATUM" => datum_identification_parameter(record),
+        "DATUM_TARGET" | "PLACED_DATUM_TARGET_FEATURE" => {
+            datum_target_identification_parameter(record)
+        }
+        _ => None,
+    }?;
+    decode_text(
+        exchange,
+        value,
+        losses,
+        id,
+        "shape aspect identification",
+        StepLossCode::MetadataStringInvalid,
+    )
+}
+
 fn targets(
+    aspect_keys: &BTreeMap<u64, NonBlankString>,
     ids: impl IntoIterator<Item = Result<u64, CodecError>>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut seen = BTreeSet::new();
@@ -1443,9 +1569,11 @@ fn targets(
             continue;
         }
         seen.insert(id);
-
+        let Some(key) = aspect_keys.get(&id) else {
+            continue;
+        };
         targets.push(PmiTarget::ShapeAspect {
-            source_id: super::step_source_id(id),
+            source_id: key.clone(),
         });
     }
     Ok(targets)
