@@ -1063,48 +1063,6 @@ pub(crate) struct MetaTypeRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "SegmentMetaIssueRecordWire")]
-pub(crate) struct SegmentMetaIssueRecord {
-    pub(crate) id: String,
-    pub(crate) token: String,
-    pub(crate) detail: String,
-}
-
-impl Serialize for SegmentMetaIssueRecord {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut fields = serializer.serialize_struct("SegmentMetaIssueRecordWire", 4)?;
-        fields.serialize_field("id", &self.id)?;
-        fields.serialize_field("token", &self.token)?;
-        fields.serialize_field("status", "malformed")?;
-        fields.serialize_field("detail", &self.detail)?;
-        fields.end()
-    }
-}
-
-#[derive(Deserialize)]
-struct SegmentMetaIssueRecordWire {
-    id: String,
-    token: String,
-    status: String,
-    detail: String,
-}
-
-impl TryFrom<SegmentMetaIssueRecordWire> for SegmentMetaIssueRecord {
-    type Error = String;
-
-    fn try_from(wire: SegmentMetaIssueRecordWire) -> Result<Self, Self::Error> {
-        if wire.status != "malformed" {
-            return Err(format!("segment meta issue status {}", wire.status));
-        }
-        Ok(Self {
-            id: wire.id,
-            token: wire.token,
-            detail: wire.detail,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "SegmentBulkRecordWire")]
 pub(crate) struct SegmentBulkRecord {
     pub(crate) id: String,
@@ -1120,23 +1078,15 @@ pub(crate) struct SegmentBulkRecord {
 
 impl Serialize for SegmentBulkRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (record_state, record_count, stream_trailer_len, stream_trailer_sha256, record_detail) =
-            match &self.records {
-                SegmentBulkFrame::Framed {
-                    record_count,
-                    stream_trailer_len,
-                    stream_trailer_sha256,
-                } => (
-                    "framed",
-                    *record_count,
-                    Some(*stream_trailer_len),
-                    Some(stream_trailer_sha256.as_str()),
-                    None,
-                ),
-                SegmentBulkFrame::Unavailable { detail } => {
-                    ("unavailable", 0, None, None, Some(detail.as_str()))
-                }
-            };
+        let SegmentBulkFrame::Framed {
+            record_count,
+            stream_trailer_len,
+            stream_trailer_sha256,
+        } = &self.records;
+        let record_state = "framed";
+        let stream_trailer_len = Some(*stream_trailer_len);
+        let stream_trailer_sha256 = Some(stream_trailer_sha256.as_str());
+        let record_detail: Option<&str> = None;
         let mut fields = serializer.serialize_struct("SegmentBulkRecordWire", 13)?;
         fields.serialize_field("id", &self.id)?;
         fields.serialize_field("token", &self.token)?;
@@ -1161,9 +1111,6 @@ pub(crate) enum SegmentBulkFrame {
         record_count: u64,
         stream_trailer_len: u64,
         stream_trailer_sha256: String,
-    },
-    Unavailable {
-        detail: String,
     },
 }
 
@@ -1199,20 +1146,6 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
                     .ok_or_else(|| "framed bulk requires stream_trailer_sha256".to_owned())?,
             },
             "framed" => return Err("framed bulk cannot carry record_detail".to_owned()),
-            "unavailable"
-                if wire.record_count == 0
-                    && wire.stream_trailer_len.is_none()
-                    && wire.stream_trailer_sha256.is_none() =>
-            {
-                SegmentBulkFrame::Unavailable {
-                    detail: wire
-                        .record_detail
-                        .ok_or_else(|| "unavailable bulk requires record_detail".to_owned())?,
-                }
-            }
-            "unavailable" => {
-                return Err("unavailable bulk cannot carry framed record fields".to_owned());
-            }
             other => return Err(format!("unknown bulk record_state {other}")),
         };
         Ok(Self {
@@ -1659,13 +1592,6 @@ impl ActiveCarrierRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SegmentBulkIssueRecord {
-    pub(crate) id: String,
-    pub(crate) token: String,
-    pub(crate) detail: String,
-}
-
 #[cfg(test)]
 pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
     let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
@@ -1792,17 +1718,6 @@ mod tests {
             "list_metadata": null
         });
         let record: super::PmGraphicsStyleCollectionRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
-        assert_native_limit(&record, expected);
-    }
-
-    #[test]
-    fn segment_meta_issue_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
-            "id": "inventor:rse:meta-issue#1", "token": "segment",
-            "status": "malformed", "detail": "short metadata"
-        });
-        let record: super::SegmentMetaIssueRecord =
             serde_json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
@@ -1945,19 +1860,6 @@ mod tests {
             invalid["record_state"] = serde_json::json!(state);
             assert!(serde_json::from_value::<SegmentBulkRecord>(invalid).is_err());
         }
-        let unavailable = SegmentBulkRecord {
-            records: SegmentBulkFrame::Unavailable {
-                detail: "no frame".into(),
-            },
-            ..record
-        };
-        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
-        assert_eq!(
-            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).expect("valid test fixture"),
-            unavailable
-        );
-        wire["record_count"] = serde_json::json!(1);
-        assert!(serde_json::from_value::<SegmentBulkRecord>(wire).is_err());
     }
 
     #[test]

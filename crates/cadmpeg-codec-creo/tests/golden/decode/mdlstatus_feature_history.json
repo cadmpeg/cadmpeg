@@ -86,9 +86,6 @@
           "name": "Surface id 45",
           "needs_recompute": false,
           "ordinal": 4,
-          "source_properties": {
-            "mdl_stored_name_prefix": "y"
-          },
           "suppressed": false
         }
       ],
@@ -129,15 +126,15 @@
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:0",
             "identifier_keyword": "id",
-            "offset": 94,
+            "offset": 100,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 93,
+            "state_offset": 100,
             "state_ordinal": 0,
-            "stored_name": "xProtrusion id 40",
-            "stored_name_bytes": "7850726f74727573696f6e206964203430",
-            "stored_name_prefix": "x"
+            "stored_name": "Protrusion id 40",
+            "stored_name_bytes": "50726f74727573696f6e206964203430",
+            "stored_name_prefix": null
           },
           {
             "current": false,
@@ -147,11 +144,11 @@
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:1",
             "identifier_keyword": "id",
-            "offset": 174,
+            "offset": 180,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 174,
+            "state_offset": 180,
             "state_ordinal": 1,
             "stored_name": "Hole id 40",
             "stored_name_bytes": "486f6c65206964203430",
@@ -164,11 +161,11 @@
             "feature_id": 41,
             "id": "creo:mdlstatus:feature_state#41:0",
             "identifier_keyword": "id",
-            "offset": 111,
+            "offset": 117,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 111,
+            "state_offset": 117,
             "state_ordinal": 0,
             "stored_name": "Round id 41",
             "stored_name_bytes": "526f756e64206964203431",
@@ -181,11 +178,11 @@
             "feature_id": 42,
             "id": "creo:mdlstatus:feature_state#42:0",
             "identifier_keyword": "id",
-            "offset": 123,
+            "offset": 129,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 123,
+            "state_offset": 129,
             "state_ordinal": 0,
             "stored_name": "Future Feature id 42",
             "stored_name_bytes": "4675747572652046656174757265206964203432",
@@ -198,11 +195,11 @@
             "feature_id": 43,
             "id": "creo:mdlstatus:feature_state#43:0",
             "identifier_keyword": "id",
-            "offset": 144,
+            "offset": 150,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 144,
+            "state_offset": 150,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 43",
             "stored_name_bytes": "446174756d20506c616e65206964203433",
@@ -215,11 +212,11 @@
             "feature_id": 44,
             "id": "creo:mdlstatus:feature_state#44:0",
             "identifier_keyword": "id",
-            "offset": 162,
+            "offset": 168,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 162,
+            "state_offset": 168,
             "state_ordinal": 0,
             "stored_name": "Draft id 44",
             "stored_name_bytes": "4472616674206964203434",
@@ -232,22 +229,22 @@
             "feature_id": 45,
             "id": "creo:mdlstatus:feature_state#45:0",
             "identifier_keyword": "id",
-            "offset": 186,
+            "offset": 198,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 185,
+            "state_offset": 198,
             "state_ordinal": 0,
-            "stored_name": "ySurface id 45",
-            "stored_name_bytes": "7953757266616365206964203435",
-            "stored_name_prefix": "y"
+            "stored_name": "Surface id 45",
+            "stored_name_bytes": "53757266616365206964203435",
+            "stored_name_prefix": null
           }
         ]
       }
     },
     "scope": {
       "design": true,
-      "model": true
+      "model": false
     },
     "source": {
       "attributes": {
@@ -757,6 +754,17 @@
         },
         "message": "1 operation(s) retain disagreeing state candidates without a current-state selector.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the creo decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -769,7 +777,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": true
+        "model": false
       }
     }
   },
@@ -777,83 +785,68 @@
     "annotations": {
       "provenance": {
         "creo:mdlstatus:feature_state#40:0": {
-          "offset": 93,
+          "offset": 100,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#40:1": {
-          "offset": 174,
+          "offset": 180,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#41:0": {
-          "offset": 111,
+          "offset": 117,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#42:0": {
-          "offset": 123,
+          "offset": 129,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#43:0": {
-          "offset": 144,
+          "offset": 150,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#44:0": {
-          "offset": 162,
+          "offset": 168,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#45:0": {
-          "offset": 185,
+          "offset": 198,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_state"
         },
         "creo:model:feature#41": {
-          "offset": 111,
+          "offset": 117,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#42": {
-          "offset": 123,
+          "offset": 129,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#43": {
-          "offset": 144,
+          "offset": 150,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#44": {
-          "offset": 162,
+          "offset": 168,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         },
         "creo:model:feature#45": {
-          "offset": 186,
+          "offset": 198,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         }
       }
     },
-    "decode_digest": "bb7d28c8113c3dfa3c1b26812d5d3d972b081d508ea16a64d55870a4449ba9ee",
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNNZGxTdGF0dXMKbm9pc2UAeFByb3RydXNpb24gaWQgNDAAUm91bmQgaWQgNDEARnV0dXJlIEZlYXR1cmUgaWQgNDIARGF0dW0gUGxhbmUgaWQgNDMARHJhZnQgaWQgNDQASG9sZSBpZCA0MAB5U3VyZmFjZSBpZCA0NQA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "decode_digest": "cd8a93907335836011d18c3fb7d2344ea14fde1f9a6d3c4f0d183d30fb6e42c3",
+    "unrepresented": []
   }
 }
