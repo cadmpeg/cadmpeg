@@ -284,3 +284,26 @@ fn a_terminated_type_38_record_without_intersection_data_ends_at_its_fifth_refer
         assert!(graph.get(NodeKind::Point, 5).is_some());
     });
 }
+
+#[test]
+fn a_type_38_record_without_intersection_data_before_an_edge_keeps_its_node() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        bytes.extend(intersection_first_use(3, [20, 21]));
+        let end = bytes.len();
+        bytes.extend(edge(true, 11, 7, 0.0));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        let node = graph.get(NodeKind::Intersection, 3).expect("type-38 node");
+        assert_eq!(node.end, end);
+        assert_eq!(graph.composite_curves().len(), 1);
+        assert!(graph.get(NodeKind::Edge, 11).is_some());
+    });
+}
+
+/// [`intersection`] with the first-use `ff` of an embedded-schema stream.
+fn intersection_first_use(xmt: u32, supports: [u32; 2]) -> Vec<u8> {
+    let mut bytes = intersection(xmt, supports);
+    bytes.insert(2, 255);
+    bytes
+}

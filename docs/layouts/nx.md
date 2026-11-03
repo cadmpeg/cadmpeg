@@ -750,7 +750,7 @@ Unstated regions:
 
 Spec §6.3 · layout: byte offsets · size: 31 B
 
-§4.1's fixed-record table has no row for type 38. The 31-byte total is the parser's constant for a record with the appended `intersection_data` reference; a record without it ends at byte 29.
+§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

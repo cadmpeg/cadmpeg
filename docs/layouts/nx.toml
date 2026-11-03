@@ -2221,7 +2221,7 @@ section = "6.3"
 anchor = "The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`."
 size = 31
 endianness = "big"
-note = "§4.1's fixed-record table has no row for type 38. The 31-byte total is the parser's constant for a record with the appended `intersection_data` reference; a record without it ends at byte 29."
+note = "§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it."
 
 [[record.field]]
 name = "ref0_primary_support"

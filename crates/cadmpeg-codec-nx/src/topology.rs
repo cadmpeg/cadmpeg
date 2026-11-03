@@ -1002,49 +1002,50 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        let terminated = frames.and_then(PrimaryFrames::terminated_records);
-        let starts: Box<dyn Iterator<Item = (usize, Option<usize>)>> = match terminated {
-            Some(records) => Box::new(
-                records
-                    .iter()
-                    .map(|record| (record.start, Some(record.end))),
-            ),
-            None => Box::new(
-                stream
-                    .len()
-                    .checked_sub(3)
-                    .into_iter()
-                    .flat_map(|last| 0..last)
-                    .map(|pos| (pos, None)),
-            ),
-        };
-        for (pos, node_end) in starts {
+        let mut admit = |pos: usize, node_end: Option<usize>| {
             if stream.get(pos) != Some(&0) {
-                continue;
+                return;
             }
             let Some(Ok(kind)) = stream.get(pos + 1).map(|&code| NodeKind::try_from(code)) else {
-                continue;
+                return;
             };
             if frames.is_some() && kind == NodeKind::Edge {
-                continue;
+                return;
             }
             for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
                 .into_iter()
                 .flatten()
             {
-                if frames.is_some_and(|frames| frames.exclude(&candidate)) {
-                    continue;
-                }
                 // A node of a terminated sequence spans its framed bytes,
                 // whatever length the fixed layout of its kind states.
                 let candidate = NodeCandidate {
                     end: node_end.unwrap_or(candidate.end),
                     ..candidate
                 };
+                if frames.is_some_and(|frames| frames.exclude(&candidate)) {
+                    continue;
+                }
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
                     ownership_candidates.push(candidate);
                 } else {
                     candidates.push(candidate);
+                }
+            }
+        };
+        match frames.and_then(PrimaryFrames::terminated_records) {
+            Some(records) => {
+                for record in records {
+                    admit(record.start, Some(record.end));
+                }
+            }
+            None => {
+                for pos in stream
+                    .len()
+                    .checked_sub(3)
+                    .into_iter()
+                    .flat_map(|last| 0..last)
+                {
+                    admit(pos, None);
                 }
             }
         }
