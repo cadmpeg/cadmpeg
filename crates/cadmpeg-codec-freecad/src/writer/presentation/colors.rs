@@ -80,7 +80,9 @@ fn material(
         if let Some(value) = native_property(&property)? {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
-    } else if shininess.is_some() && transparency.is_some() {
+    } else if shininess.is_some() || transparency.is_some() || appearance.base_color.is_none() {
+        // Only material facts or a content-free placeholder earn a material
+        // record, never defaults; a bare color travels as ShapeColor.
         let mut attributes = vec![
             ("ambientColor", "0".into()),
             ("specularColor", "0".into()),
@@ -104,9 +106,6 @@ fn material(
             ),
         );
     }
-    // Without material facts there is no material record to carry; the
-    // color travels as ShapeColor. A partial material set cannot form the
-    // required record and is reported by the appearance property loop.
     Ok(())
 }
 
