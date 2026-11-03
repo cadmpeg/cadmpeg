@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
+use std::collections::HashSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -197,10 +198,12 @@ pub(super) fn records(bytes: &[u8]) -> Vec<Bounded> {
 
 /// The `TRIMMED_CURVE` records of a node sequence whose body starts at
 /// `body_offset`, in stream order; `None` when a base field of a node does
-/// not read. Offsets are body-relative.
+/// not read or two nodes share an index. Offsets are body-relative.
 pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Vec<Bounded>> {
     let mut out = Vec::new();
+    let mut indices = HashSet::new();
     for node in records.nodes().filter(|node| node.kind() == TRIMMED_CURVE) {
+        indices.insert(node.index()).then_some(())?;
         let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let source = node.pointer("basis_curve")?;
         let [start, end] = [node.vector("point_1")?, node.vector("point_2")?];
@@ -376,6 +379,10 @@ mod tests {
     use super::super::CurveCarrier;
     use super::{point_at, TAG};
 
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point3;
+
     fn scan(
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
@@ -384,9 +391,6 @@ mod tests {
     ) -> Result<Vec<super::Wrapper>, cadmpeg_core::CodecError> {
         super::resolve(ctx, &super::records(bytes), carriers, pass)
     }
-    use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::SolvedCurveGeometry;
-    use cadmpeg_ir::math::Point3;
 
     fn wrapper(end_y: f64, has_ff: bool) -> Vec<u8> {
         let mut bytes = vec![0x00, TAG];
@@ -791,5 +795,11 @@ mod tests {
         assert_eq!(record.end, first.range().end - body_offset);
         assert_eq!(record.values[3].get(), 0.001);
         assert_eq!(record.values[7].get(), 0.5);
+        let (payload, body_offset) = sequence_of(&[
+            (133, 3, trimmed(b'+', 7, 0.001)),
+            (133, 3, trimmed(b'+', 7, 0.001)),
+        ]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

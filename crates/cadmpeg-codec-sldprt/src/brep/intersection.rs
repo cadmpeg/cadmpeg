@@ -1841,6 +1841,8 @@ mod tests {
             (41, 5, limit(b'L', POINTS[0])),
             (41, 6, limit(b'T', POINTS[2])),
             (41, 9, limit(b'X', POINTS[2])),
+            (41, 10, limit(b'L', [2.0e6, 0.0, 0.0])),
+            (41, 11, vec![C(b'L'), Hvecs(vec![POINTS[0]; 3])]),
         ]);
         let records = sequence(&payload).unwrap();
         let inputs = super::from_nodes(&records, body_offset).unwrap();
