@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-free saved-view and construction-plane records.
 
+use super::super::WriteError;
 use super::{
     anonymous, anonymous_with_children, crc_chunk_with_direct, integer, records, short_chunk,
     utf16, wire_index, CadIr, CodecError, Map, Value, TCODE_ENDOFTABLE,
@@ -24,12 +25,12 @@ fn object<'a>(fields: &'a Map<String, Value>, name: &str) -> Option<&'a Map<Stri
     fields.get(name)?.as_object()
 }
 
-fn scalar(fields: &Map<String, Value>, name: &str) -> Result<f64, CodecError> {
+fn scalar(fields: &Map<String, Value>, name: &str) -> Result<f64, WriteError> {
     fields
         .get(name)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite())
-        .ok_or_else(|| CodecError::malformed(format!("Rhino view {name} must be finite")))
+        .ok_or_else(|| WriteError::Omit(format!("Rhino view {name} must be finite")))
 }
 
 fn flag(fields: &Map<String, Value>, name: &str, default: bool) -> bool {
@@ -45,21 +46,19 @@ fn vector(
     name: &str,
     count: usize,
     output: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let values = fields
         .get(name)
         .and_then(Value::as_array)
         .filter(|values| values.len() == count)
-        .ok_or_else(|| {
-            CodecError::malformed(format!("Rhino view {name} needs {count} coordinates"))
-        })?;
+        .ok_or_else(|| WriteError::Omit(format!("Rhino view {name} needs {count} coordinates")))?;
     for value in values {
         output.extend(
             value
                 .as_f64()
                 .filter(|value| value.is_finite())
                 .ok_or_else(|| {
-                    CodecError::malformed(format!("Rhino view {name} has a nonfinite coordinate"))
+                    WriteError::Omit(format!("Rhino view {name} has a nonfinite coordinate"))
                 })?
                 .to_le_bytes(),
         );
@@ -67,7 +66,7 @@ fn vector(
     Ok(())
 }
 
-fn cplane(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
+fn cplane(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x11];
     for name in [
         "plane_origin_mm",
@@ -86,10 +85,10 @@ fn cplane(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
     }
     body.extend(utf16(text(fields, "name"))?);
     body.push(u8::from(flag(fields, "depth_buffer", true)));
-    crc_chunk_with_direct(0x2000_813b, &body, &body)
+    Ok(crc_chunk_with_direct(0x2000_813b, &body, &body)?)
 }
 
-fn window(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
+fn window(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x11];
     body.extend(i32::from(flag(fields, "maximized", false)).to_le_bytes());
     for name in ["left", "right", "top", "bottom"] {
@@ -99,9 +98,9 @@ fn window(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
         .get("floating_viewport")
         .and_then(Value::as_u64)
         .and_then(|value| u8::try_from(value).ok())
-        .ok_or_else(|| CodecError::malformed("Rhino floating viewport flag exceeds u8"))?;
+        .ok_or_else(|| WriteError::Omit("Rhino floating viewport flag exceeds u8".into()))?;
     body.push(floating);
-    crc_chunk_with_direct(0x2000_8b3b, &body, &body)
+    Ok(crc_chunk_with_direct(0x2000_8b3b, &body, &body)?)
 }
 
 fn property<'a>(view: &'a ViewPresentation, name: &str) -> Option<&'a str> {
@@ -114,7 +113,7 @@ fn encode_view(
     fields: &Map<String, Value>,
     view: Option<&ViewPresentation>,
     camera: Option<&PresentationDocument>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut children = Vec::new();
     let name = view
         .and_then(|view| property(view, "name"))
@@ -147,7 +146,7 @@ fn encode_view(
             Some("true") => true,
             Some("false") => false,
             Some(_) => {
-                return Err(CodecError::malformed(format!(
+                return Err(WriteError::Omit(format!(
                     "Rhino view {name} must be true or false"
                 )));
             }
@@ -209,7 +208,7 @@ fn encode_view(
     }
     images::append(fields, &mut children)?;
     children.push(short_chunk(TCODE_ENDOFTABLE, 0));
-    crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])
+    Ok(crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])?)
 }
 
 fn native_only_supported(fields: &Map<String, Value>) -> bool {
@@ -260,14 +259,14 @@ fn native_only_supported(fields: &Map<String, Value>) -> bool {
         })
 }
 
-fn list(typecode: u32, children: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
+fn list(typecode: u32, children: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
     let count = wire_index(children.len())?.to_le_bytes();
     let mut body = count.to_vec();
     body.extend(children.concat());
-    crc_chunk_with_direct(typecode, &body, &count)
+    Ok(crc_chunk_with_direct(typecode, &body, &count)?)
 }
 
-pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> {
+pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> {
     let mut result = ViewExport {
         settings: Vec::new(),
         regenerated: BTreeSet::new(),
@@ -361,7 +360,9 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
                 match fields.get("list_kind").and_then(Value::as_str) {
                     Some("active") => active.push(encoded),
                     Some("named") => named.push(encoded),
-                    _ => return Err(CodecError::malformed("Rhino view has no valid list kind")),
+                    _ => {
+                        return Err(WriteError::Omit("Rhino view has no valid list kind".into()));
+                    }
                 }
                 if view.is_none() && camera.is_none() {
                     result.written.insert(record.id().to_owned());
@@ -377,7 +378,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
                     }
                 }
             }
-            Err(CodecError::UnsupportedContent(reason)) => result.losses.push(
+            Err(WriteError::Omit(reason)) => result.losses.push(
                 crate::loss::RhinoLossCode::WriterAttributesOmitted
                     .note(format!("{}: {reason}", record.id())),
             ),

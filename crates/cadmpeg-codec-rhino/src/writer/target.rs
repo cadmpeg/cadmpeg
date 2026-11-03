@@ -276,7 +276,12 @@ pub(crate) fn plan(
     ctx.finish_session()?;
     session.finish()?;
     Ok(ExportBody {
-        native_dispositions: super::native_dispositions(input.ir)?,
+        native_dispositions: super::native_dispositions(input.ir).map_err(|error| match error {
+            // The plan boundary converts control flow that no record boundary
+            // caught. #239 switches this site to `EncodeError`.
+            super::WriteError::Omit(message) => CodecError::UnsupportedContent(message),
+            super::WriteError::Fail(error) => error,
+        })?,
         synthesis_cause: None,
         bytes: bytes.into_vec(),
         census: cadmpeg_ir::report::export::EntityCensus {
@@ -338,6 +343,11 @@ pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
     source: "docs/formats/rhino_3dm.md §4: archive version >= 50 stores an i64 declared_length",
     helper: "archive_body_len",
 }];
+
+const _: () = {
+    assert!(REDUCED_FIELDS.len() == 4);
+    assert!(CAPACITY_FIELDS.len() == 1);
+};
 
 /// Conservative fallback when synthesized-output verification does not prove
 /// complete preservation of an arena. The verifier promotes populated arenas

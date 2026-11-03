@@ -48,7 +48,7 @@ fn stated_write_tolerance(
     stated: Option<cadmpeg_ir::scalar::PositiveReal>,
     ir: &CadIr,
     owner: &str,
-) -> Result<f64, CodecError> {
+) -> Result<f64, WriteError> {
     let (field, value) = stated.map_or_else(
         || ("document linear tolerance", ir.tolerances.linear.get()),
         |tolerance| ("tolerance", tolerance.get()),
@@ -56,7 +56,7 @@ fn stated_write_tolerance(
     if value >= EPS_WRITE_DEGENERATE {
         return Ok(value);
     }
-    Err(CodecError::UnsupportedContent(format!(
+    Err(WriteError::Omit(format!(
         "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
     )))
 }
@@ -149,7 +149,13 @@ fn write<'budget>(
     let mut staged = session.buffer();
     let outcome = write_buffered(ctx, ir, version, session, &mut staged);
     session.finish()?;
-    Ok((staged, outcome?))
+    match outcome {
+        Ok(outcome) => Ok((staged, outcome)),
+        // The plan boundary converts control flow that no record boundary
+        // caught. #239 switches this site to `EncodeError`.
+        Err(WriteError::Omit(message)) => Err(CodecError::UnsupportedContent(message)),
+        Err(WriteError::Fail(error)) => Err(error),
+    }
 }
 
 fn write_buffered<'budget>(
@@ -158,7 +164,7 @@ fn write_buffered<'budget>(
     version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
     output: &mut EncodeBuffer<'budget>,
-) -> Result<WriteOutcome, CodecError> {
+) -> Result<WriteOutcome, WriteError> {
     let mut plan = prepare_write(ctx, ir, version, session)?;
     // The B-rep records are staged before the prefix, which names their
     // bodies. The prefix and the object table header are appended after the
@@ -213,12 +219,17 @@ fn write_buffered<'budget>(
         )?;
     }
     for (id, payload) in &plan.curves {
-        let curve = ir
+        let Some(curve) = ir
             .model
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == *id)
-            .ok_or_else(|| CodecError::malformed("prepared curve is missing"))?;
+        else {
+            // Rule 1 (#217 §5.0): the plan prepared this curve from the same
+            // document, so the lookup cannot fail on a valid document.
+            debug_assert!(false, "prepared curve {id} is missing");
+            continue;
+        };
         let display = presentation::display(
             ir,
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
@@ -231,12 +242,17 @@ fn write_buffered<'budget>(
         )?;
     }
     for (id, (class, payload)) in &plan.surfaces {
-        let surface = ir
+        let Some(surface) = ir
             .model
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == *id)
-            .ok_or_else(|| CodecError::malformed("prepared surface is missing"))?;
+        else {
+            // Rule 1 (#217 §5.0): the plan prepared this surface from the same
+            // document, so the lookup cannot fail on a valid document.
+            debug_assert!(false, "prepared surface {id} is missing");
+            continue;
+        };
         let display = presentation::display(
             ir,
             &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
@@ -249,7 +265,17 @@ fn write_buffered<'budget>(
         )?;
     }
     for mesh in &plan.meshes {
-        let payload = mesh_payload(mesh, version)?;
+        let payload = match mesh_payload(mesh, version) {
+            Ok(payload) => payload,
+            Err(WriteError::Omit(reason)) => {
+                plan.losses.push(
+                    RhinoLossCode::WriterEntityOmitted
+                        .note(format!("mesh {} omitted: {reason}", mesh.id)),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let display = presentation::display(
             ir,
             &cadmpeg_ir::appearance::AppearanceTarget::Tessellation(mesh.id.to_string()),
@@ -330,7 +356,7 @@ fn write_archive_prefix(
     written_bodies: &std::collections::BTreeSet<String>,
     materials: &MaterialPlan,
     output: &mut EncodeBuffer<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<Vec<LossNote>, WriteError> {
     output.append(&header(version), "retain Rhino archive bytes")?;
     output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
     let mut properties = vec![short_chunk(
@@ -426,8 +452,37 @@ struct WritePlan<'a, 'budget> {
     materials: MaterialPlan,
 }
 
-fn content_limitation(error: &CodecError) -> bool {
-    matches!(error, CodecError::UnsupportedContent(_))
+/// One record the target cannot carry, or a genuine encode failure (#217 §5.0).
+///
+/// `Omit` is control flow, not a failure: the boundary that catches it charges
+/// the named export loss and continues with the next record. Genuine failures
+/// (resource exhaustion, invalid input, malformed state) travel as
+/// `CodecError` and fail the write. The enum never leaves the writer: `write`
+/// converts it at the plan boundary, which #239 switches to `EncodeError`.
+#[derive(Debug)]
+pub(super) enum WriteError {
+    /// Content the target cannot express; the message names the record.
+    Omit(String),
+    /// A genuine failure that fails the write.
+    Fail(CodecError),
+}
+
+impl From<CodecError> for WriteError {
+    fn from(error: CodecError) -> Self {
+        Self::Fail(error)
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Fail(limit.into())
+    }
+}
+
+impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
+    fn from(error: cadmpeg_ir::native::NativeConvertError) -> Self {
+        Self::Fail(error.into())
+    }
 }
 
 fn prepare_write<'a, 'budget>(
@@ -435,11 +490,11 @@ fn prepare_write<'a, 'budget>(
     ir: &'a CadIr,
     archive_version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
-) -> Result<WritePlan<'a, 'budget>, CodecError> {
+) -> Result<WritePlan<'a, 'budget>, WriteError> {
     if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(CodecError::InvalidInput(
+        return Err(WriteError::Fail(CodecError::InvalidInput(
             "Rhino angular tolerance must not exceed pi".into(),
-        ));
+        )));
     }
     let model = &ir.model;
     let materials = MaterialPlan::new(ir)?;
@@ -449,7 +504,8 @@ fn prepare_write<'a, 'budget>(
         model.points.len(),
         "point arena exceeds native counts".into(),
     )?;
-    let scopes = scopes::collect(ir)?;
+    let (scopes, scope_losses) = scopes::collect(ir)?;
+    losses.extend(scope_losses);
     let used_pcurves = scopes
         .iter()
         .flat_map(|scope| scope.pcurves.iter())
@@ -525,10 +581,10 @@ fn prepare_write<'a, 'budget>(
                     )));
                 }
             }
-            Err(error) if content_limitation(&error) => {
+            Err(WriteError::Omit(reason)) => {
                 losses.push(
                     RhinoLossCode::WriterEntityOmitted
-                        .note(format!("curve {} omitted: {error}", curve.id)),
+                        .note(format!("curve {} omitted: {reason}", curve.id)),
                 );
                 // Retain writable constituent curves when their enclosing
                 // construction has no exact native representation or cache.
@@ -549,9 +605,9 @@ fn prepare_write<'a, 'budget>(
     {
         match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
             Ok(payload) => surfaces.push((surface.id.as_str(), payload)),
-            Err(error) if content_limitation(&error) => losses.push(
+            Err(WriteError::Omit(reason)) => losses.push(
                 RhinoLossCode::WriterEntityOmitted
-                    .note(format!("surface {} omitted: {error}", surface.id)),
+                    .note(format!("surface {} omitted: {reason}", surface.id)),
             ),
             Err(error) => return Err(error),
         }
@@ -560,12 +616,16 @@ fn prepare_write<'a, 'budget>(
     for source in &model.tessellations {
         let mut mesh = source.clone();
         if let Some(body_id) = &mesh.body {
-            let mut body = model
+            let Some(mut body) = model
                 .bodies
                 .iter()
                 .find(|body| body.id == *body_id)
                 .cloned()
-                .ok_or_else(|| CodecError::malformed("tessellation references missing body"))?;
+            else {
+                return Err(WriteError::Omit(
+                    "tessellation references missing body".into(),
+                ));
+            };
             if !body.transform.unwrap_or_default().is_proper_rigid() {
                 losses.push(RhinoLossCode::WriterBodyTransformNotApplied.note(format!(
                     "mesh {} non-rigid body placement omitted; geometry is written in its local frame", mesh.id)));
@@ -577,10 +637,10 @@ fn prepare_write<'a, 'budget>(
             placed.model.tessellations.push(mesh);
             match placement::bake(&mut placed) {
                 Ok(()) => mesh = placed.model.tessellations.remove(0),
-                Err(error) if content_limitation(&error) => {
+                Err(WriteError::Omit(reason)) => {
                     losses.push(
                         RhinoLossCode::WriterEntityOmitted
-                            .note(format!("mesh {} omitted: {error}", source.id)),
+                            .note(format!("mesh {} omitted: {reason}", source.id)),
                     );
                     continue;
                 }
@@ -589,11 +649,7 @@ fn prepare_write<'a, 'budget>(
         }
         match check_mesh(&mesh) {
             Ok(()) => meshes.push(mesh),
-            Err(error) if content_limitation(&error) => losses.push(
-                RhinoLossCode::WriterEntityOmitted
-                    .note(format!("mesh {} omitted: {error}", mesh.id)),
-            ),
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     let mut brep_records = session.buffer();
@@ -618,9 +674,9 @@ fn prepare_write<'a, 'budget>(
         }
         match placement::bake(&mut baked) {
             Ok(()) => {}
-            Err(error) if content_limitation(&error) => {
+            Err(WriteError::Omit(reason)) => {
                 losses.push(RhinoLossCode::WriterBodyOmitted.note(format!(
-                    "body {} omitted: {error}",
+                    "body {} omitted: {reason}",
                     baked.model.bodies[0].id
                 )));
                 continue;
@@ -657,9 +713,8 @@ fn prepare_write<'a, 'budget>(
             .and_then(|model| brep_payload(ctx, &model, archive_version))
         {
             Ok(payload) => payload,
-            Err(error)
-                if content_limitation(&error)
-                    && baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
+            Err(WriteError::Omit(_))
+                if baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
             {
                 let last_payload = std::cell::RefCell::new(None);
                 let (reduced, reduction_losses) = reduce::sheet(&baked, |candidate| {
@@ -673,14 +728,17 @@ fn prepare_write<'a, 'budget>(
                     continue;
                 };
                 baked = reduced;
-                // (C) Successful admission must supply the staged payload.
-                last_payload
-                    .into_inner()
-                    .ok_or_else(|| CodecError::malformed("sheet admission produced no payload"))?
+                // Rule 1 (#217 §5.0): a successful admission runs the callback
+                // that stages the payload, so it cannot be absent here.
+                let Some(payload) = last_payload.into_inner() else {
+                    debug_assert!(false, "sheet admission produced no payload");
+                    continue;
+                };
+                payload
             }
-            Err(error) if content_limitation(&error) => {
+            Err(WriteError::Omit(reason)) => {
                 losses.push(RhinoLossCode::WriterBodyOmitted.note(format!(
-                    "body {} omitted: {error}",
+                    "body {} omitted: {reason}",
                     baked.model.bodies[0].id
                 )));
                 continue;
@@ -719,7 +777,7 @@ fn prepare_write<'a, 'budget>(
 
 fn native_dispositions(
     ir: &CadIr,
-) -> Result<cadmpeg_ir::codec::write::NativeDispositions, CodecError> {
+) -> Result<cadmpeg_ir::codec::write::NativeDispositions, WriteError> {
     use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
     let mut dispositions = NativeDispositions::for_namespace(
         "rhino",
@@ -932,7 +990,7 @@ fn brep_payload(
     ctx: &DecodeContext<'_>,
     model: &WritableModel<'_>,
     archive_version: RhinoArchiveVersion,
-) -> Result<BrepPayload, CodecError> {
+) -> Result<BrepPayload, WriteError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
     let version = if archive_version.uses_extended_brep_layout() {
@@ -949,13 +1007,13 @@ fn brep_payload(
         .edges
         .iter()
         .map(|edge| brep_c3_curve(model, edge))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
         .surfaces
         .iter()
         .map(|surface| surface.payload())
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     payload.extend(polymorphic_array(surfaces.iter())?);
     let vertices = model
         .vertices
@@ -1216,7 +1274,7 @@ fn close_point(
 fn brep_c3_curve(
     model: &WritableModel<'_>,
     edge: &WritableEdge<'_>,
-) -> Result<([u8; 16], Vec<u8>), CodecError> {
+) -> Result<([u8; 16], Vec<u8>), WriteError> {
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
             let from = model.vertices[edge.start].point;
@@ -1242,7 +1300,7 @@ fn generated_projected_brep_c2_curve(
     origin: cadmpeg_ir::math::Point3,
     u_axis: cadmpeg_ir::math::Vector3,
     v_axis: cadmpeg_ir::math::Vector3,
-) -> Result<([u8; 16], Vec<u8>), CodecError> {
+) -> Result<([u8; 16], Vec<u8>), WriteError> {
     use cadmpeg_ir::topology::Sense;
 
     Ok(match edge.curve {
@@ -1277,10 +1335,12 @@ fn generated_projected_brep_c2_curve(
                         )
                     })
                 })
-                .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+                .map_err(|error| WriteError::Omit(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
-                    CodecError::Malformed("Rhino count exceeds address space".into())
+                    WriteError::Fail(CodecError::Malformed(
+                        "Rhino count exceeds address space".into(),
+                    ))
                 })?] + projected.knots()[projected.pole_count()];
                 projected.reverse_parameterization();
                 projected
@@ -1289,7 +1349,7 @@ fn generated_projected_brep_c2_curve(
                             *knot += sum;
                         }
                     })
-                    .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+                    .map_err(|error| WriteError::Omit(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
             (
@@ -1303,31 +1363,33 @@ fn generated_projected_brep_c2_curve(
 fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
-) -> Result<(), CodecError> {
-    let order = usize::try_from(curve.degree())
-        .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-        + 1;
+) -> Result<(), WriteError> {
+    let order = usize::try_from(curve.degree()).map_err(|_| {
+        WriteError::Fail(CodecError::Malformed(
+            "Rhino count exceeds address space".into(),
+        ))
+    })? + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
-        .map_err(|error| CodecError::UnsupportedContent(format!("curve {id}: {error}")))?;
+        .map_err(|error| WriteError::Omit(format!("curve {id}: {error}")))?;
     curve
         .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
-        .map_err(|error| CodecError::UnsupportedContent(format!("curve {id}: {error}")))?;
+        .map_err(|error| WriteError::Omit(format!("curve {id}: {error}")))?;
     Ok(())
 }
 
 fn admit_pcurve<'a>(
     edge: &WritableEdge<'_>,
     pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
-) -> Result<WritablePcurve<'a>, CodecError> {
+) -> Result<WritablePcurve<'a>, WriteError> {
     if pcurve.wrapper_reversed() == Some(true)
         || pcurve.native_tail_flags().is_some()
         || pcurve
             .parameter_range()
             .is_some_and(|range| range.finite_components() != edge.domain)
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Omit(format!(
             "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
             pcurve.id.as_str()
         )));
@@ -1353,22 +1415,21 @@ fn admit_pcurve<'a>(
             let curve = nurbs
                 .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
                 .map_err(|error| {
-                    CodecError::UnsupportedContent(format!(
-                        "pcurve {}: {error}",
-                        pcurve.id.as_str()
-                    ))
+                    WriteError::Omit(format!("pcurve {}: {error}", pcurve.id.as_str()))
                 })?;
             check_nurbs_curve(pcurve.id.as_str(), &curve)?;
             let count = curve.pole_count();
             if curve.periodic()
                 || [
                     curve.knots()[usize::try_from(curve.degree()).map_err(|_| {
-                        CodecError::Malformed("Rhino count exceeds address space".into())
+                        WriteError::Fail(CodecError::Malformed(
+                            "Rhino count exceeds address space".into(),
+                        ))
                     })?],
                     curve.knots()[count],
                 ] != domain
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Omit(format!(
                     "pcurve {} is not a nonperiodic full-domain NURBS curve",
                     pcurve.id.as_str()
                 )));
@@ -1376,7 +1437,7 @@ fn admit_pcurve<'a>(
             (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?)
         }
         _ => {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Omit(format!(
                 "pcurve {} geometry is not writable as Rhino Brep trim geometry",
                 pcurve.id.as_str()
             )));
@@ -1399,19 +1460,25 @@ fn validate_nurbs_trim(
     edge: &WritableEdge<'_>,
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     use cadmpeg_ir::topology::Sense;
 
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let u_domain = [
-        surface.u_knots()[usize::try_from(surface.u_degree())
-            .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?],
+        surface.u_knots()[usize::try_from(surface.u_degree()).map_err(|_| {
+            WriteError::Fail(CodecError::Malformed(
+                "Rhino count exceeds address space".into(),
+            ))
+        })?],
         surface.u_knots()[u_count],
     ];
     let v_domain = [
-        surface.v_knots()[usize::try_from(surface.v_degree())
-            .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?],
+        surface.v_knots()[usize::try_from(surface.v_degree()).map_err(|_| {
+            WriteError::Fail(CodecError::Malformed(
+                "Rhino count exceeds address space".into(),
+            ))
+        })?],
         surface.v_knots()[v_count],
     ];
     let pcurve = explicit.source;
@@ -1434,11 +1501,11 @@ fn validate_nurbs_trim(
                         cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
                             .map(FiniteReal::get)
                             .ok_or_else(|| {
-                                CodecError::malformed("reversed edge knot is non-finite")
+                                WriteError::Omit("reversed edge knot is non-finite".into())
                             })
                     }
                 })
-                .collect::<Result<Vec<_>, CodecError>>()?,
+                .collect::<Result<Vec<_>, WriteError>>()?,
         );
     }
     if let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
@@ -1474,14 +1541,14 @@ fn validate_nurbs_trim(
         ) {
             Ok(uv) => uv.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                WriteError::Omit(format!(
                     "pcurve {} cannot be evaluated over its edge domain",
                     pcurve.id.as_str()
                 ))
             })?,
         };
         if !inside_domain(uv.u, uv.v) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Omit(format!(
                 "pcurve {} leaves its NURBS surface parameter domain",
                 pcurve.id.as_str()
             )));
@@ -1495,7 +1562,7 @@ fn validate_nurbs_trim(
         ) {
             Ok(point) => point.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                WriteError::Omit(format!(
                     "pcurve {} cannot be evaluated through its NURBS surface",
                     pcurve.id.as_str()
                 ))
@@ -1505,13 +1572,13 @@ fn validate_nurbs_trim(
             sample
         } else {
             cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
-                .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
+                .ok_or_else(|| WriteError::Omit("reversed edge parameter is non-finite".into()))?
         };
         // A non-finite edge curve point is measured as a finite one is.
         let edge_point = match edge.curve.point(curve_parameter) {
             Ok(point) => point.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                WriteError::Omit(format!(
                     "edge curve {} cannot be evaluated over its edge domain",
                     edge.curve_id
                 ))
@@ -1528,10 +1595,10 @@ fn validate_nurbs_trim(
                 // (S-entity) Independent carrier parameters need not pair at
                 // interior samples. This writer cannot establish their
                 // correspondence, so it omits the face with an Error loss.
-                return Err(CodecError::UnsupportedContent(reason));
+                return Err(WriteError::Omit(reason));
             }
             // (C) Endpoint images disagree, or a held carrier is non-finite.
-            return Err(CodecError::malformed(reason));
+            return Err(WriteError::Omit(reason));
         }
     }
 
@@ -1558,7 +1625,7 @@ fn bounded_line_payload(
     to: [f64; 3],
     domain: [f64; 2],
     dimension: i32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut payload = vec![0x10];
     for value in from.into_iter().chain(to) {
         payload.extend(
@@ -1576,9 +1643,9 @@ fn bounded_line_payload(
 
 /// Admit a number the writer computed for `field`. A 3DM archive states no
 /// non-finite number.
-fn computed(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
+fn computed(value: f64, field: &str) -> Result<FiniteReal, WriteError> {
     FiniteReal::new(value).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        WriteError::Omit(format!(
             "Rhino writer computed the non-finite {field} {value}, which 3DM cannot state"
         ))
     })
@@ -1675,8 +1742,12 @@ fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
 }
 
 fn archive_body_len(value: u64) -> Result<i64, CodecError> {
-    i64::try_from(value)
-        .map_err(|_| CodecError::InvalidInput("3DM object table size overflow".into()))
+    if value > target::CAPACITY_FIELDS[0].limit {
+        return Err(CodecError::InvalidInput(
+            "3DM object table size overflow".into(),
+        ));
+    }
+    Ok(value as i64)
 }
 
 fn archive_final_size(position: u64) -> Result<u64, CodecError> {
@@ -1764,7 +1835,7 @@ fn check_frame(
     id: &str,
     frame: cadmpeg_ir::units::OrthonormalFrame3,
     family: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let normal = frame.axis().as_raw();
     let x = frame.reference().as_raw();
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
@@ -1772,7 +1843,7 @@ fn check_frame(
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Omit(format!(
             "{family} {id} frame is not orthonormal to Rhino's tighter bound {EPS_WRITE_DEGENERATE}"
         )));
     }
@@ -1790,19 +1861,23 @@ fn check_frame(
 fn check_nurbs_surface(
     id: &str,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-) -> Result<i32, CodecError> {
-    let u_order = usize::try_from(surface.u_degree())
-        .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-        + 1;
-    let v_order = usize::try_from(surface.v_degree())
-        .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-        + 1;
+) -> Result<i32, WriteError> {
+    let u_order = usize::try_from(surface.u_degree()).map_err(|_| {
+        WriteError::Fail(CodecError::Malformed(
+            "Rhino count exceeds address space".into(),
+        ))
+    })? + 1;
+    let v_order = usize::try_from(surface.v_degree()).map_err(|_| {
+        WriteError::Fail(CodecError::Malformed(
+            "Rhino count exceeds address space".into(),
+        ))
+    })? + 1;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let count_error = || format!("surface {id} cannot be represented by Rhino NURBS counts");
     let pole_count = native_i32_count(surface.poles().len(), count_error())?;
     if u_order < 2 || v_order < 2 {
-        return Err(CodecError::UnsupportedContent(count_error()));
+        return Err(WriteError::Omit(count_error()));
     }
     native_i32_count(u_order, count_error())?;
     native_i32_count(v_order, count_error())?;
@@ -1830,14 +1905,16 @@ fn check_nurbs_surface(
 fn check_nurbs_curve(
     id: &str,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<(), CodecError> {
-    let order = usize::try_from(curve.degree())
-        .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-        + 1;
+) -> Result<(), WriteError> {
+    let order = usize::try_from(curve.degree()).map_err(|_| {
+        WriteError::Fail(CodecError::Malformed(
+            "Rhino count exceeds address space".into(),
+        ))
+    })? + 1;
     let count = curve.control_points().len();
     let count_error = || format!("curve {id} cannot be represented by Rhino NURBS counts");
     if order < 2 {
-        return Err(CodecError::UnsupportedContent(count_error()));
+        return Err(WriteError::Omit(count_error()));
     }
     native_i32_count(order, count_error())?;
     native_i32_count(count, count_error())?;
@@ -1852,23 +1929,23 @@ fn check_knot_roundtrip(
     order: usize,
     count: usize,
     declared_periodic: bool,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Omit(format!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
     let reconstructed =
         crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
             crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                CodecError::ResourceLimit(limit)
+                WriteError::Fail(CodecError::ResourceLimit(limit))
             }
-            error => CodecError::UnsupportedContent(format!("{direction} {id}: {error}")),
+            error => WriteError::Omit(format!("{direction} {id}: {error}")),
         })?;
     let periodic = crate::surfaces::periodic_knots(stored, order, count);
     if reconstructed != full || periodic != declared_periodic {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Omit(format!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"
         )));
     }
@@ -1987,7 +2064,7 @@ fn circle_payload(
     axis: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     radius: f64,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let y = cadmpeg_ir::math::Vector3::new(
         axis.y * x.z - axis.z * x.y,
         axis.z * x.x - axis.x * x.z,
@@ -2039,14 +2116,14 @@ fn circle_payload(
 
 fn nurbs_curve_payload(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     nurbs_curve_payload_dimension(curve, 3)
 }
 
 fn nurbs_curve_payload_dimension(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     dimension: i32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let rational = i32::from(curve.weights().is_some());
     let order = i32::try_from(curve.degree() + 1)
         .map_err(|_| native_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
@@ -2107,7 +2184,7 @@ fn plane_surface_payload(
     origin: cadmpeg_ir::math::Point3,
     normal: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let y = normal.cross(x);
     let d = computed(
         -(normal.x * origin.x + normal.y * origin.y + normal.z * origin.z),
@@ -2148,7 +2225,7 @@ fn plane_surface_payload(
 fn nurbs_surface_payload(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pole_count: i32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [
@@ -2224,7 +2301,7 @@ struct MeshPayload {
 fn mesh_payload(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     archive_version: RhinoArchiveVersion,
-) -> Result<MeshPayload, CodecError> {
+) -> Result<MeshPayload, WriteError> {
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
@@ -2275,11 +2352,11 @@ fn mesh_payload(
         for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
             match width {
                 FaceIndexWidth::One => payload.push(u8::try_from(index).map_err(|_| {
-                    CodecError::Malformed("mesh face index exceeds chosen width".into())
+                    WriteError::Omit("mesh face index exceeds chosen width".into())
                 })?),
                 FaceIndexWidth::Two => payload.extend(
                     (u16::try_from(index).map_err(|_| {
-                        CodecError::Malformed("mesh face index exceeds chosen width".into())
+                        WriteError::Omit("mesh face index exceeds chosen width".into())
                     })?)
                     .to_le_bytes(),
                 ),
@@ -2292,7 +2369,7 @@ fn mesh_payload(
     for point in mesh.vertices() {
         for value in [point.x, point.y, point.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
-                .ok_or_else(|| CodecError::Malformed("mesh vertex exceeds f32 range".into()))?;
+                .ok_or_else(|| WriteError::Omit("mesh vertex exceeds f32 range".into()))?;
             float_vertices.extend(value.to_le_bytes());
         }
     }
@@ -2300,7 +2377,7 @@ fn mesh_payload(
     for normal in mesh.vertex_normals() {
         for value in [normal.x, normal.y, normal.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
-                .ok_or_else(|| CodecError::Malformed("mesh normal exceeds f32 range".into()))?;
+                .ok_or_else(|| WriteError::Omit("mesh normal exceeds f32 range".into()))?;
             normals.extend(value.to_le_bytes());
         }
     }
