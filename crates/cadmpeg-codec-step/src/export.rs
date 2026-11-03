@@ -82,6 +82,8 @@ pub(crate) struct StepWriteOutcome {
     pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) notes: Vec<String>,
+    /// Retained `step.drawing_targets` records the writer re-emitted.
+    pub(crate) written_drawing_targets: BTreeSet<String>,
 }
 
 /// Writes STEP bytes and returns the facts measured by the writer.
@@ -101,10 +103,19 @@ pub(crate) fn write_step_outcome(
     if let Some(limit) = b.approximations.resource_limit() {
         return Err(limit.into());
     }
+    let mut emitter_anchors = b.emitter.take_anchors();
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
 
-    write_header(w, schema, opts)?;
+    write_header(w, schema, opts, !emitter_anchors.is_empty())?;
+    if !emitter_anchors.is_empty() {
+        emitter_anchors.sort_by_key(|(id, _)| *id);
+        writeln!(w, "REFERENCE;")?;
+        for (id, uri) in &emitter_anchors {
+            writeln!(w, "#{id}=<{uri}>;")?;
+        }
+        writeln!(w, "ENDSEC;")?;
+    }
     writeln!(w, "DATA;")?;
     for line in &lines {
         writeln!(w, "{line}")?;
@@ -168,13 +179,18 @@ fn write_header(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
+    edition_three_sections: bool,
 ) -> std::io::Result<()> {
     let ts = opts.timestamp.as_deref().unwrap_or("1970-01-01T00:00:00");
+    // External references live in edition-3 `REFERENCE` sections, which the
+    // default `2;1` implementation level forbids. The level names the
+    // exchange actually written: edition 3 only when such a section exists.
+    let implementation = if edition_three_sections { "4;2" } else { "2;1" };
     writeln!(w, "ISO-10303-21;")?;
     writeln!(w, "HEADER;")?;
     writeln!(
         w,
-        "FILE_DESCRIPTION(({}),'2;1');",
+        "FILE_DESCRIPTION(({}),'{implementation}');",
         string("CAD model exported by cadmpeg")
     )?;
     writeln!(
@@ -382,9 +398,58 @@ pub(crate) struct Builder<'a> {
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
+    /// Owning-record names for geometry carriers, from neutral `name`
+    /// attributes. A named carrier is emitted with its name; unnamed
+    /// carriers keep the empty name the reader treats as absent.
+    carrier_names: HashMap<String, String>,
+    /// Neutral asset and attribute records the writer carried into the file.
+    /// `note_unrepresented` charges only the remainder.
+    written_asset_ids: BTreeSet<String>,
+    consumed_attribute_ids: BTreeSet<String>,
+    /// Retained `step.drawing_targets` records re-emitted for a written
+    /// drawing. The export target reports them as written.
+    written_drawing_target_ids: BTreeSet<String>,
+    /// STEP records emitted for re-emitted drawing targets, by native id.
+    drawing_target_refs: HashMap<String, Ref>,
+    /// Presentation annotation ids a written drawing already covers. Any
+    /// other presentation occurrence gets the historical `PMI presentation`
+    /// model so its semantic links survive.
+    drawn_pmi_occurrences: BTreeSet<String>,
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
     approximations: approximation::Approximator<'a>,
+}
+
+/// Owning-record names for geometry carriers, from neutral `name` attributes.
+///
+/// Only the decoder's geometry-name attributes qualify: one string value on
+/// a point, curve or surface record. Any other attribute keeps its
+/// `attribute.source-record-not-written` loss below.
+fn carrier_names(ir: &CadIr) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for attribute in &ir.model.attributes {
+        if attribute.name != "name" {
+            continue;
+        }
+        let [Some(cadmpeg_ir::attributes::AttributeValue::String(name))] =
+            attribute.values.as_slice()
+        else {
+            continue;
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let target = match &attribute.target {
+            cadmpeg_ir::attributes::AttributeTarget::Point(id) => id.as_str(),
+            cadmpeg_ir::attributes::AttributeTarget::Curve(id) => id.as_str(),
+            cadmpeg_ir::attributes::AttributeTarget::Surface(id) => id.as_str(),
+            _ => continue,
+        };
+        names
+            .entry(target.to_owned())
+            .or_insert_with(|| name.clone());
+    }
+    names
 }
 
 /// STEP names for entities that carry an id and an optional source name.
@@ -603,6 +668,12 @@ impl<'a> Builder<'a> {
             length_unit: None,
             angle_unit: None,
             ratio_unit: None,
+            carrier_names: carrier_names(ir),
+            written_asset_ids: BTreeSet::new(),
+            consumed_attribute_ids: BTreeSet::new(),
+            written_drawing_target_ids: BTreeSet::new(),
+            drawing_target_refs: HashMap::new(),
+            drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
         };
@@ -617,6 +688,48 @@ impl<'a> Builder<'a> {
         self.losses.push(code.note(message));
     }
 
+    /// The owning record's name for a geometry carrier, or empty when the
+    /// document holds no neutral name for it. Takes the name map instead of
+    /// the whole writer so callers can borrow the emitter at the same time.
+    fn carrier_name<'m>(names: &'m HashMap<String, String>, id: &str) -> &'m str {
+        names.get(id).map(String::as_str).unwrap_or("")
+    }
+
+    /// Whether the writer carried `attribute` into the file.
+    ///
+    /// A geometry name is written when its carrier record is emitted: the
+    /// carrier maps hold exactly the emitted record ids. A document reference
+    /// source is written when its document pairs with it. Any other attribute
+    /// keeps its `attribute.source-record-not-written` loss below.
+    fn attribute_is_written(&self, attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+        if self.consumed_attribute_ids.contains(attribute.id.as_str()) {
+            return true;
+        }
+        if attribute.name != "name" {
+            return false;
+        }
+        let [Some(cadmpeg_ir::attributes::AttributeValue::String(name))] =
+            attribute.values.as_slice()
+        else {
+            return false;
+        };
+        if name.is_empty() {
+            return false;
+        }
+        match &attribute.target {
+            cadmpeg_ir::attributes::AttributeTarget::Point(id) => {
+                self.point_refs.contains_key(id.as_str())
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Curve(id) => {
+                self.curve_refs.contains_key(id.as_str())
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Surface(id) => {
+                self.surface_refs.contains_key(id.as_str())
+            }
+            _ => false,
+        }
+    }
+
     fn topology_relation_loss(&mut self, identity: String, code: StepLossCode, message: String) {
         if self.topology_relation_losses.insert(identity) {
             self.loss(code, message);
@@ -624,6 +737,9 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        // External references take the first instance numbers: they live in
+        // the file's REFERENCE section, ahead of the DATA section.
+        self.emit_external_assets();
         let surface_regions = self
             .ir
             .model
@@ -649,25 +765,45 @@ impl<'a> Builder<'a> {
         let context = self.emit_context();
 
         let mut emitted_items = self.emit_shape_items(context);
-        let standalone_items = self.emit_standalone_geometry();
-        emitted_items.extend(standalone_items.iter().copied());
-        let has_model_items = !emitted_items.is_empty();
+        let bodies_written = !self.body_step_refs.is_empty();
         if self.ir.model.product_definitions.is_empty() {
-            let origin = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::units::UnitVector3::Z_AXIS,
-                cadmpeg_ir::units::UnitVector3::X_AXIS,
-            );
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
-            let representation =
-                self.emit_shape_representation("", emitted_items, vec![origin], context);
-            self.emitter.emit(
-                "SHAPE_DEFINITION_REPRESENTATION",
-                &format!("{product_def_shape},{representation}"),
-            );
+            if bodies_written {
+                let origin = geometry::placement(
+                    &mut self.emitter,
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::units::UnitVector3::Z_AXIS,
+                    cadmpeg_ir::units::UnitVector3::X_AXIS,
+                );
+                let standalone_items = self.emit_standalone_geometry();
+                emitted_items.extend(standalone_items.iter().copied());
+                let representation = self.emit_shape_representation(
+                    "",
+                    emitted_items.clone(),
+                    vec![origin],
+                    context,
+                );
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{product_def_shape},{representation}"),
+                );
+            } else {
+                // Mirror the source convention for free carriers: a bare
+                // shape representation holds points, curves and surfaces
+                // directly, with no product binding and no set wrapper. A
+                // binding without bodies makes the re-decode report a product
+                // with a shape representation and no committed topology body,
+                // and a set wrapper with no binding re-decodes as opaque.
+                let (members, _) = self.standalone_members();
+                emitted_items.extend(members.iter().copied());
+                if !members.is_empty() {
+                    self.emit_shape_representation("", members, Vec::new(), context);
+                }
+            }
         } else {
+            let standalone_items = self.emit_standalone_geometry();
+            emitted_items.extend(standalone_items.iter().copied());
             self.emit_product_graph(context);
             if !standalone_items.is_empty() {
                 self.emit_shape_representation(
@@ -678,6 +814,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        let has_model_items = !emitted_items.is_empty();
 
         self.emit_visibility();
         self.emit_tessellations(context);
@@ -691,6 +828,7 @@ impl<'a> Builder<'a> {
         self.emit_presentation(context);
         self.emit_appearance_visibility();
         self.emit_pmi(context);
+        self.emit_drawings(context);
         self.emit_layers();
         self.emit_layer_visibility();
         self.note_unrepresented();
@@ -1245,6 +1383,368 @@ impl<'a> Builder<'a> {
         assignment
     }
 
+    /// The neutral asset kind the identity names: the `<kind>` of
+    /// `step:data:<kind>#<key>`. Only decoder-retained external assets
+    /// (`external-resource`, `external-document`, `external-item`) qualify;
+    /// anything else stays dropped.
+    fn asset_kind(asset: &cadmpeg_ir::assets::Asset) -> Option<&str> {
+        asset
+            .id
+            .as_str()
+            .split(':')
+            .nth(2)
+            .and_then(|kind| kind.split('#').next())
+    }
+
+    /// Whether `uri` survives an external reference binding: the lexer ends
+    /// the resource at `>` and strips ASCII controls, so neither round-trips.
+    fn anchor_uri_round_trips(uri: &str) -> bool {
+        !uri.bytes()
+            .any(|byte| byte == b'>' || byte.is_ascii_control())
+    }
+
+    /// Whether `attribute` is a document-reference source string: one `name`
+    /// of the decoder's `DOCUMENT_REFERENCE #<record> source` form on the
+    /// document target with a single string value.
+    fn document_reference_source(
+        attribute: &cadmpeg_ir::attributes::SourceAttribute,
+    ) -> Option<&str> {
+        if attribute.target != cadmpeg_ir::attributes::AttributeTarget::Document {
+            return None;
+        }
+        let record = attribute
+            .name
+            .strip_prefix("DOCUMENT_REFERENCE #")?
+            .strip_suffix(" source")?;
+        if record.parse::<u64>().is_err() {
+            return None;
+        }
+        let [Some(cadmpeg_ir::attributes::AttributeValue::String(source))] =
+            attribute.values.as_slice()
+        else {
+            return None;
+        };
+        if source.is_empty() {
+            return None;
+        }
+        Some(source.as_str())
+    }
+
+    /// Write the neutral external assets the STEP decoder produces.
+    ///
+    /// In-file anchors become `REFERENCE` bindings, external documents become
+    /// `DOCUMENT` sets with their reference source, and externally defined
+    /// items become `EXTERNAL_SOURCE` sets. A document reference pairs with
+    /// its source string by document order when every document carries one;
+    /// otherwise every reference is emitted sourceless so no source string
+    /// lands on another document. Assets the file cannot state stay dropped.
+    fn emit_external_assets(&mut self) {
+        use cadmpeg_ir::assets::AssetContent;
+        let mut anchors = Vec::new();
+        let mut documents = Vec::new();
+        let mut items = Vec::new();
+        for asset in &self.ir.model.assets {
+            let AssetContent::External { uri } = &asset.content else {
+                continue;
+            };
+            match Self::asset_kind(asset) {
+                Some("external-resource") => anchors.push((asset, uri)),
+                Some("external-document") => documents.push((asset, uri)),
+                Some("external-item") => items.push((asset, uri)),
+                _ => {}
+            }
+        }
+        for (asset, uri) in anchors {
+            if !Self::anchor_uri_round_trips(uri.as_str()) {
+                continue;
+            }
+            self.emitter.emit_anchor(uri.as_str());
+            self.written_asset_ids.insert(asset.id.as_str().to_owned());
+        }
+        if !documents.is_empty() {
+            // The kind record is claimed through the document's kind
+            // reference; an unreferenced DOCUMENT_TYPE would re-decode as
+            // opaque. The kind string itself is unread metadata.
+            let kind = self.emitter.emit(
+                "DOCUMENT_TYPE",
+                &string("configuration controlled document version"),
+            );
+            let mut sources = Vec::new();
+            for attribute in &self.ir.model.attributes {
+                if let Some(source) = Self::document_reference_source(attribute) {
+                    sources.push((attribute.id.as_str().to_owned(), source.to_owned()));
+                }
+            }
+            let paired = sources.len() == documents.len();
+            for (index, (asset, uri)) in documents.iter().enumerate() {
+                let name = asset
+                    .name
+                    .as_ref()
+                    .map_or("", cadmpeg_core::text::NonBlankString::as_str);
+                let document = self.emitter.emit(
+                    "DOCUMENT",
+                    &format!(
+                        "{},{},{},{kind}",
+                        string(uri.as_str()),
+                        string(name),
+                        string(""),
+                    ),
+                );
+                let (source, consumed) = if paired {
+                    let (id, source) = &sources[index];
+                    (source.clone(), Some(id.clone()))
+                } else {
+                    (String::new(), None)
+                };
+                self.emitter.emit(
+                    "APPLIED_DOCUMENT_REFERENCE",
+                    &format!("{document},{},()", string(&source)),
+                );
+                self.written_asset_ids.insert(asset.id.as_str().to_owned());
+                if let Some(id) = consumed {
+                    self.consumed_attribute_ids.insert(id);
+                }
+            }
+        }
+        for (asset, uri) in items {
+            let name = asset
+                .name
+                .as_ref()
+                .map_or("", cadmpeg_core::text::NonBlankString::as_str);
+            let source = self.emitter.emit("EXTERNAL_SOURCE", &string(uri.as_str()));
+            self.emitter.emit(
+                "EXTERNALLY_DEFINED_ITEM",
+                &format!("{},{source}", string(name)),
+            );
+            self.written_asset_ids.insert(asset.id.as_str().to_owned());
+        }
+    }
+
+    /// Write the neutral drawings the STEP decoder produces.
+    ///
+    /// Only `DRAUGHTING_MODEL` drawing records are written: every other
+    /// drawing entity stays dropped with its
+    /// `presentation.drawing-records-omitted` loss. Items resolve through
+    /// written presentation occurrences and re-emitted drawing targets; an
+    /// unresolvable item is left out of the file. The file context carries
+    /// every model, so the stored presentation context always resolves to it.
+    ///
+    /// Presentation occurrences no neutral drawing covers still need a model:
+    /// an annotation occurrence re-decodes only as a draughting-model member,
+    /// and its semantic links ride draughting-model associations. They get
+    /// the historical `PMI presentation` model with their associations.
+    fn emit_drawings(&mut self, context: Ref) {
+        if self.ir.model.drawings.is_empty() && self.pmi_step_refs.is_empty() {
+            return;
+        }
+        let drawings = self.ir.model.drawings.clone();
+        for drawing in &drawings {
+            self.emit_drawing(drawing, context);
+        }
+        let mut uncovered = Vec::new();
+        for (id, occurrence) in &self.pmi_step_refs.clone() {
+            if self.drawn_pmi_occurrences.contains(id.as_str()) {
+                continue;
+            }
+            let Some(annotation) = self
+                .ir
+                .model
+                .pmi
+                .iter()
+                .find(|annotation| annotation.id.as_str() == id.as_str())
+            else {
+                continue;
+            };
+            if matches!(
+                &annotation.definition,
+                cadmpeg_ir::pmi::PmiDefinition::Presentation { .. }
+            ) {
+                uncovered.push((*occurrence, annotation.id.clone()));
+            }
+        }
+        if uncovered.is_empty() {
+            return;
+        }
+        let occurrences = uncovered
+            .iter()
+            .map(|(occurrence, _)| *occurrence)
+            .collect::<Vec<_>>();
+        let model = self.emitter.emit(
+            "DRAUGHTING_MODEL",
+            &format!("'PMI presentation',{}, {context}", refs(&occurrences)),
+        );
+        for (_, id) in uncovered {
+            let Some(annotation) = self
+                .ir
+                .model
+                .pmi
+                .iter()
+                .find(|annotation| annotation.id == id)
+            else {
+                continue;
+            };
+            let cadmpeg_ir::pmi::PmiDefinition::Presentation { semantics, .. } =
+                &annotation.definition
+            else {
+                continue;
+            };
+            for semantic in semantics {
+                let Some(definition) = self.pmi_step_refs.get(semantic.as_str()).copied() else {
+                    continue;
+                };
+                let Some(item) = self.pmi_step_refs.get(id.as_str()).copied() else {
+                    continue;
+                };
+                self.emitter.emit(
+                    "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+                    &format!("'','',{definition},{model},{item}"),
+                );
+            }
+        }
+    }
+
+    fn emit_drawing(&mut self, drawing: &cadmpeg_ir::drawings::Drawing, context: Ref) {
+        use cadmpeg_core::text::NonBlankString;
+        let supported = drawing
+            .parameters
+            .get("source_type")
+            .is_some_and(|source| source == "DRAUGHTING_MODEL");
+        if !supported {
+            let kind = drawing
+                .parameters
+                .get("source_type")
+                .cloned()
+                .unwrap_or_else(|| "?".to_owned());
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "1 drawing record ({}) was not represented in STEP: {}",
+                    kind, drawing.id
+                ),
+            );
+            return;
+        }
+        let name = drawing.parameters.get("name").map_or("", String::as_str);
+        let mut items = Vec::new();
+        if let Some(selections) = drawing
+            .relationships
+            .get(&NonBlankString::new("items".to_owned()).expect("static key is non-blank"))
+        {
+            for selection in selections {
+                if let Some(item) = self.resolve_drawing_item(selection, context) {
+                    items.push(item);
+                }
+            }
+        }
+        let model = self.emitter.emit(
+            "DRAUGHTING_MODEL",
+            &format!("{},{},{}", string(name), refs(&items), context),
+        );
+        let _ = model;
+        // Associations pair one semantic definition with the model items.
+        // The neutral relationships keep definitions and items in separate
+        // flat lists, so only an unambiguous single definition is written.
+        let definitions = drawing
+            .relationships
+            .get(
+                &NonBlankString::new("semantic_definition".to_owned())
+                    .expect("static key is non-blank"),
+            )
+            .cloned()
+            .unwrap_or_default();
+        let associated = drawing
+            .relationships
+            .get(
+                &NonBlankString::new("associated_items".to_owned())
+                    .expect("static key is non-blank"),
+            )
+            .cloned()
+            .unwrap_or_default();
+        if definitions.len() == 1 {
+            let Some(definition) = self.resolve_drawing_reference(&definitions[0]) else {
+                return;
+            };
+            for selection in &associated {
+                let Some(item) = self.resolve_drawing_reference(selection) else {
+                    continue;
+                };
+                self.emitter.emit(
+                    "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+                    &format!("'','',{definition},{model},{item}"),
+                );
+            }
+        }
+    }
+
+    /// Resolve one drawing relationship target to its written STEP record:
+    /// a presentation occurrence, or a re-emitted retained drawing target.
+    fn resolve_drawing_item(
+        &mut self,
+        selection: &cadmpeg_ir::references::ReferenceSelection,
+        context: Ref,
+    ) -> Option<Ref> {
+        let target = selection.local_target()?;
+        if let Some(reference) = self.resolve_drawing_reference(selection) {
+            self.drawn_pmi_occurrences.insert(target.to_owned());
+            return Some(reference);
+        }
+        self.emit_drawing_target(target, context)
+    }
+
+    /// Resolve one drawing relationship target without re-emitting anything:
+    /// presentation occurrences written by [`Self::emit_pmi`].
+    fn resolve_drawing_reference(
+        &self,
+        selection: &cadmpeg_ir::references::ReferenceSelection,
+    ) -> Option<Ref> {
+        let target = selection.local_target()?;
+        self.pmi_step_refs.get(target).copied()
+    }
+
+    /// Re-emit one retained `step.drawing_targets` record referenced by a
+    /// written drawing, and report it as written.
+    ///
+    /// Only records whose source type the writer can author from nothing but
+    /// a name qualify: a `DRAUGHTING_MODEL` carries the file context, and an
+    /// `ANNOTATION_PLANE` carries a fresh identity placement. Any other
+    /// source type stays dropped: its parameters are not retained.
+    fn emit_drawing_target(&mut self, target: &str, context: Ref) -> Option<Ref> {
+        if let Some(written) = self.drawing_target_refs.get(target).copied() {
+            return Some(written);
+        }
+        let record = self
+            .ir
+            .native
+            .namespace("step")?
+            .arenas()
+            .get("drawing_targets")?
+            .iter()
+            .find(|record| record.id() == target)?
+            .clone();
+        let fields = record.fields().ok()?;
+        let source_type = fields.get("source_type")?.as_str()?;
+        let reference = match source_type {
+            "DRAUGHTING_MODEL" => self
+                .emitter
+                .emit("DRAUGHTING_MODEL", &format!("'',(),{context}")),
+            "ANNOTATION_PLANE" => {
+                let placement = geometry::placement(
+                    &mut self.emitter,
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::units::UnitVector3::Z_AXIS,
+                    cadmpeg_ir::units::UnitVector3::X_AXIS,
+                );
+                self.emitter
+                    .emit("ANNOTATION_PLANE", &format!("'',{placement},()"))
+            }
+            _ => return None,
+        };
+        self.written_drawing_target_ids.insert(target.to_owned());
+        self.drawing_target_refs
+            .insert(target.to_owned(), reference);
+        Some(reference)
+    }
+
     fn emit_layers(&mut self) {
         for layer in self.ir.model.presentation_layers.clone() {
             let mut assigned = Vec::new();
@@ -1610,14 +2110,37 @@ impl<'a> Builder<'a> {
             if let Some(child_placements) = representation_placements.get(&product.id) {
                 placements.extend(child_placements);
             }
-            let representation =
-                self.emit_shape_representation(name, body_items, placements, context);
-            self.emitter.emit(
-                "SHAPE_DEFINITION_REPRESENTATION",
-                &format!("{shape},{representation}"),
-            );
+            // A representation with no body items binds the product to an
+            // empty shape: the re-decode reports a product with a shape
+            // representation and no committed topology body. Documents with an
+            // occurrence graph keep every binding the assembly walk needs; a
+            // lone product keeps its binding when unclaimed bodies resolve
+            // through it; other bodyless products keep only the product
+            // definition shape.
+            let owned_bodies: BTreeSet<_> =
+                products.iter().flat_map(|product| &product.bodies).collect();
+            let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
+                !owned_bodies.contains(&body.id)
+                    && self.body_item_refs.contains_key(body.id.as_str())
+            });
+            let representation = if body_items.is_empty()
+                && occurrences.is_empty()
+                && !(products.len() == 1 && has_unclaimed_written_bodies)
+            {
+                None
+            } else {
+                let representation =
+                    self.emit_shape_representation(name, body_items, placements, context);
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{shape},{representation}"),
+                );
+                Some(representation)
+            };
             definitions.insert(product.id.clone(), definition);
-            representations.insert(product.id.clone(), representation);
+            if let Some(representation) = representation {
+                representations.insert(product.id.clone(), representation);
+            }
         }
 
         let assembly_root = assembly_root.then(|| {
@@ -2211,7 +2734,8 @@ impl<'a> Builder<'a> {
             let reference = if let Some(reference) = self.point_refs.get(point.id.as_str()) {
                 *reference
             } else {
-                let reference = geometry::point(&mut self.emitter, point.position().get());
+                let name = Self::carrier_name(&self.carrier_names, point.id.as_str());
+                let reference = geometry::point(&mut self.emitter, name, point.position().get());
                 self.point_refs
                     .insert(point.id.as_str().to_owned(), reference);
                 reference
@@ -2455,7 +2979,13 @@ impl<'a> Builder<'a> {
         ))
     }
 
-    fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+    /// Unowned carriers the file holds outside any topology body, in emission
+    /// order, with whether a surface member needs a geometric set.
+    ///
+    /// Curves and surfaces decode from a bare shape representation, but the
+    /// product-bound path keeps the historical set wrapper; points decode
+    /// from either.
+    fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
         // Ownership is a property of the source/model graph, not of successful
         // emission. A failed face must never expose its full support as a root.
         let owned_surfaces: BTreeSet<_> = self
@@ -2563,8 +3093,10 @@ impl<'a> Builder<'a> {
                             },
                             _ => None,
                         });
+                let name = Self::carrier_name(&self.carrier_names, &surface_id).to_owned();
                 let reference = match ranges {
                     Some(ranges) => self.emit_rectangular_trim(
+                        &name,
                         reference,
                         ranges,
                         [true, true],
@@ -2596,13 +3128,14 @@ impl<'a> Builder<'a> {
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self.emit_curve(&curve_id) {
+                let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
                     .curves
                     .get(curve_id.as_str())
                     .and_then(|curve| curve.parameter_range)
                 {
                     let [start, end] = range.endpoints();
-                    self.emitter.emit("TRIMMED_CURVE", &format!("'',{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", self.emitter.real(start), self.emitter.real(end)))
+                    self.emitter.emit("TRIMMED_CURVE", &format!("{},{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", string(&name), self.emitter.real(start), self.emitter.real(end)))
                 } else {
                     reference
                 };
@@ -2631,10 +3164,18 @@ impl<'a> Builder<'a> {
             let Some(point) = self.points.get(point_id.as_str()).copied() else {
                 continue;
             };
-            let reference = geometry::point(&mut self.emitter, point.position().get());
+            let name = Self::carrier_name(&self.carrier_names, point_id.as_str());
+            let reference = geometry::point(&mut self.emitter, name, point.position().get());
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
+        (members, has_surfaces)
+    }
+
+    /// Unowned carriers wrapped for a bound representation: surfaces need a
+    /// geometric set, while curves and points take a geometric curve set.
+    fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+        let (members, has_surfaces) = self.standalone_members();
         if members.is_empty() {
             Vec::new()
         } else {
@@ -3978,7 +4519,8 @@ impl<'a> Builder<'a> {
         }
         let vertex = self.vertices.get(vertex_id).copied()?;
         let pt = self.points.get(vertex.point.as_str()).copied()?;
-        let cp = geometry::point(&mut self.emitter, pt.position().get());
+        let name = Self::carrier_name(&self.carrier_names, vertex.point.as_str());
+        let cp = geometry::point(&mut self.emitter, name, pt.position().get());
         self.point_refs.insert(vertex.point.as_str().to_owned(), cp);
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
         self.vertex_refs.insert(vertex_id.to_string(), r);
@@ -3994,6 +4536,7 @@ impl<'a> Builder<'a> {
         {
             return None;
         }
+        let name = Self::carrier_name(&self.carrier_names, surface_id).to_owned();
         self.geometry_emission_depth += 1;
         let result = (|| {
             let surf = self.surfaces.get(surface_id).copied()?;
@@ -4005,7 +4548,7 @@ impl<'a> Builder<'a> {
             });
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
-                let reference = self.emit_procedural_surface(solved, &definition)?;
+                let reference = self.emit_procedural_surface(&name, solved, &definition)?;
                 let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
                         self.surface_chart(payload.support().as_str())
@@ -4038,8 +4581,11 @@ impl<'a> Builder<'a> {
                         return None;
                     }
                 };
-                let reference =
-                    geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
+                let reference = geometry::surface(
+                    &mut self.emitter,
+                    &name,
+                    &SolvedSurfaceGeometry::Nurbs(fitted),
+                )?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
                 (reference, None, false)
             } else if let Some(solved) = solved
@@ -4048,7 +4594,7 @@ impl<'a> Builder<'a> {
                 // The basis is taken before the record is emitted, so the
                 // census cannot miss a record the writer put in the file.
                 let basis = geometry::emitted_basis(solved);
-                let reference = geometry::surface(&mut self.emitter, solved)?;
+                let reference = geometry::surface(&mut self.emitter, &name, solved)?;
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);
@@ -4058,7 +4604,7 @@ impl<'a> Builder<'a> {
             } else {
                 let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
                 let surface = self.approximations.surface(surface_id)?;
-                let reference = geometry::surface(&mut self.emitter, &surface)?;
+                let reference = geometry::surface(&mut self.emitter, &name, &surface)?;
                 self.sampled_surfaces.insert(procedural);
                 (reference, None, false)
             };
@@ -4094,6 +4640,7 @@ impl<'a> Builder<'a> {
 
     fn emit_procedural_surface(
         &mut self,
+        name: &str,
         solved: Option<&'a SolvedSurfaceGeometry>,
         definition: &ProceduralSurfaceDefinition,
     ) -> Option<Ref> {
@@ -4116,13 +4663,16 @@ impl<'a> Builder<'a> {
                 );
                 Some(self.emitter.emit(
                     "SURFACE_OF_LINEAR_EXTRUSION",
-                    &format!("'',{directrix},{vector}"),
+                    &format!("{},{directrix},{vector}", string(name)),
                 ))
             }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
-                let origin =
-                    geometry::point(&mut self.emitter, definition_payload.axis_origin().get());
+                let origin = geometry::point(
+                    &mut self.emitter,
+                    "",
+                    definition_payload.axis_origin().get(),
+                );
                 let direction = geometry::direction(
                     &mut self.emitter,
                     definition_payload.axis_direction().into(),
@@ -4130,10 +4680,10 @@ impl<'a> Builder<'a> {
                 let axis = self
                     .emitter
                     .emit("AXIS1_PLACEMENT", &format!("'',{origin},{direction}"));
-                Some(
-                    self.emitter
-                        .emit("SURFACE_OF_REVOLUTION", &format!("'',{directrix},{axis}")),
-                )
+                Some(self.emitter.emit(
+                    "SURFACE_OF_REVOLUTION",
+                    &format!("{},{directrix},{axis}", string(name)),
+                ))
             }
             ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
                 let support = definition_payload.support();
@@ -4144,7 +4694,8 @@ impl<'a> Builder<'a> {
                     Some(self.emitter.emit(
                         "OFFSET_SURFACE",
                         &format!(
-                            "'',{support},{},{}",
+                            "{},{support},{},{}",
+                            string(name),
                             self.emitter.real(distance.get()),
                             logical(*self_intersect)
                         ),
@@ -4161,6 +4712,7 @@ impl<'a> Builder<'a> {
                 let support = self.emit_surface(support.as_str())?;
                 let chart = self.surface_chart(payload.support().as_str());
                 Some(self.emit_rectangular_trim(
+                    name,
                     support,
                     parameter_ranges,
                     [*u_sense, *v_sense],
@@ -4170,10 +4722,10 @@ impl<'a> Builder<'a> {
             ProceduralSurfaceDefinition::Replica { source, transform } => {
                 let source = self.emit_surface(source.as_str())?;
                 let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
-                Some(
-                    self.emitter
-                        .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
-                )
+                Some(self.emitter.emit(
+                    "SURFACE_REPLICA",
+                    &format!("{},{source},{operator}", string(name)),
+                ))
             }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
                 let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = solved else {
@@ -4188,7 +4740,8 @@ impl<'a> Builder<'a> {
                 let reference = self.emitter.emit(
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(
-                        "'',{placement},{},{},{}",
+                        "{},{placement},{},{},{}",
+                        string(name),
                         self.emitter.real(major_radius.abs()),
                         self.emitter.real(minor_radius.abs()),
                         if *select_outer { ".T." } else { ".F." }
@@ -4215,7 +4768,8 @@ impl<'a> Builder<'a> {
                 Some(self.emitter.emit(
                     "CURVE_BOUNDED_SURFACE",
                     &format!(
-                        "'',{basis},{},{}",
+                        "{},{basis},{},{}",
+                        string(name),
                         refs(&boundary_refs),
                         if *implicit_outer { ".T." } else { ".F." }
                     ),
@@ -4227,6 +4781,7 @@ impl<'a> Builder<'a> {
 
     fn emit_rectangular_trim(
         &mut self,
+        name: &str,
         support: Ref,
         mut ranges: [[f64; 2]; 2],
         senses: [bool; 2],
@@ -4241,7 +4796,8 @@ impl<'a> Builder<'a> {
         self.emitter.emit(
             "RECTANGULAR_TRIMMED_SURFACE",
             &format!(
-                "'',{support},{},{},{},{},{},{}",
+                "{},{support},{},{},{},{},{},{}",
+                string(name),
                 self.emitter.real(ranges[0][0]),
                 self.emitter.real(ranges[0][1]),
                 self.emitter.real(ranges[1][0]),
@@ -4267,6 +4823,7 @@ impl<'a> Builder<'a> {
         if self.geometry_emission_depth >= 256 || !self.active_curves.insert(curve_id.to_string()) {
             return None;
         }
+        let name = Self::carrier_name(&self.carrier_names, curve_id).to_owned();
         self.geometry_emission_depth += 1;
         let result = (|| {
             let geometry = self.curves.get(curve_id)?.geometry.clone();
@@ -4277,7 +4834,7 @@ impl<'a> Builder<'a> {
                 )
             });
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_curve(&definition)
+                self.emit_procedural_curve(&name, &definition)
                     .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
@@ -4314,7 +4871,8 @@ impl<'a> Builder<'a> {
                 self.emitter.emit(
                     "COMPOSITE_CURVE",
                     &format!(
-                        "'',{},{}",
+                        "{},{},{}",
+                        string(&name),
                         refs(&segment_refs),
                         match self_intersect {
                             Some(true) => ".T.",
@@ -4335,16 +4893,19 @@ impl<'a> Builder<'a> {
                         return None;
                     }
                 };
-                let reference =
-                    geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
+                let reference = geometry::curve(
+                    &mut self.emitter,
+                    &name,
+                    &SolvedCurveGeometry::Nurbs(fitted),
+                )?;
                 self.fitted_helix_curves.insert(id.to_owned());
                 reference
             } else if geometry::curve_is_supported(&geometry) {
-                geometry::curve(&mut self.emitter, geometry.solved()?)?
+                geometry::curve(&mut self.emitter, &name, geometry.solved()?)?
             } else {
                 let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
                 let curve = self.approximations.curve(curve_id)?;
-                let reference = geometry::curve(&mut self.emitter, &curve)?;
+                let reference = geometry::curve(&mut self.emitter, &name, &curve)?;
                 self.sampled_curves.insert(procedural);
                 reference
             };
@@ -4430,7 +4991,11 @@ impl<'a> Builder<'a> {
             .is_some_and(|procedural| self.fitted_helix_surfaces.contains(procedural.id.as_str()))
     }
 
-    fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
+    fn emit_procedural_curve(
+        &mut self,
+        name: &str,
+        definition: &ProceduralCurveDefinition,
+    ) -> Option<Ref> {
         match definition {
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
@@ -4442,7 +5007,8 @@ impl<'a> Builder<'a> {
                     Some(self.emitter.emit(
                         "TRIMMED_CURVE",
                         &format!(
-                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
+                        "{},{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
+                        string(name),
                         self.emitter.real(start),
                         self.emitter.real(end),
                         if *sense { ".T." } else { ".F." }
@@ -4453,10 +5019,10 @@ impl<'a> Builder<'a> {
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
                 let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
-                Some(
-                    self.emitter
-                        .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
-                )
+                Some(self.emitter.emit(
+                    "CURVE_REPLICA",
+                    &format!("{},{source},{operator}", string(name)),
+                ))
             }
             ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
                 let source = definition_payload.source();
@@ -4475,7 +5041,8 @@ impl<'a> Builder<'a> {
                     Some(self.emitter.emit(
                         "OFFSET_CURVE_3D",
                         &format!(
-                            "'',{source},{},{self_intersect},{direction}",
+                            "{},{source},{},{self_intersect},{direction}",
+                            string(name),
                             self.emitter.real(distance.get())
                         ),
                     ))
@@ -4626,9 +5193,6 @@ impl<'a> Builder<'a> {
             }
             datum_target_basis_exact.insert(annotation.id.clone(), exact);
         }
-        let fallback_aspect = self
-            .emitter
-            .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
         let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
             annotation
                 .targets
@@ -4642,6 +5206,10 @@ impl<'a> Builder<'a> {
                 })
                 .or_else(|| datum_target_refs.get(&annotation.id).copied())
         };
+        // The fallback aspect exists only for a semantic annotation the
+        // document leaves without a resolved target. A bare fallback would
+        // re-decode as an opaque record and charge a new loss.
+        let mut fallback_aspect: Option<Ref> = None;
         let mut target_items = Vec::new();
         for annotation in &annotations {
             if matches!(&annotation.definition, PmiDefinition::Presentation { .. }) {
@@ -4663,8 +5231,19 @@ impl<'a> Builder<'a> {
         });
         let mut targets_exact_by_annotation = HashMap::new();
         for annotation in &annotations {
-            let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
-            let definition = target_ref(annotation).unwrap_or(fallback_aspect);
+            // Presentation annotations are written by the presentation block
+            // below, not through a semantic definition: resolving one here
+            // would emit the fallback aspect for no semantic use.
+            if matches!(&annotation.definition, PmiDefinition::Presentation { .. }) {
+                targets_exact_by_annotation.insert(annotation.id.clone(), true);
+                continue;
+            }
+            let definition = target_ref(annotation).unwrap_or_else(|| {
+                *fallback_aspect.get_or_insert_with(|| {
+                    self.emitter
+                        .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."))
+                })
+            });
             let mut exact = true;
             for target in &annotation.targets {
                 let Some(identified_item) = self.pmi_target_ref(target) else {
@@ -4677,14 +5256,10 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
-                if semantic {
-                    self.emitter.emit(
-                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
-                        &format!("'','',{definition},{used_representation},{identified_item}"),
-                    );
-                } else {
-                    exact = false;
-                }
+                self.emitter.emit(
+                    "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                    &format!("'','',{definition},{used_representation},{identified_item}"),
+                );
             }
             if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
                 exact &= datum_target_basis_exact
@@ -4788,7 +5363,12 @@ impl<'a> Builder<'a> {
                     let dimension = relation.kind();
                     let nominal = relation.resolved_nominal(self.ir);
                     let tolerance = relation.tolerance();
-                    let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
+                    let aspect = target_ref(annotation).unwrap_or_else(|| {
+                        *fallback_aspect.get_or_insert_with(|| {
+                            self.emitter
+                                .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."))
+                        })
+                    });
                     let name = annotation.name.as_deref().unwrap_or("");
                     let (entity, kind_exact) = match dimension {
                         DimensionKind::Size => ("DIMENSIONAL_SIZE", true),
@@ -4911,7 +5491,12 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
                         GeometricToleranceKind::Other(_) => continue,
                     };
-                    let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
+                    let aspect = target_ref(annotation).unwrap_or_else(|| {
+                        *fallback_aspect.get_or_insert_with(|| {
+                            self.emitter
+                                .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."))
+                        })
+                    });
                     let modifier_values = Self::emit_geometric_tolerance_modifiers(modifiers);
                     if !modifiers.is_empty() && modifier_values.is_none() {
                         continue;
@@ -4988,8 +5573,6 @@ impl<'a> Builder<'a> {
                 | PmiDefinition::Presentation { .. } => {}
             }
         }
-        let mut presentation_items = Vec::new();
-        let mut presentation_semantics = Vec::new();
         let mut hidden_presentation_items = Vec::new();
         for annotation in &annotations {
             let PmiDefinition::Presentation {
@@ -5009,6 +5592,17 @@ impl<'a> Builder<'a> {
             let Some(frame) = placement.proper_rigid_frame() else {
                 continue;
             };
+            // Associations to semantic annotations are written by
+            // [`Self::emit_drawings`] from the neutral drawing's
+            // relationships; only occurrences whose semantics all resolve
+            // are kept here so the drawing can link them.
+            let resolved_semantics = semantics
+                .iter()
+                .filter_map(|semantic| annotation_refs.get(semantic).copied())
+                .count();
+            if resolved_semantics != semantics.len() {
+                continue;
+            }
             let rows = placement.rows();
             let placement = geometry::placement(
                 &mut self.emitter,
@@ -5016,58 +5610,32 @@ impl<'a> Builder<'a> {
                 *frame.axis(),
                 *frame.reference(),
             );
-            let font_source = self.emitter.emit("EXTERNAL_SOURCE", "'ISO 3098'");
-            let font = self.emitter.emit(
-                "EXTERNALLY_DEFINED_TEXT_FONT",
-                &format!("IDENTIFIER('ISO 3098'),{font_source}"),
-            );
+            // No font is held: `$` states the absent font the decoder reads
+            // back as absent. A named font would re-decode as an opaque
+            // record and charge a new loss.
             let literal = self.emitter.emit(
                 "TEXT_LITERAL",
-                &format!("{},{placement},'left',.RIGHT.,{font}", string(text)),
+                &format!("{},{placement},'left',.RIGHT.,$", string(text)),
             );
-            let semantic_refs = semantics
-                .iter()
-                .filter_map(|semantic| annotation_refs.get(semantic).copied())
-                .collect::<Vec<_>>();
-            if semantic_refs.len() != semantics.len() {
-                continue;
-            }
-            let style = self
-                .emitter
-                .emit("PRESENTATION_STYLE_ASSIGNMENT", "(.NULL.)");
+            // No style is held: the empty style set is what the decoder
+            // reads back as no style. A null style assignment would re-decode
+            // as an opaque record and charge a new loss.
             let occurrence = self.emitter.emit(
                 "ANNOTATION_TEXT_OCCURRENCE",
                 &format!(
-                    "{},{},{literal}",
+                    "{},(),{literal}",
                     string(annotation.name.as_deref().unwrap_or("")),
-                    refs(&[style])
                 ),
             );
-            presentation_items.push(occurrence);
             if annotation.visible == Some(false) {
                 hidden_presentation_items.push(occurrence);
             }
-            presentation_semantics.push((occurrence, semantic_refs));
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
         }
-        if !presentation_items.is_empty() {
-            let model = self.emitter.emit(
-                "DRAUGHTING_MODEL",
-                &format!(
-                    "'PMI presentation',{}, {context}",
-                    refs(&presentation_items)
-                ),
-            );
-            for (occurrence, semantics) in presentation_semantics {
-                for semantic in semantics {
-                    self.emitter.emit(
-                        "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
-                        &format!("'','',{semantic},{model},{occurrence}"),
-                    );
-                }
-            }
-        }
+        // `DRAUGHTING_MODEL` records are written by [`Self::emit_drawings`]
+        // from the neutral drawings, which resolve presentation occurrences
+        // through the PMI refs recorded below.
         if !hidden_presentation_items.is_empty() {
             if self.schema.supports_visibility() {
                 self.emitter
@@ -5885,13 +6453,24 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.assets.is_empty() {
-            self.loss(
-                StepLossCode::DocumentAssetOmitted,
-                format!(
-                    "{} document asset(s) were not represented in STEP",
-                    self.ir.model.assets.len()
-                ),
-            );
+            let unwritten = self
+                .ir
+                .model
+                .assets
+                .iter()
+                .filter(|asset| !self.written_asset_ids.contains(asset.id.as_str()))
+                .map(|asset| asset.id.as_str().to_owned())
+                .collect::<Vec<_>>();
+            if !unwritten.is_empty() {
+                self.loss(
+                    StepLossCode::DocumentAssetOmitted,
+                    format!(
+                        "{} document asset(s) were not represented in STEP: {}",
+                        unwritten.len(),
+                        unwritten.join(", ")
+                    ),
+                );
+            }
         }
         if !self.ir.model.assembly_joints.is_empty() {
             self.loss(
@@ -6188,8 +6767,11 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        for index in 0..self.ir.model.attributes.len() {
-            let message = format!("{}", AttributeOmission(&self.ir.model.attributes[index]));
+        for attribute in &self.ir.model.attributes.clone() {
+            if self.attribute_is_written(attribute) {
+                continue;
+            }
+            let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
         let reduced_surfaces: BTreeSet<_> = self
@@ -6322,6 +6904,7 @@ impl<'a> Builder<'a> {
             },
             losses: self.losses.clone(),
             notes: Vec::new(),
+            written_drawing_targets: self.written_drawing_target_ids.clone(),
         }
     }
 }

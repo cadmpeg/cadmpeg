@@ -1,14 +1,11 @@
 {
   "explicit_ap242_e3": {
-    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#11 = PRODUCT_CONTEXT('',#10,'mechanical');\n#12 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#11));\n#13 = PRODUCT_DEFINITION_FORMATION('','',#12);\n#14 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#15 = PRODUCT_DEFINITION('design','',#13,#14);\n#16 = PRODUCT_DEFINITION_SHAPE('','',#15);\n#17 = SHAPE_REPRESENTATION('',(#9),#5);\n#18 = SHAPE_DEFINITION_REPRESENTATION(#16,#17);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#7 = PRODUCT_CONTEXT('',#6,'mechanical');\n#8 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#7));\n#9 = PRODUCT_DEFINITION_FORMATION('','',#8);\n#10 = PRODUCT_DEFINITION_CONTEXT('part definition',#6,'design');\n#11 = PRODUCT_DEFINITION('design','',#9,#10);\n#12 = PRODUCT_DEFINITION_SHAPE('','',#11);\nENDSEC;\nEND-ISO-10303-21;\n",
     "report": {
       "census": {
         "basis": "target_records",
         "counts": {
           "APPLICATION_CONTEXT": 1,
-          "AXIS2_PLACEMENT_3D": 1,
-          "CARTESIAN_POINT": 1,
-          "DIRECTION": 2,
           "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
           "LENGTH_UNIT": 1,
           "PLANE_ANGLE_UNIT": 1,
@@ -18,8 +15,6 @@
           "PRODUCT_DEFINITION_CONTEXT": 1,
           "PRODUCT_DEFINITION_FORMATION": 1,
           "PRODUCT_DEFINITION_SHAPE": 1,
-          "SHAPE_DEFINITION_REPRESENTATION": 1,
-          "SHAPE_REPRESENTATION": 1,
           "SOLID_ANGLE_UNIT": 1,
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
@@ -30,15 +25,15 @@
           "appearances": "written",
           "articulations": "omitted",
           "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
+          "assets": "written",
+          "attributes": "written",
           "bodies": "written",
           "coedges": "written",
           "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "declared_measures": "omitted",
-          "drawings": "dropped",
+          "drawings": "written",
           "edges": "written",
           "faces": "written",
           "feature_input_topologies": "dropped",
@@ -130,15 +125,12 @@
     }
   },
   "explicit_default": {
-    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('automotive design');\n#11 = PRODUCT_CONTEXT('',#10,'mechanical');\n#12 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#11));\n#13 = PRODUCT_DEFINITION_FORMATION('','',#12);\n#14 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#15 = PRODUCT_DEFINITION('design','',#13,#14);\n#16 = PRODUCT_DEFINITION_SHAPE('','',#15);\n#17 = SHAPE_REPRESENTATION('',(#9),#5);\n#18 = SHAPE_DEFINITION_REPRESENTATION(#16,#17);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = APPLICATION_CONTEXT('automotive design');\n#7 = PRODUCT_CONTEXT('',#6,'mechanical');\n#8 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#7));\n#9 = PRODUCT_DEFINITION_FORMATION('','',#8);\n#10 = PRODUCT_DEFINITION_CONTEXT('part definition',#6,'design');\n#11 = PRODUCT_DEFINITION('design','',#9,#10);\n#12 = PRODUCT_DEFINITION_SHAPE('','',#11);\nENDSEC;\nEND-ISO-10303-21;\n",
     "report": {
       "census": {
         "basis": "target_records",
         "counts": {
           "APPLICATION_CONTEXT": 1,
-          "AXIS2_PLACEMENT_3D": 1,
-          "CARTESIAN_POINT": 1,
-          "DIRECTION": 2,
           "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
           "LENGTH_UNIT": 1,
           "PLANE_ANGLE_UNIT": 1,
@@ -148,8 +140,6 @@
           "PRODUCT_DEFINITION_CONTEXT": 1,
           "PRODUCT_DEFINITION_FORMATION": 1,
           "PRODUCT_DEFINITION_SHAPE": 1,
-          "SHAPE_DEFINITION_REPRESENTATION": 1,
-          "SHAPE_REPRESENTATION": 1,
           "SOLID_ANGLE_UNIT": 1,
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
@@ -160,15 +150,15 @@
           "appearances": "written",
           "articulations": "omitted",
           "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
+          "assets": "written",
+          "attributes": "written",
           "bodies": "written",
           "coedges": "written",
           "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "declared_measures": "omitted",
-          "drawings": "dropped",
+          "drawings": "written",
           "edges": "written",
           "faces": "written",
           "feature_input_topologies": "dropped",
@@ -260,15 +250,12 @@
     }
   },
   "inherit": {
-    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#11 = PRODUCT_CONTEXT('',#10,'mechanical');\n#12 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#11));\n#13 = PRODUCT_DEFINITION_FORMATION('','',#12);\n#14 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#15 = PRODUCT_DEFINITION('design','',#13,#14);\n#16 = PRODUCT_DEFINITION_SHAPE('','',#15);\n#17 = SHAPE_REPRESENTATION('',(#9),#5);\n#18 = SHAPE_DEFINITION_REPRESENTATION(#16,#17);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#7 = PRODUCT_CONTEXT('',#6,'mechanical');\n#8 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#7));\n#9 = PRODUCT_DEFINITION_FORMATION('','',#8);\n#10 = PRODUCT_DEFINITION_CONTEXT('part definition',#6,'design');\n#11 = PRODUCT_DEFINITION('design','',#9,#10);\n#12 = PRODUCT_DEFINITION_SHAPE('','',#11);\nENDSEC;\nEND-ISO-10303-21;\n",
     "report": {
       "census": {
         "basis": "target_records",
         "counts": {
           "APPLICATION_CONTEXT": 1,
-          "AXIS2_PLACEMENT_3D": 1,
-          "CARTESIAN_POINT": 1,
-          "DIRECTION": 2,
           "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
           "LENGTH_UNIT": 1,
           "PLANE_ANGLE_UNIT": 1,
@@ -278,8 +265,6 @@
           "PRODUCT_DEFINITION_CONTEXT": 1,
           "PRODUCT_DEFINITION_FORMATION": 1,
           "PRODUCT_DEFINITION_SHAPE": 1,
-          "SHAPE_DEFINITION_REPRESENTATION": 1,
-          "SHAPE_REPRESENTATION": 1,
           "SOLID_ANGLE_UNIT": 1,
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
@@ -290,15 +275,15 @@
           "appearances": "written",
           "articulations": "omitted",
           "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
+          "assets": "written",
+          "attributes": "written",
           "bodies": "written",
           "coedges": "written",
           "colliders": "omitted",
           "configurations": "dropped",
           "curves": "written",
           "declared_measures": "omitted",
-          "drawings": "dropped",
+          "drawings": "written",
           "edges": "written",
           "faces": "written",
           "feature_input_topologies": "dropped",

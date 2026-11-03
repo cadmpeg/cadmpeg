@@ -2,6 +2,7 @@
 //! Coverage distinguishes complete geometry from omitted typed native content.
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::schema::EntityKind;
 
@@ -36,47 +37,91 @@ fn complete_geometry_retains_written_coverage() {
 }
 
 #[test]
-fn own_native_drawing_records_are_omitted_and_reported() {
+fn own_native_drawing_records_are_reemitted_and_reported() {
+    use cadmpeg_ir::drawings::{Drawing, DrawingKind};
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let mut fields = serde_json::Map::new();
     fields.insert("source_id".into(), serde_json::json!("#100"));
-    fields.insert("source_type".into(), serde_json::json!("DRAUGHTING_MODEL"));
+    fields.insert("source_type".into(), serde_json::json!("ANNOTATION_PLANE"));
+    let native_id = cadmpeg_ir::ids::Identity::new("step:test:drawing-target#0")
+        .expect("valid native identity");
     ir.native.namespace_mut("step").arenas_mut().insert(
         "drawing_targets".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("step:test:drawing-target#0")
-                .expect("valid native identity"),
-            fields,
-        )
-        .expect("valid native record")],
+        vec![cadmpeg_ir::NativeRecord::new(native_id, fields).expect("valid native record")],
     );
+    let mut drawing = Drawing::new(
+        cadmpeg_ir::drawings::DrawingId::mint("step:test:drawing#0")
+            .expect("valid drawing identity"),
+        "step:test:drawing#0".to_owned(),
+        DrawingKind::Other,
+        "DRAUGHTING_MODEL".to_owned(),
+        0,
+        None,
+    );
+    drawing.parameters.insert(
+        cadmpeg_core::text::NonBlankString::new("source_type".to_owned()).expect("non-blank"),
+        "DRAUGHTING_MODEL".to_owned(),
+    );
+    drawing.relationships.insert(
+        cadmpeg_core::text::NonBlankString::new("items".to_owned()).expect("non-blank"),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local("step:test:drawing-target#0".to_owned()),
+            Vec::new(),
+        )],
+    );
+    ir.model.drawings.push(drawing);
     ir.finalize();
     let plan = StepCodec::default()
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("native omission does not refuse supported geometry");
+        .expect("drawing-target re-emission does not refuse supported geometry");
     assert_eq!(
-        plan.report()
-            .native_dispositions
-            .disposition("step", "drawing_targets"),
-        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        plan.report().native_dispositions.record_disposition(
+            "step",
+            "drawing_targets",
+            "step:test:drawing-target#0"
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Written
     );
-    let omitted = plan
-        .report()
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code.local_code() == "native.records-omitted"
-                && loss.severity == cadmpeg_ir::report::Severity::Info
-                && loss.message.contains("step.drawing_targets")
-        })
-        .unwrap_or_else(|| panic!("{:?}", plan.report().losses));
-    assert_eq!(
-        crate::test_support::omitted_record_ids(&omitted.message),
-        ["step:test:drawing-target#0"]
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("drawing-target re-emission writes");
+    let text = std::str::from_utf8(&bytes).expect("Part 21 text");
+    assert!(
+        text.contains("ANNOTATION_PLANE("),
+        "the retained plane is re-emitted"
     );
+    assert!(
+        text.contains("DRAUGHTING_MODEL("),
+        "the neutral drawing is written"
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("structurally valid re-emission decodes");
     assert_eq!(
-        plan.report().coverage.disposition(EntityKind::Surface),
-        ArenaDisposition::Written
+        decoded.ir().model.drawings.len(),
+        1,
+        "the re-decode holds the drawing"
+    );
+    let targets = decoded
+        .ir()
+        .native
+        .namespace("step")
+        .expect("step namespace is retained")
+        .arenas()
+        .get("drawing_targets")
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        targets
+            .iter()
+            .any(|record| record.fields().is_ok_and(|fields| fields
+                .get("source_type")
+                .and_then(|source| source.as_str())
+                == Some("ANNOTATION_PLANE"))),
+        "the re-decode holds the re-emitted plane target: {:?}",
+        targets.iter().map(|record| record.id()).collect::<Vec<_>>()
     );
 }
 
@@ -151,11 +196,14 @@ fn native_registry_equals_dispositions() {
         .map(|arena| (*arena).to_owned())
         .collect();
     assert_eq!(declared, registry);
+    // The unit cube retains no native records, so every arena keeps the
+    // namespace default. Per-record upgrades (written drawing targets) are
+    // covered by `own_native_drawing_records_are_reemitted_and_reported`.
     for arena in &registry {
         assert_eq!(
             plan.report().native_dispositions.disposition("step", arena),
             cadmpeg_ir::codec::write::NativeDisposition::Dropped,
-            "step.{arena} is dropped until its writer lands (#233)"
+            "an empty step.{arena} keeps the dropped default"
         );
     }
 }

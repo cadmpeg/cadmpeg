@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, SourceLocation, SpaceId, View, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -314,6 +314,22 @@ impl<'a> Container<'a> {
             self.data.get(offset..end)
         })();
         bytes
+    }
+
+    /// Available spans of entries whose declared file span runs past the
+    /// source image: the unrestorable tail of a cut source, one part
+    /// give-up per entry (§4.5). Entries fully inside the image and
+    /// directory entries contribute nothing.
+    pub(crate) fn cut_tails(&self) -> Vec<(u64, u64)> {
+        let len = cadmpeg_core::decode::u64_from_index(self.data.len());
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let (offset, size) = entry.file_span()?;
+                let end = offset.checked_add(size)?;
+                (end > len && offset < len).then_some((offset, len))
+            })
+            .collect()
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
@@ -1275,6 +1291,24 @@ pub(crate) fn scan_bytes<'a>(
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let (entries, footer) = if footer_offset == ABSENT_FOOTER_OFFSET {
         (header_directory(&data)?, None)
+    } else if footer_region_missing(data.len(), footer_offset) {
+        // The footer region cannot exist in this image: the source is cut
+        // after its HEADER directory. Frame those entries; each entry tail
+        // the cut source cannot supply is one part give-up (§4.5).
+        let entries = header_directory_cut(&data)?;
+        if !entries
+            .iter()
+            .any(|entry| entry_has_available_bytes(entry, data.len()))
+        {
+            return Err(CodecError::truncated(
+                SourceLocation {
+                    space: SpaceId::ROOT,
+                    offset: cadmpeg_core::decode::u64_from_index(splmsstr::HEADER_MARKER),
+                },
+                "SPLMSSTR HEADER directory",
+            ));
+        }
+        (entries, None)
     } else {
         let (entries, footer) = header_and_footer_directories(&data, footer_offset)?;
         (entries, Some(footer))
@@ -1309,6 +1343,32 @@ fn header_directory(data: &[u8]) -> Result<Vec<DirEntry>, CodecError> {
         data.len(),
     )?;
     Ok(entries)
+}
+
+/// Whether the declared FOOTER region cannot exist in an image of `len`
+/// bytes: its marker, count and terminal fingerprint need fourteen bytes.
+/// A shorter image is cut after its HEADER directory; that directory still
+/// frames (§4.5).
+fn footer_region_missing(len: usize, footer_offset: u64) -> bool {
+    const FOOTER_REGION_MIN_LEN: u64 = 6 + 4 + 4;
+    footer_offset
+        .checked_add(FOOTER_REGION_MIN_LEN)
+        .is_none_or(|need| need > cadmpeg_core::decode::u64_from_index(len))
+}
+
+/// Read the HEADER directory of a source cut before its FOOTER region:
+/// frame entries until the first one the cut source cannot complete.
+fn header_directory_cut(data: &[u8]) -> Result<Vec<DirEntry>, CodecError> {
+    let (entries, _) = directory_region_cut(data, splmsstr::HEADER_MARKER, *b"HEADER")?;
+    Ok(entries)
+}
+
+/// Whether one directory entry has source bytes to decode: a file span that
+/// starts inside the image. An entry past the image holds no part (§4.5).
+fn entry_has_available_bytes(entry: &DirEntry, len: usize) -> bool {
+    entry
+        .file_span()
+        .is_some_and(|(offset, _)| offset < cadmpeg_core::decode::u64_from_index(len))
 }
 
 /// Read the HEADER and FOOTER directories and the terminal fingerprint of a
@@ -1542,7 +1602,8 @@ fn try_entry(
         return Ok(None);
     };
     let name = value.to_owned();
-    // Interpret the 16-byte payload as a file span when it lands within the file.
+    // Interpret the 16-byte payload as a file span when it lands within the
+    // file.
     let body = match (
         View::u64_le_at(data, payload),
         View::u64_le_at(data, payload + file_payload::SIZE),
@@ -1561,6 +1622,110 @@ fn try_entry(
                     }
                 }
                 _ => DirEntryBody::Directory,
+            }
+        }
+        _ => DirEntryBody::Directory,
+    };
+    Ok(Some((DirEntry { name, region, body }, next)))
+}
+
+/// Read one directory region from a cut source: entries frame until the
+/// first entry the remaining image cannot complete. Unlike
+/// [`directory_region`], a fully declared entry keeps its file span even
+/// when that span runs past the image, so the decode can give up that tail
+/// as one part (§4.5); reads still bound themselves to the available bytes.
+fn directory_region_cut(
+    data: &[u8],
+    marker_offset: usize,
+    marker: [u8; 6],
+) -> Result<(Vec<DirEntry>, usize), CodecError> {
+    let truncated = || {
+        CodecError::truncated(
+            SourceLocation {
+                space: SpaceId::ROOT,
+                offset: cadmpeg_core::decode::u64_from_index(marker_offset),
+            },
+            "SPLMSSTR HEADER directory",
+        )
+    };
+    let count_offset = marker_offset
+        .checked_add(marker.len())
+        .ok_or_else(truncated)?;
+    let entries_offset = count_offset.checked_add(4).ok_or_else(truncated)?;
+    if data.get(marker_offset..count_offset) != Some(marker.as_slice()) {
+        return Err(truncated());
+    }
+    let count = View::u32_le_at(data, count_offset).ok_or_else(truncated)?;
+    let mut entries = Vec::new();
+    let mut at = entries_offset;
+    for _ in 0..count {
+        match try_entry_cut(data, at, Region::Header)? {
+            Some((entry, next)) => {
+                entries.push(entry);
+                at = next;
+            }
+            None => break,
+        }
+    }
+    Ok((entries, at))
+}
+
+/// Try to read one directory entry at `o` from a cut source: `None` stops
+/// the directory at the first entry the remaining image cannot complete.
+/// A fully declared entry keeps its file span even when that span runs past
+/// the image, so the tail give-up can retain the available bytes (§4.5).
+fn try_entry_cut(
+    data: &[u8],
+    o: usize,
+    region: Region,
+) -> Result<Option<(DirEntry, usize)>, CodecError> {
+    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
+    if !(6..=128).contains(&name_len) {
+        return Ok(None);
+    }
+    let Some(name_start) = o.checked_add(dir_entry::LEN) else {
+        return Ok(None);
+    };
+    let Some(name_end) = name_start.checked_add(name_len) else {
+        return Ok(None);
+    };
+    let Some(raw) = data.get(name_start..name_end) else {
+        return Ok(None);
+    };
+    if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
+        return Ok(None);
+    }
+    let payload = name_end;
+    let Some(next) = payload.checked_add(file_payload::LEN) else {
+        return Ok(None);
+    };
+    if data.get(payload..next).is_none() {
+        return Ok(None);
+    }
+
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let name = value.to_owned();
+    let file_len = cadmpeg_core::decode::u64_from_index(data.len());
+    // A cut entry keeps its declared span when that span starts inside the
+    // image, even when it runs past it. Reads bound themselves to the
+    // available bytes; the tail give-up retains them.
+    let body = match (
+        View::u64_le_at(data, payload),
+        View::u64_le_at(data, payload + file_payload::SIZE),
+    ) {
+        (Some(off), Some(size)) => {
+            if size > 0 && off >= 8 && off < file_len {
+                DirEntryBody::File {
+                    offset: off,
+                    len: size,
+                }
+            } else {
+                DirEntryBody::Directory
             }
         }
         _ => DirEntryBody::Directory,

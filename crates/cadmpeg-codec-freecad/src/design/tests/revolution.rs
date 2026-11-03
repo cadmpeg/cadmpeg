@@ -74,7 +74,7 @@ fn revolve_and_groove_keep_reversed_axis_and_each_side() {
                             && loss.code.local_code() == "feature.revolution-not-transferred"));
                     continue;
                 }
-                assert!(result.report().losses.is_empty());
+                crate::test_support::assert_design_fragment_scope(&result);
                 let FeatureOperation::Revolve { construction, op } = operation else {
                     panic!("revolve")
                 };
