@@ -245,9 +245,7 @@ pub(super) fn decode(
             // and the parameter keeps no instance-number rendering. A
             // reference with no single neutral identity keeps its raw text
             // alongside the loss that names it.
-            if names_source_instances(value)
-                && references_resolve(value, &target_context)?
-            {
+            if names_source_instances(value) && references_resolve(value, &target_context)? {
                 continue;
             }
             if let Some(value) = value_text(
@@ -418,10 +416,7 @@ fn references_resolve(
     let mut ids = BTreeSet::new();
     collect_reference_ids(value, &mut ids, target_context.ctx)?;
     for id in ids {
-        if !matches!(
-            target_context.resolve(id)?,
-            TargetResolution::Resolved(_)
-        ) {
+        if !matches!(target_context.resolve(id)?, TargetResolution::Resolved(_)) {
             return Ok(false);
         }
     }
