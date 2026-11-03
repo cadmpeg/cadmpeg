@@ -653,6 +653,16 @@ pub(crate) fn extract_streams<'a>(
     let Some(end) = start.checked_add(size) else {
         return Ok(Vec::new());
     };
+    // A cut entry's declared span runs past the source image: its bytes
+    // belong to the cut-tail part give-up, so no stream is extracted here
+    // (§4.5).
+    let image_end = root
+        .start()
+        .checked_add(root.window().len())
+        .ok_or_else(|| CodecError::malformed("NX part image end overflows"))?;
+    if end > image_end {
+        return Ok(Vec::new());
+    }
     let part_view = source::part(ctx, root, start, end)?;
     let part = part_view.window();
 

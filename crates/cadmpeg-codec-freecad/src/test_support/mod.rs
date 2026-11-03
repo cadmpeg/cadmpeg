@@ -48,3 +48,42 @@ pub(crate) fn non_placement_losses(
         .filter(|loss| loss.code.local_code() != "feature.primitive-placement-unresolved")
         .collect()
 }
+
+/// Assert a design-fragment decode holds design scope with the losses §1.1
+/// mandates: the wrapper charges `depth.not-delivered` for a requested
+/// class exactly when the decode delivers without it (#209 §1.1). A
+/// fragment that also retains model records (such as attributes) delivers
+/// full scope with no missing-class loss.
+pub(crate) fn assert_design_fragment_scope(result: &cadmpeg_ir::codec::DecodeResult) {
+    assert!(
+        result.ir().scope.design,
+        "design fragment holds design scope"
+    );
+    let losses = non_placement_losses(result.report());
+    if result.ir().scope.model {
+        assert!(losses.is_empty(), "{losses:?}");
+    } else {
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(losses[0].code.local_code(), "depth.not-delivered");
+        assert!(losses[0].message.contains("model"), "{}", losses[0].message);
+    }
+}
+
+/// Assert a model-fragment decode delivers model scope with only the §1.1
+/// design not-delivered loss: the fragment locates model parts but no design
+/// part (#209 §1.1).
+pub(crate) fn assert_model_fragment_scope(result: &cadmpeg_ir::codec::DecodeResult) {
+    assert!(result.ir().scope.model, "model fragment holds model scope");
+    let losses = non_placement_losses(result.report());
+    if result.ir().scope.design {
+        assert!(losses.is_empty(), "{losses:?}");
+    } else {
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(losses[0].code.local_code(), "depth.not-delivered");
+        assert!(
+            losses[0].message.contains("design"),
+            "{}",
+            losses[0].message
+        );
+    }
+}

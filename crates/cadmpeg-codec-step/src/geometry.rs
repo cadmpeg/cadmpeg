@@ -18,7 +18,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::{DirectionAboveEpsilon, UnitVector3};
 
-use crate::writer::{refs, Emitter, Ref};
+use crate::writer::{refs, string, Emitter, Ref};
 
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
@@ -158,8 +158,18 @@ fn similarity_transform(transform: &Transform) -> Option<SimilarityColumns> {
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.
-pub(crate) fn point(e: &mut Emitter, p: Point3) -> Ref {
-    let params = format!("'',({},{},{})", e.real(p.x), e.real(p.y), e.real(p.z));
+///
+/// `name` is the owning record's name, or empty for an unnamed carrier.
+/// A named point is never shared with an unnamed one: the name is part of
+/// the interned key, so equal coordinates under different names stay distinct.
+pub(crate) fn point(e: &mut Emitter, name: &str, p: Point3) -> Ref {
+    let params = format!(
+        "{},({},{},{})",
+        string(name),
+        e.real(p.x),
+        e.real(p.y),
+        e.real(p.z)
+    );
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
@@ -464,7 +474,7 @@ pub(crate) fn placement(
     axis: UnitVector3,
     ref_dir: UnitVector3,
 ) -> Ref {
-    let o = point(e, origin);
+    let o = point(e, "", origin);
     let a = direction(e, axis.into());
     let r = direction(e, ref_dir.into());
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
@@ -480,6 +490,7 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     } = similarity_transform(&transform)?;
     let origin = point(
         e,
+        "",
         Point3::new(
             transform.rows()[0][3],
             transform.rows()[1][3],
@@ -509,39 +520,49 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
 ///
 /// A placed carrier is written in its own placed record when
 /// [`bake::placed_surface`] can place it, and otherwise as `SURFACE_REPLICA`
-/// records over its basis.
-pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
-    e.try_geometry(|e| surface_carrier(e, g))
+/// records over its basis. `name` is the owning record's name and is written
+/// on the outermost record only: the basis of a replica chain stays unnamed.
+pub(crate) fn surface(e: &mut Emitter, name: &str, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+    e.try_geometry(|e| surface_carrier(e, name, g))
 }
 
-fn surface_carrier(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+fn surface_carrier(e: &mut Emitter, name: &str, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
     if !placements.is_empty() {
         if let Some(placed) =
             bake::chain(&placements).and_then(|transform| bake::placed_surface(transform, basis))
         {
-            return basis_surface(e, &placed);
+            return basis_surface(e, name, &placed);
         }
     }
-    let mut reference = basis_surface(e, basis)?;
+    let basis_name = if placements.is_empty() { name } else { "" };
+    let mut reference = basis_surface(e, basis_name, basis)?;
     // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
     // references the record written for the placement inside it.
-    for transform in placements.iter().rev() {
+    for (index, transform) in placements.iter().rev().enumerate() {
         let operator = transformation_operator(e, **transform)?;
-        reference = e.emit("SURFACE_REPLICA", &format!("'',{reference},{operator}"));
+        let replica_name = if index + 1 == placements.len() {
+            name
+        } else {
+            ""
+        };
+        reference = e.emit(
+            "SURFACE_REPLICA",
+            &format!("{},{reference},{operator}", string(replica_name)),
+        );
     }
     Some(reference)
 }
 
 /// Emit the basis carrier under a chain of affine placements.
-fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+fn basis_surface(e: &mut Emitter, name: &str, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
             let normal = *plane_surface.frame().axis();
             let u_axis = *plane_surface.frame().reference();
             let pl = placement(e, origin, normal, u_axis);
-            e.emit("PLANE", &format!("'',{pl}"))
+            e.emit("PLANE", &format!("{},{pl}", string(name)))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
@@ -551,11 +572,11 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, origin, axis, ref_direction);
             e.emit(
                 "CYLINDRICAL_SURFACE",
-                &format!("'',{pl},{}", e.real(radius)),
+                &format!("{},{pl},{}", string(name), e.real(radius)),
             )
         }
         SolvedSurfaceGeometry::Cone(cone_surface) if cone_surface.half_angle().get() == 0.0 => {
-            zero_angle_cone(e, cone_surface)?
+            zero_angle_cone(e, name, cone_surface)?
         }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
         // Reversing the axis and angle maps a negative-angle cone exactly under
@@ -574,7 +595,12 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, origin, written_axis, ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
-                &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle.abs())),
+                &format!(
+                    "{},{pl},{},{}",
+                    string(name),
+                    e.real(radius),
+                    e.real(half_angle.abs())
+                ),
             )
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
@@ -585,7 +611,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, center, axis, ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
-                &format!("'',{pl},{}", e.real(radius.abs())),
+                &format!("{},{pl},{}", string(name), e.real(radius.abs())),
             )
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -598,13 +624,14 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(
-                    "'',{pl},{},{}",
+                    "{},{pl},{},{}",
+                    string(name),
                     e.real(major_radius),
                     e.real(minor_radius.abs())
                 ),
             )
         }
-        SolvedSurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
+        SolvedSurfaceGeometry::Nurbs(n) => nurbs_surface(e, name, n)?,
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
         // `placed_surface` ends the walk at the first carrier that is not a
@@ -621,7 +648,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
 /// a circular section is a `CYLINDRICAL_SURFACE`, and an elliptical one the
 /// `SURFACE_OF_LINEAR_EXTRUSION` of its `ELLIPSE` along the unit axis vector.
 /// A zero section radius is a line, which no surface record holds.
-fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
+fn zero_angle_cone(e: &mut Emitter, name: &str, cone: &ConeSurface) -> Option<Ref> {
     let origin = cone.origin().get();
     let axis = *cone.frame().axis();
     let ref_direction = *cone.frame().reference();
@@ -634,7 +661,7 @@ fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
     if cone.ratio().get() == 1.0 {
         return Some(e.emit(
             "CYLINDRICAL_SURFACE",
-            &format!("'',{pl},{}", e.real(radius)),
+            &format!("{},{pl},{}", string(name), e.real(radius)),
         ));
     }
     let section = e.emit(
@@ -645,7 +672,7 @@ fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
     let vector = e.emit("VECTOR", &format!("'',{extrusion},{}", e.real(1.0)));
     Some(e.emit(
         "SURFACE_OF_LINEAR_EXTRUSION",
-        &format!("'',{section},{vector}"),
+        &format!("{},{section},{vector}", string(name)),
     ))
 }
 
@@ -653,41 +680,51 @@ fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
 ///
 /// A placed carrier is written in its own placed record when
 /// [`bake::placed_curve`] can place it, and otherwise as `CURVE_REPLICA`
-/// records over its basis.
-pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
-    e.try_geometry(|e| curve_carrier(e, g))
+/// records over its basis. `name` is the owning record's name and is written
+/// on the outermost record only: the basis of a replica chain stays unnamed.
+pub(crate) fn curve(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<Ref> {
+    e.try_geometry(|e| curve_carrier(e, name, g))
 }
 
-fn curve_carrier(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+fn curve_carrier(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<Ref> {
     let (placements, basis) = placed_curve(g);
     if !placements.is_empty() {
         if let Some(placed) =
             bake::chain(&placements).and_then(|transform| bake::placed_curve(transform, basis))
         {
-            return basis_curve(e, &placed);
+            return basis_curve(e, name, &placed);
         }
     }
-    let mut reference = basis_curve(e, basis)?;
+    let basis_name = if placements.is_empty() { name } else { "" };
+    let mut reference = basis_curve(e, basis_name, basis)?;
     // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
     // references the record written for the placement inside it.
-    for transform in placements.iter().rev() {
+    for (index, transform) in placements.iter().rev().enumerate() {
         let operator = transformation_operator(e, **transform)?;
-        reference = e.emit("CURVE_REPLICA", &format!("'',{reference},{operator}"));
+        let replica_name = if index + 1 == placements.len() {
+            name
+        } else {
+            ""
+        };
+        reference = e.emit(
+            "CURVE_REPLICA",
+            &format!("{},{reference},{operator}", string(replica_name)),
+        );
     }
     Some(reference)
 }
 
 /// Emit the basis carrier under a chain of affine placements.
-fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+fn basis_curve(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin().get();
             let d = line_curve.direction();
-            let p = point(e, origin);
+            let p = point(e, "", origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
             let dir = direction(e, d.into());
             let vec = e.emit("VECTOR", &format!("'',{dir},{}", e.real(1.0)));
-            e.emit("LINE", &format!("'',{p},{vec}"))
+            e.emit("LINE", &format!("{},{p},{vec}", string(name)))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -695,7 +732,10 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let ref_direction = *circle_curve.frame().reference();
             let radius = circle_curve.radius().get();
             let pl = placement(e, center, axis, ref_direction);
-            e.emit("CIRCLE", &format!("'',{pl},{}", e.real(radius)))
+            e.emit(
+                "CIRCLE",
+                &format!("{},{pl},{}", string(name), e.real(radius)),
+            )
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
@@ -706,7 +746,12 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "ELLIPSE",
-                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
+                &format!(
+                    "{},{pl},{},{}",
+                    string(name),
+                    e.real(major_radius),
+                    e.real(minor_radius)
+                ),
             )
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -715,7 +760,10 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let major_direction = *parabola_curve.frame().reference();
             let focal_distance = parabola_curve.focal_distance().get();
             let pl = placement(e, vertex, axis, major_direction);
-            e.emit("PARABOLA", &format!("'',{pl},{}", e.real(focal_distance)))
+            e.emit(
+                "PARABOLA",
+                &format!("{},{pl},{}", string(name), e.real(focal_distance)),
+            )
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
@@ -726,22 +774,27 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "HYPERBOLA",
-                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
+                &format!(
+                    "{},{pl},{},{}",
+                    string(name),
+                    e.real(major_radius),
+                    e.real(minor_radius)
+                ),
             )
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let collapsed = degenerate_curve.point().get();
-            let point = point(e, collapsed);
-            e.emit("POLYLINE", &format!("'',({point},{point})"))
+            let point = point(e, "", collapsed);
+            e.emit("POLYLINE", &format!("{0},({point},{point})", string(name)))
         }
-        SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, name, n),
         SolvedCurveGeometry::Polyline(polyline) => {
             let points = polyline
                 .points()
-                .map(|position| point(e, position.get()).to_string())
+                .map(|position| point(e, "", position.get()).to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            e.emit("POLYLINE", &format!("'',({points})"))
+            e.emit("POLYLINE", &format!("{},({points})", string(name)))
         }
         // `placed_curve` ends the walk at the first carrier that is not a
         // placement, so `Transformed` does not reach this function. A composite
@@ -797,11 +850,11 @@ fn closed_flag(periodic: bool) -> &'static str {
     }
 }
 
-fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
+fn nurbs_curve(e: &mut Emitter, name: &str, n: &NurbsCurve) -> Ref {
     let pts: Vec<Ref> = n
         .control_points()
         .iter()
-        .map(|p| point(e, p.get()))
+        .map(|p| point(e, "", p.get()))
         .collect();
     let (knots, mults) = compress_knots(n.knots());
     let ctrl = refs(&pts);
@@ -818,7 +871,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
     match n.pole_rows().weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
-            &format!("'',{base},{with_knots}"),
+            &format!("{},{base},{with_knots}", string(name)),
         ),
         Some(w) => {
             // Rational curves require the AND-combined complex instance form.
@@ -826,15 +879,16 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
                 "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) \
                  B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() \
                  GEOMETRIC_REPRESENTATION_ITEM() \
-                 RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                real_list(e, &w)
+                 RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM({}) )",
+                real_list(e, &w),
+                string(name)
             );
             e.emit_raw("B_SPLINE_CURVE_WITH_KNOTS", &body)
         }
     }
 }
 
-fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
+fn nurbs_surface(e: &mut Emitter, name: &str, n: &NurbsSurface) -> Option<Ref> {
     if !valid_nurbs_surface(n) {
         return None;
     }
@@ -844,7 +898,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     for grid_row in n.control_grid() {
         let mut row: Vec<Ref> = Vec::new();
         for p in grid_row {
-            row.push(point(e, p.get()));
+            row.push(point(e, "", p.get()));
         }
         rows.push(refs(&row));
     }
@@ -869,7 +923,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     Some(match n.pole_grid().weights() {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
-            &format!("'',{base},{with_knots}"),
+            &format!("{},{base},{with_knots}", string(name)),
         ),
         Some(w) => {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
@@ -882,7 +936,8 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
                 "( BOUNDED_SURFACE() B_SPLINE_SURFACE({base}) \
                  B_SPLINE_SURFACE_WITH_KNOTS({with_knots}) \
                  GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE({wgrid}) \
-                 REPRESENTATION_ITEM('') SURFACE() )"
+                 REPRESENTATION_ITEM({}) SURFACE() )",
+                string(name)
             );
             e.emit_raw("B_SPLINE_SURFACE_WITH_KNOTS", &body)
         }

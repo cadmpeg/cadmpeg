@@ -1645,7 +1645,7 @@ impl ConfigurationSlots {
     }
 }
 
-pub(super) fn configuration_lane_assignments(
+pub(crate) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<(usize, usize)> {

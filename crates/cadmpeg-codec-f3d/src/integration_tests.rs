@@ -50,7 +50,7 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_manifest_version,
-    f3d_with_smbh_and_protein,
+    f3d_with_smbh_and_protein, f3d_with_unreadable_body_smbh_and_manifest_version,
 };
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -542,7 +542,7 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
 /// Unrepresented source content selects synthesis at the catalog default.
 #[test]
 fn inherit_synthesizes_the_default_when_off_catalog_source_content_is_unrepresented() {
-    let result = decode(f3d_with_smbh_and_manifest_version(
+    let result = decode(f3d_with_unreadable_body_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
