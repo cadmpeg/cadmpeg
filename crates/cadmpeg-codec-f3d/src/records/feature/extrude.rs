@@ -592,6 +592,25 @@ impl DesignExtrudePrologue {
         }
     }
 
+    /// Per-side extent values selected by the prologue.
+    pub(crate) fn side_extent_discriminators(self) -> Option<[u32; 2]> {
+        match self {
+            Self::LegacyDistance { .. } => None,
+            Self::ReferenceAware {
+                side_extent_discriminators,
+                ..
+            }
+            | Self::ShiftedReferenceAware {
+                side_extent_discriminators,
+                ..
+            }
+            | Self::LegacyShifted {
+                side_extent_discriminators,
+                ..
+            } => Some(side_extent_discriminators),
+        }
+    }
+
     /// Direction-reversal state.
     pub(crate) fn direction_reversed(self) -> bool {
         match self {
