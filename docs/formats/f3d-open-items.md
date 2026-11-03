@@ -430,7 +430,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the bytes between the 190-byte frame of an Extrude selection member and the next indexed record header carry when the tail is neither the fourteen-byte nor the fifty-byte form?
 
-**Known.** The tail is 1 to 1024 bytes long. Stored tails include five zero bytes; a UTF-16 fragment of a UUID followed by fourteen bytes; zero bytes followed by u32 values and marked references of the same segment; a second length-prefixed UUID; an unlengthed indexed record; and a run of zero bytes to the stream end. The member ends at the next indexed record header in every form.
+**Known.** A tail that a following header ends is 1 to 1024 bytes long. When no header follows, the tail runs to the stream end. Stored tails include five zero bytes; a UTF-16 fragment of a UUID followed by fourteen bytes; zero bytes followed by u32 values and marked references of the same segment; a second length-prefixed UUID; an unlengthed indexed record; and a run of zero bytes to the stream end. The member ends at the next indexed record header, or at the stream end when no header follows.
 
 **Need.** Files that vary the Extrude options and selected profile, to find which option writes each tail and what its fields name.
 
