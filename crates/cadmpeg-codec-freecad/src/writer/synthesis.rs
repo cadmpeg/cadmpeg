@@ -60,10 +60,16 @@ pub(super) fn write(
             .features
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some(original.id().as_str()));
+        // An opaque construction (native passthrough, stored geometry, or a
+        // base feature) has no regenerable content: the native object is the
+        // complete record and replays, keeping its links, placement, and
+        // declaration order, which the ordinal ranks derive from (#238 §5.5).
         let represented = neutral_feature.is_some_and(|feature| {
             !matches!(
                 feature.evaluation.definition().operation(),
                 FeatureOperation::Native { .. }
+                    | FeatureOperation::StoredGeometry { .. }
+                    | FeatureOperation::BaseFeature { .. }
             )
         }) || ir
             .model
@@ -311,7 +317,18 @@ pub(super) fn write(
         shape_groups.entry(name).or_default().push(body);
     }
     for (name, bodies) in shape_groups {
-        let Some(serialized) = brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds)? else {
+        // The BRep root location couples with the owner object's Placement:
+        // the decode restores an owner's placement from its shape root, so
+        // the root carries the owner's occurrence transform (#238 §5.5).
+        let root_override = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&name))
+            .and_then(|occurrence| occurrence.transform);
+        let Some(serialized) =
+            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, root_override)?
+        else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "body {} is omitted because a required carrier has no OCCT text encoding",
@@ -321,7 +338,8 @@ pub(super) fn write(
             }
             continue;
         };
-        if !objects.iter().any(|object| object.name == name) {
+        let created = !objects.iter().any(|object| object.name == name);
+        if created {
             objects.push(Object::new(
                 name.clone(),
                 "Part::Feature",
@@ -344,34 +362,24 @@ pub(super) fn write(
             ),
         );
         object.mark_geometry_written();
-        object.properties.remove("CadmpegBodyNames");
-        if bodies.iter().any(|body| body.name.is_some()) {
-            let values = bodies
+        // The Label of a plain `Part::Feature` carrying exactly one body is
+        // that body's native home; a body output by a feature, or one of
+        // several bodies in one object, has no Label home (#238 §5.5).
+        let named: Vec<_> = bodies.iter().filter(|body| body.name.is_some()).collect();
+        if (!created || bodies.len() > 1) && !named.is_empty() {
+            let ids = named
                 .iter()
-                .map(|body| {
-                    Ok(xml::element(
-                        "String",
-                        &[(
-                            "value",
-                            serde_json::to_string(&body.name).map_err(CodecError::malformed)?,
-                        )],
-                    ))
-                })
-                .collect::<Result<String, CodecError>>()?;
-            object.set(
-                "CadmpegBodyNames",
-                xml::property(
-                    "CadmpegBodyNames",
-                    "App::PropertyStringList",
-                    &format!(
-                        "<StringList count=\"{}\">{values}</StringList>",
-                        bodies.len()
-                    ),
-                )
-                .replacen("<Property ", "<Property group=\"CADIR\" hide=\"1\" ", 1),
+                .map(|body| body.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(
+                FreecadLossCode::BodyNameNotTransferred
+                    .note(format!("object {name} has no Label home for bodies {ids}",)),
             );
         }
-        super::body_styles::preserve(object, &bodies);
+        // Independent body color and visibility live in the view provider
+        // (`ShapeColor`/`Visibility` from `body.color`/`body.visible`); the
+        // bound appearance goes to `ShapeMaterial` alone (#238 §5.5).
         // FreeCAD persists the application's placement and the BRep root
         // location as coupled lanes. Restoring the property does not compose
         // the same placement twice. Keep canonical construction placements and
@@ -410,9 +418,9 @@ pub(super) fn write(
         &mut losses,
         &native_properties,
     )?;
-    // Product and feature labels are independent neutral fields even when
-    // FreeCAD stores both on the same object. Preserve the product label in a
-    // dynamic property while the visible object Label follows the feature.
+    // The object Label is the feature's native home. Where a definition
+    // and a feature share an object and their labels differ, the feature
+    // name wins and the definition label is a documented loss (#238 §5.5).
     for feature in &ir.model.features {
         if let Some(label) = &feature.name {
             if let Some(object) = names
@@ -424,23 +432,17 @@ pub(super) fn write(
                     .product_definitions
                     .iter()
                     .find(|definition| names.get(definition.id.as_str()) == Some(&object.name))
+                    .filter(|definition| definition.label.as_deref() != Some(label.as_str()))
                 {
-                    let value =
-                        serde_json::to_string(&definition.label).map_err(CodecError::malformed)?;
-                    object.set(
-                        "CadmpegProductLabel",
-                        xml::string("CadmpegProductLabel", &value).replacen(
-                            "<Property ",
-                            "<Property group=\"CADIR\" hide=\"1\" ",
-                            1,
-                        ),
-                    );
+                    losses.push(FreecadLossCode::ProductLabelNotTransferred.note(format!(
+                        "definition {} label differs from the feature label sharing object {}",
+                        definition.id, object.name,
+                    )));
                 }
                 object.set_text("Label", label);
             }
         }
     }
-    super::ordinals::preserve(ir, &mut objects, &names)?;
     super::native::attachments(
         ir,
         &mut objects,
@@ -496,6 +498,39 @@ pub(super) fn write(
             cadmpeg_ir::codec::write::ExportLossCode::OutputEmpty
                 .note("the emitted FCStd document has no geometry"),
         );
+    }
+    // Design objects enter `<Objects>` and `<ObjectData>` in ascending
+    // feature ordinal order, ties by arena order; other objects keep their
+    // slots. Replayed natives arrive in native arena order, which generally
+    // disagrees with declaration order; the declaration order is the
+    // ordinal's native home (#238 §5.5).
+    {
+        let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
+        for (index, feature) in ir.model.features.iter().enumerate() {
+            if let Some(name) = names.get(feature.id.as_str()) {
+                rank_of
+                    .entry(name.as_str())
+                    .or_insert((feature.ordinal, index));
+            }
+        }
+        let mut design = Vec::new();
+        let mut slots = Vec::new();
+        for object in objects.drain(..) {
+            if rank_of.contains_key(object.name.as_str()) {
+                slots.push(None);
+                design.push(object);
+            } else {
+                slots.push(Some(object));
+            }
+        }
+        design.sort_by_key(|object| rank_of[object.name.as_str()]);
+        let mut design = design.into_iter();
+        objects = slots
+            .into_iter()
+            .map(|slot| {
+                slot.unwrap_or_else(|| design.next().expect("design slot has no design object"))
+            })
+            .collect();
     }
     let document = xml::document(&objects, &document_properties, schema);
     let document = if dictionaries.is_empty() {

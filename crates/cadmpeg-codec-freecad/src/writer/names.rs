@@ -18,6 +18,14 @@ fn reserve(proposed: &str, used: &mut HashSet<String>) -> String {
     candidate
 }
 
+pub(super) fn is_free_identifier(value: &str) -> bool {
+    let mut characters = value.chars();
+    characters
+        .next()
+        .is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
 pub(super) fn prepare(
     ir: &CadIr,
     objects: &[ObjectRecord],
@@ -29,16 +37,23 @@ pub(super) fn prepare(
         names.insert(object.id().as_str().to_owned(), object.name().to_owned());
         used.insert(object.name().to_owned());
     }
-    // Product source names own their emitted object declarations. Resolve this
-    // before features and sketches that may share the native object identity.
+    // Product source names own their emitted object declarations. Only a
+    // valid free identifier can serve as the `<Object name>`; anything else
+    // is allocated below and charged where it is emitted (#238 §5.5).
+    // Resolve this before features and sketches that may share the native
+    // object identity.
     for definition in &ir.model.product_definitions {
-        if let Some(proposed) = &definition.source_name {
+        if let Some(proposed) = definition
+            .source_name
+            .as_deref()
+            .filter(|proposed| is_free_identifier(proposed))
+        {
             let existing = definition
                 .native_ref
                 .as_ref()
                 .and_then(|id| names.get(id))
                 .cloned();
-            if existing.as_ref() != Some(proposed) {
+            if existing.as_deref() != Some(proposed) {
                 let emitted = reserve(proposed, &mut used);
                 if let Some(native) = &definition.native_ref {
                     names.insert(native.clone(), emitted.clone());
@@ -98,6 +113,7 @@ pub(super) fn prepare(
                     &definition
                         .source_name
                         .clone()
+                        .filter(|source| is_free_identifier(source))
                         .unwrap_or_else(|| format!("Product{index}")),
                     &mut used,
                 )
