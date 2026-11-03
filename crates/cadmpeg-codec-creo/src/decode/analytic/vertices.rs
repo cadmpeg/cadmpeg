@@ -70,13 +70,13 @@ impl VisibleModelCurves {
 
 /// Admit a model point for the agreement test. A point outside the finite
 /// range has no admitted form, and agrees with no point.
-pub(super) fn finite_model_point(point: [f64; 3]) -> Option<FinitePoint3> {
+pub(in crate::decode) fn finite_model_point(point: [f64; 3]) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::from(point))
 }
 
 /// Whether two points agree within a tolerance relative to their largest
 /// coordinate. Both points are finite, so the tolerance is finite.
-pub(super) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> bool {
+pub(in crate::decode) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> bool {
     let [first, second] = [first, second].map(|point| <[f64; 3]>::from(point.get()));
     let scale = first
         .into_iter()

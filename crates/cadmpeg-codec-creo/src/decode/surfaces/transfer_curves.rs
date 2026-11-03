@@ -19,8 +19,12 @@ use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::carriers::placed_carriers;
 use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
-use crate::decode::analytic::pcurves::pcurve_edge_endpoint_evidence;
-use crate::decode::analytic::vertices::solved_topological_vertices;
+use crate::decode::analytic::pcurves::{
+    canonicalized_pcurve_endpoints, pcurve_edge_endpoint_evidence, ModelSurfaceIndex,
+};
+use crate::decode::analytic::vertices::{
+    finite_model_point, model_points_agree, solved_topological_vertices,
+};
 use crate::decode::source_carriers::SourceUnitCarriers;
 
 use super::intersection_resolve::curve_contains_points;
@@ -84,6 +88,140 @@ fn resolve_carrier_intersection_curve(
     selected.and_then(|index| candidates.into_iter().nth(index))
 }
 
+/// Squared length of the normal cross product below which two plane normals
+/// are parallel.
+const EPS_COPLANAR_NORMAL_CROSS_SQUARED: f64 = 1.0e-18;
+/// Plane offset, relative to the larger model coordinate, below which two
+/// parallel planes are one plane.
+const EPS_COPLANAR_OFFSET: f64 = 1.0e-9;
+
+/// The line through an edge's two solved endpoints when both incident faces
+/// lie on one plane and a face path maps onto the endpoints in exactly one
+/// order.
+fn coplanar_face_edge_line(
+    faces: [PlaneEquation; 2],
+    points: [[f64; 3]; 2],
+    mapped_paths: &[[[f64; 3]; 2]],
+) -> Option<CurveGeometry> {
+    one_plane(faces).then_some(())?;
+    let [Some(start), Some(end)] = points.map(finite_model_point) else {
+        return None;
+    };
+    (!model_points_agree(start, end)).then_some(())?;
+    mapped_paths
+        .iter()
+        .any(|path| {
+            let [Some(first_point), Some(second_point)] = path.map(finite_model_point) else {
+                return false;
+            };
+            let forward =
+                model_points_agree(first_point, start) && model_points_agree(second_point, end);
+            let reverse =
+                model_points_agree(first_point, end) && model_points_agree(second_point, start);
+            forward != reverse
+        })
+        .then_some(())?;
+    let direction = crate::vecmath::normalize(std::array::from_fn(|axis| {
+        points[1][axis] - points[0][axis]
+    }))?;
+    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+        cadmpeg_ir::math::Point3::from(points[0]),
+        cadmpeg_ir::math::Vector3::from(direction),
+    )
+    .ok()
+    .map(|line| CurveGeometry::Solved(SolvedCurveGeometry::Line(line)))
+}
+
+/// Whether two placed plane equations describe one plane.
+fn one_plane([first, second]: [PlaneEquation; 2]) -> bool {
+    let normal_cross = crate::vecmath::cross(first.normal, second.normal);
+    if crate::vecmath::dot(normal_cross, normal_cross) > EPS_COPLANAR_NORMAL_CROSS_SQUARED {
+        return false;
+    }
+    let Some(normal) = crate::vecmath::normalize(first.normal) else {
+        return false;
+    };
+    let offset = crate::vecmath::dot(
+        normal,
+        std::array::from_fn(|axis| second.origin[axis] - first.origin[axis]),
+    );
+    let scale = first
+        .origin
+        .into_iter()
+        .chain(second.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    offset.abs() <= EPS_COPLANAR_OFFSET * scale
+}
+
+/// Each native pcurve endpoint pair of `row` mapped through its placed planar
+/// face chart.
+fn mapped_planar_face_paths(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    model_surfaces: &ModelSurfaceIndex<'_>,
+    source_carriers: &SourceUnitCarriers,
+    row: &crate::curve::CurveTopologyRow,
+) -> Result<Vec<[[f64; 3]; 2]>, CodecError> {
+    let records = scan
+        .curves
+        .pcurves
+        .iter()
+        .map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        })
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        }));
+    let mut paths = Vec::new();
+    for (curve_id, faces, face_0_endpoints, face_1_endpoints) in records {
+        if curve_id != row.id {
+            continue;
+        }
+        let endpoint_sets =
+            canonicalized_pcurve_endpoints(scan, faces, face_0_endpoints, face_1_endpoints);
+        for (face, endpoints) in faces.into_iter().zip(endpoint_sets) {
+            let Some(face) = face.filter(|face| row.faces.contains(&Some(*face))) else {
+                continue;
+            };
+            let Some(surface) = model_surfaces.unique(face.get()) else {
+                continue;
+            };
+            let geometry = source_carriers.surface_geometry(surface);
+            if !matches!(
+                geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            ) {
+                continue;
+            }
+            let mut mapped = [[0.0; 3]; 2];
+            let mut complete = true;
+            for (slot, uv) in mapped.iter_mut().zip(endpoints) {
+                match cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, geometry, uv[0], uv[1]),
+                )?)? {
+                    Some(point) => *slot = [point.x, point.y, point.z],
+                    None => complete = false,
+                }
+            }
+            if complete {
+                paths.push(mapped);
+            }
+        }
+    }
+    Ok(paths)
+}
+
 pub(in super::super) fn transfer_carrier_intersection_curves(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -105,6 +243,38 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+    let mut coplanar_lines = std::collections::BTreeMap::new();
+    {
+        let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+        for row in
+            crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id)
+        {
+            let [Some(first_face), Some(second_face)] = row.faces else {
+                continue;
+            };
+            let (Some(CarrierEquation::Plane(first)), Some(CarrierEquation::Plane(second))) = (
+                carriers.get(&first_face.get()).copied(),
+                carriers.get(&second_face.get()).copied(),
+            ) else {
+                continue;
+            };
+            if !one_plane([first, second]) {
+                continue;
+            }
+            let Some(points) = edge_vertices.get(&row.id).and_then(|vertices| {
+                Some([
+                    *solved_vertices.get(&vertices[0].get())?,
+                    *solved_vertices.get(&vertices[1].get())?,
+                ])
+            }) else {
+                continue;
+            };
+            let paths = mapped_planar_face_paths(ctx, scan, &model_surfaces, source_carriers, row)?;
+            if let Some(line) = coplanar_face_edge_line([first, second], points, &paths) {
+                coplanar_lines.insert(row.id, line);
+            }
+        }
+    }
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
@@ -143,6 +313,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
                 select_fc14_axis_coordinate_candidate(candidates, held)
             }
+        })
+        .or_else(|| {
+            coplanar_lines
+                .remove(&row.id)
+                .map(|line| (line, "coplanar_face_pcurve_line"))
         });
         let Some((geometry, tag)) = resolved else {
             continue;
@@ -450,6 +625,39 @@ mod tests {
         let branches = { super::analytic_curve_branches(&geometry, "procedural") };
         assert_eq!(branches.len(), 1);
         assert_eq!(branches[0].0, geometry);
+    }
+
+    #[test]
+    fn coplanar_face_edge_line_needs_a_face_path_onto_both_solved_endpoints() {
+        let plane = |origin, normal| PlaneEquation { origin, normal };
+        let faces = [
+            plane([0.0, 0.0, 2.0], [0.0, 0.0, 1.0]),
+            plane([5.0, 1.0, 2.0], [0.0, 0.0, -1.0]),
+        ];
+        let points = [[1.0, 0.0, 2.0], [1.0, 3.0, 2.0]];
+        let missing = [[1.0, 0.0, 2.0], [1.25, 3.0, 2.0]];
+        for path in [points, [points[1], points[0]]] {
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line))) =
+                super::coplanar_face_edge_line(faces, points, &[missing, path])
+            else {
+                panic!("line through the solved endpoints");
+            };
+            let origin = line.origin().get();
+            let direction = *line.direction().as_raw();
+            assert_eq!([origin.x, origin.y, origin.z], points[0]);
+            assert_eq!([direction.x, direction.y, direction.z], [0.0, 1.0, 0.0]);
+        }
+        assert!(super::coplanar_face_edge_line(faces, points, &[missing]).is_none());
+        assert!(super::coplanar_face_edge_line(
+            faces,
+            [points[0], points[0]],
+            &[[points[0], points[0]]]
+        )
+        .is_none());
+        let offset = [faces[0], plane([0.0, 0.0, 3.0], [0.0, 0.0, 1.0])];
+        assert!(super::coplanar_face_edge_line(offset, points, &[points]).is_none());
+        let crossing = [faces[0], plane([1.0, 0.0, 0.0], [1.0, 0.0, 0.0])];
+        assert!(super::coplanar_face_edge_line(crossing, points, &[points]).is_none());
     }
 
     #[test]
