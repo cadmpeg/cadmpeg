@@ -752,6 +752,19 @@ fn decode_with_occurrence_limits(
     let mut source_fidelity = source_fidelity(source.window(), ctx)?;
     let view = (representation == Representation::FixedAscii).then_some(source);
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
+    // A Fixed ASCII transfer without its Terminate card is cut short: the
+    // trailing records are unknowable, so no prefix decode can satisfy §4.5
+    // (every missing record would need a name the cut bytes cannot supply).
+    // The refusal carries the truncation point, not a framing defect (#215).
+    if representation == Representation::FixedAscii
+        && !ctx.container_only()
+        && parse.scan.source_end != card::SourceEnd::Terminated
+    {
+        return Err(CodecError::truncated(
+            source.location_at(source.window().len()),
+            "iges_decode",
+        ));
+    }
     let parts = std::mem::replace(
         &mut parse.parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx),
