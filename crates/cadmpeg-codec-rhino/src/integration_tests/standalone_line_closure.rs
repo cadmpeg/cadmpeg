@@ -31,7 +31,6 @@ fn source_less_solved_line_preserves_the_required_record_under_same_comparison()
         parameter_range: Some(IncreasingParameterInterval::new([0.0, 1.0]).expect("finite range")),
         source_object: None,
     });
-    let before = serde_json::to_value(&ir).expect("original canonical line document");
     let mut output = Vec::new();
     RhinoCodec
         .plan(
@@ -44,6 +43,10 @@ fn source_less_solved_line_preserves_the_required_record_under_same_comparison()
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("native finite line archive decodes");
+    // The authored document holds model records only (§1.1): the written
+    // archive locates no design, so the re-decode delivers the model class.
+    ir.scope = cadmpeg_ir::ContentScope::geometry();
+    let before = serde_json::to_value(&ir).expect("original canonical line document");
     let after = serde_json::to_value(decoded.ir()).expect("redecoded complete document");
     assert_decodes_agree(&before, &after, &Allowances::default(), Mode::Same);
 }
