@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod annotations;
 mod attributes;
+mod drawings;
 mod evidence;
 mod fem;
 mod patterns;
@@ -5780,6 +5781,19 @@ pub(crate) fn store(
             ctx,
             &admitted.decoded,
         )?;
+        drawings::project(
+            ir,
+            &drawings::DrawingSources {
+                drawings: &drawings,
+                views: &views,
+                visibility: &view_visibility,
+                segmented: &segmented_visibility,
+                admitted: &admitted.decoded,
+                length_factor: occurrence_length_factor,
+            },
+            ctx,
+        )
+        .map(|losses| projection_losses.extend(losses))?;
         renumber_features(ir);
     }
     let namespace = ir.native.namespace_mut("iges");
