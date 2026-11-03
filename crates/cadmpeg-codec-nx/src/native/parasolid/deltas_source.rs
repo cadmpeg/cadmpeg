@@ -222,8 +222,21 @@ pub(in crate::native) fn verify(
                     span.id
                 )));
             }
-            let start = span.inflated_offset as usize;
-            let end = start.saturating_add(span.byte_len as usize);
+            let start = usize::try_from(span.inflated_offset).map_err(|_| {
+                NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap offset exceeds usize"
+                ))
+            })?;
+            let len = usize::try_from(span.byte_len).map_err(|_| {
+                NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap length exceeds usize"
+                ))
+            })?;
+            let end = start.checked_add(len).ok_or_else(|| {
+                NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap span overflows"
+                ))
+            })?;
             if bytes.get(start..end) != pinned.data() {
                 return Err(NativeConvertError::InvalidCollection(format!(
                     "NX Deltas stream {id} residual gap {} differs from retained source",

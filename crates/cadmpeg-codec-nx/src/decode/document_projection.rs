@@ -207,7 +207,7 @@ fn external_occurrences(
             occurrences.len(),
             path,
             Some(child.id().to_owned()),
-        ));
+        )?);
     }
     if occurrences.is_empty() {
         for record in strings {
@@ -222,7 +222,7 @@ fn external_occurrences(
                 occurrences.len(),
                 path.clone(),
                 Some(id),
-            ));
+            )?);
         }
     }
     Ok(occurrences)
@@ -239,26 +239,35 @@ fn child_path(directory: &str, name: &str) -> String {
     }
 }
 
-fn external_occurrence(ordinal: usize, path: String, native_ref: Option<String>) -> Occurrence {
+fn external_occurrence(
+    ordinal: usize,
+    path: String,
+    native_ref: Option<String>,
+) -> Result<Occurrence, CodecError> {
+    let ordinal = u32::try_from(ordinal).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "NX external occurrence ordinal exceeds u32"
+        ))
+    })?;
     let id = cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("nx", "document", "occurrence"),
         cadmpeg_ir::identity_key!("external-").then(ordinal),
     );
-    Occurrence {
+    Ok(Occurrence {
         id,
         prototype: PrototypeReference::External {
             document: ExternalDocument::path(path.clone()),
             object: None,
         },
         parent: OccurrenceParent::Root {},
-        ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+        ordinal,
         transform: None,
         linked_prototype: None,
         name: Some(path),
         visible: None,
         link: None,
         native_ref,
-    }
+    })
 }
 
 fn material(

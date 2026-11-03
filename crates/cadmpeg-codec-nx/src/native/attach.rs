@@ -862,7 +862,7 @@ fn drop_neutral_record_id_links(ir: &mut CadIr) {
     cadmpeg_ir::schema::native_links::visit_native_references(&ir.model, &mut |_, _, id, _| {
         identities.insert(id.to_owned());
     });
-    for namespace in ir.native.0.values() {
+    if let Some(namespace) = ir.native.namespace("nx") {
         for records in namespace.arenas().values() {
             for record in records {
                 identities.insert(record.id().to_owned());
