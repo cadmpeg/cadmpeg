@@ -211,16 +211,17 @@ fn sync_neutral_parameters(
         let Some(native_ref) = parameter.native_ref.as_deref() else {
             continue;
         };
-        let location = native
-            .feature_input_lanes
-            .iter()
-            .enumerate()
-            .find_map(|(lane_index, lane)| {
-                lane.scalars
-                    .iter()
-                    .position(|scalar| scalar.id == native_ref)
-                    .map(|scalar_index| (lane_index, scalar_index))
-            });
+        let location =
+            native
+                .feature_input_lanes
+                .iter()
+                .enumerate()
+                .find_map(|(lane_index, lane)| {
+                    lane.scalars
+                        .iter()
+                        .position(|scalar| scalar.id == native_ref)
+                        .map(|scalar_index| (lane_index, scalar_index))
+                });
         let Some((lane_index, scalar_index)) = location else {
             // A parameter linked to its dimension record rather than a lane
             // scalar has no lane value to synchronize.

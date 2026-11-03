@@ -293,19 +293,14 @@
           },
           "offset": 76,
           "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABgAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAUAQAAAAAAAHgBtZG5TsNAFEWPjUKBkGhCheQ4nRNX0IGIRggFiAQIsHuLMg0glIolULBVVNR8AnV+h5qGT+COPUbEiKXJm7fNfVfW9by9BFhYCdODtd1kp5eGG73tbhidHJ4O+oP+8VFL47lkfStLu0maLWbLMrhgRvgXj6kzz1AZPB3wUdRqNrtQkQc0CGlyKb4NJmGxPjqr+MPN09nr5kv9vKSZm/F7FTcVPldi+AT6Wd/1jby/zvFQOXfznhco8CbOPvE7lhzkSkxEiwciPCE+Uzbbx1SlTcy9xrZXTCt+8G+CS14hvI2vU4iKy5EpxQ5ZFeY5BeD/us2ONtoRfwJupf1nm8+j/bfbYFQqMI/j9ypuKvwPnWNBIEZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

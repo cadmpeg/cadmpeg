@@ -182,21 +182,15 @@
       },
       "native": {
         "nx": {
-          "parasolid_deltas_residual_spans": [
-            {
-              "byte_len": 190,
-              "id": "nx:s1:deltas-residual#0",
-              "inflated_offset": 0,
-              "sha256": "129cf8347a7b9bc14e20cb4535beef1ae17f8775ad5102885d43eccd9f5cf99d",
-              "stream_ordinal": 1
-            }
-          ],
           "unknowns": [
             {
               "id": "nx:container:parasolid#0"
             },
             {
               "id": "nx:container:parasolid#1"
+            },
+            {
+              "id": "nx:s1:deltas-residual#0"
             }
           ]
         }
@@ -481,7 +475,9 @@
           },
           "offset": 76,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -490,19 +486,25 @@
           },
           "offset": 362,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
-        "nx:source:image#whole": {
+        "nx:s1:deltas-residual#0": {
           "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAAPAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADDAQAAAAAAAHgBlVC7TsNAEJwDgoEYwqtCEF0JiRAQEBI0JxQFiAQIsKktQ1xECgRZboAW/oCanoY6vwNtGj4h49gXnfIosvbtzszu3u3dtQNg51i6tydXzmXVlafVi4rcfPbDqB7Vm09b8iEM/CioyfsX+disBY1GELIl55TPPbfiuN6ed0QDbExQH/znMdkVBfMCUxD8bK4FYsSmCod/7fXyNjWBDKvtYiynK0cpgRYbBJZgkWboLcxBYAazQBGLBIhN7X8Xdu9KPgtAY5IeKGG6G3vOPKMnDgPqP1F1TJjh8/EEBuc0JjPwyC2WeRWjDlm1lr4JsMKXNXMbyJpUvb/+nv2svqnPNH61btof+RYO+vow/o3TrfVxenwdta5jB9lFNjl4AV1MMQrCQBDcYCv4hS0VbQQbbRaRiIFEgneF3ZmYA5GIEK/Rwi9YWOkP9AFWvsIXWAo22oqFx0VCyDDMwMwwPgOARgf5qDtknsOx77g2ViMZq2BVw2kiAyUjDNe4WOowloneV1hvILjNuGiKtgZAC8oApR1YVp518kPv9j59afL32V5d59uP/jCkl7FM6GBwpHsa0fOyeYzdMxV2aQvwA5nALrtGT09URVIAAAAAAAAAAA==",
+            "data": "UFMAAAAsOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAA0AAwAAAOPAAEBAAEBAAEBAAEBAAEBKz9QYk3S8an8P2BiTdLxqfw/aJN0vGp++gAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAD+ZmZmZmZmaP+AAAAAAAAA/67Z66FhMqj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
             "retention": "inline"
           },
           "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "",
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

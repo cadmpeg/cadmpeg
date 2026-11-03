@@ -7,6 +7,7 @@
 //! reads `tests/golden/fixtures`. Code-built-only codecs (inventor, sat, nx,
 //! pvz) have no frozen inputs, so the §4.5 file tests do not cover them.
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
@@ -154,6 +155,38 @@ pub(crate) fn is_truncated(failure: &DecodeFailure) -> bool {
         failure,
         DecodeFailure::Codec(cadmpeg_core::CodecError::Truncated { .. })
     )
+}
+
+/// The ids of every `unknowns` stub the helper mints for a given-up part:
+/// `{codec}:source:part#{sha256}` (#215 rule 1). Any other `unknowns` row
+/// is content with its own home, never a part stub.
+pub(crate) fn stub_ids(format: &str, document: &serde_json::Value) -> BTreeSet<String> {
+    let mut stubs = BTreeSet::new();
+    let prefix = format!("{format}:source:part#");
+    if let Some(native) = document
+        .get("native")
+        .and_then(serde_json::Value::as_object)
+    {
+        for namespace in native.values() {
+            if let Some(rows) = namespace
+                .get("unknowns")
+                .and_then(serde_json::Value::as_array)
+            {
+                for row in rows {
+                    if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                        let digest = id.strip_prefix(prefix.as_str()).unwrap_or("");
+                        if !digest.is_empty()
+                            && digest.len() == 64
+                            && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        {
+                            stubs.insert(id.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    stubs
 }
 
 /// Runs the comparison and returns its panic text instead of panicking.
