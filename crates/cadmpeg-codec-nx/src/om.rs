@@ -3735,6 +3735,51 @@ pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
     expressions
 }
 
+/// Payload-relative spans of size-framed OM section candidates the section
+/// scan skips: a fully framed header (`ff×4`, big-endian length, `OM` tag)
+/// whose declared end runs past the payload, so the section's end cannot be
+/// found and the rest of its stream is one part give-up (§4.5). Mirrors the
+/// framing in [`sections`]; candidates sections() materializes or refuses
+/// with an error never appear here.
+pub(crate) fn truncated_section_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut at = 0usize;
+    while at + 16 <= bytes.len() {
+        let Some(relative) = bytes[at..]
+            .windows(4)
+            .position(|window| window == [0xff; 4])
+        else {
+            break;
+        };
+        let offset = at + relative;
+        let Some(payload_len) =
+            View::u32_be_at(bytes, offset + 8).map(cadmpeg_core::decode::index_from_u32)
+        else {
+            break;
+        };
+        let standard_end = offset
+            .checked_add(16)
+            .and_then(|header_end| header_end.checked_add(payload_len));
+        let compact_terminal_end = offset
+            .checked_add(12)
+            .and_then(|header_end| header_end.checked_add(payload_len))
+            .filter(|end| *end == bytes.len());
+        let tag = bytes.get(offset + 12..offset + 14);
+        // sections() skips this candidate exactly when no end frames; the
+        // span is damage only when the header fully framed (`OM` tag
+        // present) with a declared end past the payload that is not the
+        // compact terminal form.
+        if compact_terminal_end.is_none()
+            && tag == Some(b"OM".as_slice())
+            && standard_end.is_none_or(|end| end > bytes.len())
+        {
+            spans.push((offset, bytes.len()));
+        }
+        at = offset + 4;
+    }
+    spans
+}
+
 /// Locate independently size-framed OM sections and their type registries.
 pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
     let mut out = Vec::new();

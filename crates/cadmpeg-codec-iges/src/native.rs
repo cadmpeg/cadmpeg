@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use crate::card::{CardScan, ScannedLine, Section};
+use crate::card::{CardScan, ScannedLine, Section, SourceEnd};
 
 use crate::directory::{DirectoryEntry, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
@@ -2152,6 +2152,10 @@ fn index_native_inputs<'a>(
         scan.lines
             .iter()
             .enumerate()
+            .filter(|(_, line)| {
+                !matches!(line, ScannedLine::DroppedFinal(_))
+                    || scan.source_end == SourceEnd::Terminated
+            })
             .map(|(index, line)| NativeCard { index, line }),
     );
     let mut by_directory = BTreeMap::new();
@@ -2197,6 +2201,10 @@ pub(crate) fn store_physical_cards(
         .lines
         .iter()
         .enumerate()
+        .filter(|(_, line)| {
+            !matches!(line, ScannedLine::DroppedFinal(_))
+                || scan.source_end == SourceEnd::Terminated
+        })
         .map(|(index, line)| NativeCard { index, line })
         .collect::<Vec<_>>();
     ir.native
@@ -2260,6 +2268,21 @@ pub(crate) fn store(
         cadmpeg_core::decode::u64_from_index(scan.lines.len()),
         "iges_native_entities",
     )?;
+    // Entries with unreadable Parameter Data contribute no derived native
+    // record: every record built from their slots is dropped with them. The
+    // readable Directory Entry record itself is retained with null slots.
+    let present: BTreeSet<u32> = parameters
+        .iter()
+        .map(|record| record.directory_sequence)
+        .collect();
+    let tainted: BTreeSet<u32> = directory
+        .iter()
+        .filter(|entry| {
+            given_up_fields.contains_key(&entry.sequence)
+                || (entry.parameter_line_count > 0 && !present.contains(&entry.sequence))
+        })
+        .map(|entry| entry.sequence)
+        .collect();
     let NativeInputIndexes {
         cards,
         by_directory,
@@ -2509,7 +2532,8 @@ pub(crate) fn store(
     let directions = collect_native_items(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 123 && entry.form == 0),
+            .filter(|entry| entry.entity_type == 123 && entry.form == 0)
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             Ok(NativeDirection {
@@ -2567,7 +2591,10 @@ pub(crate) fn store(
         },
     )?;
     let copious_data = collect_native_items(
-        directory.iter().filter(|entry| entry.entity_type == 106),
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 106)
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let interpretation = parameters.and_then(|record| record.integer(1));
@@ -2863,7 +2890,8 @@ pub(crate) fn store(
     let definition_levels = collect_native_items(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 406 && entry.form == 1),
+            .filter(|entry| entry.entity_type == 406 && entry.form == 1)
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let end = parameters.map_or(0, |record| clamped_primary_end(entry.sequence, record));
@@ -3002,7 +3030,8 @@ pub(crate) fn store(
     let boolean_trees = collect_native_items(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1)),
+            .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
@@ -3752,7 +3781,10 @@ pub(crate) fn store(
         },
     )?;
     let mut associativities = collect_native_items(
-        directory.iter().filter(|entry| entry.entity_type == 302),
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 302)
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let class_count = record.and_then(|record| {
@@ -4449,7 +4481,8 @@ pub(crate) fn store(
     let attribute_table_definitions = collect_native_items(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2)),
+            .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
+            .filter(|entry| !tainted.contains(&entry.sequence)),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
@@ -5421,6 +5454,7 @@ pub(crate) fn store(
         &clamped_primary_end,
         &mut overdeclared_counts,
         global.global_table(),
+        &tainted,
     )?;
     let fem_entities = fem::build(directory, &by_directory, &parameter_resolver)?;
     // Scan every definition for root-inference diagnostics, then restrict the

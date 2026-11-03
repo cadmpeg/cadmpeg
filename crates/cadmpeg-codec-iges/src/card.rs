@@ -85,7 +85,7 @@ impl OpenSection {
         matches!(self, Self::Start | Self::Global)
     }
 
-    const fn section(self) -> Section {
+    pub(crate) const fn section(self) -> Section {
         match self {
             Self::Start => Section::Start,
             Self::Global => Section::Global,
