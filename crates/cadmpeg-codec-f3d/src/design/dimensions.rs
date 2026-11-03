@@ -24,6 +24,31 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// A sketch constraint governed by a dimension parameter.
+fn dimension_constraint(
+    id: cadmpeg_ir::sketches::SketchConstraintId,
+    sketch: cadmpeg_ir::sketches::SketchId,
+    definition: cadmpeg_ir::sketches::SketchConstraintDefinition,
+    parameter: &DesignParameter,
+    native_ref: String,
+) -> cadmpeg_ir::sketches::SketchConstraint {
+    cadmpeg_ir::sketches::SketchConstraint {
+        id,
+        sketch,
+        definition,
+        name: None,
+        driving: parameter.driving(),
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(native_ref),
+    }
+}
+
 fn dimension_entity_ids_distinct(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     let mut unique = HashSet::new();
     for entity in entities {
@@ -226,7 +251,7 @@ fn project_all_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
     };
 
@@ -796,21 +821,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = group.id.clone();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
+            Some(dimension_constraint(
+                crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             group_constraints.push(result);
@@ -874,21 +891,13 @@ fn project_all_dimension_constraints(
         else {
             continue;
         };
-        pair_constraints.push(SketchConstraint {
-            id: constraint_id,
+        pair_constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(pair.id.clone()),
-        });
+            parameter,
+            pair.id.clone(),
+        ));
     }
     let combined = pair_constraints
         .into_iter()
@@ -963,21 +972,13 @@ fn project_all_dimension_constraints(
                 return None;
             };
             let native_ref = frame.id.clone();
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
@@ -1007,21 +1008,13 @@ fn project_all_dimension_constraints(
                             cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                                 .ok()?;
                         let native_ref = pair.id.clone();
-                        return Some(SketchConstraint {
-                            id: constraint_id,
+                        return Some(dimension_constraint(
+                            constraint_id,
                             sketch,
                             definition,
-                            name: None,
-                            driving: None,
-                            active: None,
-                            virtual_space: None,
-                            visible: None,
-                            orientation: None,
-                            label_distance: None,
-                            label_position: None,
-                            metadata: None,
-                            native_ref: Some(native_ref),
-                        });
+                            parameter,
+                            native_ref,
+                        ));
                     }
                 }
             }
@@ -1061,21 +1054,13 @@ fn project_all_dimension_constraints(
             else {
                 return None;
             };
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(pair.id.clone()),
-            })
+                parameter,
+                pair.id.clone(),
+            ))
         }));
     let mut constraints = Vec::new();
     for projected in combined {
@@ -1198,21 +1183,13 @@ fn project_all_dimension_constraints(
             continue;
         };
         let native_ref = companion.id().to_owned();
-        constraints.push(SketchConstraint {
-            id: constraint_id,
+        constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(native_ref),
-        });
+            parameter,
+            native_ref,
+        ));
     }
     let mut projected_parameters = HashSet::new();
     for constraint in &constraints {
@@ -1403,21 +1380,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = companion.id().to_owned();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            Some(dimension_constraint(
+                crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             constraints.push(result);

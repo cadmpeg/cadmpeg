@@ -11,12 +11,14 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_tail as parameter_tail;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
+use crate::layout::design_parameter_wide_expression_trailer as wide_trailer;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::typed_reference_companion_prefix as typed_companion;
@@ -159,6 +161,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     name_offset: FrameRelative,
     evaluated_value: f64,
     evaluated_value_offset: FrameRelative,
+    flags: crate::records::parameters::DesignParameterFlags,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -212,6 +215,8 @@ impl ParsedDesignParameter {
                 evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
             },
         )
+        .ok()?
+        .with_flags(self.flags)
         .ok()
     }
 }
@@ -316,6 +321,42 @@ fn is_flagged_expression_trailer(trailer: &[u8]) -> bool {
         && trailer[4..].iter().all(|byte| *byte <= 1)
 }
 
+fn trailer_flag(bytes: &[u8], at: usize) -> Option<bool> {
+    match bytes.get(at)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// Flags and document flag of the wide expression trailer that starts `bytes`.
+fn wide_expression_trailer_flags(
+    bytes: &[u8],
+) -> Option<(crate::records::parameters::DesignParameterFlags, bool)> {
+    if bytes.get(wide_trailer::ZERO_RUN_6..wide_trailer::DRIVEN) != Some(&[0; 6][..])
+        || bytes.get(wide_trailer::RESERVED_7) != Some(&wide_trailer::RESERVED_7_VALUE)
+        || bytes.get(wide_trailer::RESERVED_9) != Some(&wide_trailer::RESERVED_9_VALUE)
+    {
+        return None;
+    }
+    let flags = crate::records::parameters::DesignParameterFlags {
+        driven: trailer_flag(bytes, wide_trailer::DRIVEN)?,
+        favorite: trailer_flag(bytes, wide_trailer::FAVORITE)?,
+    };
+    Some((flags, trailer_flag(bytes, wide_trailer::DOCUMENT)?))
+}
+
+/// Driven flag of a compact owned expression trailer.
+fn compact_trailer_driven(trailer: &[u8]) -> Option<bool> {
+    if trailer.len() != compact_trailer::LEN
+        || trailer.get(compact_trailer::RESERVED_0) != Some(&compact_trailer::RESERVED_0_VALUE)
+        || trailer.get(compact_trailer::ZERO_RUN_3..) != Some(&[0; 3][..])
+    {
+        return None;
+    }
+    trailer_flag(trailer, compact_trailer::DRIVEN)
+}
+
 /// Parse the discriminated or ordinary compact owned form. `shift` counts the
 /// further zero bytes before the discriminator of the wide discriminated form.
 fn parse_header_form(
@@ -352,7 +393,7 @@ fn parse_header_form(
                 View::u32_le_at(payload, 26)?,
                 Some(View::u32_le_at(payload, 31)?),
                 41,
-                5,
+                compact_trailer::LEN,
             )
         };
     let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
@@ -361,17 +402,22 @@ fn parse_header_form(
         && owner_record_index.is_none()
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-    let extended_document_trailer = shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6))
-        && owner_record_index.is_none()
-        && payload.get(expression_end..expression_end + 11)
-            == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6)))
+    .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
+    .flatten()
+    .filter(|(_, document)| *document == owner_record_index.is_none());
+    let compact_driven = if discriminated {
+        None
+    } else {
+        compact_trailer_driven(expression_trailer)
+    };
     let valid_expression_trailer = if discriminated {
         long_document_trailer
-            || extended_document_trailer
+            || wide_flags.is_some()
             || is_flagged_expression_trailer(expression_trailer)
     } else {
-        expression_trailer.iter().all(|byte| *byte == 0)
+        compact_driven.is_some()
     };
     if !valid_expression_trailer {
         return None;
@@ -385,19 +431,16 @@ fn parse_header_form(
     } else {
         None
     };
-    let extended_owned_trailer = shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6))
-        && owner_record_index.is_some()
-        && payload.get(expression_end..expression_end + 11) == Some(&[0; 11]);
-    let extended_kind = if extended_owned_trailer || extended_document_trailer {
-        lp_utf16_bounded(payload, expression_end + 11, 1..=256)
+    let extended_kind = if wide_flags.is_some() {
+        lp_utf16_bounded(payload, expression_end + wide_trailer::LEN, 1..=256)
     } else {
         None
     };
+    let wide_flags = wide_flags.filter(|_| extended_kind.is_some());
     let source_kind_at = if prefixed_kind.is_some() {
         expression_end + 10
     } else if extended_kind.is_some() {
-        expression_end + 11
+        expression_end + wide_trailer::LEN
     } else {
         expression_end + trailer_len
     };
@@ -405,13 +448,24 @@ fn parse_header_form(
         Some(value) => value,
         None => parameter_text!(payload, source_kind_at, 1..=256),
     };
+    let document_flag = match wide_flags {
+        Some((_, document)) => document,
+        None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
+    };
     if discriminated
         && !long_document_trailer
-        && (extended_document_trailer || expression_trailer[DOCUMENT_TRAILER_FLAG] == 1)
-            != crate::records::parameters::is_document_source_kind(&source_kind)
+        && document_flag != crate::records::parameters::is_document_source_kind(&source_kind)
     {
         return None;
     }
+    let flags = match (wide_flags, compact_driven) {
+        (Some((flags, _)), _) => flags,
+        (None, Some(driven)) => crate::records::parameters::DesignParameterFlags {
+            driven,
+            favorite: false,
+        },
+        (None, None) => crate::records::parameters::DesignParameterFlags::default(),
+    };
     let first_at = source_kind_end + usize::from(discriminated) * 4;
     if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
         return None;
@@ -457,6 +511,7 @@ fn parse_header_form(
         name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+        flags,
     }))
 }
 
@@ -546,6 +601,7 @@ fn parse_legacy_287_design_parameter(
             name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
+            flags: crate::records::parameters::DesignParameterFlags::default(),
         }))
     })();
     parsed.transpose()
@@ -762,6 +818,7 @@ fn parse_typed_compact_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            flags: crate::records::parameters::DesignParameterFlags::default(),
         }))
     })();
     parsed.transpose()
@@ -815,6 +872,7 @@ fn parse_legacy_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            flags: crate::records::parameters::DesignParameterFlags::default(),
         }))
     })();
     parsed.transpose()
