@@ -370,11 +370,6 @@ fn decode_result(
                 if projected.contains(marker.id()) {
                     continue;
                 }
-                if ctx.depth().required_scope().design {
-                    body.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
-                        "sketch-input entity {} has no neutral geometry or constraint projection; its typed native marker is retained", marker.id()
-                    )));
-                }
                 if matches!(
                     marker.kind(),
                     crate::records::SketchInputKind::Native(_)
@@ -568,7 +563,6 @@ fn append_design_losses(
     use cadmpeg_ir::features::{
         ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
     };
-    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = match ir.native.namespace("sldprt") {
         None => None,
@@ -1139,33 +1133,6 @@ fn append_design_losses(
     if native_constraints > 0 {
         report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
                 "{native_constraints} planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
-            )));
-    }
-
-    let native_sketch_geometry = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count()
-        + ir.model
-            .spatial_sketch_entities
-            .iter()
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Native { .. }
-                )
-            })
-            .count();
-    if native_sketch_geometry > 0 {
-        report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
-                "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
             )));
     }
 

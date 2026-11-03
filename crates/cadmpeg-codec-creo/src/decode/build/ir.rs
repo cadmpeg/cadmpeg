@@ -45,6 +45,7 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
+    pub(in super::super) unknown_classes: Vec<cadmpeg_ir::ArenaClasses>,
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -60,12 +61,15 @@ pub(in super::super) fn build_container_ir(
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    let passthrough = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    let (unknowns, unknown_classes): (Vec<UnknownRecord>, Vec<cadmpeg_ir::ArenaClasses>) =
+        passthrough.into_iter().unzip();
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
         unknowns,
+        unknown_classes,
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
         transfer_losses,
@@ -713,7 +717,9 @@ pub(in super::super) fn build_ir(
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     let mut source_carriers = SourceUnitCarriers::new(length_scale_mm);
     emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    let passthrough = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
+    let (unknowns, unknown_classes): (Vec<UnknownRecord>, Vec<cadmpeg_ir::ArenaClasses>) =
+        passthrough.into_iter().unzip();
     emit_reference_arenas(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_lines(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_reference_circles(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
@@ -756,12 +762,13 @@ pub(in super::super) fn build_ir(
         feature_result_edge_count,
         &mut coverage,
     );
-    crate::decode::feature_history::bindings::bind_owned_dimensions(&mut ir, &mut transfer_losses)?;
+    crate::decode::feature_history::bindings::bind_owned_dimensions(&mut ir)?;
     transfer_losses.append(&mut source_carriers.projection_losses);
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
         unknowns,
+        unknown_classes,
         coverage,
         brep_diagnostics,
         transfer_losses,

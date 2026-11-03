@@ -364,6 +364,27 @@ pub(crate) struct SectionExpansionLoss {
     pub(crate) message: String,
 }
 
+/// A section whose bytes stop short of its framed content (#215 §4.5).
+///
+/// A proven-cut section is given up as a part: its rows are excluded from
+/// transfer, its bytes are retained untyped, and one `record.unreadable`
+/// names it. A section whose end cannot be found (a trailing partial
+/// header) is incomplete with the rest of its stream. A count shortfall
+/// (declared rows outnumbering parsed rows) salvages its parsed rows and
+/// only charges the loss: the missing rows were never located, so there is
+/// nothing to exclude.
+#[derive(Debug, Clone)]
+pub(crate) struct IncompleteSection {
+    /// Byte offset of the section header: the part's address.
+    pub(crate) offset: usize,
+    /// Part kind for the give-up loss.
+    pub(crate) label: &'static str,
+    /// Whether the section's rows are excluded from transfer.
+    pub(crate) exclude_rows: bool,
+    /// Why the section cannot be read to its framed end.
+    pub(crate) reason: String,
+}
+
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
 pub(crate) struct FramingScan<'a> {
     /// Complete source bytes.
@@ -379,6 +400,10 @@ pub(crate) struct FramingScan<'a> {
     pub(crate) expanded_sections: Vec<ExpandedSection>,
     /// Bounded compressed sections whose payload could not be expanded.
     pub(crate) expansion_losses: Vec<SectionExpansionLoss>,
+    /// Sections given up as parts: their bytes stop short of their framed
+    /// content, so their rows are excluded from transfer and one
+    /// `record.unreadable` names each.
+    pub(crate) incomplete_sections: Vec<IncompleteSection>,
     /// Local work-cap skips recorded while framing and decoding plane support
     /// frames.
     pub(crate) local_work_cap_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1481,6 +1506,449 @@ fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTa
         _ => return None,
     };
     Some(FamilyTableRecord { pointer, offset })
+}
+
+/// Whether the section payload begins with the non-decodable LZW magic:
+/// `1f 9d 10` opens a Unix-compress stream, but `e0` after it is not a valid
+/// first code. Such a payload is not a Unix-compress stream.
+fn lzw_give_up_magic(payload: &[u8]) -> bool {
+    payload.starts_with(&[0x1f, 0x9d, 0x10, 0xe0])
+}
+
+/// Payload bytes after the section's `#<name>\n` header.
+fn section_payload<'a>(data: &'a [u8], section: &Section) -> Option<&'a [u8]> {
+    let start = section
+        .offset()
+        .checked_add(section.raw_name.len())
+        .and_then(|offset| offset.checked_add(2))?;
+    data.get(start..section.end())
+}
+
+/// Surface rows searched when a section's declared surface count outnumbers
+/// its parsed rows: visible, invisible, and cross-section rows, plus the
+/// datum boundary planes built from the same surface frames.
+struct SurfaceRowSets<'a> {
+    visible: &'a [SurfaceRow],
+    nonvisible: &'a [SurfaceRow],
+    cross_section: &'a [SurfaceRow],
+    boundary_planes: &'a [crate::datum::boundary_planes::BoundaryPlane],
+}
+
+/// Detect sections given up as parts: their bytes stop short of their framed
+/// content, so the transfer excludes their rows and one `record.unreadable`
+/// names each section.
+fn detect_incomplete_sections(
+    data: &[u8],
+    sections: &[ScannedSection<'_>],
+    rows: &SurfaceRowSets<'_>,
+    feature_definitions: &[FeatureDefinition],
+    expansion_losses: &[SectionExpansionLoss],
+) -> Vec<IncompleteSection> {
+    let mut incomplete = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut mark = |offset: usize, label: &'static str, exclude_rows: bool, reason: String| {
+        if seen.insert(offset) {
+            incomplete.push(IncompleteSection {
+                offset,
+                label,
+                exclude_rows,
+                reason,
+            });
+        }
+    };
+    for loss in expansion_losses {
+        mark(
+            loss.section_offset,
+            "creo.lzw_payload",
+            true,
+            loss.message.clone(),
+        );
+    }
+    for section in sections {
+        let Some(payload) = section_payload(data, &section.section) else {
+            continue;
+        };
+        if lzw_give_up_magic(payload) {
+            mark(
+                section.section.offset(),
+                "creo.lzw_payload",
+                true,
+                format!(
+                    "section `{}` payload begins 1f 9d 10 e0: not a valid Unix-compress stream",
+                    section.section.name(),
+                ),
+            );
+        }
+        if section.section.name() == "MdlStatus"
+            && crate::feature::operations::trailing_partial_state(section.region)
+        {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "section `MdlStatus` at offset {} ends mid-state",
+                    section.section.offset(),
+                ),
+            );
+        }
+    }
+    if let Some(last) = sections.last() {
+        // A header start without a terminating newline at the end of the
+        // file is a cut section header: it may sit inside the last section's
+        // payload (the header scan never admitted it) or past its end. Only
+        // a fragment that reaches EOF and extends a known section name
+        // counts; complete headers and binary noise do not.
+        const SECTION_NAMES: [&[u8]; 32] = [
+            b"VisibGeom",
+            b"NovisGeom",
+            b"ActDatums",
+            b"AllFeatur",
+            b"FeatDefs",
+            b"FeatDefsIndex",
+            b"FeatDefsDtm",
+            b"Geomlists",
+            b"GeomDepen",
+            b"Model_L05_PX",
+            b"Model_L05P",
+            b"BasicData",
+            b"BasBasData",
+            b"BasFullData",
+            b"FullMData",
+            b"THMB_IMG_MAIN",
+            b"NeuPrtSld",
+            b"NeuAsmSld",
+            b"SolidPersistTable",
+            b"SolidPrimdata",
+            b"DEPDB_DATA",
+            b"UnitSystemDef_L03",
+            b"PDMTrail_L03",
+            b"ActEntity",
+            b"MdlStatus",
+            b"MdlRefInfo",
+            b"DispCntrl",
+            b"ColorSchemeInfo",
+            b"LargeText",
+            b"BasicText",
+            b"IdsGenInfoDb",
+            b"DispDataTable",
+        ];
+        let region = data.get(last.section.offset()..).unwrap_or(&[]);
+        let mut partial = false;
+        let mut search = 0;
+        while let Some(found) = region[search..]
+            .windows(2)
+            .position(|window| window == b"\n#")
+        {
+            let start = search + found + 1;
+            search = start + 1;
+            let rest = &region[start + 1..];
+            let end = rest
+                .iter()
+                .position(|&byte| byte == b'\n' || byte == b' ')
+                .unwrap_or(rest.len());
+            let fragment = &rest[..end];
+            if end == rest.len()
+                && !fragment.is_empty()
+                && fragment.iter().all(|byte| {
+                    byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b':' || *byte == b'#'
+                })
+                && SECTION_NAMES
+                    .iter()
+                    .any(|name| name.starts_with(fragment) && name.len() > fragment.len())
+            {
+                partial = true;
+            }
+        }
+        if partial {
+            mark(
+                last.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "trailing partial section header after `{}` at offset {}: section end cannot be found",
+                    last.section.name(),
+                    last.section.end(),
+                ),
+            );
+        }
+        // A payload cut mid-label, mid-word, or mid-expression never
+        // completes its trailing token. Only fragments that reach EOF count;
+        // well-formed payloads end at complete record boundaries.
+        const RECORD_LABELS: [&[u8]; 9] = [
+            b"srf_array\0",
+            b"crv_array\0",
+            b"topol_ref_data\0",
+            b"lo_array\0",
+            b"qlt_array\0",
+            b"entity(crv_fr_eqn)\0",
+            b"backup_ents(crv_fr_eqn)\0",
+            b"expression\0",
+            b"name\0",
+        ];
+        let payload = section_payload(data, &last.section).unwrap_or(&[]);
+        // A strict prefix of a known label reaches EOF: the label never
+        // completes. Single bytes and short fragments match binary noise, so
+        // only fragments of four bytes or more count.
+        let truncated_label = RECORD_LABELS
+            .iter()
+            .any(|label| (4..label.len()).any(|len| payload.ends_with(&label[..len])));
+        let trailing_space = payload.last() == Some(&b' ');
+        let tail_text = match payload.iter().rposition(|&byte| byte == 0) {
+            Some(nul) => &payload[nul + 1..],
+            None => payload,
+        };
+        let unbalanced_call = tail_text.contains(&b'(')
+            && !tail_text.contains(&b')')
+            && tail_text
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ' || *byte == b'\t');
+        // A counted string array whose elements never terminate: the last
+        // `f8 <count>` in the payload names more NUL-terminated strings than
+        // reach EOF. Binary arrays are not text and do not count.
+        let mut truncated_strings = false;
+        if let Some(marker) = payload.iter().rposition(|&byte| byte == 0xf8) {
+            if let Some((count, after)) = crate::psb::complete_compact_int(payload, marker + 1) {
+                if count >= 1 && count <= 128 {
+                    let tail = &payload[after..];
+                    if !tail.is_empty()
+                        && tail
+                            .iter()
+                            .all(|byte| byte.is_ascii_graphic() || *byte == b' ' || *byte == b'\t')
+                        && tail.iter().filter(|&&byte| byte == 0).count() < count as usize
+                    {
+                        truncated_strings = true;
+                    }
+                }
+            }
+        }
+        if truncated_label || trailing_space || unbalanced_call || truncated_strings {
+            mark(
+                last.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "section `{}` ends mid-token at offset {}: trailing bytes name no complete record",
+                    last.section.name(),
+                    last.section.end(),
+                ),
+            );
+        }
+    }
+    for section in sections {
+        let Ok(declared) = read_array_count(section.region, b"srf_array") else {
+            continue;
+        };
+        let Some(declared) = declared else {
+            continue;
+        };
+        // Surface rows live in the namespace matching the section: visible,
+        // invisible, or cross-section rows, plus datum boundary planes built
+        // from the same surface frames.
+        let rows = rows
+            .visible
+            .iter()
+            .map(|row| row.offset)
+            .chain(rows.nonvisible.iter().map(|row| row.offset))
+            .chain(rows.cross_section.iter().map(|row| row.offset))
+            .chain(rows.boundary_planes.iter().map(|row| row.row.offset))
+            .filter(|offset| section.section.contains(*offset))
+            .count();
+        if usize::try_from(declared).is_ok_and(|bound| rows < bound) {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                false,
+                format!(
+                    "section `{}` declares {declared} surface row(s) but holds {rows}",
+                    section.section.name(),
+                ),
+            );
+        }
+        // A visible-geometry section declares both namespaces, even when
+        // empty: a present `srf_array` without `crv_array` lost its curve
+        // namespace to the cut.
+        if find(section.region, b"crv_array\0", 0).is_none() {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                false,
+                format!(
+                    "section `{}` declares surface rows but holds no curve namespace",
+                    section.section.name(),
+                ),
+            );
+        }
+    }
+    for definition in feature_definitions {
+        let Some(section) = sections
+            .iter()
+            .find(|section| section.section.contains(definition.offset))
+        else {
+            continue;
+        };
+        if let Some(table) = &definition.dimensions {
+            if usize::try_from(table.declared_count).is_ok_and(|bound| table.rows.len() < bound) {
+                mark(
+                    section.section.offset(),
+                    "creo.psb_section",
+                    false,
+                    format!(
+                        "section `{}` dimension table declares {} row(s) but holds {}",
+                        section.section.name(),
+                        table.declared_count,
+                        table.rows.len(),
+                    ),
+                );
+            }
+        }
+        if let Some(table) = &definition.relations {
+            let expected =
+                crate::decode::feature_history::dimensions::feature_relation_table_expected_rows(
+                    table,
+                );
+            if let Some(expected) = expected {
+                if table.rows.len() < expected {
+                    mark(
+                        section.section.offset(),
+                        "creo.psb_section",
+                        false,
+                        format!(
+                            "section `{}` relation table declares {expected} row(s) but holds {}",
+                            section.section.name(),
+                            table.rows.len(),
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    incomplete.sort_by_key(|section| section.offset);
+    incomplete
+}
+
+/// Row offsets that fall inside a given-up section: their transfer is
+/// excluded, so a cut section builds no records.
+fn incomplete_ranges(scan: &ContainerScan<'_>) -> Vec<(usize, usize)> {
+    scan.framing
+        .incomplete_sections
+        .iter()
+        .filter(|incomplete| incomplete.exclude_rows)
+        .filter_map(|incomplete| {
+            scan.framing
+                .sections
+                .iter()
+                .find(|section| section.offset() == incomplete.offset)
+        })
+        .map(|section| (section.offset(), section.end()))
+        .collect()
+}
+
+/// Drop every parsed row built from a given-up section's bytes. Rows without
+/// a source offset (derived topology orbits, counts, inventories) are not
+/// attributable and stay; the contract sweep reports any disagreement.
+pub(crate) fn exclude_incomplete_sections(scan: &mut ContainerScan<'_>) {
+    if scan.framing.layout.legacy_ascii().is_some() || scan.framing.incomplete_sections.is_empty() {
+        return;
+    }
+    let ranges = incomplete_ranges(scan);
+    if ranges.is_empty() {
+        return;
+    }
+    let excluded = |offset: usize| {
+        ranges
+            .iter()
+            .any(|(start, end)| *start <= offset && offset < *end)
+    };
+    macro_rules! retain_complete {
+        ($rows:expr, |$row:ident| $offset:expr) => {
+            $rows.retain(|$row| !excluded($offset));
+        };
+    }
+    retain_complete!(scan.surfaces.rows, |row| row.offset);
+    retain_complete!(scan.surfaces.nonvisible_rows, |row| row.offset);
+    retain_complete!(scan.surfaces.cross_section_rows, |row| row.offset);
+    retain_complete!(scan.surfaces.parameters, |row| row.offset);
+    retain_complete!(scan.surfaces.nonvisible_parameters, |row| row.offset);
+    retain_complete!(scan.surfaces.cross_section_parameters, |row| row.offset);
+    retain_complete!(scan.surfaces.contours, |row| row.offset);
+    retain_complete!(scan.surfaces.nonvisible_contours, |row| row.offset);
+    retain_complete!(scan.surfaces.cross_section_contours, |row| row.offset);
+    retain_complete!(scan.surfaces.prototype_records, |row| row.offset);
+    retain_complete!(scan.surfaces.nonvisible_prototype_records, |row| row.offset);
+    retain_complete!(scan.planes.datum_boundary_planes, |row| row.row.offset);
+    retain_complete!(scan.planes.local_systems, |row| row.offset);
+    retain_complete!(scan.planes.cross_section_local_systems, |row| row.offset);
+    retain_complete!(scan.planes.envelopes, |row| row.offset);
+    retain_complete!(scan.planes.cross_section_envelopes, |row| row.offset);
+    retain_complete!(scan.planes.outlines, |row| row.offset);
+    retain_complete!(scan.planes.positional_frames, |row| row.offset);
+    retain_complete!(scan.planes.cross_section_outlines, |row| row.offset);
+    retain_complete!(scan.planes.datums, |row| row.offset_in_payload);
+    retain_complete!(scan.planes.datum_cylinders, |row| row.offset_in_payload);
+    retain_complete!(scan.curves.tabulated_cylinder_replays, |row| row.offset);
+    retain_complete!(scan.curves.prototypes, |row| row.offset);
+    retain_complete!(scan.curves.nonvisible_prototypes, |row| row.offset);
+    retain_complete!(scan.curves.cross_section_prototypes, |row| row.offset);
+    retain_complete!(scan.curves.expressions, |row| row.offset);
+    retain_complete!(scan.curves.parameters, |row| row.offset);
+    retain_complete!(scan.curves.nonvisible_parameters, |row| row.offset);
+    retain_complete!(scan.curves.pcurves, |row| row.offset);
+    retain_complete!(scan.curves.two_chart_pcurves, |row| row.offset);
+    retain_complete!(scan.curves.fc_coordinates, |row| row.offset);
+    retain_complete!(scan.curves.fc05_circles, |row| row.offset);
+    retain_complete!(scan.curves.fc05_cylinder_cap_pairs, |row| row.offset);
+    retain_complete!(scan.curves.prototype_pcurves, |row| row.offset);
+    retain_complete!(scan.curves.prototype_topology, |row| row.offset);
+    retain_complete!(scan.curves.bound_prototype_pcurves, |row| row.offset);
+    retain_complete!(scan.curves.topology_rows, |row| row.offset);
+    retain_complete!(scan.curves.nonvisible_topology_rows, |row| row.offset);
+    retain_complete!(scan.curves.cross_section_rows, |row| row.offset);
+    retain_complete!(scan.loop_arrays.frames, |row| row.offset);
+    retain_complete!(scan.loop_arrays.records, |row| row.offset);
+    retain_complete!(scan.features.rows, |row| row.offset);
+    retain_complete!(scan.features.depdb_recipe_rows, |row| row.offset);
+    retain_complete!(scan.features.choices, |row| row.offset);
+    retain_complete!(scan.features.choice_fields, |row| row.offset);
+    retain_complete!(scan.features.geometry_tables, |row| row.offset);
+    retain_complete!(scan.features.loop_history_entries, |row| row.offset);
+    retain_complete!(scan.features.affected_ids, |row| row.offset);
+    retain_complete!(scan.features.replay_affected_ids, |row| row.offset);
+    retain_complete!(scan.features.surface_merge_replay_affected_ids, |row| row
+        .offset);
+    retain_complete!(scan.features.loop_restore_directions, |row| row.offset);
+    retain_complete!(scan.features.revolution_extents, |row| row.offset);
+    retain_complete!(scan.features.definitions, |row| row.offset);
+    retain_complete!(scan.features.section_transforms, |row| row.offset);
+    retain_complete!(scan.features.operation_states, |row| row.offset);
+    retain_complete!(scan.features.operations, |row| row.offset);
+    retain_complete!(scan.features.reference_names, |row| row.offset);
+    retain_complete!(scan.features.entities, |row| row.offset);
+    retain_complete!(scan.features.entity_references, |row| row.offset);
+    retain_complete!(scan.features.entity_tables, |row| row.offset);
+    retain_complete!(scan.references.lines, |row| row.offset);
+    retain_complete!(scan.references.circles, |row| row.offset);
+    retain_complete!(scan.references.conics, |row| row.offset);
+    retain_complete!(scan.references.ellipses, |row| row.offset);
+}
+
+/// The `FamilyInf` section whose binary driver-table entity has no decoded
+/// grammar, when `drv_tbl_ptr` names one. The pointer is decoded
+/// (`CreoFamilyTableRecord`); the entity it names is not, so the section that
+/// frames it is the retained extent.
+pub(crate) fn undecoded_driver_table_section<'a>(
+    scan: &'a ContainerScan<'a>,
+) -> Option<&'a Section> {
+    if !matches!(
+        scan.framing.family_table?.pointer,
+        FamilyTablePointer::Entity(_)
+    ) {
+        return None;
+    }
+    scan.framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "FamilyInf")
 }
 
 fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
@@ -2696,6 +3164,19 @@ pub(crate) fn scan_bytes<'a>(
     } else {
         sections
     };
+    // No located part and trailing bytes: the source was cut before any
+    // section could be framed, so no part survives (#215 §4.5). A clean empty
+    // file (nothing past the framing) still decodes. Legacy persistence is
+    // section-less by design and never refuses here.
+    if sections.is_empty() && legacy_ascii.is_none() && data.len() > body_start {
+        return Err(CodecError::Truncated {
+            location: cadmpeg_core::decode::SourceLocation {
+                space: cadmpeg_core::decode::SpaceId::ROOT,
+                offset: cadmpeg_core::decode::u64_from_index(body_start),
+            },
+            operation: "admit Creo sections",
+        });
+    }
     if let Some(framing) = &mut legacy_ascii {
         let scopes = legacy_scope_ranges(&data, framing, &sections);
         framing.persistence = legacy::scan(&data, scopes)?;
@@ -3054,6 +3535,18 @@ pub(crate) fn scan_bytes<'a>(
 
     // The `Cow` takes the bytes here, so the scan's borrowed regions end and
     // the framing keeps the owned sections.
+    let incomplete_sections = detect_incomplete_sections(
+        &data,
+        &all_sections,
+        &SurfaceRowSets {
+            visible: &surface_rows,
+            nonvisible: &nonvisible_surface_rows,
+            cross_section: &cross_section_surface_rows,
+            boundary_planes: &datum_boundary_planes,
+        },
+        &feature_definitions,
+        &expansion_losses,
+    );
     let mut retained_sections = Vec::new();
     for section in all_sections {
         retained_sections.push(section.section);
@@ -3067,6 +3560,7 @@ pub(crate) fn scan_bytes<'a>(
             sections: retained_sections,
             expanded_sections,
             expansion_losses,
+            incomplete_sections,
             local_work_cap_losses,
             layout,
             census,
