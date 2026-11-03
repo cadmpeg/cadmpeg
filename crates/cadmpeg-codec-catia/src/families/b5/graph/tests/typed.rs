@@ -9,6 +9,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use crate::test_support::test_b2::b2_sphere_stream;
 use crate::test_support::test_b5::{
     append_b5_record, b5_closed_triangle_stream, b5_linear_pcurve_payload, b5_object_ref,
@@ -29,7 +30,12 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
     );
     append_b5_record(&mut stream, 0x5e, 903, &[]);
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("typed unresolved face graph");
@@ -84,7 +90,12 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
     append_b5_record(&mut stream, 0x5f, 902, &face_payload);
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("typed multi-surface graph");
@@ -148,6 +159,7 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         crate::test_support::with_service_context(|ctx| crate::families::b5::graph::parse(
             ctx,
             &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the graph")
@@ -275,6 +287,7 @@ fn native_triangle_rosters_derive_coordinates_without_endpoint_fallback() {
         let graph = crate::families::b5::graph::parse(
             ctx,
             &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
             &mut crate::nurbs::LaneRefusals::new(),
         )?
         .expect("native triangle graph");
