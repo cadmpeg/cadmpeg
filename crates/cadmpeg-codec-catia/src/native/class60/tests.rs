@@ -47,6 +47,7 @@ fn counted_lists_preserve_logical_order_across_reordered_extents() {
             &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
     })
     .expect("bounded native decode");
     assert_eq!(

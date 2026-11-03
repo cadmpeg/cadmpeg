@@ -83,13 +83,21 @@ fn decode_over_routes(
             scope: cadmpeg_ir::ContentScope::container(),
             geometry_transferred: false,
         };
+        let mut marks: Vec<(String, cadmpeg_ir::ArenaClasses)> = Vec::new();
+        if let Some(classes) = fallback_untyped {
+            marks.extend(
+                unknowns
+                    .iter()
+                    .map(|record| (record.id().to_string(), classes.clone())),
+            );
+        }
         return decode_result(
             ctx,
             &scan,
             &matched,
             ir,
             report,
-            (annotations, unknowns, fallback_untyped),
+            (annotations, unknowns, marks),
         );
     }
 
@@ -228,13 +236,24 @@ fn finish_decode(
         mut ir,
         mut report,
         mut annotations,
-        unknowns,
+        mut unknowns,
         mut admitted_model_entities,
         standard_face_population,
         fell_through,
         refusal,
         fallback_untyped,
     } = inputs;
+    // §1.3 marks the classes retained-without-decoding records can hold at
+    // their retention sites: fallback unknowns here, part give-ups where they
+    // are appended below.
+    let mut untyped_marks: Vec<(String, cadmpeg_ir::ArenaClasses)> = Vec::new();
+    if let Some(classes) = fallback_untyped {
+        untyped_marks.extend(
+            unknowns
+                .iter()
+                .map(|record| (record.id().to_string(), classes.clone())),
+        );
+    }
     // Drain before the first fallible step: every refusal a route stated is in
     // the `report` value. The `Ok` route returns that value, so the notes reach
     // the caller. The `Err` route below drops the value and returns the bare
@@ -256,7 +275,7 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let mut native = CatiaNative::decode_with_record_sources(
+    let (mut native, give_ups) = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,
         &consolidated_record_sources,
@@ -266,6 +285,25 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    // Given-up object-record parts retain their bytes and report here; the
+    // walk already continued at each part's end.
+    let mut stub_annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    for (unknown, loss, classes) in give_ups {
+        untyped_marks.push((unknown.id().to_string(), classes));
+        crate::assemble::annotate(
+            &mut stub_annotations,
+            unknown.id(),
+            "CATPart",
+            unknown.offset(),
+            scan.variant.id(),
+            cadmpeg_ir::Exactness::ByteExact,
+        )?;
+        unknowns.push(unknown);
+        report.losses.push(loss);
+    }
+    annotations
+        .append(stub_annotations.build())
+        .map_err(cadmpeg_core::CodecError::from)?;
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
@@ -3743,7 +3781,7 @@ fn finish_decode(
         matched,
         ir,
         report,
-        (annotations, unknowns, fallback_untyped),
+        (annotations, unknowns, untyped_marks),
     )
 }
 
@@ -3816,10 +3854,10 @@ fn decode_result(
     source: (
         Annotations,
         Vec<UnknownRecord>,
-        Option<cadmpeg_ir::ArenaClasses>,
+        Vec<(String, cadmpeg_ir::ArenaClasses)>,
     ),
 ) -> Result<Decoded, CodecError> {
-    let (annotations, unknowns, fallback_untyped) = source;
+    let (annotations, unknowns, untyped_marks) = source;
     if ctx.container_only() {
         ir.scope = cadmpeg_ir::ContentScope::container();
     }
@@ -3830,24 +3868,13 @@ fn decode_result(
         body.losses.push(loss);
     }
     let mut source_fidelity = SourceFidelity::for_decode(ctx, annotations);
-    let untyped_ids: Vec<String> = fallback_untyped
-        .is_some()
-        .then(|| {
-            unknowns
-                .iter()
-                .map(|record| record.id().to_string())
-                .collect()
-        })
-        .unwrap_or_default();
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
-    if let Some(classes) = fallback_untyped {
-        // The fallback unknowns retain bytes no route decoded, so §1.3 marks
-        // the classes those bytes can hold at this retention site. Route
-        // unknowns decoded their bytes into the transferred model and carry
-        // no mark.
-        for id in &untyped_ids {
-            source_fidelity.mark_untyped(id, classes.iter().copied())?;
-        }
+    // §1.3 marks the classes retained-without-decoding records can hold at
+    // their retention sites: fallback unknowns (bytes no route decoded) and
+    // given-up part extents. Route unknowns decoded their bytes into the
+    // transferred model and carry no mark.
+    for (id, classes) in &untyped_marks {
+        source_fidelity.mark_untyped(id, classes.iter().copied())?;
     }
     Ok(Decoded {
         ir,
