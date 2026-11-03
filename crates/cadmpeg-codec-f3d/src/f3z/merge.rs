@@ -228,7 +228,6 @@ impl MergeSession<'_, '_> {
         omit_unbound_member_joints(
             &mut parent_ir.model,
             &unplaced_members,
-            !table.unplaced_references.is_empty(),
             &mut parent_report.losses,
         );
         let (legacy, qualified): (Vec<_>, Vec<_>) =
@@ -531,12 +530,11 @@ impl MergeSession<'_, '_> {
 fn omit_unbound_member_joints(
     model: &mut Model,
     unplaced_members: &std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
-    unplaced_root: bool,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
-    if unplaced_members.is_empty() && !unplaced_root {
+    if unplaced_members.is_empty() {
         return;
     }
     let parents = model
@@ -569,7 +567,6 @@ fn omit_unbound_member_joints(
             if occurrence_path.is_empty() && connector.operand.subelements.is_empty() {
                 return false;
             }
-            if unplaced_root { return true; }
             let mut current = occurrence;
             for _ in 0..=parents.len() {
                 if ancestors.contains(current) { return true; }
@@ -581,7 +578,7 @@ fn omit_unbound_member_joints(
         if unresolved {
             omitted.insert(joint.id.clone());
             losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
-                "joint {} stays native because its operand path has no complete placement binding in an archive with an omitted external placement",
+                "joint {} stays native because its operand path crosses a member with an omitted external placement",
                 joint.id
             )));
         }

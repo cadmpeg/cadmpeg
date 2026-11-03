@@ -1488,7 +1488,7 @@ fn project_qualified_operands(
                     .map(|guid| guid.value.as_str().to_ascii_lowercase())
                     .collect::<Vec<_>>();
                 if let Some((id, consumed)) = paths.resolve(stream, &keys) {
-                    if consumed != keys.len() && paths.requires_external_binding(stream) {
+                    if consumed != keys.len() && paths.refuses_residual_keys(stream, &id) {
                         return None;
                     }
                     return Some(JointOperand::occurrence(
@@ -2132,7 +2132,7 @@ mod tests {
         )
         .unwrap();
         let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path: descendant };
-        let refused_operands = super::project_qualified_operands(
+        let continued = super::project_qualified_operands(
             [&qualifier, &qualifier],
             [false; 2],
             "f3d:Design/BulkStream.dat",
@@ -2140,8 +2140,15 @@ mod tests {
             &[],
             &inserts,
             &partial_bindings,
-        );
-        assert!(refused_operands.is_none());
+        )
+        .unwrap();
+        assert!(continued.iter().all(|operand| {
+            matches!(
+                &operand.container,
+                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                    if occurrence == &ancestor[0].id
+            ) && operand.subelements == ["99999999-9999-4999-8999-999999999999".to_owned()]
+        }));
 
         let mut other_document = restored.xref_references[0].clone();
         other_document.id =
