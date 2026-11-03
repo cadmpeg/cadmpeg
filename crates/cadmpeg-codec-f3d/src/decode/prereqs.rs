@@ -27,6 +27,9 @@ pub(super) struct ProductPrereqs {
     pub(super) design_types: Vec<SegmentType>,
     pub(super) design_parameters: Vec<DesignParameter>,
     pub(super) parameter_state_parts: crate::design::decode::parameter_state::DecodedStateParts,
+    /// Primary-index records whose header fails validation, given up as
+    /// `f3d.bulk_record` parts; the session reports them as losses.
+    pub(super) bulk_record_parts: crate::design::decode::meta::BulkRecordGiveUps,
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
@@ -101,6 +104,7 @@ impl ProductPrereqs {
             design_types,
             design_parameters,
             parameter_state_parts,
+            bulk_record_parts: _,
             design_parameter_unparsed: _,
             design_parameter_owner_unparsed: _,
             design_superseded_scope_envelopes: _,
@@ -243,6 +247,7 @@ pub(super) fn decode(
         unbound: design_unbound_component_naming_spaces,
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+    let bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
             return Err(error)
@@ -255,6 +260,7 @@ pub(super) fn decode(
         design_types,
         design_parameters,
         parameter_state_parts,
+        bulk_record_parts,
         design_parameter_unparsed,
         design_parameter_owner_unparsed,
         design_superseded_scope_envelopes,

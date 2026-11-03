@@ -255,8 +255,8 @@ fn step_cross_closure_carries_other_formats() {
 /// goldens ([`observe_carried`]); the per-crate constructor scan
 /// (`scan_sldprt.json`) and the observation/scan/table composition helper do
 /// not exist yet (only `scan_step.json` is checked in), so scan and table
-/// variants are not attributed. SolidWorks declares no reduced fields yet,
-/// so every path compares exactly until its `REDUCED_FIELDS` rows land.
+/// variants are not attributed. SolidWorks' `REDUCED_FIELDS` rows compare
+/// with their storage applied.
 ///
 /// A debug build runs the §9.4 fixed sample: the first fixture of each format
 /// in path order. `cargo test --release --test contract` runs all.
@@ -282,9 +282,24 @@ fn observe_sldprt() -> ObservedSldprt {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
-    // SolidWorks declares no reduced fields yet (#237); every path compares
-    // exactly until its REDUCED_FIELDS rows land.
-    let reduced = Vec::new();
+    // SolidWorks stores tessellation scalars as f32 and appearance base
+    // colours as 8-bit channels (#237 REDUCED_FIELDS); the comparison applies
+    // that storage before pairing.
+    let reduced = [
+        ("model.tessellations[].vertices[]", ReducedStorage::F32),
+        (
+            "model.tessellations[].vertex_normals[]",
+            ReducedStorage::F32,
+        ),
+        ("model.appearances[].base_color", ReducedStorage::U8Channel),
+    ]
+    .into_iter()
+    .map(|(path, storage)| ReducedProbe {
+        path,
+        storage,
+        normalize: None,
+    })
+    .collect();
     ObservedSldprt {
         carried,
         fixed_paths,

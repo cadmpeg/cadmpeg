@@ -140,7 +140,7 @@ fn assert_native_retention_as(
     extra_code: &str,
     extra: usize,
 ) {
-    use crate::native::{ObjectRecord, PropertyBody, PropertyRecord};
+    use crate::native::{ObjectRecord, PropertyRecord};
     use cadmpeg_ir::features::FeatureOperation;
     let namespace = result
         .ir()
@@ -178,7 +178,7 @@ fn assert_native_retention_as(
     }
     let unreadable = properties
         .iter()
-        .filter(|property| matches!(property.body, Some(PropertyBody::Unreadable(_))))
+        .filter(|property| property.body.is_none())
         .collect::<Vec<_>>();
     let losses = &result.report().losses;
     assert_eq!(
@@ -192,18 +192,40 @@ fn assert_native_retention_as(
     );
     for property in &unreadable {
         assert!(property.values().is_empty());
-        assert!(
-            !crate::test_support::source_fidelity::bytes(result.source_fidelity(), &property.id)
-                .is_empty(),
-            "unreadable source XML remains in fidelity"
-        );
         let owner = format!("{}/{}", property.owner, property.name);
+        let loss = losses
+            .iter()
+            .find(|loss| {
+                loss.code.namespace() == "decode"
+                    && loss.code.local_code() == "record.unreadable"
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.message.contains("part freecad.property_value")
+                    && loss.message.contains(&owner)
+            })
+            .unwrap_or_else(|| panic!("unreadable {owner} needs its own loss: {losses:?}"));
+        let offset = loss
+            .message
+            .split("offset=")
+            .nth(1)
+            .and_then(|rest| rest.split_whitespace().next())
+            .map(|token| token.trim_end_matches(|cell: char| !cell.is_ascii_digit()))
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or_else(|| panic!("unreadable {owner} loss names its part offset"));
+        let length = loss
+            .message
+            .split("length=")
+            .nth(1)
+            .and_then(|rest| rest.split_whitespace().next())
+            .map(|token| token.trim_end_matches(|cell: char| !cell.is_ascii_digit()))
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or_else(|| panic!("unreadable {owner} loss names its part length"));
+        let (id, _) = crate::test_support::source_fidelity::given_up(result.source_fidelity())
+            .into_iter()
+            .find(|(_, record)| record.offset() == offset && record.byte_len() == length)
+            .unwrap_or_else(|| panic!("unreadable {owner} part is retained"));
         assert!(
-            losses.iter().any(|loss| loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "metadata.persistence-payload-unresolved"
-                && loss.severity == cadmpeg_ir::report::Severity::Warning
-                && loss.message.contains(&owner)),
-            "unreadable {owner} needs its own loss: {losses:?}"
+            !crate::test_support::source_fidelity::bytes(result.source_fidelity(), id).is_empty(),
+            "unreadable source XML remains in fidelity"
         );
     }
     assert_eq!(
@@ -264,12 +286,7 @@ fn assert_unreadable_properties(
         .expect("typed properties");
     let actual = properties
         .iter()
-        .filter(|property| {
-            matches!(
-                property.body,
-                Some(crate::native::PropertyBody::Unreadable(_))
-            )
-        })
+        .filter(|property| property.body.is_none())
         .map(|property| (property.owner.clone(), property.name.clone()))
         .collect::<std::collections::BTreeSet<_>>();
     let expected: std::collections::BTreeSet<_> = expected

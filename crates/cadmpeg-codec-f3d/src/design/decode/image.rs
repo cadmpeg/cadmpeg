@@ -117,6 +117,98 @@ pub(super) fn decode_scoped_image_records<'s, T>(
     Ok(images.into_iter().map(|(_, image)| image).collect())
 }
 
+/// Decode image records of scopes in their owning streams, giving up each
+/// record whose parse fails as one part: `locate` names each record,
+/// `extent` bounds its bytes, and `parse` reads its grammar. A record that
+/// parses to nothing is dropped without a part; a parse failure gives up the
+/// record's extent through the part helper and decodes nothing for it.
+pub(super) fn decode_scoped_image_records_with_parts<'s, T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    part_label: &'static str,
+    scan: &ContainerScan<'s>,
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    kind: &crate::records::feature::scope::DesignFeatureKind,
+    locate: impl Fn(
+        &[u8],
+        &str,
+        &crate::records::feature::scope::DesignParameterScope,
+    ) -> Option<String>,
+    extent: impl Fn(
+        &[u8],
+        &str,
+        &crate::records::feature::scope::DesignParameterScope,
+    ) -> Option<(usize, usize)>,
+    parse: impl Fn(
+        &[u8],
+        &str,
+        &crate::records::feature::scope::DesignParameterScope,
+        &ImageRead<'s, '_>,
+    ) -> Result<Option<T>, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
+    let mut images = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = source.window();
+        let stream = crate::ids::native_scope(&entry.name);
+        let read = |range: std::ops::Range<usize>| {
+            source
+                .start()
+                .checked_add(range.start)
+                .zip(source.start().checked_add(range.end))
+                .and_then(|(start, end)| source.child(start, end))
+                .map(View::window)
+        };
+        let stream_name =
+            cadmpeg_ir::StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
+        for scope in scopes.iter().filter(|scope| {
+            scope.kind().as_str() == kind.as_str()
+                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
+        }) {
+            let Some(id) = locate(bytes, &entry.name, scope) else {
+                continue;
+            };
+            if images.iter().any(|(other, _): &(String, T)| *other == id) {
+                continue;
+            }
+            match parse(bytes, &entry.name, scope, &read) {
+                Ok(Some(image)) => images.push((id, image)),
+                Ok(None) => {}
+                Err(error) => {
+                    let Some((start, end)) = extent(bytes, &entry.name, scope) else {
+                        continue;
+                    };
+                    let Some(extent) = source
+                        .start()
+                        .checked_add(start)
+                        .zip(source.start().checked_add(end))
+                        .and_then(|(start, end)| source.child(start, end))
+                    else {
+                        continue;
+                    };
+                    let spec = PartSpec::new(part_label);
+                    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+                        spec
+                    } else {
+                        spec.in_stream(stream_name.clone())
+                    };
+                    ctx.decode_part(output, extent, spec, |_| Err::<(), CodecError>(error))?;
+                }
+            }
+        }
+    }
+    images.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(images.into_iter().map(|(_, image)| image).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write};

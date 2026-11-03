@@ -18,7 +18,8 @@ use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
 use crate::test_support::zip_test::{
-    f3d_with_damaged_protein_asset, f3d_with_smbh, f3d_with_smbh_and_protein,
+    f3d_with_damaged_design_bulkstream, f3d_with_damaged_protein_asset, f3d_with_smbh,
+    f3d_with_smbh_and_protein,
 };
 use crate::F3dCodec;
 
@@ -395,9 +396,7 @@ fn one_damaged_history_record_gives_up_only_its_part() {
         })
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0]
-        .message
-        .contains("f3d.history_record"));
+    assert!(unreadable[0].message.contains("f3d.history_record"));
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -407,9 +406,7 @@ fn one_damaged_history_record_gives_up_only_its_part() {
 
 #[test]
 fn one_damaged_protein_asset_gives_up_only_its_part() {
-    let result = decode(f3d_with_damaged_protein_asset(
-        &synthetic_geometry_smbh(),
-    ));
+    let result = decode(f3d_with_damaged_protein_asset(&synthetic_geometry_smbh()));
     assert!(!result.ir().model.appearances.is_empty());
     let unreadable = result
         .report()
@@ -429,4 +426,66 @@ fn one_damaged_protein_asset_gives_up_only_its_part() {
         .retained_records()
         .keys()
         .any(|id| id.as_str().starts_with("f3d:source:part#")));
+}
+
+#[test]
+fn one_damaged_primary_index_gives_up_only_its_stream() {
+    let full = decode(design_archive());
+    let damaged = decode(f3d_with_damaged_design_bulkstream(
+        &synthetic_geometry_with_history_smbh(),
+    ));
+    let damaged_bodies = &damaged.ir().model.bodies;
+    let full_bodies = &full.ir().model.bodies;
+    assert_eq!(
+        damaged_bodies.len(),
+        full_bodies.len(),
+        "damaged BulkStream keeps the body count"
+    );
+    for (damaged_body, full_body) in damaged_bodies.iter().zip(full_bodies.iter()) {
+        assert_eq!(damaged_body.id, full_body.id);
+        assert_eq!(damaged_body.kind, full_body.kind);
+        assert_eq!(damaged_body.regions, full_body.regions);
+    }
+    assert!(damaged.ir().scope.design);
+    assert!(!f3d_native(damaged.ir()).asm_histories.is_empty());
+    assert!(damaged
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    let unreadable = damaged
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("f3d.bulk_record"));
+    assert!(unreadable[0].message.contains("Design1/BulkStream.dat"));
+    let stub_ids = damaged
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .filter(|id| id.as_str().starts_with("f3d:source:part#"))
+        .collect::<Vec<_>>();
+    assert_eq!(stub_ids.len(), 1);
+    let unknowns = damaged
+        .ir()
+        .native
+        .namespace("f3d")
+        .expect("f3d native namespace")
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        cadmpeg_ir::native::NativeRecord::id(&unknowns[0]),
+        stub_ids[0].as_str()
+    );
+    assert_valid(&damaged);
 }
