@@ -701,6 +701,41 @@ fn read_base_feature_entry_at(
     Some(entry)
 }
 
+/// Repeated-run form selected by the count field of a result-body envelope
+/// whose class pair has no row of its own.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnclassedResultBodyCount {
+    /// `u8 1`, six zero bytes, u32 count: the passive references repeat.
+    Passive,
+    /// `u8 1`, five zero bytes, `u8 1`, u32 count: the body suffixes repeat.
+    BodySuffix,
+}
+
+fn unclassed_result_body_count(
+    bytes: &[u8],
+    count_field: usize,
+    body_count: usize,
+) -> Option<UnclassedResultBodyCount> {
+    if bytes.get(count_field + compact_count::COUNT_MARKER) != Some(&1)
+        || bytes.get(
+            count_field + compact_count::ZERO_RUN_5..count_field + compact_count::REPEAT_MARKER,
+        ) != Some(&[0; 5])
+        || usize::try_from(View::u32_le_at(
+            bytes,
+            count_field + compact_count::BODY_COUNT,
+        )?)
+        .ok()?
+            != body_count
+    {
+        return None;
+    }
+    match bytes.get(count_field + compact_count::REPEAT_MARKER)? {
+        0 => Some(UnclassedResultBodyCount::Passive),
+        1 => Some(UnclassedResultBodyCount::BodySuffix),
+        _ => None,
+    }
+}
+
 /// Distance from the null GUID length field of the typed zero-body form to
 /// the scope kind.
 const TYPED_ZERO_BODY_GUID_COUNT_BEFORE_KIND: usize = 142;
@@ -1200,16 +1235,32 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let body_count = combined_count / 2;
-        let expanded = legacy_290_261
+        let class_expanded = legacy_290_261
             || legacy_360_258
             || matches!(
                 (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
                 ("384", "264") | ("409", "262")
             );
-        let compact = matches!(
+        let class_compact = matches!(
             (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
             ("420", "258") | ("452", "266")
         );
+        let unclassed_count = if class_expanded || class_compact || legacy_444_263 {
+            None
+        } else {
+            unclassed_result_body_count(
+                bytes,
+                start
+                    + result_body::LEN
+                    + body_count
+                        .checked_mul(2)?
+                        .checked_mul(result_body_entry::LEN)?,
+                body_count,
+            )
+        };
+        let expanded = class_expanded || unclassed_count == Some(UnclassedResultBodyCount::Passive);
+        let compact =
+            class_compact || unclassed_count == Some(UnclassedResultBodyCount::BodySuffix);
         let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
         let base_length = if legacy_290_261 {
             Some(261)
@@ -1219,16 +1270,21 @@ pub(super) fn exact_base_feature_construction(
             None
         };
         // The ordinary form is measured to its scope kind, which the fixed
-        // scope tail of either length follows.
-        let sized = match base_length {
-            Some(base_length) => scope.frame_length() == base_length + body_run_length,
-            None => {
-                scope.kind_offset().checked_sub(scope.byte_offset()) == Some(169 + body_run_length)
+        // scope tail of either length follows; the kind position selects the
+        // width of its metadata field.
+        let ordinary_metadata_width = match base_length {
+            Some(base_length) => {
+                if scope.frame_length() != base_length + body_run_length {
+                    return None;
+                }
+                None
             }
+            None => match scope.kind_offset().checked_sub(scope.byte_offset())? {
+                kind if kind == 169 + body_run_length => Some(6),
+                kind if kind == 165 + body_run_length => Some(2),
+                _ => return None,
+            },
         };
-        if !sized {
-            return None;
-        }
         let mut cursor = start + result_body::LEN;
         let mut entities = Vec::new();
         for _ in 0..body_count {
@@ -1317,11 +1373,7 @@ pub(super) fn exact_base_feature_construction(
         }
         let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
         let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-        let metadata_field_width = if expanded || compact || legacy_444_263 {
-            2
-        } else {
-            6
-        };
+        let metadata_field_width = ordinary_metadata_width.unwrap_or(2);
         let metadata_field = bytes
             .get(cursor + 9..cursor + 9 + metadata_field_width)?
             .to_vec();

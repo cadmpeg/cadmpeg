@@ -1009,7 +1009,9 @@ The class-keyed result-body envelopes are:
 | `444` | `263` | `u8 1`, five zero bytes, `u8 0`, u32 `N` | passive-reference records | 2 bytes | `262 + 52N` |
 | `420` | `258` | `u8 1`, five zero bytes, `u8 1`, u32 `N` | body entity suffixes | 2 bytes | `262 + 52N` |
 | `452` | `266` | `u8 1`, five zero bytes, `u8 1`, u32 `N` | body entity suffixes | 2 bytes | `262 + 52N` |
-| other result-body forms | — | `u8 1`, ten zero bytes, u32 `N` | passive-reference records | 6 bytes | kind payload at `169 + 52N` |
+| other class pairs | — | `u8 1`, ten zero bytes, u32 `N` | passive-reference records | 6 or 2 bytes | kind payload at `169 + 52N` or `165 + 52N` |
+
+Under a class pair without its own row, the count field selects the envelope. The count field `u8 1`, six zero bytes, u32 `N` selects the class-360/class-258 envelope, and `u8 1`, five zero bytes, `u8 1`, u32 `N` selects the class-420/class-258 envelope. The count field `u8 1`, ten zero bytes, u32 `N` selects the last row: a 6-byte metadata field places the kind payload at `169 + 52N`, and a 2-byte metadata field places it at `165 + 52N`.
 
 For the class-360/class-258, class-384/class-264, and class-409/class-262 rows, let `C = 24 + 30N`, the offset immediately after the two parallel runs. The discriminant layout is:
 
