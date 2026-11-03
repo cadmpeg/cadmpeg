@@ -2,10 +2,8 @@
 
 use super::deltas_instance::{ParasolidDeltasInstance, ParasolidDeltasSchema};
 use super::deltas_metadata::ParasolidDeltasMetadata;
-use super::{
-    deltas_events_for_stream, ParasolidDeltasEvents, ParasolidDeltasPartitionPrefix,
-    ParasolidDeltasRecord, ParasolidDeltasResidualSpan, ParasolidDeltasTransmitHeader,
-};
+use super::{deltas_events_for_stream, ParasolidDeltasEvents, ParasolidDeltasPartitionPrefix,
+    ParasolidDeltasRecord, ParasolidDeltasTransmitHeader};
 use crate::parasolid::{classify, ParasolidSubtype, StreamBody};
 use crate::records::deltas::{DeltasEnd, DeltasRecords};
 use crate::RETAINED_PARASOLID_STREAM_ID_PREFIX;
@@ -26,7 +24,6 @@ struct Claimed<'a> {
     schemas: Records<'a>,
     instances: Records<'a>,
     records: Records<'a>,
-    residual_spans: Records<'a>,
     metadata: Records<'a>,
 }
 
@@ -59,7 +56,6 @@ pub(in crate::native) fn verify(
     claim!(schemas, ParasolidDeltasSchema);
     claim!(instances, ParasolidDeltasInstance);
     claim!(records, ParasolidDeltasRecord);
-    claim!(residual_spans, ParasolidDeltasResidualSpan);
     claim!(metadata, ParasolidDeltasMetadata);
     if claims.is_empty() {
         return Ok(Vec::new());
@@ -134,7 +130,7 @@ pub(in crate::native) fn verify(
             schemas,
             instances,
             records,
-            residual_spans,
+            residual_spans: gap_spans,
             metadata,
         } = derived;
         let Claimed {
@@ -143,7 +139,6 @@ pub(in crate::native) fn verify(
             schemas: claimed_schemas,
             instances: claimed_instances,
             records: claimed_records,
-            residual_spans: claimed_residual_spans,
             metadata: claimed_metadata,
         } = claimed;
         compare_arena(
@@ -188,19 +183,54 @@ pub(in crate::native) fn verify(
         compare_arena(
             ctx,
             &id,
-            "parasolid_deltas_residual_spans",
-            &claimed_residual_spans,
-            residual_spans
-                .iter()
-                .map(|record| (record.id.as_str(), record)),
-        )?;
-        compare_arena(
-            ctx,
-            &id,
             "parasolid_deltas_metadata",
             &claimed_metadata,
             metadata.iter().map(|record| (record.id.as_str(), record)),
         )?;
+        // Residual gaps stay in retained records marked untyped (§1.3), not
+        // in the native namespace. The pinned gap records authenticate the
+        // verify-time gaps: tampered bytes fail here.
+        let Some(source) = source else {
+            continue;
+        };
+        let mut pinned = std::collections::BTreeMap::new();
+        for (record_id, record) in source.retained_records() {
+            if record_id.as_str().starts_with(&format!("nx:s{ordinal}:deltas-residual#")) {
+                pinned.insert(record_id.as_str(), record);
+            }
+        }
+        if pinned.len() != gap_spans.len() {
+            return Err(NativeConvertError::InvalidCollection(format!(
+                "NX Deltas stream {id} retains {} residual gap(s), but the source parses to {}",
+                pinned.len(),
+                gap_spans.len()
+            )));
+        }
+        for span in &gap_spans {
+            let Some(pinned) = pinned.get(span.id.as_str()) else {
+                return Err(NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap {} is missing from retained source",
+                    span.id
+                )));
+            };
+            if !pinned
+                .untyped()
+                .contains(&cadmpeg_ir::ArenaClass::Model)
+            {
+                return Err(NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap {} is not marked untyped",
+                    span.id
+                )));
+            }
+            let start = span.inflated_offset as usize;
+            let end = start.saturating_add(span.byte_len as usize);
+            if bytes.get(start..end) != pinned.data() {
+                return Err(NativeConvertError::InvalidCollection(format!(
+                    "NX Deltas stream {id} residual gap {} differs from retained source",
+                    span.id
+                )));
+            }
+        }
         if let DeltasEnd::Stopped { offset, reason } = owner.end() {
             push_info(&mut findings, id, format_args!("NX Deltas source agrees with native records; only the bounded prefix was parsed, stopping at inflated offset {offset} ({reason:?}); the residual suffix was compared by range and digest"));
         }

@@ -20,6 +20,14 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        crate::writer::CAPACITY_FIELDS.is_empty(),
+        "STEP declares no capacity rows"
+    );
+    debug_assert!(
+        crate::writer::REDUCED_FIELDS.is_empty(),
+        "STEP stores no reduced fields"
+    );
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());

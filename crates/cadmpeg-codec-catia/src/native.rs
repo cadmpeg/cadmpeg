@@ -1837,7 +1837,7 @@ impl CatiaValueSchemaSelection {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn name(&self) -> Option<&str> {
         match &self.kind {
             CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
