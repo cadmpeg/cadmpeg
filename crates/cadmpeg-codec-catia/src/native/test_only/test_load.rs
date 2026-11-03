@@ -53,6 +53,45 @@ use crate::native::{
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
 
+pub(in crate::native) fn validate_rolling_ball_continuations(
+    records: &[crate::native::rolling_ball_continuation::CatiaRollingBallContinuation],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (i, r) in records.iter().enumerate() {
+        if r.id != format!("catia:consolidated:rolling-ball-continuation#{i}")
+            || !crate::native::rolling_ball_continuation::valid_record(r)
+            || (i > 0
+                && (records[i - 1].source_index, records[i - 1].source_offset)
+                    >= (r.source_index, r.source_offset))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "invalid rolling-ball continuation source identity or fields".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(in crate::native) fn validate_four_reference_edges(
+    records: &[crate::native::four_reference_edge::CatiaConsolidatedFourReferenceEdge],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (ordinal, record) in records.iter().enumerate() {
+        let order_valid = ordinal == 0
+            || (
+                records[ordinal - 1].source_index,
+                records[ordinal - 1].source_offset,
+            ) < (record.source_index, record.source_offset);
+        if record.id != format!("catia:consolidated:four-reference-edge#{ordinal}")
+            || !crate::native::four_reference_edge::valid_payload(record)
+            || !order_valid
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "invalid four-reference edge source identity or payload".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records directly from a synthesized record source.
     #[must_use]
@@ -200,8 +239,13 @@ impl CatiaNative {
         };
         let expected_schema_configuration_row_chains =
             crate::test_support::with_service_context(|ctx| {
-                derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)
-                    .map(|derived| derived.chains)
+                derive_schema_configuration_row_chains(
+                    ctx,
+                    &entity_records,
+                    &entity_references,
+                    records.iter(),
+                )
+                .map(|derived| derived.chains)
             })
             .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if schema_configuration_row_chains != expected_schema_configuration_row_chains {
@@ -526,6 +570,12 @@ impl CatiaNative {
             namespace.arena_as("consolidated_circles")?;
         consolidated_circles.sort_by_key(|circle| circle.byte_offset);
         validate_consolidated_circles(&consolidated_circles)?;
+        let mut consolidated_four_reference_edges: Vec<
+            crate::native::four_reference_edge::CatiaConsolidatedFourReferenceEdge,
+        > = namespace.arena_as("consolidated_four_reference_edges")?;
+        consolidated_four_reference_edges
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        validate_four_reference_edges(&consolidated_four_reference_edges)?;
         let mut consolidated_class61_records: Vec<CatiaConsolidatedClass61Record> =
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records
@@ -585,6 +635,12 @@ impl CatiaNative {
             namespace.arena_as("consolidated_revolutions")?;
         consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
         validate_consolidated_revolutions(&consolidated_revolutions, &consolidated_circles)?;
+        let mut consolidated_rolling_ball_continuations: Vec<
+            crate::native::rolling_ball_continuation::CatiaRollingBallContinuation,
+        > = namespace.arena_as("consolidated_rolling_ball_continuations")?;
+        consolidated_rolling_ball_continuations
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        validate_rolling_ball_continuations(&consolidated_rolling_ball_continuations)?;
         let mut consolidated_spheres: Vec<CatiaConsolidatedSphere> =
             namespace.arena_as("consolidated_spheres")?;
         consolidated_spheres.sort_by_key(|sphere| sphere.byte_offset);
@@ -669,6 +725,8 @@ impl CatiaNative {
         validate_alias_surface_tags(&alias_rows)?;
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         let e5_curve_supports = namespace.arena_as("e5_curve_supports")?;
+        let e5_edges = namespace.arena_as("e5_edges")?;
+        let e5_nurbs_limit_programs = namespace.arena_as("e5_nurbs_limit_programs")?;
         let mut consolidated_domain_relations: Vec<
             crate::native::domain_relation::CatiaConsolidatedDomainRelation,
         > = namespace.arena_as("consolidated_domain_relations")?;
@@ -706,6 +764,7 @@ impl CatiaNative {
             consolidated_cones,
             consolidated_cylinders,
             consolidated_domain_relations,
+            consolidated_four_reference_edges,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_class60_records,
@@ -716,11 +775,14 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_reference_lists,
             consolidated_revolutions,
+            consolidated_rolling_ball_continuations,
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
             e5_curve_supports,
+            e5_edges,
+            e5_nurbs_limit_programs,
             entity_records,
             external_references,
             finjpl_segments,

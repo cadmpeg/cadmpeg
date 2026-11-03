@@ -659,3 +659,5 @@ fn detect_high_on_magic() {
         Confidence::No
     );
 }
+
+mod sweep_history;

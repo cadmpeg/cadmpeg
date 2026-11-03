@@ -1475,11 +1475,12 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
     );
     stream.splice(vertex_start..vertex_start, unresolved_face);
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::from([100, 501]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1500,11 +1501,12 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
     stream[7..11].copy_from_slice(&100u32.to_le_bytes());
     append_b5_record(&mut stream, 0x2e, 501, &[0x18, 100, 0]);
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::from([100, 501]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1530,11 +1532,12 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
     first.extend(second);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[first],
             &HashSet::from([100]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1549,11 +1552,12 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
     stream.extend(stream.clone());
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::from([100]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1567,11 +1571,12 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
 #[test]
 fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[a8_freeform_curve_stream()],
             &HashSet::from([0x1234_5678]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1599,11 +1604,12 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
     second[face + 4..face + 8].copy_from_slice(&501u32.to_le_bytes());
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[first, second],
             &HashSet::new(),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1622,11 +1628,12 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
     stream[face + 10..face + 12].copy_from_slice(&999u16.to_le_bytes());
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::new(),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1642,11 +1649,12 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
 fn standard_object_evidence_rejects_repeated_topology_namespaces() {
     let stream = b5_closed_triangle_stream();
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream.clone(), stream],
             &HashSet::new(),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1667,11 +1675,12 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
     stream.insert(loop_start, 0xff);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::new(),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1699,11 +1708,12 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
     stream.splice(vertex_start..vertex_start, records);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::standard_object_evidence_from_streams(
+        crate::families::standard::decode::standard_object_evidence_with_selected_faces(
             ctx,
             &[stream],
             &HashSet::from([501]),
             &HashSet::new(),
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })

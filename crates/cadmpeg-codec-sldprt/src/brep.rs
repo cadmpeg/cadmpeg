@@ -250,31 +250,50 @@ impl SurfaceCarrier {
     }
 }
 
-fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
-    let mut candidates = Vec::new();
+/// The attr and marker offset of each bare reading at `off`, whose `attr
+/// ordinal refs[5]` head stores the attr and each reference as a native pointer.
+fn bare_carrier_markers(body: &[u8], off: usize, tag: u8) -> Vec<(u32, usize)> {
+    record_starts(body, off, tag)
+        .filter_map(|hdr| {
+            let mut at = hdr;
+            let attr = cadmpeg_parasolid::pointer::read_at(body, &mut at)?;
+            (attr > 1).then_some(())?;
+            View::u32_be_at(body, at)?;
+            at = at.checked_add(4)?;
+            native_refs::<COMPACT_REF_COUNT>(body, &mut at)?;
+            matches!(body.get(at), Some(0x2b | 0x2d)).then_some((attr, at))
+        })
+        .collect()
+}
 
-    let partition_marker = hdr.checked_add(analytic::MARKER)?;
-    if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
-        candidates.push(partition_marker);
-    }
+/// The attr and marker offset of each deltas reading at `off`.
+///
+/// Deltas records encode each of the five references as `[hi][lo][01]`. The
+/// marker follows that fixed-width roster, so its position is not a search
+/// result. The terminators distinguish this framing from arbitrary marker-like
+/// bytes in the reference and ordinal fields.
+fn tripled_carrier_markers(body: &[u8], off: usize, tag: u8) -> Vec<(u32, usize)> {
+    record_starts(body, off, tag)
+        .filter_map(|hdr| {
+            let attr = word_at(body, hdr).filter(|attr| *attr > 1 && *attr <= 0x7fff)?;
+            Some((attr, tripled_carrier_marker(body, hdr)?))
+        })
+        .collect()
+}
 
-    // Deltas records encode each of the five references as [hi][lo][01].
-    // The marker follows that fixed-width roster, so its position is not a
-    // search result. The terminators distinguish this framing from arbitrary
-    // marker-like bytes in the reference and ordinal fields.
+/// The marker offset of the deltas reading whose header starts at `hdr`.
+fn tripled_carrier_marker(body: &[u8], hdr: usize) -> Option<usize> {
     let refs_at = hdr.checked_add(analytic::REFS)?;
-    let tripled_marker = hdr.checked_add(DELTAS_MARKER_OFFSET)?;
-    let tripled_refs = (0..COMPACT_REF_COUNT).all(|index| {
-        refs_at
-            .checked_add(index * DELTAS_REF_STRIDE + DELTAS_REF_STRIDE - 1)
-            .and_then(|at| body.get(at))
-            == Some(&1)
-    });
-    if tripled_refs && matches!(body.get(tripled_marker), Some(0x2b | 0x2d)) {
-        candidates.push(tripled_marker);
-    }
-
-    Some(candidates)
+    (0..COMPACT_REF_COUNT)
+        .all(|index| {
+            refs_at
+                .checked_add(index * DELTAS_REF_STRIDE + DELTAS_REF_STRIDE - 1)
+                .and_then(|at| body.get(at))
+                == Some(&1)
+        })
+        .then_some(())?;
+    let marker = hdr.checked_add(DELTAS_MARKER_OFFSET)?;
+    matches!(body.get(marker), Some(0x2b | 0x2d)).then_some(marker)
 }
 
 fn parse_carrier_at_marker(
@@ -320,29 +339,13 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tt = *body.get(off.checked_add(1)?)?;
     let n = analytic_value_count(tt)?;
 
-    let mut candidates = Vec::new();
-    for hdr in record_starts(body, off, tt) {
-        let parsed = (|| {
-            let mut at = hdr;
-            let attr = cadmpeg_parasolid::pointer::read_at(body, &mut at)?;
-            (attr > 1).then_some(())?;
-            View::u32_be_at(body, at)?;
-            at += 4;
-            native_refs::<5>(body, &mut at)?;
-            parse_carrier_at_marker(body, off, tt, attr, n, at)
-        })();
-        candidates.extend(parsed);
-        if let Some(attr) = word_at(body, hdr).filter(|attr| *attr > 1 && *attr <= 0x7fff) {
-            for marker in analytic_marker_candidates(body, hdr)? {
-                if marker != hdr + analytic::MARKER {
-                    candidates.extend(parse_carrier_at_marker(body, off, tt, attr, n, marker));
-                }
-            }
-        }
-    }
-    let mut iter = candidates.into_iter();
-    let first = iter.next()?;
-    iter.next().is_none().then_some(first)
+    let mut candidates = bare_carrier_markers(body, off, tt);
+    candidates.extend(tripled_carrier_markers(body, off, tt));
+    let mut carriers = candidates
+        .into_iter()
+        .filter_map(|(attr, marker)| parse_carrier_at_marker(body, off, tt, attr, n, marker));
+    let carrier = carriers.next()?;
+    carriers.next().is_none().then_some(carrier)
 }
 
 /// Every compact analytic carrier the body admits, as body-relative spans.
@@ -376,6 +379,26 @@ pub(crate) fn analytic_spans(body: &[u8]) -> Vec<read_ledger::RawSpan> {
         i += 1;
     }
     spans
+}
+
+pub(super) fn parse_carrier_for_role(body: &[u8], off: usize, deltas: bool) -> Option<Carrier> {
+    let carrier = parse_carrier(body, off)?;
+    let tag = *body.get(off.checked_add(1)?)?;
+    let n = analytic_value_count(tag)?;
+    let end = match &carrier {
+        Carrier::Curve(curve) => curve.end,
+        Carrier::Surface(surface) => surface.end,
+    };
+    let marker = end.checked_sub(n.checked_mul(8)?.checked_add(1)?)?;
+    let expected = if deltas {
+        tripled_carrier_markers(body, off, tag)
+    } else {
+        bare_carrier_markers(body, off, tag)
+    };
+    expected
+        .iter()
+        .any(|(_, at)| *at == marker)
+        .then_some(carrier)
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
@@ -539,11 +562,12 @@ pub(crate) fn patch_nurbs_by_attr(
 #[cfg(test)]
 mod tests {
     use super::index::scan_carriers;
-    use super::{parse_carrier, tag, Carrier};
+    use super::{parse_carrier, parse_carrier_for_role, tag, Carrier};
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
+    use cadmpeg_parasolid::pointer::write;
 
     fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut bytes = vec![0, tag];
@@ -641,6 +665,24 @@ mod tests {
             };
             assert_eq!(frame, Some((reference, expected_v)));
         }
+    }
+
+    #[test]
+    fn two_word_cells_move_the_compact_carrier_marker() {
+        let mut bytes = vec![0, tag::PLANE];
+        // attr, the two words of a zero ordinal, then five references.
+        for code in [36_225, 0, 0, 40_000, 1, 1, 33_000, 1] {
+            write(&mut bytes, code).expect("code in the two-word range");
+        }
+        bytes.push(0x2b);
+        for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        let Some(Carrier::Surface(carrier)) = parse_carrier_for_role(&bytes, 0, false) else {
+            panic!("expected surface carrier");
+        };
+        assert_eq!(carrier.attr, 36_225);
+        assert_eq!(carrier.end, bytes.len());
     }
 
     #[test]
@@ -1001,5 +1043,38 @@ mod tests {
         );
 
         assert!(parse_carrier(&bytes, 0).is_none());
+    }
+    #[test]
+    fn analytic_carrier_role_refuses_the_other_frame_without_changing_values() {
+        let values = [0.017, -0.029, 0.043, 0.0, 1.0, 0.0];
+        let partition = compact_carrier(tag::LINE, 79, &values);
+        assert!(super::parse_carrier_for_role(&partition, 0, false).is_some());
+        assert!(super::parse_carrier_for_role(&partition, 0, true).is_none());
+        for escape in [false, true] {
+            let delta = tripled_compact_carrier(tag::LINE, 79, [1, 17, 73, 1, 1], &values, escape);
+            let Some(Carrier::Curve(old)) = parse_carrier(&delta, 0) else {
+                panic!("authored delta")
+            };
+            let Some(Carrier::Curve(accepted)) = super::parse_carrier_for_role(&delta, 0, true)
+            else {
+                panic!("declared delta role")
+            };
+            assert_eq!(old.attr, accepted.attr);
+            assert_eq!(old.offset, accepted.offset);
+            assert_eq!(old.end, accepted.end);
+            assert_eq!(
+                serde_json::to_value(old.geometry).unwrap(),
+                serde_json::to_value(accepted.geometry).unwrap()
+            );
+            assert!(super::parse_carrier_for_role(&delta, 0, false).is_none());
+            let mut malformed = delta.clone();
+            malformed[2 + usize::from(escape) + 8] = 0x66;
+            assert!(super::parse_carrier_for_role(&malformed, 0, true).is_none());
+        }
+        let invalid = compact_carrier(tag::LINE, 79, &[0.017, -0.029, 0.043, 2.0, 0.0, 0.0]);
+        assert!(parse_carrier(&invalid, 0).is_none());
+        for role in [false, true] {
+            assert!(super::parse_carrier_for_role(&invalid, 0, role).is_none());
+        }
     }
 }

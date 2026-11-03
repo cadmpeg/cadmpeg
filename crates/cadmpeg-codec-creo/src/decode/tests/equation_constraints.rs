@@ -346,7 +346,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             declared_count: 2,
             entity_ref: None,
             rows: vec![
-                variable(3, 42, ScalarLane::DimensionDriven),
+                variable(3, 42, ScalarLane::Undefined),
                 variable(0, 0, ScalarLane::Value(5.0)),
             ],
             offset: 0,
@@ -1739,8 +1739,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
 
     let mut missing = definition([10.0, 0.0], 10.0);
     let distance = &mut missing.variables.as_mut().expect("variables").rows[6];
-    distance.value = ScalarLane::DimensionDriven;
-    distance.guess = ScalarLane::DimensionDriven;
+    distance.value = ScalarLane::Undefined;
+    distance.guess = ScalarLane::Undefined;
     assert_eq!(
         crate::decode::with_service_context(|ctx| section_equation_axis_distance_constraints(
             ctx, &missing, &sketch

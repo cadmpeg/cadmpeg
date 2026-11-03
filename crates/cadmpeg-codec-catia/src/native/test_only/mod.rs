@@ -4,5 +4,5 @@
 mod test_consolidated;
 mod test_legacy;
 mod test_links;
-mod test_load;
+pub(super) mod test_load;
 mod test_zero_entity;

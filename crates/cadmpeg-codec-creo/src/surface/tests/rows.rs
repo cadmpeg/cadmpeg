@@ -16,6 +16,7 @@ use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
+use crate::surface::paired_short_second_coordinate;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
@@ -1008,6 +1009,60 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
         })
         .expect("compound-close scan is admitted"),
         Some(body.len() - 1)
+    );
+}
+
+#[test]
+fn short_second_coordinate_takes_ieee_byte_one_from_its_unique_frame_partner() {
+    const PARTNER_BYTE_1: u8 = 0xb9;
+    const SHARED_TAIL: [u8; 6] = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+    const SHORT_OPENER_OFFSET: usize = 8;
+    let frame_body = [
+        &[0x00, 0x0c, 0x9a][..],
+        &[0xd2, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb],
+        &[0x2d, 0x1c, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60],
+        &[0xbc, 0x13, 0x57, 0x9b, 0xdf, 0x24, 0x68],
+        &[0xd0, 0x31, 0x75, 0xb9, 0xfd, 0x42, 0x86],
+        &[0x2d, 0x1d, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20],
+        &[0x41, PARTNER_BYTE_1],
+        &SHARED_TAIL,
+    ]
+    .concat();
+    let (frame, _) = decode_tabulated_cylinder_frame(&frame_body, &scalar::ScalarCache::default())
+        .expect("complete tabulated-cylinder frame");
+    let point = [
+        &[0x2d, 0x3a, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x4d][..],
+        &SHARED_TAIL,
+    ]
+    .concat();
+    let mut paired_bytes = [0x3f, PARTNER_BYTE_1, 0, 0, 0, 0, 0, 0];
+    paired_bytes[2..].copy_from_slice(&SHARED_TAIL);
+    let paired = f64::from_be_bytes(paired_bytes);
+
+    assert_eq!(
+        paired_short_second_coordinate(&point, SHORT_OPENER_OFFSET, &frame),
+        Some((paired, point.len()))
+    );
+    let mut other_tail = point.clone();
+    *other_tail.last_mut().expect("tail byte") ^= 1;
+    assert_eq!(
+        paired_short_second_coordinate(&other_tail, SHORT_OPENER_OFFSET, &frame),
+        None
+    );
+    let mut unpaired_opener = point.clone();
+    unpaired_opener[SHORT_OPENER_OFFSET] = 0x4c;
+    assert_eq!(
+        paired_short_second_coordinate(&unpaired_opener, SHORT_OPENER_OFFSET, &frame),
+        None
+    );
+    let mut values = frame.values().get();
+    values[2] = paired;
+    let mut prefixes = frame.prefixes();
+    prefixes[2] = 0x41;
+    let repeated = TabulatedCylinderFrame::new(values, prefixes).expect("finite frame");
+    assert_eq!(
+        paired_short_second_coordinate(&point, SHORT_OPENER_OFFSET, &repeated),
+        None
     );
 }
 

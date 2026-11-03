@@ -1300,3 +1300,110 @@ fn dimension_without_a_nominal_key_is_skipped() {
         .iter()
         .any(|annotation| annotation.id == pmi_id("A60").unwrap()));
 }
+
+fn bestfit_distance_root() -> Entity {
+    let mut root = semantic_root();
+    for (id, height) in [("BF1", 2.0), ("BF2", 15.0)] {
+        let mut plane = plane_at([6.0, -4.0, height], [0.0, 0.0, 1.0]);
+        plane.class = entity("GdtBestfitPlane").class;
+        let mut origin = entity("GeoPoint");
+        for coordinate in ["X", "Y", "Z"] {
+            origin.doubles.insert(coordinate.into(), 0.0);
+        }
+        plane.related.push(RelatedObject {
+            name: "NomOrigin".into(),
+            class: origin.class.clone(),
+            entity: origin,
+        });
+        root.features
+            .references
+            .push(reference(id, "GdtBestfitPlane"));
+        root.features.entities.push(plane);
+    }
+    root.annotations
+        .references
+        .push(reference("AD", "GdtDistanceBetween"));
+    root.annotations.entities.push(distance_annotation(
+        reference("BF1", "GdtBestfitPlane"),
+        reference("BF2", "GdtBestfitPlane"),
+        [0.0, 0.0, -1.0],
+    ));
+    root
+}
+
+#[test]
+fn directional_bestfit_distance_uses_solved_plane_not_feature_origin() {
+    let root = bestfit_distance_root();
+    let mut annotations = project(&root);
+    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    assert_eq!(dimension_nominal(&annotations, "AD"), length(13.0));
+}
+
+#[test]
+fn directional_bestfit_distance_refuses_invalid_or_duplicate_solved_planes() {
+    for mode in 0..3 {
+        let mut root = bestfit_distance_root();
+        let index = root
+            .features
+            .references
+            .iter()
+            .position(|r| r.id == "BF2")
+            .unwrap();
+        let feature = root.features.entities.get_mut(index).expect("feature");
+        let plane_index = feature
+            .related
+            .iter()
+            .position(|r| r.name == "NomPlane")
+            .unwrap();
+        match mode {
+            0 => {
+                feature
+                    .related
+                    .get_mut(plane_index)
+                    .expect("plane")
+                    .entity
+                    .doubles
+                    .insert("K".into(), 2.0);
+            }
+            1 => {
+                let plane = feature.related.get_mut(plane_index).expect("plane");
+                plane.entity.doubles.insert("K".into(), 0.0);
+                plane.entity.doubles.insert("I".into(), 1.0);
+            }
+            _ => {
+                let plane = feature.related.get(plane_index).expect("plane").clone();
+                feature.related.push(plane);
+            }
+        }
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations, None);
+        assert_eq!(dimension_nominal(&annotations, "AD"), None);
+    }
+}
+
+#[test]
+fn directional_distance_refuses_every_nonidentity_transform() {
+    for (field, value) in [("X", 1e-12), ("R1C2", 1e-12), ("R1C1", 1.0 + 1e-12)] {
+        let mut root = bestfit_distance_root();
+        let index = root
+            .annotations
+            .references
+            .iter()
+            .position(|r| r.id == "AD")
+            .unwrap();
+        root.annotations
+            .entities
+            .get_mut(index)
+            .expect("annotation")
+            .related
+            .iter_mut()
+            .find(|r| r.name == "NominalTransform")
+            .unwrap()
+            .entity
+            .doubles
+            .insert(field.into(), value);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations, None);
+        assert_eq!(dimension_nominal(&annotations, "AD"), None);
+    }
+}

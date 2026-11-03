@@ -2604,12 +2604,12 @@ mod tests {
                 variable_type: crate::feature::definitions::VariableType::from(variable_type),
                 key,
                 value: value.map_or(
-                    crate::feature::definitions::ScalarLane::DimensionDriven,
+                    crate::feature::definitions::ScalarLane::Undefined,
                     crate::feature::definitions::ScalarLane::Value,
                 ),
                 value_body: Vec::new(),
                 guess: value.map_or(
-                    crate::feature::definitions::ScalarLane::DimensionDriven,
+                    crate::feature::definitions::ScalarLane::Undefined,
                     crate::feature::definitions::ScalarLane::Value,
                 ),
                 guess_body: Vec::new(),
@@ -2679,12 +2679,12 @@ mod tests {
                 variable_type: crate::feature::definitions::VariableType::from(variable_type),
                 key,
                 value: value.map_or(
-                    crate::feature::definitions::ScalarLane::DimensionDriven,
+                    crate::feature::definitions::ScalarLane::Undefined,
                     crate::feature::definitions::ScalarLane::Value,
                 ),
                 value_body: Vec::new(),
                 guess: value.map_or(
-                    crate::feature::definitions::ScalarLane::DimensionDriven,
+                    crate::feature::definitions::ScalarLane::Undefined,
                     crate::feature::definitions::ScalarLane::Value,
                 ),
                 guess_body: Vec::new(),

@@ -217,14 +217,6 @@ pub(crate) const DECODED_FEATURE_CIRCLE_SEGMENT_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_circle_segment_count");
 pub(crate) const DECODED_FEATURE_DIMENSION_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_dimension_count");
-pub(crate) const DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_feature_dimension_driven_coordinate_variable_count");
-pub(crate) const DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT: CoverageKey =
-    CoverageKey::new("decoded_feature_dimension_driven_guess_count");
-pub(crate) const DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_feature_dimension_driven_other_variable_count");
-pub(crate) const DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_feature_dimension_driven_variable_count");
 pub(crate) const DECODED_FEATURE_LINE_SEGMENT_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_line_segment_count");
 pub(crate) const DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT: CoverageKey =
@@ -269,18 +261,14 @@ pub(crate) const MISSING_FEATURE_SEGMENT_ROW_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_segment_row_count");
 pub(crate) const MISSING_FEATURE_SKAMP_ROW_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_skamp_row_count");
+pub(crate) const OPAQUE_SECTION_VARIABLE_LANE_COUNT: CoverageKey =
+    CoverageKey::new("opaque_section_variable_lane_count");
 pub(crate) const MISSING_FEATURE_SOLVER_VARIABLE_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_solver_variable_count");
 pub(crate) const PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT: CoverageKey =
     CoverageKey::new("prohibited_active_curve_expression_kind_count");
 pub(crate) const PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT: CoverageKey =
     CoverageKey::new("prohibited_active_curve_expression_record_count");
-pub(crate) const RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("resolved_feature_dimension_driven_coordinate_variable_count");
-pub(crate) const RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("resolved_feature_dimension_driven_other_variable_count");
-pub(crate) const RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("resolved_feature_dimension_driven_variable_count");
 pub(crate) const RESOLVED_FEATURE_DIMENSION_VALUE_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_dimension_value_count");
 pub(crate) const RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
@@ -436,14 +424,6 @@ pub(crate) const TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_plane_surface_row_count");
 pub(crate) const UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT: CoverageKey =
     CoverageKey::new("unresolved_active_curve_expression_solve_control_count");
-pub(crate) const UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("unresolved_feature_dimension_driven_coordinate_variable_count");
-pub(crate) const UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT: CoverageKey =
-    CoverageKey::new("unresolved_feature_dimension_driven_guess_count");
-pub(crate) const UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("unresolved_feature_dimension_driven_other_variable_count");
-pub(crate) const UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT: CoverageKey =
-    CoverageKey::new("unresolved_feature_dimension_driven_variable_count");
 pub(crate) const UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_dimension_value_count");
 pub(crate) const UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
@@ -867,8 +847,6 @@ pub(crate) const TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT: CoverageKey =
     CoverageKey::new("transferred_positional_spline_replay_count");
 pub(crate) const TRANSFERRED_ROUND_EDGE_CARRIER_COUNT: CoverageKey =
     CoverageKey::new("transferred_round_edge_carrier_count");
-pub(crate) const TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT: CoverageKey =
-    CoverageKey::new("transferred_rowless_round_cylinder_count");
 pub(crate) const TRANSFERRED_SAVED_SPLINE_CURVE_COUNT: CoverageKey =
     CoverageKey::new("transferred_saved_spline_curve_count");
 pub(crate) const TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT: CoverageKey =
@@ -1423,7 +1401,6 @@ const ALL: &[CoverageKey] = &[
     TRANSFERRED_POSITIONAL_LINE_EXTRUSION_PLANE_COUNT,
     TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT,
     TRANSFERRED_ROUND_EDGE_CARRIER_COUNT,
-    TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT,
     TRANSFERRED_SAVED_SPLINE_CURVE_COUNT,
     TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT,
     TRANSFERRED_SPLIT_OUTLINE_CYLINDER_COUNT,
@@ -1461,10 +1438,6 @@ const ALL: &[CoverageKey] = &[
     DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT,
     DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
     DECODED_FEATURE_DIMENSION_COUNT,
-    DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-    DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-    DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-    DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
     DECODED_FEATURE_LINE_SEGMENT_COUNT,
     DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT,
     DECODED_FEATURE_POINT_SEGMENT_COUNT,
@@ -1488,11 +1461,9 @@ const ALL: &[CoverageKey] = &[
     MISSING_FEATURE_SEGMENT_ROW_COUNT,
     MISSING_FEATURE_SKAMP_ROW_COUNT,
     MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
+    OPAQUE_SECTION_VARIABLE_LANE_COUNT,
     PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
     PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
-    RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-    RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-    RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
     RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
     RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT,
     RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
@@ -1568,10 +1539,6 @@ const ALL: &[CoverageKey] = &[
     TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT,
     TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT,
     UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
-    UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-    UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-    UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-    UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
     UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
     UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT,
     UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,

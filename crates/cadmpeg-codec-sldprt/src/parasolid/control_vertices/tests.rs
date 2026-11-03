@@ -224,15 +224,16 @@ fn append_before_base_end_and_insert_after_base_end_abstain() {
 }
 
 #[test]
-fn wide_pointer_encoding_requires_a_negative_remainder_and_nonzero_quotient() {
+fn wide_pointer_encoding_requires_a_negative_remainder_and_positive_quotient() {
     for (bytes, expected) in [
         (&[0, 1][..], Some(1)),
         (&[0, 0][..], None),
         (&[255, 255, 0, 1][..], Some(32768)),
         (&[128, 1, 0, 1][..], Some(65534)),
-        (&[128, 0, 0, 1][..], Some(65535)),
+        (&[128, 1, 127, 255][..], Some(32768 * 32767)),
+        (&[128, 0, 0, 1][..], None),
         (&[255, 255, 0, 0][..], None),
-        (&[255, 255, 128, 0][..], Some(32768 * 32767 + 1)),
+        (&[255, 255, 128, 0][..], None),
     ] {
         let mut cursor = super::Cursor { bytes, at: 0 };
         assert_eq!(cursor.reference(), expected);

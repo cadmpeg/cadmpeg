@@ -67,6 +67,7 @@ fn named_block(section: &str, payload: Vec<u8>) -> Block {
         payload,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
+        ps_auxiliary_refusal: None,
     }
 }
 

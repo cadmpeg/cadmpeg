@@ -67,7 +67,14 @@ for provenance and passthrough.
 Typed transfer covers analytic carriers, NURBS, selected trimmed curves, and
 connected topology when fixed-record references resolve. Geometry that cannot
 be attached remains available through derived free topology. Partitions retain
-their own input. Every paired or unpaired Deltas stream contributes no semantic
+their own input. For primary schemas 11004 and 13006, EDGE records use the
+effective-field cursor. Only complete records with the expected field contract
+and a unique source identity enter the topology graph. The cursor does not
+resume after an unsupported field or the terminator. Other fixed families and
+unsupported primary headers retain their legacy discovery paths; their source
+ownership remains unverified by this EDGE rule.
+
+Every paired or unpaired Deltas stream contributes no semantic
 bytes while aggregate selection remains unresolved. A sequential source owner
 retains supported physical events, shared schema metadata, generic field values,
 and the exact suffix at its first unsupported boundary. `RMFastLoad` intersects

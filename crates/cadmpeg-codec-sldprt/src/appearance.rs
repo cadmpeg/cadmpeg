@@ -67,7 +67,6 @@ pub(crate) struct UnresolvedAppearanceBinding {
 
 pub(crate) struct ResolvedDisplayDefinition {
     pub(crate) definition: AppearanceDefinition,
-    pub(crate) rank: u8,
 }
 
 pub(crate) struct ResolvedDisplayAppearances {
@@ -332,7 +331,6 @@ pub(crate) fn resolve_display_appearances(
                     *face_index,
                     ResolvedDisplayDefinition {
                         definition: assignment.definition.clone(),
-                        rank: 2,
                     },
                 );
             }
@@ -407,7 +405,6 @@ pub(crate) fn resolve_display_appearances(
                 face_index,
                 ResolvedDisplayDefinition {
                     definition: definition.clone(),
-                    rank: 3,
                 },
             );
         }
@@ -418,7 +415,6 @@ pub(crate) fn resolve_display_appearances(
                 face_index,
                 ResolvedDisplayDefinition {
                     definition: assignment.definition,
-                    rank: 4,
                 },
             );
         }

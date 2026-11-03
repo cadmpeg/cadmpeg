@@ -58,13 +58,6 @@ impl<'a> Field<'a> {
         Self { name, kind }
     }
 }
-/// The nonzero XT pointer at `at` and its width in bytes (`parasolid.md` §1).
-pub(crate) fn xt_pointer(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
-    let mut end = at;
-    let value = cadmpeg_parasolid::pointer::read_at(bytes, &mut end)?;
-    (value != 0).then_some((value, end.checked_sub(at)?))
-}
-
 struct Cursor<'a> {
     bytes: &'a [u8],
     at: usize,
@@ -91,9 +84,7 @@ impl<'a> Cursor<'a> {
         n.is_finite().then_some(n)
     }
     fn reference(&mut self) -> Option<u32> {
-        let (reference, width) = xt_pointer(self.bytes, self.at)?;
-        self.at = self.at.checked_add(width)?;
-        Some(reference)
+        cadmpeg_parasolid::pointer::read_at(self.bytes, &mut self.at).filter(|value| *value != 0)
     }
     fn string(&mut self) -> Option<&'a str> {
         let count = usize::from(self.byte()?);

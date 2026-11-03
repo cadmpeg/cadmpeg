@@ -6,6 +6,8 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod configuration_manager;
+mod default_properties;
 mod edge_direction;
 mod envelope;
 mod ownership;
@@ -115,7 +117,30 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
+    if source_scan.as_ref().is_some_and(|scan| {
+        scan.sections()
+            .any(|section| section.ps_auxiliary_refusal().is_some())
+    }) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
+        ));
+    }
     let mut source_baseline = None;
+    if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
+        let scan = source_scan.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(
+                "SLDPRT saved properties require their retained source carrier".into(),
+            )
+        })?;
+        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "SLDPRT saved properties require their retained source document".into(),
+                )
+            })?;
+        default_properties::validate(&normalized, &baseline.ir, scan)?;
+        default_properties::validate_retention(scan, retained_records, annotations)?;
+    }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =
@@ -248,6 +273,7 @@ pub(crate) fn write_semantic_with_records(
         }
         true
     };
+    configuration_manager::validate(ir, annotations, &retained_swobjects)?;
     let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
     if replay_swobjects {
         generated_partition_sections
@@ -393,6 +419,9 @@ pub(crate) fn write_semantic_with_records(
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
+    if let Some(scan) = source_scan.as_ref() {
+        default_properties::validate_emitted(scan, &sections)?;
+    }
     let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
@@ -873,8 +902,10 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            let bodies = configuration.bodies.as_deref()?;
-            (!bodies.is_empty()).then_some((configuration, bodies))
+            configuration
+                .bodies
+                .as_deref()
+                .map(|bodies| (configuration, bodies))
         })
         .map(|(configuration, bodies)| {
             let index = configuration.source_index.ok_or_else(|| {
@@ -883,6 +914,15 @@ fn configuration_partitions(
                     configuration.id.as_str()
                 ))
             })?;
+            if bodies.is_empty() {
+                let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
+                payload.extend(parasolid_stream_named(
+                    &[],
+                    "SCH_SW_33103_11000",
+                    "deltas body",
+                )?);
+                return Ok((format!("Contents/Config-{index}-Partition"), payload));
+            }
             let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
                 .model
@@ -1318,6 +1358,13 @@ fn patch_retained_swobjects_metadata(
             }
             Ok(())
         };
+        if attribute.name == "configuration_manager"
+            && attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+            && crate::metadata::configuration_manager::values(payload, offset)
+                .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
+        {
+            continue;
+        }
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let [AttributeValue::Vector(current)] = attribute.values.as_slice() else {
@@ -1400,20 +1447,32 @@ fn patch_retained_swobjects_metadata(
                     &bytes,
                 )?;
             }
-            Some(MetadataRecord::PartRecord { id, version }) => {
-                let start = offset + PART_RECORD_TOKEN.len();
-                overwrite_bytes(payload, start, &id.to_le_bytes())?;
-                overwrite_bytes(payload, start + 8, &version.to_le_bytes())?;
-            }
-            Some(MetadataRecord::ConfigurationManager {
-                minor,
-                states,
-                filetime,
+            Some(MetadataRecord::PartRecord {
+                first_word,
+                trailing_word,
             }) => {
-                let start = offset + CONFIGURATION_MANAGER_TOKEN.len();
-                overwrite_bytes(payload, start + 66, &minor.to_le_bytes())?;
-                overwrite_bytes(payload, start + 107, &[states])?;
-                overwrite_bytes(payload, start + 117, &filetime.to_le_bytes())?;
+                let crate::metadata::part::Root::Supported(resident) =
+                    crate::metadata::part::parse(payload)
+                else {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT Part edit requires a supported root scalar prefix".into(),
+                    ));
+                };
+                if offset != resident.token_offset
+                    || trailing_word.is_some() != resident.trailing_word.is_some()
+                {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT Part edit cannot change root ownership or scalar form".into(),
+                    ));
+                }
+                overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())?;
+                if let Some(word) = trailing_word {
+                    overwrite_bytes(
+                        payload,
+                        resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
+                        &word.to_le_bytes(),
+                    )?;
+                }
             }
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 let marker = offset + UNIT_NAME_TOKEN.len();
@@ -1524,10 +1583,23 @@ fn patch_active_configuration_xml(
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return Ok(None);
     }
-    let attribute = document
+    let mut models = document
         .descendants()
-        .find(|node| node.has_tag_name("swModel"))
-        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?
+        .filter(|node| node.has_tag_name("swModel"));
+    let model = models
+        .next()
+        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?;
+    if models.next().is_some()
+        || document
+            .descendants()
+            .any(|node| node.has_tag_name("swConfiguration"))
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT active configuration edits require a complete configuration manifest rewrite"
+                .into(),
+        ));
+    }
+    let attribute = model
         .attributes()
         .find(|attribute| attribute.name() == "swConfigurationName")
         .ok_or_else(|| {
@@ -1861,7 +1933,6 @@ const BOUNDING_ENVELOPE_TOKEN: &[u8] = b"moBBoxCenterData_c";
 const DEFAULT_REFERENCE_PLANE_TOKEN: &[u8] = b"moDefaultRefPlnData_c";
 const TRANSFORMED_REFERENCE_PLANE_TOKEN: &[u8] = b"moTransRefPlaneData_c";
 const PART_RECORD_TOKEN: &[u8] = b"moPart_c";
-const CONFIGURATION_MANAGER_TOKEN: &[u8] = b"moConfigurationMgr_c";
 const UNIT_NAME_TOKEN: &[u8] = b"moLengthUserUnits_c";
 
 /// One `SWObjects` metadata attribute admitted for writing. Its values have
@@ -1879,13 +1950,9 @@ enum MetadataRecord {
         lower: [f64; 3],
         radius: f64,
     },
-    /// Part identity and version.
-    PartRecord { id: u32, version: u32 },
-    /// Configuration-manager version, state count and timestamp.
-    ConfigurationManager {
-        minor: u32,
-        states: u8,
-        filetime: u64,
+    PartRecord {
+        first_word: u32,
+        trailing_word: Option<u32>,
     },
     /// Source linear unit code.
     SourceLinearUnitCode(i64),
@@ -1961,30 +2028,26 @@ impl MetadataRecord {
                 }
             }
             "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] = values else {
-                    return Err(invalid("part record"));
-                };
                 retained(PART_RECORD_TOKEN)?;
+                let (first, trailing) = match values {
+                    [AttributeValue::Integer(first)] => (*first, None),
+                    [AttributeValue::Integer(first), AttributeValue::Integer(last)] => {
+                        (*first, Some(*last))
+                    }
+                    _ => return Err(invalid("part scalar prefix")),
+                };
                 Self::PartRecord {
-                    id: u32::try_from(*id).map_err(|_| invalid("part id"))?,
-                    version: u32::try_from(*version).map_err(|_| invalid("part version"))?,
+                    first_word: u32::try_from(first).map_err(|_| invalid("Part first word"))?,
+                    trailing_word: trailing
+                        .map(u32::try_from)
+                        .transpose()
+                        .map_err(|_| invalid("Part trailing word"))?,
                 }
             }
             "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    values
-                else {
-                    return Err(invalid("configuration manager"));
-                };
-                retained(CONFIGURATION_MANAGER_TOKEN)?;
-                Self::ConfigurationManager {
-                    minor: u32::try_from(*minor)
-                        .map_err(|_| invalid("configuration minor version"))?,
-                    states: u8::try_from(*states)
-                        .map_err(|_| invalid("configuration state count"))?,
-                    filetime: u64::try_from(*filetime)
-                        .map_err(|_| invalid("configuration timestamp"))?,
-                }
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles".into(),
+                ));
             }
             "source_linear_unit_code" => {
                 let [AttributeValue::Integer(code)] = values else {
@@ -2036,7 +2099,9 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
-        if attribute.id.as_str().starts_with("sldprt:") {
+        if attribute.id.as_str().starts_with("sldprt:")
+            && !crate::metadata::is_saved_property_attribute(attribute)
+        {
             let position = metadata_source_position(attribute.id.as_str());
             positioned.push(((position.is_none(), position), attribute));
         }
@@ -2063,6 +2128,9 @@ fn metadata_payloads(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
         }
+        if retained_swobjects && attribute.name == "configuration_manager" {
+            continue;
+        }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
@@ -2084,24 +2152,11 @@ fn metadata_payloads(
                         .into(),
                 ));
             }
-            Some(MetadataRecord::PartRecord { id, version }) => {
-                objects.extend_from_slice(PART_RECORD_TOKEN);
-                objects.extend_from_slice(&id.to_le_bytes());
-                objects.extend_from_slice(&0u32.to_le_bytes());
-                objects.extend_from_slice(&version.to_le_bytes());
-                objects.push(0);
-            }
-            Some(MetadataRecord::ConfigurationManager {
-                minor,
-                states,
-                filetime,
-            }) => {
-                let mut record = [0u8; 125];
-                record[66..70].copy_from_slice(&minor.to_le_bytes());
-                record[107] = states;
-                record[117..125].copy_from_slice(&filetime.to_le_bytes());
-                objects.extend_from_slice(CONFIGURATION_MANAGER_TOKEN);
-                objects.extend_from_slice(&record);
+            Some(MetadataRecord::PartRecord { .. }) if retained_swobjects => {}
+            Some(MetadataRecord::PartRecord { .. }) => {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT Part generation requires a retained supported root serializer".into(),
+                ));
             }
             Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
@@ -3601,6 +3656,7 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     be16(out, attr);
     be32(out, node_id);
 }
+
 /// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
 fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
     cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
@@ -4067,6 +4123,12 @@ fn write_nurbs_surface(
 
 fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     let attr = *next;
+    // Bare records receive each attr and reference as a one-word cell.
+    if attr > 0x7fff {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT attribute space exhausted".into(),
+        ));
+    }
     *next = next
         .checked_add(1)
         .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
@@ -4460,8 +4522,8 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{
-        check_semantic_support, pmi_local_sha256, typed_ref, unique_knots, write_nurbs_surface,
-        PMI_LOCAL_DIGEST_ATTRIBUTE,
+        check_semantic_support, pmi_local_sha256, take_attr, typed_ref, unique_knots,
+        write_nurbs_surface, PMI_LOCAL_DIGEST_ATTRIBUTE,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -4610,7 +4672,9 @@ mod nurbs_write_tests {
             (0x7ffe_u32, vec![0x7f, 0xfe]),
             (0x7fff_u32, vec![0x7f, 0xff]),
             (0x8000_u32, vec![0xff, 0xff, 0, 1]),
-            (65_536 * 32_767_u32, vec![0x80, 0x01, 0xff, 0xff]),
+            (36_225_u32, vec![0xf2, 0x7e, 0, 1]),
+            (65_535_u32, vec![0xff, 0xff, 0, 2]),
+            (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
             typed_ref(&mut bytes, value).expect("reference is representable");
@@ -4618,9 +4682,19 @@ mod nurbs_write_tests {
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), 65_536 * 32_767_u32 + 1),
+            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
                 if message.contains("XT pointer range")
+        ));
+    }
+
+    #[test]
+    fn attribute_space_ends_at_the_one_word_cell_range() {
+        let mut next = 0x7fff;
+        assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
+        assert!(matches!(
+            take_attr(&mut next),
+            Err(CodecError::NotImplemented(message)) if message.contains("attribute space")
         ));
     }
 

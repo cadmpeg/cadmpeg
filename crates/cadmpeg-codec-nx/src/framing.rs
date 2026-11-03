@@ -8,7 +8,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::decode::View;
+use cadmpeg_parasolid::pointer;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -161,16 +161,10 @@ fn member_of_feature_frame(stream: &[u8], pos: usize) -> bool {
         || (stream.get(identity_at) == Some(&0xff) && frame(identity_at + 1).is_some())
 }
 
-pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
-    let (value, extra) = read_xmt(stream, *at)?;
-    *at += 2 + extra;
-    Some(value)
-}
-
 pub(crate) fn read_sequence_at<const N: usize>(stream: &[u8], at: &mut usize) -> Option<[u32; N]> {
     let mut references = [0; N];
     for reference in &mut references {
-        *reference = read_and_advance(stream, at)?;
+        *reference = pointer::read_at(stream, at)?;
     }
     Some(references)
 }
@@ -182,34 +176,23 @@ pub(crate) fn read_sequence_at<const N: usize>(stream: &[u8], at: &mut usize) ->
 /// byte candidates from creating temporary vectors during a whole-stream scan.
 pub(crate) fn skip_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<()> {
     for _ in 0..count {
-        read_and_advance(stream, at)?;
+        pointer::read_at(stream, at)?;
     }
     Some(())
 }
 
-/// Decode the compact and extended XMT forms. The extended form uses a negative
-/// signed remainder followed by a quotient: `quotient * 32767 + remainder`.
+/// Read the encoded XMT at `at` (`parasolid.md` §1) and the bytes it takes
+/// past its first word: `0` or `2`.
 pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let mut view = View::over_retained(stream);
-    view.seek(at)?;
-    let first = view.i16_be()?;
-    if first >= 0 {
-        return Some((u32::try_from(first).ok()?, 0));
-    }
-    let remainder = first.unsigned_abs();
-    let quotient = view.u16_be()?;
-    let value = u32::from(quotient) * 32_767 + u32::from(remainder);
-    Some((value, 2))
+    let (value, width) = read_xmt_width(stream, at)?;
+    Some((value, width.checked_sub(2)?))
 }
 
-/// Decode XMT and return the full encoded width (2 or 4 bytes).
-///
-/// Prefer this when the caller advances by the returned length. Topology keeps
-/// [`read_xmt`]'s extra-bytes convention (`at += 2 + extra`) so its offsets stay
-/// correct.
+/// Read the encoded XMT at `at` and its full width: `2` or `4` bytes.
 pub(crate) fn read_xmt_width(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let (value, extra) = read_xmt(stream, at)?;
-    Some((value, 2 + extra))
+    let mut end = at;
+    let value = pointer::read_at(stream, &mut end)?;
+    Some((value, end.checked_sub(at)?))
 }
 
 /// Record an XMT-keyed entry, dropping every entry of an XMT that repeats.
@@ -232,7 +215,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
     if kind == NodeKind::Face {
         let mut at = pos + face::ATTRIBUTES + header_shift;
         let start = at;
-        read_and_advance(stream, &mut at)?;
+        pointer::read_at(stream, &mut at)?;
         at += 8;
         skip_sequence_at(stream, &mut at, 5)?;
         at += 1;
@@ -242,7 +225,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
     if kind == NodeKind::Edge {
         let mut at = pos + edge::ATTRIBUTES + header_shift;
         let start = at;
-        read_and_advance(stream, &mut at)?;
+        pointer::read_at(stream, &mut at)?;
         at += 8;
         skip_sequence_at(stream, &mut at, 7)?;
         return Some(at - start - 24);
@@ -302,13 +285,13 @@ fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize)
         }
         NodeKind::OffsetSurface => {
             at += 2;
-            read_and_advance(stream, &mut at)?;
+            pointer::read_at(stream, &mut at)?;
         }
         NodeKind::BSurface | NodeKind::BCurve => {
             skip_sequence_at(stream, &mut at, 2)?;
         }
         NodeKind::TrimmedCurve => {
-            read_and_advance(stream, &mut at)?;
+            pointer::read_at(stream, &mut at)?;
         }
         NodeKind::SpCurve => {
             skip_sequence_at(stream, &mut at, 3)?;

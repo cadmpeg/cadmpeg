@@ -330,7 +330,7 @@ fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
     bytes.extend_from_slice(&6u32.to_be_bytes());
     bytes.extend_from_slice(&10u16.to_be_bytes());
     bytes.extend_from_slice(&[
-        0x00, 0x63, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
+        0x00, 0x63, 0xff, 0x00, 0x00, 0x01, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
     ]);
 
     let records = crate::parasolid::field_names_records(&bytes);
@@ -344,7 +344,7 @@ fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
             .copied()
             .map(u32::from)
             .collect::<Vec<_>>(),
-        [99, 256, 256, 8192, 12288, 64]
+        [99, 32_767 + 256, 256, 8192, 12288, 64]
     );
 }
 

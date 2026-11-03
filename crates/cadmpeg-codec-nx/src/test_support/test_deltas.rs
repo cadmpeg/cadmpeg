@@ -10,6 +10,7 @@ use super::test_bytes::put_f64;
 use super::test_bytes::put_ref;
 use super::test_bytes::put_vec3;
 use super::test_bytes::record;
+use super::test_bytes::{record_offset, rewrite_cells};
 use super::test_streams::offset_surface_topology_partition_stream;
 use super::test_streams::topology_partition_stream;
 
@@ -868,65 +869,47 @@ pub(crate) fn forward_trimmed_curve_chain_stream() -> Vec<u8> {
     stream
 }
 
+/// A wide pointer that names no record.
+const WIDE_DANGLING: u32 = 40_000;
+
 pub(crate) fn topology_with_extended_edge_curve_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let edge = stream
-        .windows(4)
-        .position(|window| window == [0, 16, 0, 8])
-        .expect("edge record");
-    stream[edge + 24..edge + 26].copy_from_slice(&(-9i16).to_be_bytes());
-    stream.splice(edge + 26..edge + 26, [0, 0]);
+    let curve = 40_009;
+    let sites = [
+        (record_offset(&stream, 30, 9) + 2, curve),
+        (record_offset(&stream, 17, 7) + 18, curve),
+        (record_offset(&stream, 16, 8) + 24, curve),
+    ];
+    rewrite_cells(&mut stream, &sites);
     stream
 }
 
 pub(crate) fn topology_with_extended_face_attribute_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face record");
-    stream.splice(face + 8..face + 10, [0xff, 0xff, 0x00, 0x00]);
+    let face = record_offset(&stream, 14, 4);
+    rewrite_cells(&mut stream, &[(face + 8, WIDE_DANGLING)]);
     stream
 }
 
 pub(crate) fn topology_with_extended_edge_attribute_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let edge = stream
-        .windows(4)
-        .position(|window| window == [0, 16, 0, 8])
-        .expect("edge record");
-    stream.splice(edge + 8..edge + 10, [0xff, 0xff, 0x00, 0x00]);
+    let edge = record_offset(&stream, 16, 8);
+    rewrite_cells(&mut stream, &[(edge + 8, WIDE_DANGLING)]);
     stream
 }
 
+/// The shell, loop, fin, vertex, and point identities and every reference to
+/// them in four-byte cells.
 pub(crate) fn topology_with_extended_internal_topology_references() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
-    for (tag, xmt, offset) in [(13, 3, 8), (15, 5, 8), (17, 7, 4), (18, 10, 8), (29, 11, 8)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("topology record");
-        stream.splice(
-            record + offset..record + offset + 2,
-            [0xff, 0xff, 0x00, 0x00],
-        );
-    }
-    stream
+    super::test_streams::widen_topology_xmts(&topology_partition_stream(), |xmt| {
+        matches!(xmt, 3 | 5 | 7 | 10 | 11)
+    })
 }
 
 pub(crate) fn topology_with_fully_extended_geometry_headers() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt) in [(50, 6), (30, 9)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("geometry record");
-        for index in 0..5 {
-            let at = record + 8 + index * 4;
-            stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-        }
+        fully_extend_common_header(&mut stream, [0, tag, 0, xmt]);
     }
     stream
 }
@@ -945,24 +928,17 @@ pub(crate) fn topology_with_escaped_geometry_envelopes() -> Vec<u8> {
 
 pub(crate) fn offset_surface_with_fully_extended_common_header() -> Vec<u8> {
     let mut stream = offset_surface_topology_partition_stream();
-    let record = stream
-        .windows(4)
-        .position(|window| window == [0, 60, 0, 12])
-        .expect("offset record");
-    for index in 0..5 {
-        let at = record + 8 + index * 4;
-        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-    }
+    fully_extend_common_header(&mut stream, [0, 60, 0, 12]);
     stream
 }
 
+/// Give the five common-header pointers after the identity of the record
+/// that starts with `marker` the four-byte cell of a wide pointer.
 pub(crate) fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) {
     let record = stream
         .windows(marker.len())
         .position(|window| window == marker)
         .expect("compact geometry record");
-    for index in 0..5 {
-        let at = record + 8 + index * 4;
-        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-    }
+    let sites = [0, 1, 2, 3, 4].map(|index| (record + 8 + index * 2, WIDE_DANGLING));
+    rewrite_cells(stream, &sites);
 }

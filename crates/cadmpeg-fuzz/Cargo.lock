@@ -321,6 +321,7 @@ name = "cadmpeg-parasolid"
 version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
+ "serde",
 ]
 
 [[package]]

@@ -395,84 +395,90 @@ fn revolution_line_reference_inputs_decode_declared_post_handle_address() {
     );
 }
 
-#[test]
-fn temporary_axis_reference_decodes_placed_axis_record() {
-    let mut payload = vec![0; 400];
-    let declaration = 40;
-    payload[declaration + temporary_axis::CLASS_MARKER
-        ..declaration + temporary_axis::CLASS_MARKER + temporary_axis::CLASS_MARKER_VALUE.len()]
-        .copy_from_slice(&temporary_axis::CLASS_MARKER_VALUE);
-    payload
-        [declaration + temporary_axis::NAME_LENGTH..declaration + temporary_axis::NAME_LENGTH + 2]
-        .copy_from_slice(&temporary_axis::NAME_LENGTH_VALUE.to_le_bytes());
-    payload[declaration + temporary_axis::NAME
-        ..declaration + temporary_axis::NAME + temporary_axis::NAME_VALUE.len()]
-        .copy_from_slice(&temporary_axis::NAME_VALUE);
-    payload[declaration + temporary_axis::HANDLES
-        ..declaration + temporary_axis::HANDLES + temporary_axis::HANDLES_VALUE.len()]
-        .copy_from_slice(&temporary_axis::HANDLES_VALUE);
-    payload[declaration + temporary_axis::STREAM_ADDRESS
-        ..declaration + temporary_axis::STREAM_ADDRESS + 4]
-        .copy_from_slice(&5000u32.to_le_bytes());
-    for (index, value) in [0.0, 0.0, 0.03, 0.0, 0.0, 0.072, 0.0, 0.0, -1.0]
-        .into_iter()
-        .enumerate()
+fn authored_temporary_axis(point: [f64; 3], compact: bool) -> Vec<u8> {
+    let mut payload = vec![0; 360];
+    payload[..4].copy_from_slice(&temporary_axis::CLASS_MARKER_VALUE);
+    payload[4..6].copy_from_slice(&temporary_axis::NAME_LENGTH_VALUE.to_le_bytes());
+    payload[6..21].copy_from_slice(&temporary_axis::NAME_VALUE);
+    payload[223..231].copy_from_slice(&temporary_axis::HANDLES_VALUE);
+    for (index, value) in [
+        0.09, -0.08, 0.07, point[0], point[1], point[2], 0.0, 1.0, 0.0,
+    ]
+    .into_iter()
+    .enumerate()
     {
-        let offset = declaration + temporary_axis::AXIS_FRAME + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        let offset = temporary_axis::AXIS_FRAME + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    payload[declaration + temporary_axis::NEXT_CLASS_MARKER
-        ..declaration
-            + temporary_axis::NEXT_CLASS_MARKER
-            + temporary_axis::NEXT_CLASS_MARKER_VALUE.len()]
-        .copy_from_slice(&temporary_axis::NEXT_CLASS_MARKER_VALUE);
+    if compact {
+        payload[318..324].copy_from_slice(&[255, 254, 255, 0, 4, 0]);
+    } else {
+        payload[312..318].copy_from_slice(&[255, 255, 1, 0, 11, 0]);
+        payload[318..329].copy_from_slice(b"AxisChild_c");
+    }
+    payload
+}
 
+#[test]
+fn temporary_axis_reference_decodes_middle_point_and_zero_address() {
+    for compact in [false, true] {
+        for address in [0u32, 5000] {
+            for start in [0, 40] {
+                let mut record = authored_temporary_axis([0.011, -0.023, 0.037], compact);
+                record[temporary_axis::STREAM_ADDRESS..temporary_axis::STREAM_ADDRESS + 4]
+                    .copy_from_slice(&address.to_le_bytes());
+                let mut payload = vec![0; start];
+                payload.extend(record);
+                assert_eq!(
+                    temporary_axis_reference(&payload, start, payload.len()),
+                    Some((Point3::new(11.0, -23.0, 37.0), Vector3::new(0.0, 1.0, 0.0)))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn temporary_axis_reference_requires_complete_exact_boundary() {
+    let valid = authored_temporary_axis([0.011, -0.023, 0.037], true);
+    for offset in 311..324 {
+        let mut payload = valid.clone();
+        payload[offset] ^= 1;
+        assert_eq!(temporary_axis_reference(&payload, 0, payload.len()), None);
+    }
+    assert_eq!(temporary_axis_reference(&valid, 0, 323), None);
+    let declared = authored_temporary_axis([0.011, -0.023, 0.037], false);
+    assert_eq!(temporary_axis_reference(&declared, 0, 328), None);
+    let mut empty_name = declared.clone();
+    empty_name[316..318].fill(0);
     assert_eq!(
-        temporary_axis_reference(&payload, 32, payload.len()),
-        Some((Point3::new(0.0, 0.0, 30.0), Vector3::new(0.0, 0.0, -1.0)))
+        temporary_axis_reference(&empty_name, 0, empty_name.len()),
+        None
     );
+    for offset in [311, 312, 313, 314, 315, 317, 318] {
+        let mut payload = declared.clone();
+        if offset == 318 {
+            payload[offset] = b'!';
+        } else {
+            payload[offset] ^= 1;
+        }
+        assert_eq!(temporary_axis_reference(&payload, 0, payload.len()), None);
+    }
+}
+
+#[test]
+fn temporary_axis_reference_does_not_extend_eight_scalar_body() {
+    let mut payload = authored_temporary_axis([0.011, -0.023, 0.037], true);
+    payload[303..324].fill(0);
+    payload[310..316].copy_from_slice(&[255, 254, 255, 0, 4, 0]);
+    assert_eq!(temporary_axis_reference(&payload, 0, payload.len()), None);
 }
 
 #[test]
 fn temporary_axis_reference_rejects_conflicting_records() {
-    let mut payload = vec![0; 720];
-    let write_record = |payload: &mut [u8], declaration: usize, origin: [f64; 3]| {
-        payload[declaration + temporary_axis::CLASS_MARKER
-            ..declaration
-                + temporary_axis::CLASS_MARKER
-                + temporary_axis::CLASS_MARKER_VALUE.len()]
-            .copy_from_slice(&temporary_axis::CLASS_MARKER_VALUE);
-        payload[declaration + temporary_axis::NAME_LENGTH
-            ..declaration + temporary_axis::NAME_LENGTH + 2]
-            .copy_from_slice(&temporary_axis::NAME_LENGTH_VALUE.to_le_bytes());
-        payload[declaration + temporary_axis::NAME
-            ..declaration + temporary_axis::NAME + temporary_axis::NAME_VALUE.len()]
-            .copy_from_slice(&temporary_axis::NAME_VALUE);
-        payload[declaration + temporary_axis::HANDLES
-            ..declaration + temporary_axis::HANDLES + temporary_axis::HANDLES_VALUE.len()]
-            .copy_from_slice(&temporary_axis::HANDLES_VALUE);
-        payload[declaration + temporary_axis::STREAM_ADDRESS
-            ..declaration + temporary_axis::STREAM_ADDRESS + 4]
-            .copy_from_slice(&5000u32.to_le_bytes());
-        for (index, value) in [
-            origin[0], origin[1], origin[2], 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let offset = declaration + temporary_axis::AXIS_FRAME + index * 8;
-            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-        }
-        payload[declaration + temporary_axis::NEXT_CLASS_MARKER
-            ..declaration
-                + temporary_axis::NEXT_CLASS_MARKER
-                + temporary_axis::NEXT_CLASS_MARKER_VALUE.len()]
-            .copy_from_slice(&temporary_axis::NEXT_CLASS_MARKER_VALUE);
-    };
-    write_record(&mut payload, 40, [0.0, 0.0, 0.01]);
-    write_record(&mut payload, 380, [0.0, 0.0, 0.02]);
-
-    assert_eq!(temporary_axis_reference(&payload, 32, payload.len()), None);
+    let mut payload = authored_temporary_axis([0.011, -0.023, 0.037], true);
+    payload.extend(authored_temporary_axis([0.021, -0.023, 0.037], true));
+    assert_eq!(temporary_axis_reference(&payload, 0, payload.len()), None);
 }
 
 #[test]

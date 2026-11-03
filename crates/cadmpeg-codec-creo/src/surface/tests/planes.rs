@@ -118,6 +118,7 @@ fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {
@@ -200,6 +201,7 @@ fn derives_plane_from_auxiliary_corner_frame() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {
@@ -475,6 +477,7 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         body,
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {

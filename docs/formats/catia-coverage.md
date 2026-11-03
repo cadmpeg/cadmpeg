@@ -802,6 +802,8 @@ binding its loop roster.
 
 E5 NURBS current-limit programs admit the identity parameterization with disabled extrapolation. AA pcurves use the two tail-defined arc-local limits, including an inset lower limit. E7 surfaces require a current rectangle equal to the complete knot domain. Nonidentity parameterizations, active extrapolation, malformed limits and unadmitted surface subdomains retain native bytes and abstain from this geometry route.
 
+Complete E5 `0x00aa` and `0x00e7` NURBS cores retain their complete current-limit programs in `e5_nurbs_limit_programs`. Each entry keeps its physical offset, frame length, persistent record ID, complete class word and payload-relative trailer offset. Binary64 fields use raw integer bits. Unsupported affine and extrapolation controls remain stored without geometric admission. Equal persistent IDs at distinct physical offsets remain separate records.
+
 E5 curve supports retain complete mode-0, affine mode-3 and sampled mode-5 programs in `e5_curve_supports`, indexed by physical source offset and persistent record identity. The graph and Native arena share one parser. Unknown modes and malformed tails remain in the original bounded source payload. Accuracy, fit tolerance, fixed limits, active limits and both sampled lanes remain distinct. The reference facet supplies an exact lifted curve or its parametric surface-curve construction. A two-surface neutral context requires normalized line pcurves with independently affine lifts to the same ordered locus; endpoint agreement and sampled correspondence sites do not establish that map. The source co-facet and complete correspondence remain in Native data.
 
 Indexed visualization coordinates bind width-three trim endpoints to counted coordinate rows by exact binary32 coordinate equality. Multiple trim handles can bind one logical vertex. Complete admission requires every coordinate row to be selected; coordinate rank does not bind endpoints.
@@ -845,8 +847,33 @@ B5 face transfer uses the second loop control to select the unique outer loop
 and each inner loop. Classification applies to analytic, freeform and opaque
 carriers and does not require planar pcurves or a containment calculation.
 Absent or multiple outer selections leave the loop roles unspecified.
-The first loop control retains face-to-carrier orientation independently;
-shell orientation and neutral chart conversion remain separate relations.
+The first loop control is retained independently. Its relation to absolute
+face-to-carrier orientation is unresolved; shell orientation and neutral chart
+conversion are separate relations.
+
+The current B5 transfer maps the unique outer loop's primary `03` to reversed
+sense and `05` to forward sense for native planes, positive-scale cylinders,
+tori, direct NURBS carriers whose normal is not reversed, and revolutions with
+matching complete profile intervals. Its cone path also composes this control
+with chart handedness. This implementation rule does not establish outward
+face sense. Raw native faces can have the same primary control and opposite
+outward relations to their carriers. All owned loops must repeat the face
+carrier, and transfer must preserve native traversal order. The carrier
+geometry is unchanged. The unresolved ownership and orientation relation is
+tracked in OS-05.
+
+Four fixtures exercise positive and negative cylinder and direct NURBS
+faces. Each has one three-edge outer loop. The negative fixtures reverse UV
+winding and select primary `03`; the positive fixtures select primary `05`.
+Their carrier surfaces are equal across each pair. The NURBS fixture does not
+establish complete boundary-length geometry.
+
+Four further fixtures retain line and arc revolution profiles with
+positive and negative loop controls. The line pair transfers one four-edge face
+and preserves equal carrier and construction payloads across the pair. The arc
+pair preserves its existing topology refusal. Revolution measurements retain
+procedural-carrier unavailability; the face-sense rule does not establish a
+numerical orientation verdict.
 
 The frozen plane-with-hole graph has 34 frames and two three-edge loops.
 Its face lists the inner loop first, and its boundaries are degree-one NURBS
@@ -904,12 +931,20 @@ limit containment, both reference-scalar copies, controls, and map terminals
 before it retains site data. Arbitrary frame-bounded continuation bytes no
 longer qualify as a complete rolling-ball carrier.
 
-The byte check resolves 183 source tails: 170 absent scalar jets and 13 explicit
-scalar jets. All 5,265 quintic samples stay inside their endpoint value range
+The typed scope resolves absent and explicit scalar jets. All 5,265 quintic samples stay inside their endpoint value range
 and retain the stored decreasing direction. Source parameter domains and six
 records with exact source knots support the parameter interpretation. All four
 NIST maps fit all four candidate source-curve domains, so no target is assigned
 from that relation. Raw tail controls retain their source polarity.
+
+Native retention covers single-extent frames with absent and explicit scalar
+jets. A continuation that crosses physical extents remains source-only. All
+retained continuations preserve the exact scalar words, control, branch,
+terminal, current and maximal bounds, and complete source frame. Compact prefix
+length follows the encoded integers, including the seven-byte `K=64` prefix.
+
+The direct-limit comparison is a raw-coordinate diagnostic; it does not prove
+a common frame or a millimeter unit.
 
 The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
 witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
@@ -954,7 +989,10 @@ descriptor owner and closes inside its reconstructed logical source. Exactly
 Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
 the one-byte backward-distance or owned-child forms. These are source-byte
 grammar checks; the four operand roles remain unassigned, and the existing
-five-reference parser abstains on this production.
+five-reference parser abstains on this production. A separate native arena
+retains every four-reference record with their complete frames, source
+coordinates, header tokens, flags, reference values and forms, and terminal
+bytes. It adds no fifth operand or neutral edge.
 
 ## Object-stream edge terminals
 

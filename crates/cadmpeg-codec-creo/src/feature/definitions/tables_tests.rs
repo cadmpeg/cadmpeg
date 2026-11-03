@@ -1183,3 +1183,62 @@ fn positional_triples_replay_nullable_relation_joins() {
 }
 
 mod trim_tables;
+
+#[test]
+fn relation_terminal_wrapper_requires_its_complete_owned_point_pair_profile() {
+    use crate::feature::definitions::owned_relation_operand_vectors;
+    let body = b"\x06\x07\x06\x07\x00\xe4\x01\xe4\x0f\x10\xe4\x0f\xf5";
+    let expected = Some([
+        [Some(6), Some(7), Some(6), Some(7)],
+        [Some(0), Some(1), Some(1), Some(1)],
+        [Some(15), Some(16), Some(1), Some(15)],
+    ]);
+    for kind in [9, 21] {
+        assert_eq!(owned_relation_operand_vectors(body, kind), expected);
+        assert_eq!(
+            owned_relation_operand_vectors(&body[..body.len() - 1], kind),
+            expected
+        );
+        assert!(owned_relation_operand_vectors(&body[..body.len() - 2], kind).is_none());
+    }
+    for kind in [0, 1, 10, 12, 13, 14, 22, 25, 26, 38] {
+        assert!(owned_relation_operand_vectors(body, kind).is_none());
+    }
+    let mut duplicate_wrapper = body.to_vec();
+    duplicate_wrapper.push(0xf5);
+    assert!(owned_relation_operand_vectors(&duplicate_wrapper, 9).is_none());
+    let mut other_shape = body.to_vec();
+    other_shape[2] = 8;
+    assert!(owned_relation_operand_vectors(&other_shape, 9).is_none());
+}
+
+#[test]
+fn relation_compact_integer_tail_is_not_a_terminal_wrapper() {
+    use crate::feature::definitions::owned_relation_operand_vectors;
+    let body = b"\x00\xe6\x00\xe6\x00\x00\x00\x80\xf5";
+    let expected = Some([
+        [Some(0); 4],
+        [Some(0); 4],
+        [Some(0), Some(0), Some(0), Some(245)],
+    ]);
+    assert_eq!(owned_relation_operand_vectors(body, 9), expected);
+}
+
+#[test]
+fn mixed_relation_operand_retains_the_exact_row_without_integer_vectors() {
+    let body =
+        b"\x03\x04\x04\x01\xe4\x02\x00\xe6\x65\xa3\x4d\xb4\xd1\xc0\x92\x0f\xe5\x01\xf6\x1a\xe2";
+    let mut input = b"relat_ptr\0\xf8\x03\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+    input.extend_from_slice(body);
+    let table = relation_table(&input, 0, input.len()).expect("counted mixed relation row");
+    assert_eq!(table.rows.len(), 1);
+    let row = &table.rows[0];
+    assert_eq!(row.relation_type, 26);
+    assert_eq!(row.relation_id, 3);
+    assert_eq!(row.operand_vectors, None);
+    assert_eq!(row.body, &body[..body.len() - 1]);
+    assert_eq!(
+        row.operands,
+        b"\x04\x01\xe4\x02\x00\xe6\x65\xa3\x4d\xb4\xd1\xc0\x92\x0f\xe5"
+    );
+}

@@ -1811,6 +1811,20 @@ fn append_design_losses(
         )));
     }
 
+    let refused_edge_terminals = match native.as_ref() {
+        Some(native) => crate::resolved_features::selections::edge_owners::refused_selection_count(
+            ctx,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        )?,
+        None => 0,
+    };
+    if refused_edge_terminals > 0 {
+        report.losses.push(SldprtLossCode::FeatureEdgeTerminalUnresolved.note(format!(
+            "{refused_edge_terminals} native edge selection(s) retain an unresolved terminal feature owner."
+        )));
+    }
+
     let ambiguous_thin_operations = native.as_ref().map_or(0, |native| {
         let histories = crate::records::HistoryFeatures::new(&native.feature_histories);
         let lane_names = native
@@ -2631,6 +2645,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target
         .native_face_identities
         .append(&mut source.native_face_identities);
+    target.face_keys.append(&mut source.face_keys);
     target
         .native_body_identities
         .append(&mut source.native_body_identities);
@@ -2639,6 +2654,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
+    target.stats.tolerant_edges_without_curve += source.stats.tolerant_edges_without_curve;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.marker_conflict_edges += source.stats.marker_conflict_edges;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
@@ -2722,7 +2738,7 @@ fn ensure_display_appearance(
 
 struct DisplayPush {
     persistent_face_bindings: Vec<crate::tessellation::PersistentFaceBinding>,
-    display_appearance_ranks: BTreeMap<String, u8>,
+    face_key_bindings: Vec<crate::tessellation::FaceKeyBinding>,
     matched_feature_sources: BTreeSet<FeatureSourceId>,
     conflicting_display_references: Vec<String>,
     unresolved: Vec<crate::appearance::UnresolvedAppearanceBinding>,
@@ -2877,8 +2893,8 @@ fn push_display_meshes(
     let mut matched_feature_sources = BTreeSet::new();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
+    let mut face_key_bindings = Vec::new();
     let mut withheld_reused_tags = Vec::new();
-    let mut display_appearance_ranks = BTreeMap::new();
     let mut unresolved = Vec::new();
     let mut mesh_count = 0usize;
     for (display, display_faces) in display_sections {
@@ -2926,6 +2942,11 @@ fn push_display_meshes(
         }
         unresolved.extend(resolved.unresolved);
         let mut display_links = Vec::new();
+        let face_keys = (0..display_faces.len())
+            .map(|index| {
+                crate::tessellation::display_face_key(display.payload(), &display_faces, index)
+            })
+            .collect::<Vec<_>>();
         let join_verdicts: Vec<crate::tessellation::PersistentJoinVerdict> = if display_faces
             .iter()
             .any(|face| !face.surface_references.is_empty())
@@ -2946,12 +2967,20 @@ fn push_display_meshes(
         } else {
             Vec::new()
         };
-        for (table_index, display_face) in display_faces.into_iter().enumerate() {
+        for ((table_index, display_face), face_key) in
+            display_faces.into_iter().enumerate().zip(face_keys)
+        {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
                 display.ordinal(),
                 table_index
             );
+            if let Some(key) = face_key {
+                face_key_bindings.push(crate::tessellation::FaceKeyBinding {
+                    tessellation: id.clone(),
+                    key,
+                });
+            }
             match join_verdicts.get(table_index) {
                 Some(crate::tessellation::PersistentJoinVerdict::Admit(identity)) => {
                     persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
@@ -2976,7 +3005,6 @@ fn push_display_meshes(
             )?;
             display_links.push(id.clone());
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
-                display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
                 let definition = &resolved_definition.definition;
                 let source_entity_id =
                     format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
@@ -3036,7 +3064,7 @@ fn push_display_meshes(
     }
     Ok(DisplayPush {
         persistent_face_bindings,
-        display_appearance_ranks,
+        face_key_bindings,
         matched_feature_sources,
         conflicting_display_references,
         unresolved,
@@ -3227,11 +3255,7 @@ fn build_geometry_ir(
         &histories,
         lanes,
     )?;
-    crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-        &mut ir.model.features,
-        &histories,
-        lanes,
-    );
+    crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut ir.model.features);
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut sketch_entities,
         &sketches,
@@ -3292,7 +3316,7 @@ fn build_geometry_ir(
         sketch_lanes,
     );
     stamp_feature_baseline(ctx, &mut ir)?;
-    let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
+    let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     attributes.extend(custom_properties);
     ir.model.attributes = attributes;
@@ -3479,7 +3503,7 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(&mut ir, configuration_bodies)?;
+    assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -3681,7 +3705,7 @@ fn build_geometry_ir(
         matched_feature_sources.insert(*source);
     }
     let persistent_face_bindings = push.persistent_face_bindings;
-    let display_appearance_ranks = push.display_appearance_ranks;
+    let face_key_bindings = push.face_key_bindings;
     let conflicting_display_references = push.conflicting_display_references;
     let feature_appearance_sources = push.feature_appearance_sources;
     for start in push.withheld_reused_tags {
@@ -3728,11 +3752,16 @@ fn build_geometry_ir(
     ) {
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
-    let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
+    let mut assigned_tessellations = crate::tessellation::assign_face_key_owners(
+        &mut ir.model,
+        &brep.face_keys,
+        &face_key_bindings,
+    );
+    assigned_tessellations.extend(crate::tessellation::assign_persistent_owners(
         &mut ir.model,
         &face_identities,
         &persistent_face_bindings,
-    );
+    ));
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
@@ -3791,25 +3820,6 @@ fn build_geometry_ir(
             visible: None,
             channels: display_binding_channels(definition),
         });
-    }
-    for tessellation in &ir.model.tessellations {
-        let old_rank = display_appearance_ranks
-            .get(tessellation.id.as_str())
-            .copied()
-            .unwrap_or(0);
-        let blocked = native_appearance_plan.blocked_display_rank >= old_rank
-            && native_appearance_plan.blocked_display_rank != 0
-            || tessellation.faces.iter().any(|face| {
-                native_appearance_plan
-                    .faces
-                    .get(face)
-                    .is_some_and(|choice| choice.definition.is_none() && choice.rank >= old_rank)
-            });
-        if blocked {
-            ir.model.appearance_bindings.retain(|binding| {
-                binding.target != AppearanceTarget::Tessellation(tessellation.id.to_string())
-            });
-        }
     }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in scoped_color_faces {
@@ -4113,11 +4123,6 @@ fn add_solidworks_xml_metadata(
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
                 value.to_owned(),
             );
-        } else if let Some(value) = &envelope.configuration_name {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                value.clone(),
-            );
         }
         for (key, value) in &envelope.configuration_attributes {
             let name = cadmpeg_core::text::NonBlankString::new(key.to_owned())
@@ -4227,6 +4232,15 @@ fn build_geometry_report(
             )),
         );
     }
+    if s.tolerant_edges_without_curve > 0 {
+        losses.push(
+            SldprtLossCode::GeometryTolerantEdgeCurveUnread.note(format!(
+                "{} tolerant edge(s) have no fin curve that decodes; the edges have topology and \
+                 vertices but no curve.",
+                s.tolerant_edges_without_curve
+            )),
+        );
+    }
     if s.marker_conflict_edges > 0 {
         losses.push(SldprtLossCode::GeometryCurveMarkerConflict.note(format!(
             "{} edge(s) have no parameter range because the compact curve records of their \
@@ -4279,7 +4293,7 @@ fn build_geometry_report(
             ),
         );
     }
-    append_parasolid_probe_losses(scan, &mut losses);
+    append_parasolid_container_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(&mut losses);
     Ok(DecodeBody {
@@ -4336,7 +4350,8 @@ fn build_metadata_ir(
         &mut annotations,
         &mut pmi_losses,
     )?;
-    let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
+    let mut model_attributes =
+        crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     model_attributes.extend(custom_properties);
     ir.model.attributes = model_attributes;
@@ -4519,11 +4534,7 @@ fn build_metadata_ir(
         &histories,
         lanes,
     )?;
-    crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-        &mut ir.model.features,
-        &histories,
-        lanes,
-    );
+    crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut ir.model.features);
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -4779,13 +4790,18 @@ fn project_design_history(
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
-    crate::history::configuration::enrich_history_semantic(
+    let ambiguous_body_features = crate::history::configuration::enrich_history_semantic(
         ctx,
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
     )?;
+    if ambiguous_body_features > 0 {
+        losses.push(SldprtLossCode::FeatureBodyPathAmbiguous.note(format!(
+            "{ambiguous_body_features} feature(s) retain ambiguous compact body-path candidates because a local identifier also spells a complete tagged entry."
+        )));
+    }
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?
@@ -4953,6 +4969,14 @@ fn mark_active_configuration(ir: &mut CadIr) {
         by_name
     } else if active_index.is_some() {
         by_index
+    } else if ir.source.as_ref().is_some_and(|source| {
+        source
+            .attributes
+            .get("sldprt_active_partition_unresolved")
+            .map(String::as_str)
+            == Some("true")
+    }) {
+        None
     } else if ir.model.configurations.len() == 1 {
         Some(0)
     } else {
@@ -5281,6 +5305,7 @@ fn stamp_feature_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(),
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    scan: Option<&ContainerScan<'_>>,
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
@@ -5295,6 +5320,24 @@ fn assign_configuration_bodies(
         }
     }
 
+    if let Some(scan) = scan.filter(|scan| container::has_manifest_configuration_rows(scan)) {
+        for configuration in &mut ir.model.configurations {
+            let index = configuration
+                .name
+                .as_deref()
+                .and_then(
+                    |name| match container::manifest_configuration_index(scan, name) {
+                        container::ManifestConfigurationIndex::Resolved(index) => Some(index),
+                        container::ManifestConfigurationIndex::Absent
+                        | container::ManifestConfigurationIndex::Unresolved => None,
+                    },
+                )
+                .and_then(|index| u32::try_from(index).ok())
+                .filter(|index| partition_map.contains_key(index));
+            configuration.source_index = index;
+            configuration.bodies = None;
+        }
+    }
     let mut source_counts = BTreeMap::<u32, usize>::new();
     for source_index in ir
         .model
@@ -5321,13 +5364,23 @@ fn assign_configuration_bodies(
             }
         }
     }
-    if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
-        if let Some(bodies) = partition_map.remove(&active_index) {
-            ir.model.configurations[position].bodies =
-                Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+    if !scan.is_some_and(container::has_manifest_configuration_rows) {
+        if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
+            if let Some(bodies) = partition_map.remove(&active_index) {
+                ir.model.configurations[position].bodies =
+                    Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+            }
         }
     }
     for (source_index, bodies) in partition_map {
+        let name = scan
+            .and_then(|scan| {
+                usize::try_from(source_index)
+                    .ok()
+                    .and_then(|index| container::manifest_configuration_name(scan, index))
+            })
+            .filter(|_| !source_counts.contains_key(&source_index))
+            .map_or_else(|| format!("Config-{source_index}"), str::to_owned);
         let ordinal = match ir
             .model
             .configurations
@@ -5350,7 +5403,7 @@ fn assign_configuration_bodies(
                 ordinal,
                 active: false,
                 source_index: Some(source_index),
-                name: format!("Config-{source_index}").into(),
+                name: name.into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?),
@@ -5475,16 +5528,14 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             brep_hash,
         );
     }
-    let has_swobjects_semantics = ir
+    let has_swobjects_semantics = ir.model.attributes.iter().any(|attribute| {
+        attribute.id.as_str().starts_with("sldprt:metadata:")
+            && !crate::metadata::is_saved_property_attribute(attribute)
+    }) || ir
         .model
-        .attributes
+        .appearances
         .iter()
-        .any(|attribute| attribute.id.as_str().starts_with("sldprt:metadata:"))
-        || ir
-            .model
-            .appearances
-            .iter()
-            .any(|appearance| appearance.schema.as_deref() == Some("moVisualProperties_c"));
+        .any(|appearance| appearance.schema.as_deref() == Some("moVisualProperties_c"));
     if has_swobjects_semantics {
         match (
             crate::writer::swobjects_local_sha256(ctx, ir),
@@ -5919,7 +5970,7 @@ fn build_container_report(
             ),
         );
     }
-    append_parasolid_probe_losses(scan, &mut losses);
+    append_parasolid_container_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(&mut losses);
 
@@ -5932,10 +5983,18 @@ fn build_container_report(
     })
 }
 
-fn append_parasolid_probe_losses(
+fn append_parasolid_container_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
+    for section in scan.sections() {
+        if let Some(reason) = section.ps_auxiliary_refusal() {
+            losses.push(SldprtLossCode::ContainerAuxiliaryParasolidRefused.note(format!(
+                "Optional Parasolid owner {} is malformed: {reason}. Its complete source bytes remain retained; no fallback scan or entry resynchronization followed this refusal.",
+                section.source_stream().as_str(),
+            )));
+        }
+    }
     let mut capped = crate::loss::NamedCount::default();
     for section in scan.sections().filter(|section| section.ps_probe_capped()) {
         capped.push(section.source_stream().as_str());

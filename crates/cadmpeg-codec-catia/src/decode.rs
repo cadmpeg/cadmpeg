@@ -250,10 +250,8 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
-    let modeling_graph_scope = modeling_graph_scope(
-        !scan.outer_container_declarations.is_empty(),
-        &native.object_graphs,
-    );
+    let modeling_graph_scope =
+        modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
     crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
@@ -3494,6 +3492,16 @@ fn finish_decode(
              history authorship remains unresolved."
             )),
         );
+    }
+    if formula_transfer.native_only_definition_chain_count != 0 {
+        report
+            .losses
+            .push(CatiaLossCode::HistoryDefinitionChainsRetained.note(format!(
+                "CATIA native data retains {} typed two-definition value chain(s) that no formula \
+                 input selects; their catalog selectors declare no parameter name, so no neutral \
+                 parameter transfers.",
+                formula_transfer.native_only_definition_chain_count
+            )));
     }
     if unresolved_object_record_count != 0 {
         report.losses.push((CatiaLossCode::HistoryObjectRecordsUnresolved).note(format!(

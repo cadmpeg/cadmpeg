@@ -641,7 +641,7 @@ mod tests {
             },
             support_data: super::super::intersection::IntersectionSupportData {
                 supports: [2, 3],
-                fit_tolerance_mm: 0.01,
+                fit_tolerance_mm: Some(0.01),
                 support_uv: None,
             },
         };

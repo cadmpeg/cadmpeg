@@ -109,6 +109,11 @@ impl From<GroupSelector> for u8 {
     }
 }
 
+/// Whether a GROUP node's pointer fields are all non-null and its second names a stored node.
+pub fn valid_group_references(references: &[u32; 5]) -> bool {
+    references.iter().all(|reference| *reference != 0) && references[1] > 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::GroupSelector;

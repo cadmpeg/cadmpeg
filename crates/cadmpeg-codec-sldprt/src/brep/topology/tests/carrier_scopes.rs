@@ -113,3 +113,65 @@ fn tripled_b_curve_scopes_use_the_complete_header_before_bare_framing() {
             .any(|scope| scope.contains(&header_end)));
     }
 }
+
+#[test]
+fn an_intersection_composite_is_skipped_whole() {
+    let mut bytes = vec![0x00, 0x26];
+    bytes.extend(300_u16.to_be_bytes());
+    bytes.extend(7_u32.to_be_bytes());
+    for reference in [1_u16, 3, 301, 302, 303] {
+        bytes.extend(reference.to_be_bytes());
+    }
+    bytes.push(0x2b);
+    for reference in [40_u16, 41, 42, 43, 44] {
+        bytes.extend(reference.to_be_bytes());
+    }
+    assert_eq!(
+        crate::brep::topology::intersection_composite_end(&bytes, 0, 5),
+        Some(bytes.len())
+    );
+    let mut unmarked = bytes.clone();
+    unmarked[2 + 16] = 0x00;
+    assert_eq!(
+        crate::brep::topology::intersection_composite_end(&unmarked, 0, 5),
+        None
+    );
+    let scopes = topology_scopes(&bytes, false);
+    assert_eq!(scopes.excluded_starts, vec![1..bytes.len()]);
+}
+
+#[test]
+fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
+    // The first composite of a stream follows its class's edited type
+    // header (spec §4.1) with no tag of its own. Its sequence number
+    // `00 00 12 1a` holds a false `00 12` vertex header that would run
+    // over the tag of the point record that follows.
+    let mut bytes = vec![0x00, 0x26, 12];
+    bytes.extend([b'C'; 11]);
+    bytes.push(b'A');
+    bytes.push(17);
+    bytes.extend(b"intersection_data");
+    bytes.extend([0x00, 0xcc, 0x00, 0x01]);
+    bytes.push(b'Z');
+    let record = bytes.len();
+    bytes.extend(9_u16.to_be_bytes());
+    bytes.extend(0x121a_u32.to_be_bytes());
+    for reference in [1_u16, 3, 56, 1, 53] {
+        bytes.extend(reference.to_be_bytes());
+    }
+    bytes.push(0x2d);
+    for reference in [50_u16, 8, 54, 55, 58, 61] {
+        bytes.extend(reference.to_be_bytes());
+    }
+    let point = bytes.len();
+    assert_eq!(point, record + 29);
+    bytes.extend(crate::test_support::parasolid::world_point(
+        10,
+        [0.001, 0.002, 0.003],
+    ));
+    let scopes = topology_scopes(&bytes, false);
+    assert_eq!(scopes.excluded_starts.first(), Some(&(1..point)));
+    assert!(crate::brep::topology::scan(&bytes)
+        .points()
+        .contains_key(&10));
+}

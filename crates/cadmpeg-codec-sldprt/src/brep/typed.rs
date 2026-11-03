@@ -14,7 +14,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_parasolid::pointer::read_at as read_ref;
 
-mod schema;
+pub(super) mod schema;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -235,6 +235,19 @@ impl Facts {
     pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u32>> {
         self.valid_ownership_maps()
             .map(|(_, _, _, faces)| faces.into_keys().collect())
+    }
+
+    /// Physical FACE records selected by a closed typed ownership set.
+    pub(super) fn selected_face_offsets(&self, attrs: Option<&HashSet<u32>>) -> HashSet<usize> {
+        let mut offsets = HashSet::new();
+        if let Some(attrs) = attrs {
+            for face in &self.faces {
+                if attrs.contains(&face.attr) {
+                    offsets.insert(face.offset);
+                }
+            }
+        }
+        offsets
     }
 
     /// Return body hierarchies only when the typed ownership graph is complete
@@ -834,7 +847,7 @@ pub(super) fn edited_header_end(bytes: &[u8], offset: usize) -> Option<(u16, usi
 
 pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let tag = bytes.get(offset..offset.checked_add(2)?)?;
-    if tag == BODY_TAG {
+    let end = if tag == BODY_TAG {
         parse_tagged_body(bytes, offset).map(|node| node.end)
     } else if tag == SHELL_TAG {
         parse_shell(bytes, offset).map(|node| node.end)
@@ -842,7 +855,12 @@ pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usi
         parse_region(bytes, offset).map(|node| node.end)
     } else {
         None
-    }
+    }?;
+    // Owner fields hold no complete edited type header; a reading that spans
+    // one started inside another node.
+    (!(offset.checked_add(1)?..end)
+        .any(|at| bytes.get(at) == Some(&0) && schema::edited_header(bytes, at).is_some()))
+    .then_some(end)
 }
 
 /// Resolve first-of-type prefixes and wide identities through ownership links.
@@ -1323,6 +1341,41 @@ mod tests {
     }
 
     #[test]
+    fn two_word_attr_cell_moves_the_typed_face_fields() {
+        let mut bytes = FACE_TAG.to_vec();
+        bytes.extend_from_slice(&[0xf2, 0x7e, 0x00, 0x01]);
+        bytes.extend_from_slice(&0x51_u32.to_be_bytes());
+        push_ref(&mut bytes, 1);
+        bytes.extend_from_slice(&MAGIC);
+        for value in [1, 2, 3, 40_000, 5] {
+            push_ref(&mut bytes, value);
+        }
+        bytes.push(0x2d);
+        let face = super::tagged_candidates(&bytes, 0, FACE_TAG, super::parse_face_fields)
+            .into_iter()
+            .next()
+            .expect("FACE frames");
+        assert_eq!(face.attr, 36_225);
+        assert_eq!(face.node_id, 0x51);
+        assert_eq!(face.refs, [1, 2, 3, 40_000, 5]);
+        assert_eq!(face.sense, Sense::Reversed);
+    }
+
+    #[test]
+    fn a_wide_shell_reading_does_not_hide_the_edited_body_header_it_spans() {
+        let mut bytes = vec![0, 0x0d, 0xa2, 0, 0, 0x0d, 0xa1, 0, 0, 0, 0, 0, 1, 0, 1];
+        let header = bytes.len();
+        bytes.extend(copied_schema(BODY_TAG, 23));
+        bytes.extend(body_node(3, 1006, 1));
+        assert_eq!(super::tagged_owner_prefix_end(&bytes, 0), None);
+        assert!(!crate::brep::topology::topology_scopes(&bytes, false)
+            .excluded_starts
+            .iter()
+            .any(|range| range.contains(&header)));
+        assert_eq!(scan(&bytes).bodies.len(), 1);
+    }
+
+    #[test]
     fn wide_region_fields_retain_the_stored_kind() {
         for key in [0x7fff, 0x8000, 0x1_0000] {
             for (byte, kind) in [(b'S', RegionKind::Solid), (b'V', RegionKind::Void)] {
@@ -1428,7 +1481,7 @@ mod tests {
         let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 0x0d, 0, 3, 0, 0, 0, 11]);
-        for value in [1536, 0, 263, 1_216_581_639, 2, 3, 4, 5] {
+        for value in [1536, 0, 263, 1_073_709_056, 2, 3, 4, 5] {
             push_ref(&mut bytes, value);
         }
         let facts = scan(&bytes);

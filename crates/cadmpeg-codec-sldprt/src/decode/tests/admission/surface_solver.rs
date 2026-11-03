@@ -30,7 +30,7 @@ fn intersection_surface_source() -> Vec<u8> {
     be16(&mut body, 190);
     body.extend_from_slice(&[0; 14]);
     body.push(0x2b);
-    for reference in [180, 200, 194, 195, 196, 0] {
+    for reference in [180, 200, 194, 195, 196] {
         be16(&mut body, reference);
     }
     body.extend_from_slice(&[0, 0x28]);

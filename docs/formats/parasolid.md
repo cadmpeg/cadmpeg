@@ -21,12 +21,14 @@ XMT index encoding:
 | Form        | Encoding                                                                                         |
 | ----------- | ------------------------------------------------------------------------------------------------ |
 | Small index | `uint16` BE, 2 bytes                                                                             |
-| Large index | negative `int16` remainder + nonzero `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
+| Large index | negative `int16` remainder + positive `int16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
 
-A small index holds `0` through `0x7fff`. A large index has remainder
-magnitude `1` through `32767`; a multiple of 32767 takes the preceding quotient
-and remainder magnitude 32767. The node indices of one stream are `2` through
-the node count plus one.
+A small index holds `0` through `0x7fff`. For a logical index `i` of at least
+32767, the remainder is `-(i mod 32767 + 1)` and the quotient is `i div 32767`.
+Both words are `int16`: a remainder word is `0x8001` through `0xffff`, and a
+quotient word is `0x0001` through `0x7fff`. The largest raw value is
+`32768*32767`. The node indices of one stream are `2` through the node count
+plus one.
 
 An encoded index is one greater than the logical node index; encoded `0001`
 denotes the null reference. An extended pointer occupies four bytes instead of

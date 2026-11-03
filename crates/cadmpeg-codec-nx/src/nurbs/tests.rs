@@ -782,7 +782,7 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
 }
 
 #[test]
-fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
+fn nurbs_mixed_surface_layouts_do_not_prove_coalescence() {
     let mut stream = bspline_partition_stream();
     let mut descriptor = record(126, 49);
     put_ref(&mut descriptor, 2, 20);
@@ -804,15 +804,11 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     stream.extend(descriptor);
 
     let surfaces = crate::nurbs::surfaces(&stream).0;
-    assert_eq!(surfaces.len(), 1);
-    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
-        panic!("expected NURBS surface");
-    };
-    assert_eq!(surface.poles().len(), 4);
+    assert!(surfaces.is_empty());
 }
 
 #[test]
-fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
+fn nurbs_mixed_curve_layouts_do_not_prove_coalescence() {
     let mut stream = bspline_partition_stream();
     let mut descriptor = record(136, 30);
     put_ref(&mut descriptor, 2, 40);
@@ -832,11 +828,7 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     stream.extend(descriptor);
 
     let curves = crate::nurbs::curves(&stream).0;
-    assert_eq!(curves.len(), 1);
-    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
-        panic!("expected NURBS curve");
-    };
-    assert_eq!(curve.control_points().len(), 2);
+    assert!(curves.is_empty());
 }
 
 #[test]
@@ -1136,4 +1128,155 @@ fn nurbs_array_count_requires_nonempty_complete_storage_and_nonnull_identity() {
             });
         }
     }
+}
+
+#[test]
+fn declared_rational_dimension_three_controls_are_uv_not_model_xyz() {
+    let stream = declared_curve(3, true, &[2.0, 4.0, 2.0, 9.0, 12.0, 3.0]);
+    assert!(crate::nurbs::curves(&stream).0.is_empty());
+    let curves = crate::nurbs::pcurves(&stream).0;
+    assert_eq!(curves.len(), 1);
+    let PcurveGeometry::Nurbs { nurbs: curve } = &curves[0].geometry else {
+        panic!("expected parameter-space NURBS");
+    };
+    assert_eq!(
+        curve.pole_rows().raw_points(),
+        vec![Point2 { u: 1.0, v: 2.0 }, Point2 { u: 3.0, v: 4.0 }]
+    );
+}
+
+#[test]
+fn declared_curve_dimension_rational_and_count_must_agree() {
+    let xyz = declared_curve(3, false, &[0.0, 0.0, 0.0, 0.02, 0.0, 0.0]);
+    assert_eq!(crate::nurbs::curves(&xyz).0.len(), 1);
+    assert!(crate::nurbs::pcurves(&xyz).0.is_empty());
+    for (dimension, rational, values) in [
+        (4, false, vec![0.0, 0.0, 0.0, 1.0, 0.02, 0.0, 0.0, 1.0]),
+        (4, true, vec![0.0, 0.0, 1.0, 0.02, 0.0, 1.0]),
+        (3, true, vec![0.0, 0.0, -1.0, 0.02, 0.0, 1.0]),
+        (3, true, vec![0.0, 0.0, 0.0, 0.02, 0.0, 1.0]),
+    ] {
+        let stream = declared_curve(dimension, rational, &values);
+        assert!(crate::nurbs::curves(&stream).0.is_empty());
+        assert!(crate::nurbs::pcurves(&stream).0.is_empty());
+    }
+}
+
+fn declared_curve(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let at = stream
+        .windows(4)
+        .position(|w| w == [0, 136, 0, 40])
+        .unwrap();
+    let mut descriptor = vec![0, 136, 0, 40, 0, 1];
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&dimension.to_be_bytes());
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&[5, 0, 0, u8::from(rational), 1]);
+    for reference in [41u16, 42, 43] {
+        descriptor.extend_from_slice(&reference.to_be_bytes());
+        descriptor.push(0);
+    }
+    stream.splice(at..at + 27, descriptor);
+    let at = stream
+        .windows(4)
+        .position(|w| w == [0, 135, 0, 41])
+        .unwrap();
+    let mut payload = record(135, 15 + values.len() * 8);
+    put_ref(&mut payload, 2, 41);
+    payload[9..13].copy_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    for (index, value) in values.iter().enumerate() {
+        put_f64(&mut payload, 15 + index * 8, *value);
+    }
+    stream.splice(at..at + 15 + 6 * 8, payload);
+    stream
+}
+
+#[test]
+fn declared_surface_dimension_rational_and_count_constrain_the_grid() {
+    let weighted = [
+        0.0, 0.0, 0.0, 1.0, 0.0, 0.04, 0.0, 2.0, 0.03, 0.0, 0.0, 3.0, 0.04, 0.08, 0.0, 4.0,
+    ];
+    let stream = declared_surface(4, true, &weighted);
+    let surfaces = crate::nurbs::surfaces(&stream).0;
+    assert_eq!(surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
+        panic!("expected weighted NURBS surface");
+    };
+    assert_same_points3(
+        &surface.pole_grid().raw_points().concat(),
+        &[
+            Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            Point3 {
+                x: 0.0,
+                y: 20.0,
+                z: 0.0,
+            },
+            Point3 {
+                x: 10.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            Point3 {
+                x: 10.0,
+                y: 20.0,
+                z: 0.0,
+            },
+        ],
+    );
+    assert!(
+        crate::nurbs::surfaces(&declared_surface(3, false, &weighted))
+            .0
+            .is_empty()
+    );
+    assert!(
+        crate::nurbs::surfaces(&declared_surface(4, false, &weighted))
+            .0
+            .is_empty()
+    );
+    for weight in [0.0, -1.0] {
+        let mut invalid = weighted;
+        invalid[3] = weight;
+        assert!(crate::nurbs::surfaces(&declared_surface(4, true, &invalid))
+            .0
+            .is_empty());
+    }
+}
+
+fn declared_surface(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let at = stream
+        .windows(4)
+        .position(|w| w == [0, 126, 0, 20])
+        .unwrap();
+    let mut descriptor = vec![0, 126, 0, 20, 0, 0, 0, 1, 0, 1];
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&[5, 5]);
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&[u8::from(rational), 0, 0, 1]);
+    descriptor.extend_from_slice(&dimension.to_be_bytes());
+    for reference in [21u16, 30, 31, 32, 33] {
+        descriptor.extend_from_slice(&reference.to_be_bytes());
+        descriptor.push(0);
+    }
+    stream.splice(at..at + 48, descriptor);
+    let at = stream
+        .windows(4)
+        .position(|w| w == [0, 125, 0, 21])
+        .unwrap();
+    let mut payload = record(125, 97 + values.len() * 8);
+    put_ref(&mut payload, 2, 21);
+    payload[90] = b'+';
+    payload[91..95].copy_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    for (index, value) in values.iter().enumerate() {
+        put_f64(&mut payload, 97 + index * 8, *value);
+    }
+    stream.splice(at..at + 97 + 12 * 8, payload);
+    stream
 }

@@ -81,8 +81,8 @@ pub(crate) struct LoopArrayRecord {
     pub(crate) lo_subtype: u32,
     /// `feat_id` compact integer.
     pub(crate) feature_id: u32,
-    /// Raw `attributes` byte.
-    pub(crate) attributes: u8,
+    /// Raw compact-integer `attributes` value.
+    pub(crate) attributes: u32,
     /// `direction` compact integer.
     pub(crate) direction: u32,
     /// `next_lo_ptr` compact integer.
@@ -169,7 +169,7 @@ struct Prefix {
     lo_type: u32,
     lo_subtype: u32,
     feature_id: u32,
-    attributes: u8,
+    attributes: u32,
     direction: u32,
     next_lo_ptr: u32,
     body_offset: usize,
@@ -180,8 +180,8 @@ fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
     let (lo_type, cursor) = compact_at(data, cursor, end)?;
     let (lo_subtype, cursor) = compact_at(data, cursor, end)?;
     let (feature_id, cursor) = compact_at(data, cursor, end)?;
-    let attributes = *data.get(cursor)?;
-    let (direction, cursor) = compact_at(data, cursor + 1, end)?;
+    let (attributes, cursor) = compact_at(data, cursor, end)?;
+    let (direction, cursor) = compact_at(data, cursor, end)?;
     let (next_lo_ptr, body_offset) = compact_at(data, cursor, end)?;
     (body_offset <= end).then_some(Prefix {
         lo_id,

@@ -21,8 +21,13 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("curve-orientation")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("curve-orientation"),
+        false,
+    )
+    .unwrap();
     let edge = brep
         .edges
         .iter()
@@ -124,8 +129,13 @@ fn decode_spline_edge(first: [f64; 3], last: [f64; 3]) -> (String, String, Sense
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("curve-orientation")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("curve-orientation"),
+        false,
+    )
+    .unwrap();
     let edge = brep
         .edges
         .iter()
@@ -543,7 +553,7 @@ fn chart(poles: &[[f64; 3]], parameters: &[f64]) -> crate::brep::intersection::I
         },
         support_data: crate::brep::intersection::IntersectionSupportData {
             supports: [2, 3],
-            fit_tolerance_mm: 0.01,
+            fit_tolerance_mm: Some(0.01),
             support_uv: None,
         },
     }

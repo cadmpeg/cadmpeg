@@ -183,7 +183,7 @@ fn a_surface_curve_retains_a_known_support_without_a_face() {
         [0.0, 0.0, 1.0],
         [1.0, 0.0, 0.0],
     );
-    let carriers = super::scan_carriers(&ctx, &bytes).unwrap();
+    let carriers = crate::brep::index::scan_carriers(&ctx, &bytes).unwrap();
     let mut out = Brep::default();
     attach_surface_curve(
         &mut super::BrepSink {
@@ -453,7 +453,7 @@ fn triangle_on_sp_curve(edge_40: &[u8], coedge_30: &[u8], from: [f64; 2], to: [f
 }
 
 fn decode_edge_40(body: &[u8]) -> (Brep, cadmpeg_ir::topology::Edge) {
-    let brep = super::decode_body(&ctx(), body, &cadmpeg_ir::stream_name!("test"))
+    let brep = super::decode_body(&ctx(), body, &cadmpeg_ir::stream_name!("test"), false)
         .expect("the triangle decodes");
     let edge = brep
         .edges

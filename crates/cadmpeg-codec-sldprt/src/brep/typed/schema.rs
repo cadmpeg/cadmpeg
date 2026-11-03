@@ -2,7 +2,9 @@
 
 use crate::layout::parasolid_edited_type_header as header;
 use cadmpeg_core::decode::View;
-use cadmpeg_parasolid::records::{read_edit_program, BaseVersion, EditProgram};
+use cadmpeg_parasolid::records::{read_edit_program, BaseVersion, EditProgram, SchemaPlan};
+
+pub(in crate::brep) const INTERSECTION_KIND: u16 = 38;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Class {
@@ -40,13 +42,25 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
     program.consumes_base().then_some((class, end))
 }
 
-/// An edited type header (spec §4.1): its node type and the offset just past
-/// its declaration, where the class's first record follows without a tag of
-/// its own.
+/// An edited INTERSECTION header whose program consumes every base field
+/// (spec §7.3): the plan it establishes and the offset of its first node's
+/// fields.
+pub(in crate::brep) fn edited_intersection(bytes: &[u8], at: usize) -> Option<(SchemaPlan, usize)> {
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    (kind == INTERSECTION_KIND).then_some(())?;
+    let (program, end) = edit_program(bytes, at, kind)?;
+    program
+        .consumes_base()
+        .then(|| (program.plan().clone(), end))
+}
+
+/// An edited type header whose program copies or deletes every base field
+/// (spec §4.1): its node type and the offset just past its declaration, where
+/// the class's first record follows without a tag of its own.
 pub(super) fn edited_header(bytes: &[u8], at: usize) -> Option<(u16, usize)> {
     let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
-    let (_, end) = edit_program(bytes, at, kind)?;
-    Some((kind, end))
+    let (program, end) = edit_program(bytes, at, kind)?;
+    program.consumes_base().then_some((kind, end))
 }
 
 #[cfg(test)]

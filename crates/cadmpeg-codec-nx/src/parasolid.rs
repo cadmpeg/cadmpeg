@@ -38,8 +38,8 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::read_and_advance as read_xmt;
 use crate::grouping::group_pairs;
+use cadmpeg_parasolid::pointer::read_at as read_xmt;
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.

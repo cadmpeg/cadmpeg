@@ -449,7 +449,7 @@ fn object_graphs_retain_exact_outer_container_declarations() {
     assert_eq!(container.ordinal, 2);
     assert_eq!(container.class_name, "CATPrtCont");
     assert_eq!(container.base_class, "CATProdCont");
-    assert_eq!(container.stream_name, "1048_62eb7b6f_1825");
+    assert_eq!(container.stream_name, "Cont_4bbc295c_1048_62eb7b6f_1825");
     let expected = container.clone();
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();

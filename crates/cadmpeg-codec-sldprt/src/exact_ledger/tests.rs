@@ -239,7 +239,7 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
 
 #[test]
 fn a_face_with_a_stored_tolerance_has_a_span_in_each_stream_mode() {
-    // The typed FACE 10 supersedes the bridge FACE 10.
+    // An ownership-only typed FACE does not replace the bridge FACE 10.
     let mut body = syn::triangle_body();
     let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
     let bridge = (0..body.len() - 18)
@@ -256,6 +256,6 @@ fn a_face_with_a_stored_tolerance_has_a_span_in_each_stream_mode() {
         assert!(ledger
             .spans
             .iter()
-            .any(|span| span.tag == 0x0e && span.offset == typed));
+            .any(|span| span.tag == 0x0e && span.offset == bridge));
     }
 }

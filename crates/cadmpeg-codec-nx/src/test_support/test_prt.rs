@@ -216,26 +216,11 @@ pub(crate) fn prt_with_size_framed_om_section() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// `stream`, a [`super::test_streams::topology_partition_stream`], with every
+/// record identity and every reference to a record moved past 32767 into the
+/// four-byte pointer cell.
 pub(crate) fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
-    let marker = b"SCH_TEST_1_9999\x00";
-    let start = stream
-        .windows(marker.len())
-        .position(|window| window == marker)
-        .unwrap()
-        + marker.len();
-    let lengths = [24, 24, 39, 16, 23, 32, 91, 67, 28, 16, 40];
-    let mut out = stream[..start].to_vec();
-    let mut pos = start;
-    for len in lengths {
-        let record = &stream[pos..pos + len];
-        let xmt = u16::from_be_bytes([record[2], record[3]]);
-        out.extend_from_slice(&record[..2]);
-        out.extend_from_slice(&(-(i16::try_from(xmt).unwrap())).to_be_bytes());
-        out.extend_from_slice(&0u16.to_be_bytes());
-        out.extend_from_slice(&record[4..]);
-        pos += len;
-    }
-    out
+    super::test_streams::widen_topology_xmts(stream, |_| true)
 }
 
 /// A synthetic assembly `.prt`: SPLMSSTR header, an `ExternalReferences` file

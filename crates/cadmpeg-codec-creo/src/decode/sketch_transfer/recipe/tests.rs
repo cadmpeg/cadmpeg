@@ -35,7 +35,6 @@ fn operation(
         display_state_conflict: false,
         depdb: schema.map(|schema| crate::feature::operations::DepdbPrefix { schema, parent: 0 }),
         offset: 0,
-        state_offset: 0,
     }
 }
 
@@ -58,7 +57,7 @@ fn feature_schema_classes_keep_distinct_sorted_values() {
 #[test]
 fn indexed_feature_schema_classes_match_the_per_feature_scan() {
     let mut scan = crate::test_support::empty_container_scan();
-    // 1: unique operation class over a conflicting row; 2: duplicate operations
+    // 1: conflicting current and operation classes abstain; 2: duplicate operations
     // fall back to the rows; 3: operation without a class falls back to the
     // rows; 4: conflicting rows fall back to a legacy round; 5: agreeing rows
     // across both row lists; 6: classless rows only; 7: legacy round only;
@@ -106,5 +105,72 @@ fn indexed_feature_schema_classes_match_the_per_feature_scan() {
             feature_schema_class(&scan, feature_id),
             "{feature_id}"
         );
+    }
+}
+
+#[test]
+fn current_material_rows_reject_a_conflicting_creation_recipe() {
+    use crate::feature::operations::{FeatureRecipe, RecipeResolution};
+
+    for (recipe, stored, current, agrees) in [
+        (
+            FeatureRecipe::ProtrudeExtrude,
+            SchemaClass::Protrusion,
+            SchemaClass::Protrusion,
+            true,
+        ),
+        (
+            FeatureRecipe::ProtrudeExtrude,
+            SchemaClass::Protrusion,
+            SchemaClass::Cut,
+            false,
+        ),
+        (
+            FeatureRecipe::CutRevolve,
+            SchemaClass::Cut,
+            SchemaClass::Cut,
+            true,
+        ),
+        (
+            FeatureRecipe::CutRevolve,
+            SchemaClass::Cut,
+            SchemaClass::Protrusion,
+            false,
+        ),
+    ] {
+        let mut scan = crate::test_support::empty_container_scan();
+        let mut audit = operation(40, Some(stored));
+        audit.recipe = RecipeResolution::Resolved(recipe);
+        audit.depdb.as_mut().expect("stored schema").parent = 7;
+        scan.features.operations.push(audit.clone());
+        scan.features.rows.push(row(current));
+        let expected = agrees.then_some(recipe);
+        assert_eq!(super::admitted_feature_recipe(&scan, 40), expected);
+        assert_eq!(
+            super::admitted_feature_recipe_parent(&scan, 40),
+            agrees.then_some(7)
+        );
+        assert_eq!(
+            super::current_feature_recipe_parent(&scan.features.operations, 40),
+            Some(7)
+        );
+        assert_eq!(
+            super::feature_recipe(&scan, 40),
+            expected.map(FeatureRecipe::kind)
+        );
+        assert_eq!(
+            super::feature_recipe_effect(&scan, 40),
+            expected.map(FeatureRecipe::effect)
+        );
+        assert_eq!(
+            super::feature_section_sweep_semantics_conflict(&scan, 40),
+            !agrees
+        );
+        assert_eq!(feature_schema_class(&scan, 40), agrees.then_some(current));
+        assert_eq!(
+            FeatureSchemaClasses::new(&scan).get(40),
+            agrees.then_some(current)
+        );
+        assert_eq!(scan.features.operations[0], audit);
     }
 }

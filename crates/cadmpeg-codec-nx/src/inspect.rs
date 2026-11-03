@@ -81,7 +81,7 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
             );
         }
         if stream.kind().is_parasolid() && stream.kind() != parasolid::StreamKind::Deltas {
-            let graph = topology::Graph::parse(&stream.inflated);
+            let graph = topology::Graph::parse_source(&stream.inflated)?;
             for (kind, name) in [
                 (NodeKind::Body, "body"),
                 (NodeKind::Shell, "shell"),

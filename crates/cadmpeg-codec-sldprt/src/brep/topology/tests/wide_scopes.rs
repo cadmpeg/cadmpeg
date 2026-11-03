@@ -43,20 +43,20 @@ fn wide_attribute_scope_covers_the_definition_and_slot_pointers() {
 #[test]
 fn selected_wide_fin_keeps_its_own_identity_under_prefix_ambiguity() {
     let mut references = [1; 9];
-    references[8] = (0x012b << 15) | 0x2b;
-    let body = wide::fin(0xfffd, &references);
+    references[8] = 299 * 32_767 + 32_725;
+    let body = wide::fin(32_770, &references);
     let tables = crate::brep::topology::scan_plain(&body);
-    let fin = tables.coedges().get(&0xfffd).expect("wide FIN identity");
-    assert_eq!(fin.attr, 0xfffd);
+    let fin = tables.coedges().get(&32_770).expect("wide FIN identity");
+    assert_eq!(fin.attr, 32_770);
     assert_eq!(fin.refs, references);
     assert_eq!(tables.coedges().len(), 1);
-    assert!(!tables.coedge_is_ambiguous(0xfffd));
+    assert!(!tables.coedge_is_ambiguous(32_770));
 }
 
 #[test]
 fn wide_fin_scope_covers_a_vertex_tag_in_a_reference() {
     let mut references = [1; 9];
-    references[3] = 18 << 15;
+    references[3] = 18 * 32_767 + 1;
     let body = wide::fin(0x1_0000, &references);
     let nested = body.windows(2).position(|word| word == [0, 18]).unwrap();
     assert_eq!(topology_header_prefix_end(&body, 0, 0x11), Some(body.len()));
@@ -69,7 +69,7 @@ fn wide_fin_scope_covers_a_vertex_tag_in_a_reference() {
 #[test]
 fn string_node_scopes_follow_the_native_identity_width() {
     for tag in [0x4f, 0x54] {
-        for key in [0x7fff, 0x8000, 0xffff, 0x1_0000, 18 << 15] {
+        for key in [0x7fff, 0x8000, 0xffff, 0x1_0000, 18 * 32_767 + 1] {
             let node = wide::string_node(tag, key, "label");
             let fin = framed_topology_fin(31, [1; 9], false, false, false);
             let body = [node.as_slice(), fin.as_slice()].concat();

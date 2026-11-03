@@ -333,17 +333,11 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap
             let legacy = super::word_at(bytes, start)
                 .filter(|attr| (2..=0x7fff).contains(attr))
                 .and_then(|attr| {
-                    super::analytic_marker_candidates(bytes, start)?
-                        .into_iter()
-                        .filter(|marker| {
-                            *marker != start + crate::layout::compact_analytic_header::MARKER
-                        })
-                        .filter_map(|marker| support_refs(bytes, marker))
-                        .find_map(|(surface, b_curve)| {
-                            pcurves
-                                .contains_key(&b_curve)
-                                .then_some((attr, surface, b_curve))
-                        })
+                    let marker = super::tripled_carrier_marker(bytes, start)?;
+                    let (surface, b_curve) = support_refs(bytes, marker)?;
+                    pcurves
+                        .contains_key(&b_curve)
+                        .then_some((attr, surface, b_curve))
                 });
             for (attr, surface, b_curve) in native.into_iter().chain(legacy) {
                 let Some(pcurve) = pcurves.get(&b_curve).filter(|_| surface > 1) else {

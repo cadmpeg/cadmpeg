@@ -48,6 +48,52 @@ pub(crate) fn build_prt_raw(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<
     out
 }
 
+/// One slot of a synthetic `dim_array`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DimSlot<'a> {
+    /// The null slot `e1`.
+    Null,
+    /// The labeled first element, from its `e3` opener through `bck_value`.
+    Prototype(&'a [u8]),
+    /// A later element, from its `e3` opener through its last field before
+    /// `symbol`.
+    Later(&'a [u8]),
+}
+
+/// A `dim_array` field with one slot for each of `slots`: `e0 00 dim_array\0`,
+/// `token`, `f8 <count> f7 02 fb`, then each slot. Each element ends with the
+/// `symbol` field that states its slot index. Returns the bytes and the offset
+/// of each slot.
+pub(crate) fn dim_array(token: &[u8], slots: &[DimSlot<'_>]) -> (Vec<u8>, Vec<usize>) {
+    assert!(slots.len() < 0x80, "one-byte compact slot count");
+    let mut bytes = b"\xe0\x00dim_array\0".to_vec();
+    bytes.extend_from_slice(token);
+    bytes.push(0xf8);
+    bytes.push(u8::try_from(slots.len()).unwrap());
+    bytes.extend_from_slice(b"\xf7\x02\xfb");
+    let mut starts = Vec::new();
+    for (index, slot) in slots.iter().enumerate() {
+        starts.push(bytes.len());
+        let index = u8::try_from(index).unwrap();
+        match slot {
+            DimSlot::Null => bytes.push(0xe1),
+            DimSlot::Prototype(fields) => {
+                bytes.extend_from_slice(fields);
+                bytes.extend_from_slice(
+                    b"\xe0\x00symbol\0\xe2\xe0\x01type\0\x01\xe0\x01text(i_val)\0",
+                );
+                bytes.push(index);
+                bytes.push(0xf2);
+            }
+            DimSlot::Later(fields) => {
+                bytes.extend_from_slice(fields);
+                bytes.extend_from_slice(&[0xe2, 0x01, index]);
+            }
+        }
+    }
+    (bytes, starts)
+}
+
 /// A `VisibGeom` payload with byte-backed `srf_array`/`crv_array` count headers.
 pub(crate) fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
     let mut p = Vec::new();
