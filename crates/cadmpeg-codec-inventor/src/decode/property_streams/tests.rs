@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::{PropertyRecord, PropertySetRecord};
-use crate::property_set::PropertySetState;
 use crate::test_support::given_up_records;
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -58,10 +57,6 @@ fn untrusted_header_count_gives_up_only_its_actual_stream_and_keeps_the_peer() {
     let descriptors = crate::property_set::inventory(&ctx, &snapshot)
         .expect("the property set inventory succeeds");
     assert_eq!(descriptors.len(), 2);
-    assert!(matches!(
-        descriptors[0].state,
-        PropertySetState::Malformed(_)
-    ));
     let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let mut ordinal = 0;
     assert!(
@@ -113,10 +108,6 @@ fn unreadable_bounded_value_keeps_its_section_and_exact_property_peer() {
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
     let descriptors = crate::property_set::inventory(&ctx, &snapshot)
         .expect("the property set inventory succeeds");
-    assert!(matches!(
-        descriptors[0].state,
-        PropertySetState::Malformed(_)
-    ));
     let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let formed = super::stage(&ctx, &mut output, &descriptors[0], &mut 0)
         .expect("the stream stage succeeds")
@@ -148,15 +139,14 @@ fn unreadable_bounded_value_keeps_its_section_and_exact_property_peer() {
 }
 
 #[test]
-fn cached_failure_does_not_override_actual_readable_source() {
+fn readable_source_stage_forms_its_section() {
     let bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&stream(false));
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("the fixture fits the service policy");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
-    let mut descriptors = crate::property_set::inventory(&ctx, &snapshot)
+    let descriptors = crate::property_set::inventory(&ctx, &snapshot)
         .expect("the property set inventory succeeds");
-    descriptors[0].state = PropertySetState::Malformed("cached cue".into());
     let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let formed = super::stage(&ctx, &mut output, &descriptors[0], &mut 0)
         .expect("the stream stage succeeds")

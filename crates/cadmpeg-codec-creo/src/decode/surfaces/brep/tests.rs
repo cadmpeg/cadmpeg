@@ -257,12 +257,14 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingLoops);
     let samples = samples.collect::<Vec<_>>();
     assert_eq!(count, 6);
+    // §4.5: a rejected face is dropped by validation and named in the loss
+    // only; the loss lists every rejected face id with no sample cap.
     assert_eq!(
         samples
             .iter()
             .map(|detail| detail.face_id)
             .collect::<Vec<_>>(),
-        vec![10, 11, 12, 13]
+        vec![10, 11, 12, 13, 14, 15]
     );
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     (diagnostics.record_coverage(&mut coverage));

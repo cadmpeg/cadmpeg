@@ -75,8 +75,11 @@ fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
     }
 }
 
+/// An empty reached history table locates no design parts (§1.1): a table
+/// with no records holds no class, so a cut that removes the table agrees
+/// with the uncut scope.
 #[test]
-fn an_empty_reached_history_table_holds_design_at_full_depth_only() {
+fn an_empty_history_table_holds_no_design_part() {
     let bytes = modern(&[], Some(&[]));
     for depth in [
         DecodeDepth::Container,
@@ -84,7 +87,7 @@ fn an_empty_reached_history_table_holds_design_at_full_depth_only() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::full()));
+        assert_scope(&result, delivered(depth, ContentScope::geometry()));
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
@@ -123,6 +126,48 @@ fn a_bounded_object_history_part_survives_its_inner_parse_failure_for_scope() {
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
+}
+
+fn hatch_object() -> Vec<u8> {
+    crate::test_support::test_dump::object_record_with_payload(
+        ArchiveVersion::V8,
+        0x0001_0000,
+        crate::hatch::CLASS.to_wire(),
+        &crate::hatch::tests::version_two_hatch_payload(),
+    )
+}
+
+fn modern_with_units(objects: &[Vec<u8>]) -> Vec<u8> {
+    let archive = ArchiveVersion::V8;
+    let tables = vec![
+        table(archive, 0x1000_0014, &[]),
+        table(
+            archive,
+            0x1000_0015,
+            &[crate::test_support::test_dump::units_record(archive, 2)],
+        ),
+        table(archive, 0x1000_0013, objects),
+    ];
+    minimal_document("80", &tables)
+}
+
+/// A hatch object projects its feature to the design arena only when the
+/// request includes design (§1.1): a geometry decode keeps the loop curves
+/// and holds no design.
+#[test]
+fn a_hatch_feature_holds_design_only_at_full_depth() {
+    let bytes = modern_with_units(&[hatch_object()]);
+    let full = decode(&bytes, DecodeDepth::Full);
+    assert_scope(&full, delivered(DecodeDepth::Full, ContentScope::full()));
+    assert_eq!(full.ir().model.features.len(), 1);
+    assert!(!full.ir().model.curves.is_empty());
+    let geometry = decode(&bytes, DecodeDepth::Geometry);
+    assert_scope(
+        &geometry,
+        delivered(DecodeDepth::Geometry, ContentScope::geometry()),
+    );
+    assert!(geometry.ir().model.features.is_empty());
+    assert!(!geometry.ir().model.curves.is_empty());
 }
 
 fn v1(points: &[[f64; 3]]) -> Vec<u8> {
