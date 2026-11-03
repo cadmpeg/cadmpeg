@@ -1053,6 +1053,9 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     let mut mapping = std::collections::BTreeMap::new();
     if let Some(model) = value.get("model").and_then(|model| model.as_object()) {
         for (arena, records) in model {
+            if arena == "coedges" {
+                continue;
+            }
             if let Some(records) = records.as_array() {
                 for (ordinal, record) in records.iter().enumerate() {
                     if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
@@ -1060,6 +1063,33 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
                             mapping.insert(id.to_owned(), format!("{arena}#{ordinal}"));
                         }
                     }
+                }
+            }
+        }
+    }
+    // Coedge records have no canonical order; the patch preserves the
+    // retained order while synthesis re-derives it. Sort each side's coedges
+    // by their (already rekeyed) edge, sense and owner loop before assigning
+    // positional identities.
+    if let Some(coedges) = value
+        .pointer_mut("/model/coedges")
+        .and_then(|coedges| coedges.as_array_mut())
+    {
+        let key = |record: &serde_json::Value| {
+            let field = |name: &str| {
+                record
+                    .get(name)
+                    .and_then(|field| field.as_str())
+                    .map(|field| mapping.get(field).cloned().unwrap_or_else(|| field.into()))
+                    .unwrap_or_default()
+            };
+            [field("edge"), field("sense"), field("owner_loop")].join("\0")
+        };
+        coedges.sort_by_cached_key(|record| key(record));
+        for (ordinal, record) in coedges.iter().enumerate() {
+            if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                if ephemeral_id(id) {
+                    mapping.insert(id.to_owned(), format!("coedges#{ordinal}"));
                 }
             }
         }
