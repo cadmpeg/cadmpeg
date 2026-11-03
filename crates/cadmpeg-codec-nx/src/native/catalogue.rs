@@ -61,7 +61,7 @@ use super::om::{
 use super::parasolid::{
     ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
     ParasolidChartRecord, ParasolidDeltasPartitionPrefix, ParasolidDeltasRecord,
-    ParasolidDeltasResidualSpan, ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
+    ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
     ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
     ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord,
     ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
@@ -639,11 +639,6 @@ impl StreamNoted for ParasolidDeltasMetadata {
     }
 }
 
-impl StreamNoted for ParasolidDeltasResidualSpan {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
 impl StreamNoted for ParasolidAttributeDefinition {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -1320,17 +1315,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_metadata, r, ns),
         len: |m| m.parasolid.deltas_metadata.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "parasolid_deltas_residual_spans",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("DELTAS_RESIDUAL"),
-            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_residual_spans, r, tag, a),
-        },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_residual_spans, r, ns),
-        len: |m| m.parasolid.deltas_residual_spans.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
