@@ -310,7 +310,7 @@ pub(crate) fn frame_bulk_records<'a>(
     bulk: View<'a>,
     tables: &MetaTables<'a>,
     segment_version_major: u8,
-) -> Result<RseRecordTable<'a>, CodecError> {
+) -> Result<FramedBulkRecords<'a>, CodecError> {
     frame_bulk_records_with(bulk, tables, segment_version_major, |index| {
         tables.types.get(usize::from(index)).copied()
     })
@@ -321,10 +321,31 @@ pub(crate) fn frame_admitted_bulk_records<'a>(
     tables: &MetaTables<'a>,
     admitted: &[Option<TypeDescriptor>],
     segment_version_major: u8,
-) -> Result<RseRecordTable<'a>, CodecError> {
+) -> Result<FramedBulkRecords<'a>, CodecError> {
     frame_bulk_records_with(bulk, tables, segment_version_major, |index| {
         admitted.get(usize::from(index)).copied().flatten()
     })
+}
+
+/// Records framed before an out-of-range payload, with the range to give up.
+///
+/// A payload that runs past the end of the bulk stream is a part failure
+/// (§4.5): the records framed before it are kept, and the failing record to
+/// the end of the stream is given up as one part. Any other framing error
+/// fails the whole table.
+#[derive(Debug)]
+pub(crate) struct FramedBulkRecords<'a> {
+    pub(crate) table: RseRecordTable<'a>,
+    pub(crate) failure: Option<BulkRangeFailure>,
+    pub(crate) source_record_count: usize,
+}
+
+/// An out-of-range bulk payload: the failing record starts at `start`, and
+/// `error` carries the truncation for the give-up loss.
+#[derive(Debug)]
+pub(crate) struct BulkRangeFailure {
+    pub(crate) start: usize,
+    pub(crate) error: CodecError,
 }
 
 fn frame_bulk_records_with<'a>(
@@ -332,36 +353,80 @@ fn frame_bulk_records_with<'a>(
     tables: &MetaTables<'a>,
     segment_version_major: u8,
     mut descriptor_at: impl FnMut(u8) -> Option<TypeDescriptor>,
-) -> Result<RseRecordTable<'a>, CodecError> {
+) -> Result<FramedBulkRecords<'a>, CodecError> {
     let mut cursor = Cursor::new(bulk);
     let mut records = Vec::new();
+    let mut failure = None;
+    let mut source_record_count = 0;
     for block in tables.blocks.iter().filter(|block| block.stored) {
-        let selector = cursor.u32("record type selector")?;
-        let type_index = u8::try_from(selector & 0xff).map_err(|_| {
-            CodecError::Malformed("Inventor numeric value exceeds target range".into())
-        })?;
-        let descriptor = descriptor_at(type_index).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "RSe record {} selects absent type index {type_index}",
-                block.ordinal
-            ))
-        })?;
-        let source = frame_record_source(&mut cursor, bulk, block, segment_version_major, true)?;
-        records.push(RseRecordFrame {
-            block_descriptor_source: block.source,
-            ordinal: block.ordinal,
-            selector,
-            type_id: descriptor.id,
-            payload_offset: source.payload_offset,
-            payload: source.payload,
-            trailing_length_written: source.trailing_length_written,
-            trailer: source.trailer,
-        });
+        source_record_count += 1;
+        let start = bulk
+            .start()
+            .checked_add(cursor.position())
+            .ok_or_else(|| CodecError::malformed("RSe record range overflows"))?;
+        let framed = (|| {
+            let selector = cursor.u32("record type selector")?;
+            let type_index = u8::try_from(selector & 0xff).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?;
+            let descriptor = descriptor_at(type_index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "RSe record {} selects absent type index {type_index}",
+                    block.ordinal
+                ))
+            })?;
+            let source =
+                frame_record_source(&mut cursor, bulk, block, segment_version_major, true)?;
+            Ok(RseRecordFrame {
+                block_descriptor_source: block.source,
+                ordinal: block.ordinal,
+                selector,
+                type_id: descriptor.id,
+                payload_offset: source.payload_offset,
+                payload: source.payload,
+                trailing_length_written: source.trailing_length_written,
+                trailer: source.trailer,
+            })
+        })();
+        match framed {
+            Ok(record) => records.push(record),
+            Err(error @ CodecError::Truncated { .. }) => {
+                failure = Some(BulkRangeFailure { start, error });
+                break;
+            }
+            Err(error) => return Err(error),
+        }
     }
-    let stream_trailer = frame_stream_trailer(&mut cursor, bulk)?;
-    Ok(RseRecordTable {
-        records,
-        stream_trailer,
+    let end_view = || {
+        bulk.child(bulk.end(), bulk.end())
+            .ok_or_else(|| CodecError::malformed("RSe bulk end range is invalid"))
+    };
+    let stream_trailer = if failure.is_some() {
+        end_view()?
+    } else {
+        let trailer_start = bulk
+            .start()
+            .checked_add(cursor.position())
+            .ok_or_else(|| CodecError::malformed("RSe trailer range overflows"))?;
+        match frame_stream_trailer(&mut cursor, bulk) {
+            Ok(trailer) => trailer,
+            Err(error @ CodecError::Truncated { .. }) => {
+                failure = Some(BulkRangeFailure {
+                    start: trailer_start,
+                    error,
+                });
+                end_view()?
+            }
+            Err(error) => return Err(error),
+        }
+    };
+    Ok(FramedBulkRecords {
+        table: RseRecordTable {
+            records,
+            stream_trailer,
+        },
+        failure,
+        source_record_count,
     })
 }
 
@@ -873,6 +938,7 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn record_trailer_type_diagnostic_names_the_type() {
@@ -936,8 +1002,10 @@ mod tests {
             push_u32(&mut bulk, u32::MAX);
             bulk.extend_from_slice(&[7, 8]);
             with_view(&bulk, |bulk_view| {
-                let records = frame_bulk_records(bulk_view, &tables, 18)
+                let framing = frame_bulk_records(bulk_view, &tables, 18)
                     .expect("synthetic bulk records parse");
+                assert!(framing.failure.is_none());
+                let records = framing.table;
                 assert_eq!(records.records.len(), 2);
                 assert_eq!(records.records[1].payload.window(), &[0x42; 5]);
                 assert_eq!(
@@ -948,6 +1016,33 @@ mod tests {
             bulk[24] = 0;
             with_view(&bulk, |bulk_view| {
                 assert!(frame_bulk_records(bulk_view, &tables, 18).is_err());
+            });
+        });
+    }
+
+    #[test]
+    fn truncated_bulk_payload_keeps_framed_records_and_names_its_remainder() {
+        let meta = meta_fixture();
+        with_view(&meta, |meta_view| {
+            let tables = parse_meta_tables(meta_view).expect("synthetic metadata tables parse");
+            let mut bulk = Vec::new();
+            push_u32(&mut bulk, 0x100);
+            bulk.extend_from_slice(&[0x41; 3]);
+            push_u32(&mut bulk, 3);
+            push_u32(&mut bulk, 0x100);
+            bulk.extend_from_slice(&[0x42; 5]);
+            push_u32(&mut bulk, 5);
+            push_u32(&mut bulk, u32::MAX);
+            bulk.extend_from_slice(&[7, 8]);
+            // The first record occupies 11 bytes; cut inside the second payload.
+            with_view(&bulk[..17], |bulk_view| {
+                let framing = frame_bulk_records(bulk_view, &tables, 18)
+                    .expect("truncation keeps the framed records");
+                assert_eq!(framing.table.records.len(), 1);
+                assert_eq!(framing.table.records[0].payload.window(), &[0x41; 3]);
+                let failure = framing.failure.expect("the remainder is named");
+                assert_eq!(failure.start, bulk_view.start() + 11);
+                assert!(matches!(failure.error, CodecError::Truncated { .. }));
             });
         });
     }

@@ -934,7 +934,13 @@ impl CodecBackend for FcstdCodec {
                     scan.losses.push(code.note(format!("property {} Python payload has no decoded value; opaque encoding retained only in fidelity", property.id)));
                 }
             }
-            let mut entry_records = container::entry_records(&scan, &graph.properties)?;
+            let mut entry_records = container::entry_records(
+                &scan,
+                &graph.objects,
+                &graph.properties,
+                &scan.failed_retained,
+                &mut source_fidelity,
+            )?;
             let shape_payloads = brep::parse_payloads(
                 &property_reader,
                 &graph.properties,
@@ -1268,7 +1274,7 @@ impl CodecBackend for FcstdCodec {
             &entry_sources,
             &mut source_fidelity,
         )?);
-        fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
+        fidelity::mark_unreadable(&ir, &mut source_fidelity, &scan.failed_members)?;
         // The decode wrapper stamps the source digest from its root view.
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

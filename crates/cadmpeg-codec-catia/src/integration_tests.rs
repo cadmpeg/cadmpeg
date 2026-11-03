@@ -637,7 +637,9 @@ fn sketch_geometry_without_construction_state_stays_native() {
 }
 
 #[test]
-fn operation_schema_buckets_stay_native_without_feature_ownership() {
+fn operation_schema_buckets_transfer_as_native_operations() {
+    // §2.2: an owner-declared operation bucket projects as a native operation
+    // with its native reference instead of remaining unresolved.
     use crate::test_support::test_container::outer_container_catpart;
     use crate::test_support::test_object_graph::{
         catalog_stream, entity_backed_object_graph, object_graph_record,
@@ -692,9 +694,26 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
             Some(label)
         );
         assert_eq!(bucket.fields.len(), 2);
-        assert!(
-            result.ir().model.features.is_empty(),
-            "schema label {label} has no operation closure"
+        let bucket_features: Vec<_> = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .filter(|feature| feature.native_ref.as_deref() == Some(bucket.id.as_str()))
+            .collect();
+        assert_eq!(
+            bucket_features.len(),
+            1,
+            "schema label {label} projects one native operation"
+        );
+        assert_eq!(
+            bucket_features[0].evaluation.definition(),
+            &cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind: cadmpeg_ir::features::NativeFeatureKind::from(label),
+                    parameters: std::collections::BTreeMap::new(),
+                }
+            )
         );
         let records: Vec<crate::native::CatiaObjectRecord> = namespace
             .arena_as("object_graph_records")

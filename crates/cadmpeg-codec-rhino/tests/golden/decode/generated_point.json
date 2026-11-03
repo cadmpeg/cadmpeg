@@ -20,7 +20,8 @@
             "g": 0.0,
             "r": 0.0
           },
-          "id": "rhino:model:display-color#layer-0"
+          "id": "rhino:model:display-color#layer-0",
+          "native_ref": "rhino:object:record#000000"
         }
       ],
       "assembly_joints": [],
@@ -126,6 +127,7 @@
       "view_presentations": [
         {
           "id": "rhino:model:object-view#0-0",
+          "native_ref": "rhino:object:record#000000",
           "object": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
           "order": 0,
           "visible": true

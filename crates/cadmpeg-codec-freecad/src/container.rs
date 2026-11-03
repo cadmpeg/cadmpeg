@@ -13,7 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
-use crate::native::{DocumentFacts, EntryRecord, PropertyRecord};
+use crate::native::{DocumentFacts, EntryRecord, ObjectRecord, PropertyRecord};
 
 pub(crate) mod parts;
 
@@ -81,6 +81,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
     /// Independently framed members given up by the shared part helper.
     pub(crate) failed_members: BTreeSet<String>,
+    /// Retained-record identities each failed member's give-up kept.
+    pub(crate) failed_retained: BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
@@ -241,13 +243,17 @@ fn scan_impl<'a>(
         document_properties,
         object_declarations,
         failed_members: opened.failed,
+        failed_retained: opened.failed_retained,
         data,
     })
 }
 
 pub(crate) fn entry_records(
     scan: &Scan<'_>,
+    objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    failed_retained: &BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    fidelity: &mut cadmpeg_ir::source_fidelity::SourceFidelity,
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
     let mut unreadable_names = HashSet::new();
@@ -269,6 +275,35 @@ pub(crate) fn entry_records(
         if !scan.data.contains_key(&entry.name) {
             if unreadable_names.contains(entry.name.as_str()) {
                 // Stored source-only bytes have no expanded-byte coverage.
+                // Narrow the retained give-up to the classes its bytes can
+                // hold: referring properties when named, else the entry role.
+                // Pruned side entries lose failed members, so named file
+                // attributes are read again here for this member alone.
+                let mut owners = references
+                    .get(entry.name.as_str())
+                    .map_or(Vec::new(), |owners| owners.clone());
+                for (index, property) in properties.iter().enumerate() {
+                    if owners.contains(&index) {
+                        continue;
+                    }
+                    let mut names = property.values().iter().flat_map(|value| {
+                        value.attributes.iter().filter_map(|(key, name)| {
+                            crate::loss::entry_attribute(property, key).then_some(name)
+                        })
+                    });
+                    if names.any(|name| name == &entry.name) {
+                        owners.push(index);
+                    }
+                }
+                refine_failed_member(
+                    &entry.name,
+                    entry.role,
+                    &owners,
+                    objects,
+                    properties,
+                    failed_retained,
+                    fidelity,
+                )?;
                 continue;
             }
             return Err(CodecError::malformed(format_args!(
@@ -291,6 +326,48 @@ pub(crate) fn entry_records(
         )?);
     }
     Ok(records)
+}
+
+/// Narrow a failed member's retained give-up to the classes its bytes can
+/// hold: the referring properties' classes when named, else the entry role.
+#[allow(clippy::too_many_arguments)]
+fn refine_failed_member(
+    name: &str,
+    role: ContainerRole,
+    owners: &[usize],
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    failed_retained: &BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    fidelity: &mut cadmpeg_ir::source_fidelity::SourceFidelity,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
+    let mut classes = ArenaClasses::new();
+    match role {
+        ContainerRole::Brep | ContainerRole::Thumbnail => {
+            classes.insert(ArenaClass::Model);
+        }
+        _ => {
+            for &index in owners {
+                classes.insert(crate::fidelity::property_class(objects, &properties[index]));
+            }
+            if classes.is_empty() {
+                classes.insert(ArenaClass::Model);
+                classes.insert(ArenaClass::Design);
+            }
+        }
+    }
+    let Some(ids) = failed_retained.get(name) else {
+        return Ok(());
+    };
+    for id in ids {
+        let Some(record) = fidelity.remove_retained_record(id.as_str()) else {
+            continue;
+        };
+        fidelity
+            .insert_retained_record(id.clone(), record.with_untyped(classes.clone()))
+            .map_err(CodecError::malformed)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn source_attributes(

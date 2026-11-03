@@ -5,12 +5,9 @@ use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Sect
 
 use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
-use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -2655,74 +2652,6 @@ impl ParameterDefect {
     }
 }
 
-/// One entity's Parameter Data whose tokens were not recovered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct QuarantinedParameterRecord {
-    pub(crate) sequence: u32,
-    ownership: QuarantinedCards,
-    failing_offset: Option<u64>,
-    pub(crate) defect: ParameterDefect,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum QuarantinedCards {
-    Owned {
-        range: Range<u32>,
-        bytes: Vec<u8>,
-        first_offset: u64,
-    },
-    None {
-        directory_offset: u64,
-    },
-}
-
-impl QuarantinedParameterRecord {
-    pub(crate) fn source_offset(&self) -> u64 {
-        match &self.ownership {
-            QuarantinedCards::Owned { first_offset, .. } => *first_offset,
-            QuarantinedCards::None { directory_offset } => *directory_offset,
-        }
-    }
-
-    pub(crate) fn cards(&self) -> usize {
-        self.bytes().len() / crate::card::CARD_WIDTH
-    }
-
-    pub(crate) fn bytes(&self) -> &[u8] {
-        match &self.ownership {
-            QuarantinedCards::Owned { bytes, .. } => bytes,
-            QuarantinedCards::None { .. } => &[],
-        }
-    }
-
-    pub(crate) fn loss_note(&self) -> Result<LossNote, CodecError> {
-        let owned = match &self.ownership {
-            QuarantinedCards::Owned { range, .. } => {
-                let last = range.end.checked_sub(1).ok_or_else(|| {
-                    CodecError::Malformed("IGES owned Parameter Data range ends at zero".into())
-                })?;
-                format!("P{} through P{last}", range.start)
-            }
-            QuarantinedCards::None { .. } => "no owned Parameter Data card".to_string(),
-        };
-        let message = format!("IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
-        self.sequence,
-        self.defect.describe(),
-        self.cards());
-        let tag = format!("D{}:parameter", self.sequence);
-        let code = IgesLossCode::ParameterDataQuarantined;
-
-        Ok(code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.failing_offset.unwrap_or_else(|| self.source_offset()),
-            )
-            .with_tag(tag),
-        ))
-    }
-}
-
 /// A tokenizer stop: a source defect at an offset, or a codec error.
 enum TokenizeFailure {
     Defect(ParameterDefect, usize),
@@ -2833,9 +2762,12 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
 pub(crate) struct ParameterAssembly {
     pub(crate) records: Vec<ParameterRecord>,
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
-    pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
     pub(crate) given_up: BTreeSet<u32>,
+    /// Directory sequences with given-up Parameter Data fields, each with
+    /// its covering field-stub identities in slot order. A failed record
+    /// stage drops its stubs, so only formed records report (#215 rule 1).
+    pub(crate) given_up_fields: BTreeMap<u32, Vec<String>>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -3597,86 +3529,17 @@ struct OwnedParameterBytes {
     card_boundaries: Vec<usize>,
 }
 
-fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> OwnedParameterBytes {
-    let mut bytes = Vec::new();
-    let mut card_boundaries = Vec::new();
-    for sequence in cards {
-        let Some(line) = lines.get(sequence) else {
-            continue;
-        };
-        bytes.extend(line.payload.get(..64).unwrap_or_default());
-        card_boundaries.push(bytes.len());
-    }
-    OwnedParameterBytes {
-        bytes,
-        card_boundaries,
-    }
-}
-
-/// The source offset of `offset` inside the assembled 64-column card stream.
-fn stream_offset(
-    offset: usize,
-    cards: &[u32],
-    lines: &BTreeMap<u32, &PhysicalLine>,
-) -> Option<u64> {
-    let line = lines.get(cards.get(offset / 64)?)?;
-    line.offset
-        .checked_add(cadmpeg_core::decode::u64_from_index(offset % 64))
-}
-
-fn quarantine(
-    entry: &DirectoryEntry,
-    cards: &[u32],
-    lines: &BTreeMap<u32, &PhysicalLine>,
-    defect: ParameterDefect,
-    failing_offset: Option<usize>,
-) -> Result<QuarantinedParameterRecord, CodecError> {
-    let mut retained = cards
-        .iter()
-        .filter_map(|sequence| lines.get(sequence).map(|line| (*sequence, *line)));
-    let ownership = match retained.next() {
-        Some((first, line)) => {
-            let first_offset = line.offset;
-            let range_end = first
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
-            let mut range = first..range_end;
-            let mut bytes = line.payload.clone();
-            for (sequence, line) in retained {
-                range.end = sequence.checked_add(1).ok_or_else(|| {
-                    CodecError::malformed("IGES parameter card sequence overflow")
-                })?;
-                bytes.extend_from_slice(&line.payload);
-            }
-            QuarantinedCards::Owned {
-                range,
-                bytes,
-                first_offset,
-            }
-        }
-        None => QuarantinedCards::None {
-            directory_offset: entry.source_offset,
-        },
-    };
-    Ok(QuarantinedParameterRecord {
-        sequence: entry.sequence,
-        ownership,
-        failing_offset: failing_offset.and_then(|offset| stream_offset(offset, cards, lines)),
-        defect,
-    })
-}
-
 /// One entity's resolved Parameter Data ownership.
 struct Ownership<'a> {
     entry: &'a DirectoryEntry,
     cards: Vec<u32>,
-    quarantine: Option<ParameterDefect>,
+    defect: Option<ParameterDefect>,
 }
 
 /// Resolve which Parameter Data cards each Directory Entry owns.
 ///
 /// The declared range applies first, then the back-pointer census, and a
-/// conflict between the two statements quarantines both entities.
+/// conflict between the two statements gives up both entities' cards.
 fn resolve_ownership<'a>(
     directory: &'a [DirectoryEntry],
     lines: &BTreeMap<u32, &PhysicalLine>,
@@ -3779,7 +3642,7 @@ fn resolve_ownership<'a>(
             resolved.push(Ownership {
                 entry,
                 cards,
-                quarantine: Some(ParameterDefect::OwnershipConflict),
+                defect: Some(ParameterDefect::OwnershipConflict),
             });
             continue;
         }
@@ -3789,7 +3652,7 @@ fn resolve_ownership<'a>(
             resolved.push(Ownership {
                 entry,
                 cards,
-                quarantine: None,
+                defect: None,
             });
             continue;
         }
@@ -3811,7 +3674,7 @@ fn resolve_ownership<'a>(
             resolved.push(Ownership {
                 entry,
                 cards: run,
-                quarantine: None,
+                defect: None,
             });
             continue;
         }
@@ -3826,7 +3689,7 @@ fn resolve_ownership<'a>(
         resolved.push(Ownership {
             entry,
             cards: Vec::new(),
-            quarantine: Some(defect),
+            defect: Some(defect),
         });
     }
     Ok(resolved)
@@ -3852,16 +3715,6 @@ impl From<TokenizeFailure> for OwnedParseFailure {
     }
 }
 
-fn parse_owned_record(
-    owned: &Ownership<'_>,
-    owned_bytes: OwnedParameterBytes,
-    global: &ResolvedGlobal,
-) -> Result<ParameterRecord, OwnedParseFailure> {
-    let (record, failed) = parse_owned_fields(owned, owned_bytes, global)?;
-    reject_failed_fields(&failed)?;
-    Ok(record)
-}
-
 /// Parse one owned record. A field whose literal is not admitted has no token
 /// and is returned for its caller to give up.
 fn parse_owned_fields(
@@ -3885,14 +3738,6 @@ fn parse_owned_fields(
         None => line_start,
     };
     Ok((admitted.bind_range(line_start..line_end), failed))
-}
-
-/// A caller with no field part refuses the record at its first failed field.
-fn reject_failed_fields(failed: &[FailedField]) -> Result<(), OwnedParseFailure> {
-    match failed.first() {
-        Some(field) => Err(OwnedParseFailure::Defect(field.defect, Some(field.offset))),
-        None => Ok(()),
-    }
 }
 
 #[derive(Debug)]
@@ -3992,54 +3837,11 @@ fn lex_admitted(
     ))
 }
 
-fn parse_legacy_owned(
-    owned: &Ownership<'_>,
-    lines: &BTreeMap<u32, &PhysicalLine>,
-    global: &ResolvedGlobal,
-) -> Result<ParsedOwned, CodecError> {
-    if let Some(defect) = owned.quarantine {
-        return Ok(ParsedOwned::Quarantined(quarantine(
-            owned.entry,
-            &owned.cards,
-            lines,
-            defect,
-            None,
-        )?));
-    }
-    match parse_owned_record(owned, owned_bytes(&owned.cards, lines), global) {
-        Ok(record) => Ok(ParsedOwned::Record(record)),
-        Err(OwnedParseFailure::Error(error)) => Err(error),
-        Err(OwnedParseFailure::Defect(defect, offset)) => Ok(ParsedOwned::Quarantined(quarantine(
-            owned.entry,
-            &owned.cards,
-            lines,
-            defect,
-            offset,
-        )?)),
-    }
-}
-
-/// `excluded_directory` holds the first-card sequence of each quarantined or
-/// given-up Directory Entry. A Parameter Data card whose back-pointer names
-/// one is part of that excluded record, not an unclaimed card.
-pub(crate) fn assemble(
-    scan: &CardScan,
-    directory: &[DirectoryEntry],
-    excluded_directory: impl IntoIterator<Item = u32>,
-    global: &ResolvedGlobal,
-) -> Result<ParameterAssembly, CodecError> {
-    assemble_with(
-        scan,
-        directory,
-        excluded_directory,
-        global,
-        |owned, lines, _| parse_legacy_owned(owned, lines, global),
-    )
-}
-
+/// `excluded_directory` holds the first-card sequence of each given-up
+/// Directory Entry. A Parameter Data card whose back-pointer names one is
+/// part of that excluded record, not an unclaimed card.
 enum ParsedOwned {
     Record(ParameterRecord),
-    Quarantined(QuarantinedParameterRecord),
     GivenUp,
 }
 
@@ -4072,12 +3874,10 @@ fn assemble_with(
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries)?;
     let mut records = Vec::new();
-    let mut quarantined = Vec::new();
     let mut given_up = BTreeSet::new();
     for owned in &ownership {
         match parse(owned, &lines, &ownership)? {
             ParsedOwned::Record(record) => records.push(record),
-            ParsedOwned::Quarantined(record) => quarantined.push(record),
             ParsedOwned::GivenUp => {
                 given_up.insert(owned.entry.sequence);
             }
@@ -4113,9 +3913,9 @@ fn assemble_with(
     Ok(ParameterAssembly {
         records,
         trailing_pointer_analysis,
-        quarantined,
         recoveries,
         given_up,
+        given_up_fields: BTreeMap::new(),
     })
 }
 
@@ -4133,9 +3933,9 @@ pub(crate) fn finish_admitted(
     ParameterAssembly {
         records,
         trailing_pointer_analysis,
-        quarantined: Vec::new(),
         recoveries: crate::card::FramingRecoveries::default(),
         given_up: BTreeSet::new(),
+        given_up_fields: BTreeMap::new(),
     }
 }
 
@@ -4194,8 +3994,6 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
 
 #[cfg(test)]
 mod counted_list_tests;
-#[cfg(test)]
-mod quarantine_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

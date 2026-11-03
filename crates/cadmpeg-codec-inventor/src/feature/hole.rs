@@ -24,9 +24,9 @@ pub(super) fn termination(
 ) -> Option<LinearTermination> {
     match super::enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         EXTENT_DISTANCE => {
-            cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?;
+            let depth = cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?;
             Some(LinearTermination::Blind {
-                length: super::parameter_binding(source, 2, index)?,
+                length: super::parameter_or_literal(source, 2, index, depth.into()),
             })
         }
         EXTENT_THROUGH_NEXT => Some(LinearTermination::ThroughNext {}),

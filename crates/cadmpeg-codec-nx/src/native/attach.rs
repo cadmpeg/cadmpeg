@@ -574,14 +574,7 @@ fn attach_records(
         annotations,
         &annotation_stream,
     )?;
-    expressions::attach_expression_parameters(
-        ctx,
-        ir,
-        &model.om.expressions,
-        &model.om.expression_declarations,
-        annotations,
-        losses,
-    )?;
+    expressions::attach_expression_parameters(ctx, ir, &model.om.expressions, annotations, losses)?;
     attach_feature_operations(
         &mut scan.source_untyped(),
         ctx,
@@ -5805,21 +5798,6 @@ fn text_semantic_annotation(
             native_ref.to_owned(),
         )
     }))
-}
-
-#[cfg(test)]
-pub(super) fn parameter_owner_dependencies(
-    parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
-    parameter_references: &[ParameterId],
-) -> Vec<FeatureId> {
-    let mut dependencies = FeatureDependencies::default();
-    for parameter_id in parameter_references {
-        let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
-            continue;
-        };
-        dependencies.push(owner);
-    }
-    dependencies.into_vec()
 }
 
 fn extrude_feature_definition(
