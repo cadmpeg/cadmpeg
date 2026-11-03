@@ -8,6 +8,7 @@ mod assembly_local;
 mod attribute_colors;
 mod body_reference_tails;
 mod configuration_parameters;
+mod design_canvas;
 mod design_containment;
 mod emboss_operands;
 mod history_deltas;
