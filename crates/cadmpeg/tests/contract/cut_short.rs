@@ -229,22 +229,14 @@ fn check_format(format: &str) {
                             ));
                         }
                     }
-                    // The record comparison below covers held records only;
-                    // scope is judged above, so it is not compared twice.
-                    if let Some(scope) = document.get_mut("scope") {
-                        *scope = uncut_scope.clone();
-                    }
-                    let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
-                    let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);
                     // #209 §1.1 with the #224 ruling 1: a cut decode derives
                     // scope from the cut bytes, not by copying the uncut
                     // decode. The cut scope is a subset of the uncut scope,
                     // and it agrees with §1.1 on the cut decode's own records
                     // and parts. A class whose every part was cut off may flip
                     // to false; a class with any held record or located part
-                    // may not.
-                    let cut_scope = document.get("scope").cloned().unwrap_or_default();
-                    let uncut_scope = uncut_document.get("scope").cloned().unwrap_or_default();
+                    // may not. This runs on the cut document before the record
+                    // comparison below replaces its scope.
                     for class in ["model", "design"] {
                         if cut_scope.get(class).and_then(serde_json::Value::as_bool) == Some(true)
                             && uncut_scope.get(class).and_then(serde_json::Value::as_bool)
@@ -270,6 +262,13 @@ fn check_format(format: &str) {
                             fixture.path.display()
                         ));
                     }
+                    // The record comparison below covers held records only;
+                    // scope is judged above, so it is not compared twice.
+                    if let Some(scope) = document.get_mut("scope") {
+                        *scope = uncut_scope.clone();
+                    }
+                    let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
+                    let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);
                     restricted["scope"] = serde_json::Value::Null;
                     let mut document = document.clone();
                     document["scope"] = serde_json::Value::Null;
