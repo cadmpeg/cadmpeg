@@ -58,7 +58,7 @@ fn conflicting_display_reference_retains_exact_text() {
 }
 
 #[test]
-fn native_planar_and_spatial_sketch_geometry_is_reported() {
+fn native_planar_and_spatial_sketch_geometry_is_held_without_loss() {
     let mut ir = CadIr::empty();
     ir.model.sketch_entities.push(
         SketchEntity::new(
@@ -93,10 +93,9 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     )
     .unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            == "2 sketch entity geometry record(s) retain native kinds without solved neutral geometry."
-    }));
+    assert!(report.losses.iter().all(|loss| !loss.message.contains(
+        "retain native kinds without solved neutral geometry"
+    )));
 }
 
 #[test]

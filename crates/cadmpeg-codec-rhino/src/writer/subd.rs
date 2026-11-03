@@ -144,11 +144,16 @@ fn incidence(
     count: usize,
     values: impl Iterator<Item = Incidence>,
 ) -> Result<Vec<Incidence>, CodecError> {
-    let mut result = ctx.alloc_filled(count, Incidence::default(), "Rhino SubD incidence")?;
+    // Working scratch, not retained output: it never reaches the archive.
+    let mut result = Vec::new();
+    ctx.reserve_working(&mut result, count, "Rhino SubD incidence")?;
     let mut values = values;
     let mut staged = 0;
-    for (slot, value) in result.iter_mut().zip(values.by_ref()) {
-        *slot = value;
+    while staged < count {
+        let Some(value) = values.next() else {
+            break;
+        };
+        result.push(value);
         staged += 1;
     }
     debug_assert!(
