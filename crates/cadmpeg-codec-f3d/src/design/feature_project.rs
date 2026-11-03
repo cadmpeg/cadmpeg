@@ -1609,6 +1609,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     format!("{owner_record_index}"),
                 );
             }
+            if let Some(comment) = parameter.comment() {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("comment"),
+                    comment.to_owned(),
+                );
+            }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
                 _ if parameter.text_value().is_some() => parameter
                     .text_value()

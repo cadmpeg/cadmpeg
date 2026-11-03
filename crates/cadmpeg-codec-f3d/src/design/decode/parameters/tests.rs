@@ -13,6 +13,7 @@ use zip::CompressionMethod;
 use super::{
     decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
     parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    wide_parameter_comment,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -23,6 +24,7 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod comment_field;
 mod expression_flags;
 mod registered_tail;
 mod tail_forms;

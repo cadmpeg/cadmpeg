@@ -170,6 +170,47 @@ fn parameters_project_all_design_database_unit_tokens() {
 }
 
 #[test]
+fn parameter_comment_projects_as_a_source_property() {
+    let parameter = parse_design_parameter_record(&parameter_record(
+        None,
+        "12 mm",
+        "User Parameter",
+        Some("mm"),
+        "uf",
+        1.2,
+    ))
+    .expect("generated document parameter");
+    let expression_offset = parameter.expression_offset();
+    let commented = parameter
+        .with_comment(Some(crate::records::identity::RecordedValue {
+            value: "Ø entraxe".into(),
+            offset: expression_offset - 8,
+        }))
+        .unwrap();
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[commented],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        projected[0].properties.get("comment").map(String::as_str),
+        Some("Ø entraxe")
+    );
+}
+
+#[test]
 fn text_parameter_projects_its_text_as_a_string_value() {
     let numeric = parse_design_parameter_record(&parameter_record(
         None,
