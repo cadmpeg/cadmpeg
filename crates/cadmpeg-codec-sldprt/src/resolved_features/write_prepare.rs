@@ -1400,6 +1400,24 @@ pub(crate) fn generated_native_lane(
     Ok(lanes.remove(0))
 }
 
+/// Whether the lane's sketch entities state the kinds their payload
+/// bytes parse to, compared in ordinal order. Both sides derive the kind
+/// from the same bytes through the same admission, so a mismatch proves the
+/// typed records were reclassified past what the bytes state. The patch
+/// path declines such a lane; synthesis drops it.
+pub(crate) fn sketch_entity_kinds_match(
+    entities: &[crate::records::SketchInputEntity],
+    expected: &[crate::records::SketchInputEntity],
+) -> bool {
+    entities.len() == expected.len()
+        && entities
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| {
+                actual.ordinal() == expected.ordinal() && actual.kind() == expected.kind()
+            })
+}
+
 /// Refuse a native feature-input lane whose typed records disagree with the
 /// payload bytes they state.
 ///
