@@ -176,6 +176,7 @@ fn inspect_parsed_exchange(
         decoded,
         matched,
         opaque_offsets,
+        ..
     } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
     let mut entries = Vec::new();
     entries.push(ContainerEntry {

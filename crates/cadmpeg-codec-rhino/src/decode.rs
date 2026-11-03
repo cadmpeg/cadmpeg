@@ -1068,6 +1068,11 @@ impl<'a> DecodeContext<'a> {
         };
         let hatch_loops = hatch.loops;
         let session = self.expand.ctx();
+        // §1.1: a geometry request excludes design, so the hatch feature is
+        // held only at full depth. The loop curves are model geometry and
+        // commit at every depth.
+        let full_depth = self.expand.ctx().depth() == cadmpeg_core::decode::DecodeDepth::Full;
+        let feature = full_depth.then_some(feature);
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
@@ -1083,7 +1088,7 @@ impl<'a> DecodeContext<'a> {
                     },
                 )?;
             }
-            candidate.model.features.push(feature);
+            candidate.model.features.extend(feature);
             Ok::<(), CandidateError>(())
         });
         match result {
@@ -1114,6 +1119,13 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
+        // §1.1: a geometry request excludes design, and a polyedge reference
+        // projects only a design feature, so the object is retained without
+        // decoding its payload below full depth.
+        if self.expand.ctx().depth() != cadmpeg_core::decode::DecodeDepth::Full {
+            self.mark_native_retained(source_order, RhinoLossCode::PolyedgeReferencesNotResolved);
+            return Ok(());
+        }
         let polyedge = match crate::polyedge::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1338,6 +1350,13 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let identity = &object.identity;
+        // §1.1: a geometry request excludes design, and a NURBS cage projects
+        // only a design feature, so the object is retained without decoding
+        // its payload below full depth.
+        if self.expand.ctx().depth() != cadmpeg_core::decode::DecodeDepth::Full {
+            self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
+            return Ok(());
+        }
         let cage = match crate::cage::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1481,6 +1500,13 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let identity = &object.identity;
+        // §1.1: a geometry request excludes design, and a morph control
+        // projects only a design feature, so the object is retained without
+        // decoding its payload below full depth.
+        if self.expand.ctx().depth() != cadmpeg_core::decode::DecodeDepth::Full {
+            self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
+            return Ok(());
+        }
         let morph = match crate::morph::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1679,6 +1705,11 @@ impl<'a> DecodeContext<'a> {
             ),
         };
         let session = self.expand.ctx();
+        // §1.1: a geometry request excludes design, so the curve-on-surface
+        // feature is held only at full depth. The parameter and model curves
+        // and the support surface are model geometry and commit at every depth.
+        let full_depth = self.expand.ctx().depth() == cadmpeg_core::decode::DecodeDepth::Full;
+        let feature = full_depth.then_some(feature);
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
                 session,
@@ -1721,7 +1752,11 @@ impl<'a> DecodeContext<'a> {
                     Exactness::ByteExact
                 },
             );
-            candidate.model.features.push(feature);
+            // §1.1: a geometry request excludes design, so the
+            // curve-on-surface feature is held only at full depth. The
+            // parameter and model curves and the support surface are model
+            // geometry and commit at every depth.
+            candidate.model.features.extend(feature);
             Ok::<(), CandidateError>(())
         });
         match result {

@@ -87,7 +87,7 @@ fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoint
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("native bounded line archive reads");
-        let [census] = decoded.report().losses.as_slice() else {
+        let [census, not_delivered] = decoded.report().losses.as_slice() else {
             panic!("{:?}", decoded.report().losses);
         };
         assert_eq!(
@@ -95,6 +95,10 @@ fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoint
             crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         );
         assert_eq!(census.message, "decoded 1/1 Rhino object records");
+        // The written archive holds no design parts (§1.1): the empty
+        // history table locates no design, so the full-depth re-decode
+        // reports the missing class like every other model-only file.
+        assert_eq!(not_delivered.code.to_string(), "decode/depth.not-delivered");
         assert!(decoded.ir().model.bodies.is_empty());
         assert_eq!(decoded.ir().model.curves.len(), 1);
         let curve = &decoded.ir().model.curves[0];

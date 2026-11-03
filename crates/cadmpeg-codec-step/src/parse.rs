@@ -394,6 +394,14 @@ pub(crate) struct Exchange {
     omitted_spans: Vec<Range<usize>>,
     /// Parser-only ownership index: these spans already have a shared part home.
     shared_omitted: BTreeSet<usize>,
+    /// DATA instance numbers given up as parts, in source order.
+    dead: BTreeSet<u64>,
+    /// DATA instance numbers given up as parts and their statement spans.
+    dead_spans: BTreeMap<u64, Range<usize>>,
+    /// DATA instance numbers given up as parts and their removed records.
+    dead_records: BTreeMap<u64, RawRecord>,
+    /// DATA instance numbers given up as parts and their entity keywords.
+    dead_keywords: BTreeMap<u64, Option<String>>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -463,6 +471,26 @@ impl Exchange {
 
     pub(crate) fn omitted_spans(&self) -> &[Range<usize>] {
         &self.omitted_spans
+    }
+
+    /// DATA instance numbers given up as parts, in source order.
+    pub(crate) fn dead_instances(&self) -> &BTreeSet<u64> {
+        &self.dead
+    }
+
+    /// Statement spans of the instances given up as parts.
+    pub(crate) fn dead_spans(&self) -> &BTreeMap<u64, Range<usize>> {
+        &self.dead_spans
+    }
+
+    /// Removed records of the instances given up as parts.
+    pub(crate) fn dead_records(&self) -> &BTreeMap<u64, RawRecord> {
+        &self.dead_records
+    }
+
+    /// Entity keywords of the instances given up as parts, when stated.
+    pub(crate) fn dead_keyword(&self, id: u64) -> Option<&str> {
+        self.dead_keywords.get(&id).and_then(Option::as_deref)
     }
 
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
@@ -644,6 +672,10 @@ pub(crate) fn parse_inner(
         parts: None,
         part_stream: None,
         shared_omitted: BTreeSet::new(),
+        dead: BTreeSet::new(),
+        dead_spans: BTreeMap::new(),
+        dead_records: BTreeMap::new(),
+        dead_keywords: BTreeMap::new(),
     };
     parser.current = parser.lex_next()?;
     parser.exchange()
@@ -671,6 +703,10 @@ struct Parser<'input, 'ctx, 'arena> {
     parts: Option<&'ctx mut cadmpeg_ir::source_fidelity::parts::PartOutput>,
     part_stream: Option<cadmpeg_ir::StreamName>,
     shared_omitted: BTreeSet<usize>,
+    dead: BTreeSet<u64>,
+    dead_spans: BTreeMap<u64, Range<usize>>,
+    dead_records: BTreeMap<u64, RawRecord>,
+    dead_keywords: BTreeMap<u64, Option<String>>,
 }
 
 struct PartialNameList<'a>(&'a partials::RecordPartials);
@@ -1364,6 +1400,10 @@ impl Parser<'_, '_, '_> {
                 records,
                 omitted_spans,
                 shared_omitted: self.shared_omitted,
+                dead: self.dead,
+                dead_spans: self.dead_spans,
+                dead_records: self.dead_records,
+                dead_keywords: self.dead_keywords,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,

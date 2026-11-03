@@ -62,11 +62,6 @@ fn public_fixed_ascii_decode_composes_shared_failure_and_keeps_real_point_conten
             .count(),
         1
     );
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != crate::loss::IgesLossCode::DirectoryRecordQuarantined.kind()));
     // #215 damaged-part test: no loss code other than record.unreadable that
     // the undamaged decode does not charge.
     let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
@@ -83,4 +78,42 @@ fn public_fixed_ascii_decode_composes_shared_failure_and_keeps_real_point_conten
     );
     expected.sort_unstable();
     assert_eq!(codes(&decoded.report().losses), expected);
+}
+
+#[test]
+fn a_pointer_into_a_given_up_directory_entry_is_unresolved() {
+    let original = points();
+    let baseline = crate::test_support::decode(original.clone());
+    let mut damaged = original;
+    // Corrupt D1's entity-type field so its Directory Entry is given up.
+    let first = second_entry(&damaged) - 162;
+    damaged[first..first + 8].copy_from_slice(b"abcdefgh");
+    // Point D3's view at D1. A pointer naming a given-up entry is unresolved,
+    // like one naming an absent entry (#222).
+    let third = second_entry(&damaged);
+    damaged[third + 40..third + 48].copy_from_slice(b"       1");
+    let decoded = crate::test_support::decode(damaged);
+    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&decoded.ir().model.points[0]).unwrap(),
+        serde_json::to_value(&baseline.ir().model.points[1]).unwrap()
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::PointerUnresolved.kind())
+            .count(),
+        1
+    );
 }
