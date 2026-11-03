@@ -738,6 +738,98 @@ fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellS
     merged
 }
 
+/// Admitted components grouped by the body that their visible surface rows
+/// name.
+struct OwnedBodyComponents {
+    bodies: Vec<NeutralShellSpec>,
+    unowned_faces: Vec<u32>,
+    owned_curves: BTreeSet<u32>,
+}
+
+/// Groups admitted components by owning body.
+///
+/// Every face of an owned component has one visible row, and every such row
+/// names the same body. No face of an unowned component has a visible row.
+/// Any other component, an owned body without admitted topology, or more
+/// owning bodies than the selected count groups nothing.
+fn surface_owned_body_components(
+    scan: &ContainerScan,
+    admitted_components: &[&crate::topology::FaceComponent],
+    body_components: &[NeutralShellSpec],
+    selected_body_count: Option<usize>,
+) -> Option<OwnedBodyComponents> {
+    use crate::surface::owners::SurfaceOwner;
+    let mut visible_row_counts = BTreeMap::<u32, usize>::new();
+    for row in &scan.surfaces.rows {
+        *visible_row_counts.entry(row.id).or_default() += 1;
+    }
+    let mut owners = BTreeMap::<u32, Option<SurfaceOwner>>::new();
+    for row in &scan.surfaces.row_owners {
+        owners
+            .entry(row.surface_id)
+            .and_modify(|owner| {
+                if *owner != Some(row.owner) {
+                    *owner = None;
+                }
+            })
+            .or_insert(Some(row.owner));
+    }
+    let mut groups = BTreeMap::<u32, NeutralShellSpec>::new();
+    let mut unowned_faces = Vec::new();
+    let mut owned_curves = BTreeSet::new();
+    for (component, spec) in admitted_components.iter().zip(body_components) {
+        let faces = component.face_ids();
+        if faces
+            .iter()
+            .all(|face| !visible_row_counts.contains_key(face))
+        {
+            unowned_faces.extend(spec.faces.iter().copied());
+            continue;
+        }
+        let mut body = None;
+        for face in faces {
+            let (Some(1), Some(Some(SurfaceOwner::Body(id)))) = (
+                visible_row_counts.get(face).copied(),
+                owners.get(face).copied(),
+            ) else {
+                return None;
+            };
+            if *body.get_or_insert(id) != id {
+                return None;
+            }
+        }
+        let group = groups.entry(body?).or_insert_with(|| NeutralShellSpec {
+            faces: Vec::new(),
+            wire_curves: BTreeSet::new(),
+        });
+        group.faces.extend(spec.faces.iter().copied());
+        group.wire_curves.extend(spec.wire_curves.iter().copied());
+        owned_curves.extend(component.curve_ids().iter().copied());
+    }
+    (!groups.is_empty()
+        && selected_body_count.is_some_and(|count| groups.len() <= count)
+        && groups
+            .values()
+            .all(|group| !group.faces.is_empty() || !group.wire_curves.is_empty()))
+    .then_some(())?;
+    Some(OwnedBodyComponents {
+        bodies: groups.into_values().collect(),
+        unowned_faces,
+        owned_curves,
+    })
+}
+
+impl OwnedBodyComponents {
+    /// One note for each admitted face of an unowned component.
+    fn unowned_face_losses(&self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+        self.unowned_faces.iter().map(|face_id| {
+            crate::loss::CreoLossCode::TopologyUnownedComponent.note(format!(
+                "source face {face_id} retained as native: no face of its component has a visible surface row that names an owning body"
+            ))
+        })
+    }
+}
+
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
     !matches!(
         scan.framing.layout,
@@ -2435,7 +2527,7 @@ pub(in super::super) fn transfer_native_brep(
     } = BrepEligibleFaceIndexes::from_faces(&eligible_faces, &scan.curves.topology_rows);
     let admitted_components = admitted_face_components(scan, &eligible_face_ids);
     let BrepBodyIndexes {
-        neutral_edge_curves,
+        mut neutral_edge_curves,
         body_components,
     } = BrepBodyIndexes::from_components(
         scan,
@@ -2456,12 +2548,33 @@ pub(in super::super) fn transfer_native_brep(
         .count();
     let explicit_single_body =
         scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
-    let body_components =
-        if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
-            merge_body_components(body_components)
-        } else {
-            body_components
-        };
+    let owned_grouping = (!matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) && (empty_component_count != 0
+        || selected_body_count != Some(body_components.len())))
+    .then(|| {
+        surface_owned_body_components(
+            scan,
+            &admitted_components,
+            &body_components,
+            selected_body_count,
+        )
+    })
+    .flatten();
+    let owner_grouped = owned_grouping.is_some();
+    let (body_components, empty_component_count) = if let Some(grouping) = owned_grouping {
+        losses.extend(grouping.unowned_face_losses());
+        neutral_edge_curves.retain(|curve_id| grouping.owned_curves.contains(curve_id));
+        (grouping.bodies, 0)
+    } else if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
+        (
+            merge_body_components(body_components),
+            empty_component_count,
+        )
+    } else {
+        (body_components, empty_component_count)
+    };
     let solved_point_count = solved_vertices.len();
     let mut point_ids = NumberedIdentityPositions::new(
         ir.model.points.iter().map(|item| item.id.as_str()),
@@ -2505,8 +2618,9 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
         point_ids.admit(ir.model.points[point_position].id.as_str(), point_position);
     }
-    diagnostics.body_count_mismatch =
-        !body_components.is_empty() && selected_body_count != Some(body_components.len());
+    diagnostics.body_count_mismatch = !owner_grouped
+        && !body_components.is_empty()
+        && selected_body_count != Some(body_components.len());
     diagnostics.legacy_body_ownership_ambiguous =
         !legacy_body_ownership_is_unambiguous(scan, admitted_components.len());
     diagnostics.empty_component_count = empty_component_count;

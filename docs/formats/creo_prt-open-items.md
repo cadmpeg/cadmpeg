@@ -924,9 +924,9 @@ carriers.
 
 ### TP-12. Shell-to-body assignment
 
-**Question.** Which byte-backed relation assigns a shell to a body when face-adjacency components and body-count fields disagree?
+**Question.** Which byte-backed relation assigns a shell to a body in a legacy ASCII layout when face-adjacency components and body-count fields disagree?
 
-**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership. Legacy ASCII admission can identify eligible visible faces and retain a single admitted component; multiple admitted components still lack a shell-to-body join.
+**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership. Legacy ASCII admission can identify eligible visible faces and retain a single admitted component; multiple admitted components still lack a shell-to-body join. In ND layouts, the `srf_array` row owner (`list_id`, `list_type`) assigns each visible face to its body (`creo_prt.md` §3 and §5).
 
 **Need.** We must know the relation to construct the correct body membership.
 
