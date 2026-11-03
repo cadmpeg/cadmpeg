@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 5194,
-      "payload_sha256": "c1832a10c77b0499e4431577c89adf45e8b6f20875b52b09a4929297b7ce8280"
+      "payload_len": 4710,
+      "payload_sha256": "fab2f8bd5cc223f70a8346d73bd07721b9f7f31f93c9e8a011f885c8c6ae4cc8"
     },
     {
       "name": "Box.LineColorArray",
@@ -27,8 +27,8 @@
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 2118,
-      "payload_sha256": "0ca78a2fa89a5a78af222d85e6fa81808a2bdb25a28328eabc85405526ccb15f"
+      "payload_len": 2149,
+      "payload_sha256": "672e063781f5baaf3197b8c7c3c902b104b9b93c3cb7a882695ba4fcf46bfabe"
     }
   ],
   "report": {
@@ -40,7 +40,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 13,
+        "attributes": 19,
         "bodies": 1,
         "coedges": 24,
         "colliders": 0,
@@ -52,12 +52,13 @@
         "faces": 6,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 1,
         "loops": 6,
         "mass_properties": 0,
         "native.fcstd.applications": 1,
         "native.fcstd.attachments": 1,
         "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 6,
         "native.fcstd.gui_documents": 1,
@@ -196,7 +197,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -216,7 +217,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -236,7 +237,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -256,7 +257,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -276,7 +277,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -296,7 +297,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -316,7 +317,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -336,7 +337,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -356,7 +357,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -376,7 +377,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -396,7 +397,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -416,7 +417,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -476,7 +477,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -496,7 +497,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -516,7 +517,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -536,7 +537,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -556,7 +557,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -576,7 +577,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -586,7 +587,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -606,7 +607,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -666,7 +667,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Box:Placement",
         "severity": "info"
       }
     ],
@@ -696,7 +697,10 @@
               }
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#Box:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -753,7 +757,7 @@
             "objects": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:object#Box": "written"
+                "fcstd:native:object#Box": "regenerated"
               }
             },
             "product_nodes": {
@@ -773,21 +777,20 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#Box:Label": "written",
-                "fcstd:native:property#Box:Label2": "written",
-                "fcstd:native:property#Box:Placement": "regenerated",
+                "fcstd:native:property#Box:Label": "regenerated",
+                "fcstd:native:property#Box:Label2": "regenerated",
                 "fcstd:native:property#Box:Shape": "regenerated",
                 "fcstd:native:property#Box:ShapeMaterial": "written",
-                "fcstd:native:property#Box:Visibility": "written"
+                "fcstd:native:property#Box:Visibility": "regenerated"
               }
             },
             "shape_payloads": {

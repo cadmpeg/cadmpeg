@@ -147,6 +147,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -171,6 +199,34 @@
             {
               "kind": "string",
               "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000001"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -351,6 +407,32 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Pad:UpToShape2:property",
+          "name": "UpToShape2",
+          "native_ref": "fcstd:native:property#Pad:UpToShape2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pad"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#Pad:UpToShape:property",
+          "name": "UpToShape",
+          "native_ref": "fcstd:native:property#Pad:UpToShape",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pad"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#Pad:Visibility:property",
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Pad:Visibility",
@@ -387,6 +469,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PadSketch:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#PadSketch:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PadSketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PadSketch:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#PadSketch:AttacherType",
@@ -401,6 +501,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PadSketch:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#PadSketch:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PadSketch"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#PadSketch:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#PadSketch:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PadSketch"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#PadSketch:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#PadSketch:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PadSketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -567,6 +711,32 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Pocket:UpToShape2:property",
+          "name": "UpToShape2",
+          "native_ref": "fcstd:native:property#Pocket:UpToShape2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pocket"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#Pocket:UpToShape:property",
+          "name": "UpToShape",
+          "native_ref": "fcstd:native:property#Pocket:UpToShape",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Pocket"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#Pocket:Visibility:property",
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Pocket:Visibility",
@@ -603,6 +773,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PocketSketch:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#PocketSketch:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PocketSketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PocketSketch:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#PocketSketch:AttacherType",
@@ -617,6 +805,50 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PocketSketch:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#PocketSketch:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PocketSketch"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#PocketSketch:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#PocketSketch:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PocketSketch"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#PocketSketch:ExternalTypes:property",
+          "name": "ExternalTypes",
+          "native_ref": "fcstd:native:property#PocketSketch:ExternalTypes",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#PocketSketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -12251,21 +12483,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -12281,21 +12513,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -12310,21 +12542,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -12340,21 +12572,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -12369,21 +12601,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -12399,21 +12631,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -12481,418 +12713,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Body:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Fillet:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Fillet:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Fillet:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Origin001:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pad:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pad:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pad:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pad:UpToShape (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pad:UpToShape2 (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PadSketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pocket:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pocket:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pocket:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pocket:UpToShape (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Pocket:UpToShape2 (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PocketSketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
