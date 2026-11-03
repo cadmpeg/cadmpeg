@@ -346,6 +346,31 @@ fn structured_scalar_value_is_named_and_never_stringified() {
 }
 
 #[test]
+fn plain_scalar_attribute_without_carrier_names_its_own_omission() {
+    let mut ir = CadIr::empty();
+    let plain = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#plain").unwrap();
+    ir.model
+        .attributes
+        .push(cadmpeg_ir::attributes::SourceAttribute {
+            id: plain.clone(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "author".into(),
+            values: vec![Some(AttributeValue::String("source author".into()))],
+        });
+    let before = ir.clone();
+    let mut losses = Vec::new();
+    uncarried_attribute_losses(&ir, &mut losses);
+    assert_eq!(ir, before);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        RhinoLossCode::WriterAttributesOmitted.note("").code
+    );
+    assert!(losses[0].message.contains(plain.as_str()));
+}
+
+#[test]
 fn uncarried_holes_and_structured_values_have_named_attribute_losses() {
     let mut ir = CadIr::empty();
     let hole = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#hole").unwrap();
