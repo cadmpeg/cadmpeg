@@ -41,7 +41,7 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
     assert!(body_offset > offset);
 
     let inventor: Summary = serde_json::from_str(include_str!(
-        "../../../cadmpeg-codec-inventor/tests/golden/inspect/structural.json"
+        "../../../cadmpeg-codec-inventor/tests/golden/inspect/damaged/structural.json"
     ))
     .expect("native summary witness");
     let storage = inventor
