@@ -429,3 +429,128 @@ fn reemitted_node_carries_its_subscript_into_the_directory() {
     assert_eq!(cards.len(), 4);
     assert_eq!(&cards[3][64..72], b"       5");
 }
+
+#[test]
+fn reemitted_macro_definition_redecodes_to_its_defined_type() {
+    use crate::test_support::test_owned::{owned_test_file_with_structures, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let file = owned_test_file_with_structures(
+        &[
+            OwnedTestEntity {
+                entity_type: 306,
+                form: 0,
+                label: "MACRODEF".into(),
+                status: "00000200",
+                parameters: "306,MACRO,621,X,Y;LET Z=0;ENDM;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 621,
+                form: 0,
+                label: "MACRO".into(),
+                status: "00000000",
+                parameters: "621,1.0,2.0;".into(),
+            },
+        ],
+        &[(3, -1)],
+    );
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions::default(),
+        )
+        .expect("macro fixture decodes");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace decodes");
+    assert_eq!(native.arenas()["macro_definitions"].len(), 1);
+    assert_eq!(native.arenas()["macro_instances"].len(), 1);
+    let synthesized = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("macro records synthesize");
+    assert!(
+        synthesized
+            .losses
+            .iter()
+            .all(|loss| loss.code
+                == crate::loss::IgesLossCode::NoExportableSolids.kind()),
+        "only the no-geometry loss: {:?}",
+        synthesized.losses
+    );
+    let round_trip = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(synthesized.bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("re-emitted macros decode");
+    let after = round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace re-decodes");
+    assert_eq!(after.arenas()["macro_definitions"].len(), 1);
+    assert_eq!(
+        after.arenas()["macro_definitions"][0].field("defined_entity_type"),
+        native.arenas()["macro_definitions"][0].field("defined_entity_type"),
+    );
+    assert_eq!(after.arenas()["macro_instances"].len(), 1);
+    let instance = &after.arenas()["macro_instances"][0];
+    assert_eq!(
+        instance.field("entity_type"),
+        native.arenas()["macro_instances"][0].field("entity_type"),
+    );
+    assert_eq!(
+        instance
+            .field("parameters")
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(2),
+    );
+    assert!(instance.field("macro_definition").is_some());
+}
+
+#[test]
+fn reemitted_definition_levels_redecode_to_their_level_set() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let file = owned_test_file(&[OwnedTestEntity {
+        entity_type: 406,
+        form: 1,
+        label: "LEVELS".into(),
+        status: "00000000",
+        parameters: "406,2,0,1;".into(),
+    }]);
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions::default(),
+        )
+        .expect("levels fixture decodes");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace decodes");
+    assert_eq!(native.arenas()["definition_levels"].len(), 1);
+    let synthesized = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("levels synthesize");
+    let round_trip = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(synthesized.bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("re-emitted levels decode");
+    let after = round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace re-decodes");
+    assert_eq!(after.arenas()["definition_levels"].len(), 1);
+    assert_eq!(
+        after.arenas()["definition_levels"][0].field("levels"),
+        native.arenas()["definition_levels"][0].field("levels"),
+    );
+}
