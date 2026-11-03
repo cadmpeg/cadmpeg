@@ -3,7 +3,30 @@
     "ir_version": "10",
     "model": {
       "appearance_bindings": [],
-      "appearances": [],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10000000149011612,
+            "g": 0.10000000149011612,
+            "r": 0.8999999761581421
+          },
+          "id": "step:presentation:appearance#40",
+          "name": "override red",
+          "schema": "step_surface_style"
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "step:presentation:appearance#60",
+          "name": "blue green",
+          "schema": "step_surface_style"
+        }
+      ],
       "assembly_joints": [],
       "attributes": [],
       "bodies": [],
@@ -60,9 +83,41 @@
       "loops": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "step:data:pcurve#56",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        }
+      ],
       "pmi": [],
       "points": [
+        {
+          "id": "step:data:point#3",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#6"
+          }
+        },
         {
           "id": "step:data:point#5",
           "position": {
@@ -92,9 +147,45 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#28",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#28"
+          }
+        }
+      ],
       "tessellations": [],
-      "vertices": [],
+      "vertices": [
+        {
+          "id": "step:data:vertex#6",
+          "point": "step:data:point#3"
+        },
+        {
+          "id": "step:data:vertex#8",
+          "point": "step:data:point#5"
+        }
+      ],
       "view_presentations": []
     },
     "native": {
@@ -103,13 +194,9 @@
           {
             "id": "step:data:axis2_placement_3d#27",
             "links": [
-              "step:data:cartesian_point#3",
               "step:data:direction#9",
               "step:data:direction#10"
             ]
-          },
-          {
-            "id": "step:data:cartesian_point#3"
           },
           {
             "id": "step:data:cartesian_point#51"
@@ -137,11 +224,7 @@
             "id": "step:data:direction#9"
           },
           {
-            "id": "step:data:edge_curve#21",
-            "links": [
-              "step:data:vertex_point#6",
-              "step:data:vertex_point#8"
-            ]
+            "id": "step:data:edge_curve#21"
           },
           {
             "id": "step:data:fill_area_style#42",
@@ -181,19 +264,6 @@
             "id": "step:data:oriented_edge#24",
             "links": [
               "step:data:edge_curve#21"
-            ]
-          },
-          {
-            "id": "step:data:pcurve#56",
-            "links": [
-              "step:data:plane#28",
-              "step:data:definitional_representation#55"
-            ]
-          },
-          {
-            "id": "step:data:plane#28",
-            "links": [
-              "step:data:axis2_placement_3d#27"
             ]
           },
           {
@@ -249,15 +319,6 @@
             "links": [
               "step:data:direction#52"
             ]
-          },
-          {
-            "id": "step:data:vertex_point#6",
-            "links": [
-              "step:data:cartesian_point#3"
-            ]
-          },
-          {
-            "id": "step:data:vertex_point#8"
           },
           {
             "id": "step:source:part#1f161740850602ea314d9b65d92395f37b2e54f8b777d9f1a3e3e934fc1b40ce"
@@ -376,213 +437,19 @@
       },
       {
         "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "unowned STEP carrier retention: opaque_pcurves=1, protected_pcurves=0, deleted pcurves=1, points=1, curves=0, surfaces=1, procedural_curves=0, procedural_surfaces=0",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 AXIS2_PLACEMENT_3D instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 CARTESIAN_POINT instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 COLOUR_RGB instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 DEFINITIONAL_REPRESENTATION instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 3 DIRECTION instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 EDGE_CURVE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 FILL_AREA_STYLE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 FILL_AREA_STYLE_COLOUR instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 GEOMETRIC_REPRESENTATION_CONTEXT+PARAMETRIC_REPRESENTATION_CONTEXT+REPRESENTATION_CONTEXT instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 LINE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 ORIENTED_EDGE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 PCURVE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 PLANE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 SURFACE_SIDE_STYLE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 SURFACE_STYLE_FILL_AREA instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 SURFACE_STYLE_USAGE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 VECTOR instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 2 VERTEX_POINT instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "record.unreadable",
           "kind": "decode_diagnostic",
           "namespace": "decode",
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=413 length=35: malformed container: unexpected byte at byte 443 at byte 443; dropped=[]",
+        "dropped": [
+          "step:data:curve#54",
+          "step:data:edge#21",
+          "step:data:point#4",
+          "step:data:point#51"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=413 length=35: malformed container: unexpected byte at byte 443 at byte 443; dropped=[step:data:curve#54, step:data:edge#21, step:data:point#4, step:data:point#51]",
         "provenance": {
           "byte_len": 35,
           "format": "step",
@@ -598,7 +465,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=786 length=20: malformed container: unresolved instance reference #4; dropped=[]",
+        "dropped": [
+          "step:data:curve#17"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=786 length=20: malformed container: unresolved instance reference #4; dropped=[step:data:curve#17]",
         "provenance": {
           "byte_len": 20,
           "format": "step",
@@ -614,7 +484,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=862 length=33: malformed container: depends on given-up instance #17; dropped=[]",
+        "dropped": [
+          "step:data:edge#20"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=862 length=33: malformed container: depends on given-up instance #17; dropped=[step:data:edge#20]",
         "provenance": {
           "byte_len": 33,
           "format": "step",
@@ -678,7 +551,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=1159 length=36: malformed container: depends on given-up instance #26; dropped=[]",
+        "dropped": [
+          "step:data:face#29"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=1159 length=36: malformed container: depends on given-up instance #26; dropped=[step:data:face#29]",
         "provenance": {
           "byte_len": 36,
           "format": "step",
@@ -710,7 +586,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=1663 length=73: malformed container: depends on given-up instance #29; dropped=[]",
+        "dropped": [
+          "step:presentation:layer#48"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=1663 length=73: malformed container: depends on given-up instance #29; dropped=[step:presentation:layer#48]",
         "provenance": {
           "byte_len": 73,
           "format": "step",
@@ -742,7 +621,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=1196 length=25: malformed container: depends on given-up instance #29; dropped=[]",
+        "dropped": [
+          "step:data:shell#30"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=1196 length=25: malformed container: depends on given-up instance #29; dropped=[step:data:shell#30]",
         "provenance": {
           "byte_len": 25,
           "format": "step",
@@ -758,7 +640,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=1319 length=38: malformed container: depends on given-up instance #30; dropped=[]",
+        "dropped": [
+          "step:data:shell#33"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=1319 length=38: malformed container: depends on given-up instance #30; dropped=[step:data:shell#33]",
         "provenance": {
           "byte_len": 38,
           "format": "step",
@@ -774,7 +659,11 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=1222 length=40: malformed container: depends on given-up instance #33; dropped=[]",
+        "dropped": [
+          "step:data:body#31",
+          "step:data:region#31"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=1222 length=40: malformed container: depends on given-up instance #33; dropped=[step:data:body#31, step:data:region#31]",
         "provenance": {
           "byte_len": 40,
           "format": "step",
@@ -806,7 +695,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=509 length=23: malformed container: unresolved instance reference #4; dropped=[]",
+        "dropped": [
+          "step:data:vertex#7"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=509 length=23: malformed container: unresolved instance reference #4; dropped=[step:data:vertex#7]",
         "provenance": {
           "byte_len": 23,
           "format": "step",
@@ -822,7 +714,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part step.simple_entity_instance stream=\"\" offset=828 length=33: malformed container: depends on given-up instance #7; dropped=[]",
+        "dropped": [
+          "step:data:edge#19"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=828 length=33: malformed container: depends on given-up instance #7; dropped=[step:data:edge#19]",
         "provenance": {
           "byte_len": 33,
           "format": "step",
@@ -864,7 +759,7 @@
       }
     ],
     "notes": [
-      "byte accounting: 290 structural, 434 typed, 1691 named opaque, 0 unclassified"
+      "byte accounting: 290 structural, 514 typed, 1611 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,
@@ -884,17 +779,6 @@
           "retention": "inline"
         },
         "offset": 1102,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:cartesian_point#3": {
-        "bytes": {
-          "data": "IzM9Q0FSVEVTSUFOX1BPSU5UKCcnLCgwLiwwLiwwLikpOw==",
-          "retention": "inline"
-        },
-        "offset": 378,
         "stream": "",
         "untyped": [
           "model"
@@ -1065,28 +949,6 @@
           "model"
         ]
       },
-      "step:data:pcurve#56": {
-        "bytes": {
-          "data": "IzU2PVBDVVJWRSgnJywjMjgsIzU1KTs=",
-          "retention": "inline"
-        },
-        "offset": 2002,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:plane#28": {
-        "bytes": {
-          "data": "IzI4PVBMQU5FKCcnLCMyNyk7",
-          "retention": "inline"
-        },
-        "offset": 1140,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
       "step:data:presentation_style_assignment#46": {
         "bytes": {
           "data": "IzQ2PVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKCgjNDUpKTs=",
@@ -1181,28 +1043,6 @@
           "retention": "inline"
         },
         "offset": 1910,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:vertex_point#6": {
-        "bytes": {
-          "data": "IzY9VkVSVEVYX1BPSU5UKCcnLCMzKTs=",
-          "retention": "inline"
-        },
-        "offset": 485,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:vertex_point#8": {
-        "bytes": {
-          "data": "Izg9VkVSVEVYX1BPSU5UKCcnLCM1KTs=",
-          "retention": "inline"
-        },
-        "offset": 533,
         "stream": "",
         "untyped": [
           "model"

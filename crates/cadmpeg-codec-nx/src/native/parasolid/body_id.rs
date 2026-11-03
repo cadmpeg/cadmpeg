@@ -5,12 +5,9 @@ use super::{
     ParasolidAttributeDefinition, ParasolidEntity51Record, ParasolidEntity52IntegerRecord,
 };
 
-pub(in crate::native) struct BodyIdMatch<'a> {
+pub(in crate::native) struct BodyIdMatch {
     pub(in crate::native) stream: u32,
     pub(in crate::native) body_xmt: u32,
-    pub(in crate::native) definition: &'a str,
-    pub(in crate::native) entity: &'a str,
-    pub(in crate::native) value_record: &'a str,
 }
 
 /// The operation family fixes the declared field and identity convention.
@@ -27,7 +24,7 @@ pub(in crate::native) fn resolve<'a>(
     definitions: &'a [ParasolidAttributeDefinition],
     entities: &'a [ParasolidEntity51Record],
     integers: &'a [ParasolidEntity52IntegerRecord],
-) -> Option<BodyIdMatch<'a>> {
+) -> Option<BodyIdMatch> {
     let (field, value) = match encoding {
         BodyIdEncoding::CurveMeshIgnored => (super::AttributeField::Ignored, u32::from(identity)),
         BodyIdEncoding::BrepInteger => {
@@ -96,13 +93,7 @@ pub(in crate::native) fn resolve<'a>(
         if found.is_some() {
             return None;
         }
-        found = Some(BodyIdMatch {
-            stream,
-            body_xmt,
-            definition: &definition.id,
-            entity: &entity.id,
-            value_record: &integer.id,
-        });
+        found = Some(BodyIdMatch { stream, body_xmt });
     }
     found
 }

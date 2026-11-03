@@ -174,7 +174,6 @@ fn fixture() -> Fixture {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
-        issues: Vec::new(),
         ..Default::default()
     };
     Fixture {
@@ -454,7 +453,6 @@ fn thicken_selection_record_round_trip_retains_its_family_and_qualifiers() {
     let inventory =
         inventory_with_record(owner::SELECTION_LIST_TYPE, &bytes, DecodePolicy::service())
             .expect("selection inventory");
-    assert!(inventory.issues.is_empty());
     let [property] = inventory.properties.as_slice() else {
         panic!("one selection list")
     };
