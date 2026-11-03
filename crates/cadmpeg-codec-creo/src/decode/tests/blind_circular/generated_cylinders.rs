@@ -140,6 +140,7 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
                 ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: 0,
+                type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                 body_offset: 0,
             }
         };
@@ -195,6 +196,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 33,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 34,
         };
         scan.surfaces.parameters.push(parameter);

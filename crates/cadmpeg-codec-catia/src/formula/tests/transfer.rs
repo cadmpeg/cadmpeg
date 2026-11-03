@@ -1048,7 +1048,7 @@ fn formula_candidate_entity_limit_refuses_before_first_candidate() {
 }
 
 #[test]
-fn formula_definition_chain_limit_refuses_before_candidate_creation() {
+fn standalone_definition_chain_does_not_charge_a_parameter_entity() {
     let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
         "Boolean",
         &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
@@ -1064,21 +1064,14 @@ fn formula_definition_chain_limit_refuses_before_candidate_creation() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("definition-chain input fits service input limit");
     let mut ir = CadIr::empty();
-    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::formula::transfer_parameters(
+    crate::formula::transfer_parameters(
         &ctx,
         &mut ir,
         &native,
         &mut cadmpeg_ir::Annotations::default(),
         &crate::decode::ModelingGraphScope::Unscoped,
-    ) else {
-        panic!("definition-chain candidate must exceed the zero entity limit");
-    };
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::Entities
-    );
-    assert_eq!(limit.used, 0);
-    assert_eq!(limit.operation, "admit CATIA formula candidate");
+    )
+    .expect("an unowned scalar chain creates no parameter or entity charge");
     assert!(ir.model.parameters.is_empty());
 }
 
@@ -1463,7 +1456,7 @@ fn unresolved_graph_scope_transfers_no_formula_parameters() {
 }
 
 #[test]
-fn boolean_definition_chain_yields_a_parameter_candidate() {
+fn explicitly_consumed_boolean_chain_does_not_name_a_parameter() {
     let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
         "Boolean",
         &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
@@ -1479,7 +1472,11 @@ fn boolean_definition_chain_yields_a_parameter_candidate() {
         super::super::definition_chain_parameter_candidate(ctx, entity, chain)
     })
     .expect("compute the definition chain parameter candidate");
-    assert!(admitted.is_some());
+    assert!(admitted
+        .expect("typed value conversion")
+        .parameter
+        .name
+        .is_empty());
 }
 
 #[test]

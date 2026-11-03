@@ -284,6 +284,72 @@ path = "crates/cadmpeg-codec-creo/src/scalar.rs"
 contains = "pub(crate) fn decode_explicit_local_system_slots( body: &[u8], cache: &ScalarCache, ) -> Option<FiniteVector<12>>"
 note = "The parser expands the local-system support frame as twelve finite `f64` slots."
 
+
+# --- §2.3 Model scalar-heap fixed images --------------------------------------
+
+[[record]]
+name = "model_double_xar_metric_scale"
+parsed_by = "crates/cadmpeg-codec-creo/src/double_xar.rs"
+kind = "byte"
+section = "Constants and cache references"
+anchor = "The metric model-scale image is `07 23 11 2e`."
+size = 4
+
+[[record.field]]
+name = "image"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "The metric model-scale image is `07 23 11 2e`."
+value = [0x07, 0x23, 0x11, 0x2e]
+
+[[record]]
+name = "model_double_xar_imperial_scale"
+parsed_by = "crates/cadmpeg-codec-creo/src/double_xar.rs"
+kind = "byte"
+section = "Constants and cache references"
+anchor = "The imperial model-scale image is `28 <tail7> 23 11 2e`."
+size = 11
+
+[[record.field]]
+name = "opener"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The imperial model-scale image is `28 <tail7> 23 11 2e`."
+value = 0x28
+
+[[record.field]]
+name = "tail"
+offset = 1
+type = "bytes[7]"
+source = "spec"
+anchor = "The imperial model-scale image is `28 <tail7> 23 11 2e`."
+
+[[record.field]]
+name = "trailer"
+offset = 8
+type = "bytes[3]"
+source = "spec"
+anchor = "The imperial model-scale image is `28 <tail7> 23 11 2e`."
+value = [0x23, 0x11, 0x2e]
+
+[[record]]
+name = "model_double_xar_control"
+parsed_by = "crates/cadmpeg-codec-creo/src/double_xar.rs"
+kind = "byte"
+section = "Constants and cache references"
+anchor = "The following fixed control `e8 26 d6 95` supplies no slot."
+size = 4
+
+[[record.field]]
+name = "image"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "The following fixed control `e8 26 d6 95` supplies no slot."
+value = [0xe8, 0x26, 0xd6, 0x95]
+
 # --- Not tabulated -----------------------------------------------------------
 
 [[not_applicable]]
@@ -309,3 +375,86 @@ area = "Section, feature, and DEPDB record grammars (§5-§8)"
 reason = "Variable-length token grammars over self-delimiting fields. About twenty-five of them state a complete ordered slot list and are transcribable as slot layouts; they are not covered in this pass. The rest are named but unspecified, and their gaps are already tracked in `creo_prt-open-items.md`."
 section = "5"
 anchor = "## 5. Topology and section records"
+
+[[record]]
+name = "section_full_width_scalar"
+parsed_by = "crates/cadmpeg-codec-creo/src/scalar.rs"
+kind = "byte"
+section = "5"
+anchor = "A section full-width scalar starts with `ed`, has an eight-byte payload"
+size = 9
+endianness = "big"
+note = "The complete owning scalar field supplies the boundary. Only supported coordinate roles interpret the payload as big-endian binary64; other roles retain opaque bytes."
+
+[[record.field]]
+name = "opener"
+offset = 0
+type = "bytes[1]"
+source = "spec"
+anchor = "A section full-width scalar starts with `ed`"
+value = [0xed]
+
+[[record.field]]
+name = "payload"
+offset = 1
+type = "bytes[8]"
+source = "spec"
+anchor = "byte offset 1, and occupies exactly nine bytes."
+
+[[record]]
+name = "type24_cap_envelope_control_prefix"
+kind = "byte"
+section = "3.2"
+anchor = "The class-932 cap-envelope control prefix contains three seven-byte physical"
+size = 22
+endianness = "unstated"
+note = "Physical scalar images remain opaque; no numeric role or carrier chart follows from this prefix."
+parsed_by = "crates/cadmpeg-codec-creo/src/decode/surfaces/cap_envelopes.rs"
+
+[[record.field]]
+name = "first_control"
+offset = 0
+type = "bytes[7]"
+source = "spec"
+anchor = "three seven-byte physical"
+
+[[record.field]]
+name = "separator"
+offset = 7
+type = "u8"
+value = 24
+source = "derived"
+anchor = "literal `18` between the first and second images"
+note = "One byte follows the first seven-byte image."
+
+[[record.field]]
+name = "second_control"
+offset = 8
+type = "bytes[7]"
+source = "derived"
+anchor = "literal `18` between the first and second images"
+note = "The second image follows the seven-byte first image and separator."
+
+[[record.field]]
+name = "third_control"
+offset = 15
+type = "bytes[7]"
+source = "derived"
+anchor = "three seven-byte physical"
+note = "The third image follows the second seven-byte image."
+
+[[record]]
+name = "hybrid_visibgeom_clear_prefix"
+kind = "byte"
+section = "3"
+anchor = "the clear prefix `e0 00 53 6c`"
+size = 4
+note = "Clear prefix only. The following stored bytes use XOR 0x96 for the invariant-bounded pcurve tail. No carrier or leading-region grammar follows from this prefix alone."
+
+[[record.field]]
+name = "clear_prefix"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "the clear prefix `e0 00 53 6c`"
+value = [0xe0, 0x00, 0x53, 0x6c]

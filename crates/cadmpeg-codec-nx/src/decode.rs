@@ -278,6 +278,7 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
+        losses.extend(parsed.primary_edge_losses());
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,

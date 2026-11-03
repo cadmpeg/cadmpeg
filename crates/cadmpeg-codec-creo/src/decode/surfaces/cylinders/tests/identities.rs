@@ -306,6 +306,7 @@ fn positional_cone_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 7,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 7,
         });
     scan

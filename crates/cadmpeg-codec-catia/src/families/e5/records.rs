@@ -8,6 +8,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::families::a5a8::records::rolling_ball_jet_derivative;
+use crate::layout::e5_rolling_ball_tail as d8_tail;
 use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -141,9 +142,7 @@ const _: () = assert!(
     "the E5 layout token and the container E5 marker must state the same bytes"
 );
 
-const E5_NURBS_SURFACE_TAIL_BYTES: usize = 148;
 const EPS_CURRENT_LIMIT_DOMAIN: f64 = 1.0e-9;
-const E5_D8_TAIL_BYTES: usize = 63;
 const E5_D8_ARC_TOLERANCE: f64 = 1e-8;
 const E5_D8_RADIUS_TOLERANCE: f64 = 1e-8;
 
@@ -414,7 +413,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         read_d8_channel_rows(&mut view, station_count_u64, &mut positions)?;
         read_d8_channel_rows(&mut view, station_count_u64, &mut first_derivatives)?;
         read_d8_channel_rows(&mut view, station_count_u64, &mut second_derivatives)?;
-        if view.remaining() != E5_D8_TAIL_BYTES {
+        if view.remaining() != d8_tail::LEN {
             return None;
         }
         let parameter_min = view.f64_le()?;
@@ -437,7 +436,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
             || tail_radius0 <= 0.0
             || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
             || !relative_close(tail_radius0, tail_radius2, E5_D8_RADIUS_TOLERANCE)
-            || view.array::<3>()? != [1, 0, 0]
+            || view.array::<3>()? != d8_tail::TERMINAL_VALUE
         {
             return None;
         }
@@ -682,36 +681,14 @@ fn e5_nurbs_surface(
     } else {
         None
     };
-    if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
-        return Ok(None);
-    }
-    let Some((arcs, locals, affine)) = (|| {
-        Some((
-            [
-                view.u16_le()?,
-                view.u16_le()?,
-                view.u16_le()?,
-                view.u16_le()?,
-            ],
-            [
-                view.f64_le()?,
-                view.f64_le()?,
-                view.f64_le()?,
-                view.f64_le()?,
-            ],
-            [
-                view.f64_le()?,
-                view.f64_le()?,
-                view.f64_le()?,
-                view.f64_le()?,
-            ],
-        ))
-    })() else {
+    let Some(program) = super::limit_program::SurfaceLimits::read(&mut view) else {
         return Ok(None);
     };
-    if affine != [1.0, 0.0, 1.0, 0.0] {
+    if !program.is_disabled_identity() {
         return Ok(None);
     }
+    let arcs = program.patches;
+    let locals = program.locals();
     let Some((u_limits, v_limits)) = (|| {
         Some((
             super::parameters::current_limits([arcs[0], arcs[1]], [locals[0], locals[1]], |arc| {
@@ -736,21 +713,6 @@ fn e5_nurbs_surface(
         let domain_span = knots[count] - knots[degree];
         let tolerance = EPS_CURRENT_LIMIT_DOMAIN * (1.0 + domain_span.abs());
         if !tolerance.is_finite() || low_error.abs() > tolerance || high_error.abs() > tolerance {
-            return Ok(None);
-        }
-    }
-    for _ in 0..3 {
-        if view.u16_le() != Some(0) {
-            return Ok(None);
-        }
-    }
-    for _ in 0..8 {
-        if view.f64_le() != Some(0.0) {
-            return Ok(None);
-        }
-    }
-    for _ in 0..6 {
-        if view.u8() != Some(0) {
             return Ok(None);
         }
     }
@@ -1128,7 +1090,7 @@ mod tests {
     #[test]
     fn e7_nurbs_surface_abstains_on_unadmitted_limit_programs() {
         let payload = nurbs_surface_payload(0);
-        let tail = payload.len() - super::E5_NURBS_SURFACE_TAIL_BYTES;
+        let tail = payload.len() - super::super::limit_program::SurfaceLimits::LEN;
         for (offset, bytes) in [
             (0, vec![0, 0]),
             (6, vec![2, 0]),

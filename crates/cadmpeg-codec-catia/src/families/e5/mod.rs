@@ -2,6 +2,7 @@
 
 pub(super) mod decode;
 pub(crate) mod graph;
+pub(crate) mod limit_program;
 mod parameters;
 pub(super) mod records;
 pub(crate) mod support;

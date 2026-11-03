@@ -12,6 +12,8 @@ use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
 
+mod current_definitions;
+
 use super::super::feature_history::dimensions::feature_dimension_table_complete;
 use super::super::feature_history::round::unique_surface_parameter_record;
 use super::super::sketch::equations_coordinate::approximately_equal;
@@ -366,6 +368,60 @@ pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
     paired_corner_envelope_axis_spans(first, second)
 }
 
+fn controlled_drilled_patch_corners(body: &[u8]) -> Option<[[f64; 3]; 2]> {
+    let (mut cursor, separator) = match body {
+        [0x18, ..] => (1, 0x11),
+        [0x00, 0x15, 0x19, ..] => (3, 0x18),
+        _ => return None,
+    };
+    let cache = crate::scalar::ScalarCache::default();
+    let (_, after_first) = crate::scalar::decode_round_edge_coordinate(body, cursor, &cache)?;
+    (body.get(after_first) == Some(&separator)).then_some(())?;
+    let (_, after_second) =
+        crate::scalar::decode_round_edge_coordinate(body, after_first + 1, &cache)?;
+    cursor = after_second;
+    drilled_patch_corners_after_parameters(body, cursor)
+}
+
+fn controlled_drilled_cone_patch_corners(body: &[u8]) -> Option<[[f64; 3]; 2]> {
+    let cursor = match body {
+        [0x18, 0xe4, 0x11, ..] => 3,
+        [0x00, 0x15, 0x19, 0x18, 0xe4, ..] => 5,
+        _ => return controlled_drilled_patch_corners(body),
+    };
+    let (_, after_parameter) = crate::scalar::decode_round_edge_coordinate(
+        body,
+        cursor,
+        &crate::scalar::ScalarCache::default(),
+    )?;
+    drilled_patch_corners_after_parameters(body, after_parameter)
+}
+
+fn drilled_patch_corners_after_parameters(body: &[u8], mut cursor: usize) -> Option<[[f64; 3]; 2]> {
+    let cache = crate::scalar::ScalarCache::default();
+    let mut corners = [[0.0; 3]; 2];
+    for corner in &mut corners {
+        for value in corner {
+            let (coordinate, next) =
+                crate::scalar::decode_round_edge_coordinate(body, cursor, &cache)?;
+            coordinate.is_finite().then_some(())?;
+            *value = coordinate;
+            cursor = next;
+        }
+    }
+    if body.get(cursor) == Some(&crate::psb::token::ENTITY_REF) {
+        let (_, next) = crate::psb::reference_id(body, cursor + 1).ok()?;
+        cursor = next;
+        if body.get(cursor) == Some(&crate::psb::token::COMPOUND_CLOSE) {
+            return Some(corners);
+        }
+    }
+    if body.get(cursor) == Some(&crate::psb::token::COMPOUND_CLOSE) {
+        cursor += 1;
+    }
+    (cursor == body.len()).then_some(corners)
+}
+
 fn simple_drilled_hole_corner_envelopes(
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
@@ -378,7 +434,11 @@ fn simple_drilled_hole_corner_envelopes(
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
-        .map(|row| unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope());
+        .map(|row| {
+            let record = unique_surface_parameter_record(scan, row)?;
+            (record.boundary == crate::surface::SurfaceBodyBoundary::CompoundClose).then_some(())?;
+            controlled_drilled_patch_corners(&record.body)
+        });
     let first = envelopes.next()??;
     let second = envelopes.next()??;
     envelopes.next().is_none().then_some([first, second])
@@ -425,14 +485,118 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
     depth: f64,
 ) -> Option<(Point3, Vector3)> {
     let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
-    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth).or_else(|| {
-        clipped_drilled_hole_placement_from_cone_points(
-            corners,
-            simple_drilled_hole_cone_terminal_points(scan, table)?,
-            diameter,
-            depth,
-        )
-    })
+    let placement = drilled_hole_placement_from_corner_envelopes(corners, diameter, depth)
+        .or_else(|| {
+            clipped_drilled_hole_placement_from_cone_points(
+                corners,
+                simple_drilled_hole_cone_terminal_points(scan, table)?,
+                diameter,
+                depth,
+            )
+        })?;
+    let axis = simple_drilled_hole_axis_placement(scan, table, diameter)?;
+    let mut cones = table.surface_ids_iter().filter_map(|surface_id| {
+        crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+            .filter(|row| row.feature_id == table.feature_id)
+            .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
+    });
+    let mut cone_corners = || {
+        let record = unique_surface_parameter_record(scan, cones.next()?)?;
+        controlled_drilled_cone_patch_corners(&record.body)
+    };
+    let cone_pair = [cone_corners()?, cone_corners()?];
+    cones.next().is_none().then_some(())?;
+    let placement = placement_towards_cone(corners, cone_pair, diameter, depth, placement)?;
+    directed_placement_matches_axis(placement, &axis).then_some(placement)
+}
+
+fn placement_towards_cone(
+    cylinders: [[[f64; 3]; 2]; 2],
+    cones: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    depth: f64,
+    (position, _): (Point3, Vector3),
+) -> Option<(Point3, Vector3)> {
+    cones
+        .iter()
+        .flatten()
+        .flatten()
+        .all(|v| v.is_finite())
+        .then_some(())?;
+    let layout = DrilledHoleEnvelopeLayout::new(cylinders, diameter, depth)?;
+    layout.shared(layout.axis).then_some(())?;
+    let index = layout.axis.index();
+    let [lower, upper] = layout.intervals()[0][index];
+    let mut entry_and_sign = None;
+    for bounds in envelope_intervals(cones) {
+        let [cone_lower, cone_upper] = bounds[index];
+        let candidate = if layout.close(cone_upper, lower)
+            && cone_lower < lower
+            && !layout.close(cone_lower, lower)
+        {
+            (upper, -1.0)
+        } else if layout.close(cone_lower, upper)
+            && cone_upper > upper
+            && !layout.close(cone_upper, upper)
+        {
+            (lower, 1.0)
+        } else {
+            return None;
+        };
+        if entry_and_sign.is_some_and(|previous| previous != candidate) {
+            return None;
+        }
+        entry_and_sign = Some(candidate);
+    }
+    let (entry, sign) = entry_and_sign?;
+    let mut origin = [position.x, position.y, position.z];
+    origin[index] = entry;
+    let mut direction = [0.0; 3];
+    direction[index] = sign;
+    Some((Point3::from(origin), Vector3::from(direction)))
+}
+
+fn directed_placement_matches_axis(
+    (position, direction): (Point3, Vector3),
+    placement: &cadmpeg_ir::features::holes::HolePlacement,
+) -> bool {
+    let cadmpeg_ir::features::holes::HolePlacement::Axis { origin, axis } = placement else {
+        return false;
+    };
+    let origin = origin.get();
+    let axis = axis.get();
+    let delta = [
+        position.x - origin.x,
+        position.y - origin.y,
+        position.z - origin.z,
+    ];
+    let axis = [axis.x, axis.y, axis.z];
+    let alignment = [direction.x, direction.y, direction.z]
+        .into_iter()
+        .zip(axis)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    if !alignment.is_finite() || alignment.abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+        return false;
+    }
+    let along = delta
+        .into_iter()
+        .zip(axis)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    let residual = delta
+        .into_iter()
+        .zip(axis)
+        .map(|(value, axis)| (value - along * axis).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    let scale = [
+        position.x, position.y, position.z, origin.x, origin.y, origin.z,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0, f64::max);
+    residual.is_finite() && residual <= EPS_COORDINATE_AGREEMENT * scale
 }
 
 pub(in crate::decode) fn simple_drilled_hole_axis_placement(
@@ -819,18 +983,13 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
 
 pub(in crate::decode) fn simple_drilled_hole_dimensions(
     scan: &ContainerScan,
+    recipe: &crate::feature::entity::FeatureEntityTable,
     observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
-    simple_drilled_hole_dimension_values(
-        scan.features
-            .definitions
-            .iter()
-            .filter(|definition| definition.identity.id() == 911)
-            .filter_map(|definition| definition.dimensions.as_ref()),
-        observed_envelope_spans,
-        family,
-    )
+    let spans = observed_envelope_spans?;
+    let table = current_definitions::current_dimension_table(scan, recipe, family)?;
+    simple_drilled_hole_dimension_values(std::iter::once(table), Some(spans), family)
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
@@ -967,6 +1126,7 @@ mod tests {
                 ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: 0,
+                type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                 body_offset: 0,
             });
         let table = crate::feature::entity::FeatureEntityTable::new(
@@ -985,6 +1145,153 @@ mod tests {
         assert!(matches!(
             axis_placement(),
             Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })
+        ));
+    }
+    /// A coordinate in the round-edge lane, in the form that its leading IEEE
+    /// byte selects.
+    fn coordinate(value: f64) -> Vec<u8> {
+        let raw = value.to_be_bytes();
+        if value == 0.0 {
+            return vec![0x18];
+        }
+        let opener = match raw[0] {
+            0x3f => 0x28,
+            0x40 => 0x2d,
+            0xc0 => 0x46,
+            high => panic!("no test form for leading byte {high:#x}"),
+        };
+        let mut bytes = vec![opener];
+        bytes.extend_from_slice(&raw[1..]);
+        bytes
+    }
+
+    fn corners_bytes(corners: [[f64; 3]; 2]) -> Vec<u8> {
+        corners.into_iter().flatten().flat_map(coordinate).collect()
+    }
+
+    const ENTITY_REF_TAIL: [u8; 2] = [crate::psb::token::ENTITY_REF, 0x19];
+    const FIRST_PARAMETER: [u8; 7] = [0x31, 0x08, 0x12, 0x34, 0x56, 0x78, 0x9a];
+    const SECOND_PARAMETER: [u8; 7] = [0x31, 0x0c, 0xab, 0xcd, 0xef, 0x12, 0x34];
+    const FIRST_PATCH: [[f64; 3]; 2] = [[-3.25, -2.625, 7.40625], [-2.125, 1.5625, 9.75]];
+    const SECOND_PATCH: [[f64; 3]; 2] = [[-3.25, -2.625, 9.75], [-2.125, 1.5625, 11.8125]];
+
+    fn bare_packet() -> Vec<u8> {
+        [
+            &[0x18][..],
+            &FIRST_PARAMETER,
+            &[0x11],
+            &SECOND_PARAMETER,
+            &corners_bytes(FIRST_PATCH),
+            &ENTITY_REF_TAIL,
+        ]
+        .concat()
+    }
+
+    #[test]
+    fn controlled_drilled_packets_read_structural_wrappers_before_six_coordinates() {
+        let bare = bare_packet();
+        let wrapped = [
+            &[0x00, 0x15, 0x19][..],
+            &FIRST_PARAMETER,
+            &[0x18],
+            &SECOND_PARAMETER,
+            &corners_bytes(SECOND_PATCH),
+            &ENTITY_REF_TAIL,
+        ]
+        .concat();
+        let first = controlled_drilled_patch_corners(&bare).expect("complete first patch");
+        let second = controlled_drilled_patch_corners(&wrapped).expect("complete second patch");
+        assert_eq!(first, FIRST_PATCH);
+        assert_eq!(second, SECOND_PATCH);
+    }
+
+    #[test]
+    fn controlled_drilled_packets_refuse_truncation_wrong_separators_and_extra_bodies() {
+        let source = bare_packet();
+        let coordinate_end = source.len() - ENTITY_REF_TAIL.len();
+        assert!(controlled_drilled_patch_corners(&source[..coordinate_end]).is_some());
+        for end in (0..source.len()).filter(|end| *end != coordinate_end) {
+            assert!(controlled_drilled_patch_corners(&source[..end]).is_none());
+        }
+        let mut wrong = source.clone();
+        wrong[1 + FIRST_PARAMETER.len()] = 0x18;
+        assert!(controlled_drilled_patch_corners(&wrong).is_none());
+        let mut extra = source;
+        extra.push(0x18);
+        assert!(controlled_drilled_patch_corners(&extra).is_none());
+    }
+
+    #[test]
+    fn a_closed_corner_packet_does_not_consume_the_following_analytic_frame() {
+        const CORNERS: [[f64; 3]; 2] = [[28.75, 13.25, -27.5], [41.125, 19.5, 0.0]];
+        let source = [
+            &[0x18][..],
+            &FIRST_PARAMETER,
+            &[0x11],
+            &SECOND_PARAMETER,
+            &corners_bytes(CORNERS),
+            &ENTITY_REF_TAIL,
+            &[crate::psb::token::COMPOUND_CLOSE],
+            &[
+                0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x2f, 0x41, 0x80, 0x2f, 0x34, 0x00,
+            ],
+        ]
+        .concat();
+        let corners = controlled_drilled_patch_corners(&source).expect("closed corner packet");
+        assert_eq!(corners, CORNERS);
+    }
+
+    #[test]
+    fn drilled_entry_is_opposite_the_shared_cone_shoulder() {
+        let cylinders = [
+            [[6.125, 2.85, 8.625], [6.375, 3.35, 8.75]],
+            [[6.125, 2.85, 8.75], [6.375, 3.35, 8.875]],
+        ];
+        let cones = [
+            [[6.125, 2.774_892_422_621_554_6, 8.625], [6.375, 2.85, 8.75]],
+            [[6.125, 2.774_892_422_621_554_6, 8.75], [6.375, 2.85, 8.875]],
+        ];
+        let old = (Point3::new(6.25, 2.85, 8.75), Vector3::new(0.0, 1.0, 0.0));
+        let (entry, direction) = placement_towards_cone(cylinders, cones, 0.25, 0.5, old)
+            .expect("one source-joined shoulder");
+        assert_eq!([entry.x, entry.y, entry.z], [6.25, 3.35, 8.75]);
+        assert_eq!([direction.x, direction.y, direction.z], [0.0, -1.0, 0.0]);
+        let mut crossing = cones;
+        crossing[1][1][1] = 3.0;
+        assert!(placement_towards_cone(cylinders, crossing, 0.25, 0.5, old).is_none());
+    }
+
+    #[test]
+    fn cone_corner_controls_are_not_cylinder_parameter_slots() {
+        const CORNERS: [[f64; 3]; 2] = [[5.875, 2.4375, 8.25], [6.625, 2.9375, 8.875]];
+        let source = [
+            &[0x18, 0xe4, 0x11][..],
+            &FIRST_PARAMETER,
+            &corners_bytes(CORNERS),
+            &ENTITY_REF_TAIL,
+            &[crate::psb::token::COMPOUND_CLOSE],
+            &[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18, 0x2f, 0x19, 0x00],
+        ]
+        .concat();
+        let corners = controlled_drilled_cone_patch_corners(&source).expect("complete cone packet");
+        assert_eq!(corners, CORNERS);
+    }
+
+    #[test]
+    fn reflected_directed_placements_do_not_gain_an_axis_binding() {
+        let axis = cadmpeg_ir::features::holes::HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, -1.0, 9.5))
+                .expect("finite"),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                .expect("unit"),
+        };
+        assert!(directed_placement_matches_axis(
+            (Point3::new(-3.5, -1.0, 9.5), Vector3::new(1.0, 0.0, 0.0)),
+            &axis
+        ));
+        assert!(!directed_placement_matches_axis(
+            (Point3::new(3.5, 1.0, -9.5), Vector3::new(-1.0, 0.0, 0.0)),
+            &axis
         ));
     }
 }

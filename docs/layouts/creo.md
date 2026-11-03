@@ -125,6 +125,81 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser expands the local-system support frame as twelve finite `f64` slots.
 
+## `model_double_xar_metric_scale`
+
+Spec §Constants and cache references · layout: byte offsets · size: 4 B
+
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/double_xar.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `image` | `bytes[4]` | — | spec | The metric model-scale image is `07 23 11 2e`. · value `[7, 35, 17, 46]` |
+
+## `model_double_xar_imperial_scale`
+
+Spec §Constants and cache references · layout: byte offsets · size: 11 B
+
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/double_xar.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `opener` | `u8` | — | spec | The imperial model-scale image is `28 <tail7> 23 11 2e`. · value `40` |
+| 1 | 7 | `tail` | `bytes[7]` | — | spec | The imperial model-scale image is `28 <tail7> 23 11 2e`. |
+| 8 | 3 | `trailer` | `bytes[3]` | — | spec | The imperial model-scale image is `28 <tail7> 23 11 2e`. · value `[35, 17, 46]` |
+
+## `model_double_xar_control`
+
+Spec §Constants and cache references · layout: byte offsets · size: 4 B
+
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/double_xar.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `image` | `bytes[4]` | — | spec | The following fixed control `e8 26 d6 95` supplies no slot. · value `[232, 38, 214, 149]` |
+
+## `section_full_width_scalar`
+
+Spec §5 · layout: byte offsets · size: 9 B
+
+The complete owning scalar field supplies the boundary. Only supported coordinate roles interpret the payload as big-endian binary64; other roles retain opaque bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/scalar.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `opener` | `bytes[1]` | big | spec | A section full-width scalar starts with `ed` · value `[237]` |
+| 1 | 8 | `payload` | `bytes[8]` | big | spec | byte offset 1, and occupies exactly nine bytes. |
+
+## `type24_cap_envelope_control_prefix`
+
+Spec §3.2 · layout: byte offsets · size: 22 B
+
+Physical scalar images remain opaque; no numeric role or carrier chart follows from this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/decode/surfaces/cap_envelopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 7 | `first_control` | `bytes[7]` | unstated | spec | three seven-byte physical |
+| 7 | 1 | `separator` | `u8` | unstated | derived | One byte follows the first seven-byte image. · value `24` |
+| 8 | 7 | `second_control` | `bytes[7]` | unstated | derived | The second image follows the seven-byte first image and separator. |
+| 15 | 7 | `third_control` | `bytes[7]` | unstated | derived | The third image follows the second seven-byte image. |
+
+## `hybrid_visibgeom_clear_prefix`
+
+Spec §3 · layout: byte offsets · size: 4 B
+
+Clear prefix only. The following stored bytes use XOR 0x96 for the invariant-bounded pcurve tail. No carrier or leading-region grammar follows from this prefix alone.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `clear_prefix` | `bytes[4]` | — | spec | the clear prefix `e0 00 53 6c` · value `[224, 0, 83, 108]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

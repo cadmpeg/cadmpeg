@@ -41,13 +41,6 @@ pub(crate) fn transfer_parameters(
         .collect::<std::collections::HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
-    collect_definition_chain_parameters(
-        ctx,
-        native,
-        graph_scope,
-        &mut candidates,
-        &mut conflicting_inputs,
-    )?;
     let mut programs = Vec::<FormulaProgramCandidate>::new();
     let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
     for entity in native
@@ -549,6 +542,21 @@ pub(crate) fn transfer_parameters(
                 .is_some_and(|entity| entity.definition_chain_value().is_some())
         })
         .count();
+    let transferred_native_refs = parameters
+        .iter()
+        .filter_map(|candidate| candidate.parameter.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let native_only_definition_chain_count = native
+        .entity_records
+        .iter()
+        .filter(|entity| {
+            graph_scope.contains(entity.object_graph.as_str())
+                && !transferred_native_refs.contains(entity.id.as_str())
+                && entity
+                    .definition_chain_value()
+                    .is_some_and(|chain| definition_chain_typed_value(chain).is_some())
+        })
+        .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
         annotation_builder.derived(candidate.parameter.id.as_str(), "properties")?;
@@ -569,6 +577,7 @@ pub(crate) fn transfer_parameters(
     Ok(FormulaTransfer {
         typed_parameter_count,
         definition_chain_parameter_count,
+        native_only_definition_chain_count,
         relation_program_parameter_count,
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
@@ -577,42 +586,44 @@ pub(crate) fn transfer_parameters(
     })
 }
 
-/// Add only typed scalar values from the exact two-definition chain grammar.
-///
-/// The first definition names the parameter field and the second definition
-/// names its source type. The suffix selector must already agree with the
-/// first definition; the native decoder enforces that invariant. Other suffix
-/// states remain native because they do not contain a neutral parameter value.
-fn collect_definition_chain_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    native: &CatiaNative,
-    graph_scope: &crate::decode::ModelingGraphScope,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
-    conflicting_inputs: &mut BTreeSet<ParameterId>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for entity in native
-        .entity_records
-        .iter()
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
-    {
-        let Some(chain) = entity.definition_chain_value() else {
-            continue;
-        };
-        let Some(candidate) = definition_chain_parameter_candidate(ctx, entity, chain)? else {
-            continue;
-        };
-        let id = candidate.parameter.id.clone();
-        match candidates.get(&id) {
-            None => {
-                candidates.insert(id, candidate);
-            }
-            Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                conflicting_inputs.insert(id);
-            }
-            Some(_) => {}
-        }
+fn definition_chain_typed_value(
+    chain: &crate::native::CatiaDefinitionChainValue,
+) -> Option<(
+    FormulaParameterType,
+    TypedParameterEvaluation,
+    Option<u64>,
+    Option<u32>,
+)> {
+    if chain.selector.value.is_empty() {
+        return None;
     }
-    Ok(())
+    match &chain.value {
+        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => {
+            let (parameter_type, evaluation) =
+                typed_parameter_evaluation(&chain.role.value, evaluation)?;
+            Some((parameter_type, evaluation, Some(*opcode_offset), None))
+        }
+        crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
+            if canonical_parameter_type(&chain.role.value)
+                == Some(FormulaParameterType::Boolean) =>
+        {
+            let boolean = match value {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
+            Some((
+                FormulaParameterType::Boolean,
+                TypedParameterEvaluation::Value(ParameterValue::Boolean(boolean)),
+                None,
+                Some(*value),
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn definition_chain_parameter_candidate(
@@ -620,45 +631,17 @@ fn definition_chain_parameter_candidate(
     entity: &crate::native::entity_record::CatiaEntityRecord,
     chain: &crate::native::CatiaDefinitionChainValue,
 ) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
-    let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
-        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset,
-            evaluation,
-        } => {
-            let Some((parameter_type, evaluation)) =
-                typed_parameter_evaluation(&chain.role.value, evaluation)
-            else {
-                return Ok(None);
-            };
-            (parameter_type, evaluation, Some(*opcode_offset), None)
-        }
-        crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
-            if canonical_parameter_type(&chain.role.value)
-                == Some(FormulaParameterType::Boolean) =>
-        {
-            (
-                FormulaParameterType::Boolean,
-                TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
-                    0 => false,
-                    1 => true,
-                    _ => return Ok(None),
-                })),
-                None,
-                Some(*value),
-            )
-        }
-        _ => return Ok(None),
-    };
-    if chain.selector.value.is_empty() {
+    let Some((parameter_type, evaluation, evaluation_opcode_offset, atom_value)) =
+        definition_chain_typed_value(chain)
+    else {
         return Ok(None);
-    }
+    };
     let id = match neutral_parameter_id(&entity.id) {
         Ok(id) => id,
         Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name = chain.selector.value.clone();
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -666,9 +649,6 @@ fn definition_chain_parameter_candidate(
             (expression, Some(value))
         }
     };
-    // A definition chain names the parameter in its first definition. It does
-    // not carry the named-parameter value record's scope/expression binding,
-    // so do not publish the definition name as `catia_binding`.
     let mut properties = parameter_properties(parameter_type.as_str(), None)?;
     crate::resource::source_attribute(
         &mut properties,
@@ -725,7 +705,7 @@ fn definition_chain_parameter_candidate(
             id,
             owner: None,
             ordinal: 0,
-            name,
+            name: String::new(),
             expression,
             display: None,
             value,
@@ -744,6 +724,7 @@ fn definition_chain_parameter_candidate(
 pub(crate) struct FormulaTransfer {
     pub(crate) typed_parameter_count: usize,
     pub(crate) definition_chain_parameter_count: usize,
+    pub(crate) native_only_definition_chain_count: usize,
     pub(crate) relation_program_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,

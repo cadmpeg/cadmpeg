@@ -155,3 +155,38 @@ fn object_record_reference_retained_limit_refuses_json_record() {
             .expect("store the native arena");
     });
 }
+
+#[test]
+fn e5_edge_wire_views_keep_null_unresolved_and_allocation_fields() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_e5::append_e5_record(
+        &mut bytes,
+        0xff,
+        7,
+        &[0x85, 0x80, 0x8a, 0x90, 0x8e, 0x8f, 0x22],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut borrowed = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut borrowed)
+        .expect("store borrowed source operands");
+    let mut owned = cadmpeg_ir::NativeNamespace::default();
+    native
+        .clone()
+        .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+        .expect("store owned source operands");
+    assert_eq!(borrowed, owned);
+    assert_eq!(
+        crate::native::CatiaNative::load(&owned).expect("load source operands"),
+        native
+    );
+    let rows: Vec<serde_json::Value> = owned.arena_as("e5_edges").expect("typed wire view");
+    assert_eq!(
+        rows,
+        [serde_json::json!({
+            "id":"catia:e5:edge-use#0", "byte_offset":0, "byte_len":20,
+            "record_id":7, "object_references":[0,10,16,14,15],
+            "allocation_terminal":{"raw_byte":34,"value":8,"encoding":"selector2"}
+        })]
+    );
+}

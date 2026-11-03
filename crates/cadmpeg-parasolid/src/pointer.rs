@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Encoded XMT indices (`parasolid.md` §1): a short word, or a negative
-//! remainder and a nonzero quotient.
+//! Encoded XMT indices (`parasolid.md` §1): a nonnegative `int16`, or a
+//! negative `int16` remainder and a positive `int16` quotient.
 
 use cadmpeg_core::decode::View;
 
-/// The largest value of the one-word form.
-const SHORT_MAX: u32 = 0x7fff;
-
 /// The divisor of the two-word form.
 const QUOTIENT_UNIT: u32 = 32_767;
+
+/// The largest pointer: quotient and remainder magnitude 32767.
+pub const MAX_VALUE: u32 = 32_768 * 32_767;
 
 /// Read one complete pointer and advance the view.
 ///
@@ -16,15 +16,14 @@ const QUOTIENT_UNIT: u32 = 32_767;
 #[must_use]
 pub fn read(view: &mut View<'_>) -> Option<u32> {
     let mut next = *view;
-    let first = next.u16_be()?;
-    let value = if u32::from(first) <= SHORT_MAX {
-        u32::from(first)
+    let first = next.i16_be()?;
+    let value = if first >= 0 {
+        u32::from(first.unsigned_abs())
     } else {
-        let quotient = next.u16_be()?;
-        (quotient != 0).then_some(())?;
-        u32::from(quotient)
-            .checked_mul(QUOTIENT_UNIT)?
-            .checked_add(u32::from(first.cast_signed().unsigned_abs()))?
+        let remainder = first.checked_neg()?;
+        let quotient = next.i16_be()?;
+        (quotient > 0).then_some(())?;
+        u32::from(quotient.unsigned_abs()) * QUOTIENT_UNIT + u32::from(remainder.unsigned_abs())
     };
     *view = next;
     Some(value)
@@ -44,21 +43,21 @@ pub fn read_at(bytes: &[u8], at: &mut usize) -> Option<u32> {
 ///
 /// Returns `None` when the value exceeds the two-word range.
 pub fn write(out: &mut Vec<u8>, value: u32) -> Option<()> {
-    if value <= SHORT_MAX {
-        out.extend_from_slice(&u16::try_from(value).ok()?.to_be_bytes());
+    if let Ok(short) = i16::try_from(value) {
+        out.extend_from_slice(&short.to_be_bytes());
         return Some(());
     }
     let quotient = (value - 1) / QUOTIENT_UNIT;
     let remainder = i16::try_from(value - quotient * QUOTIENT_UNIT).ok()?;
-    let quotient = u16::try_from(quotient).ok()?;
-    out.extend_from_slice(&0_i16.checked_sub(remainder)?.to_be_bytes());
+    let quotient = i16::try_from(quotient).ok()?;
+    out.extend_from_slice(&(-remainder).to_be_bytes());
     out.extend_from_slice(&quotient.to_be_bytes());
     Some(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{read, write};
+    use super::{read, write, MAX_VALUE};
     use cadmpeg_core::decode::View;
 
     #[test]
@@ -74,9 +73,9 @@ mod tests {
             (&[0xf2, 0x7e, 0, 1][..], 36_225),
             // 65534 = 1 * 32767 + 32767.
             (&[0x80, 0x01, 0, 1][..], 65_534),
-            (&[0x80, 0, 0, 1][..], 65_535),
+            (&[0xff, 0xff, 0, 2][..], 65_535),
             (&[0xff, 0xfe, 0, 2][..], 0x1_0000),
-            (&[0x80, 0x01, 0xff, 0xff][..], 65_536 * 32_767),
+            (&[0x80, 0x01, 0x7f, 0xff][..], MAX_VALUE),
         ] {
             let mut view = View::over_retained(bytes);
             assert_eq!(read(&mut view), Some(expected));
@@ -87,15 +86,7 @@ mod tests {
     #[test]
     fn written_pointers_take_the_shortest_form_and_read_back() {
         for value in [
-            0,
-            1,
-            0x7fff,
-            0x8000,
-            36_225,
-            65_534,
-            65_535,
-            0x1_0000,
-            65_536 * 32_767,
+            0, 1, 0x7fff, 0x8000, 36_225, 65_534, 65_535, 0x1_0000, MAX_VALUE,
         ] {
             let mut bytes = Vec::new();
             write(&mut bytes, value).unwrap();
@@ -103,7 +94,7 @@ mod tests {
             let mut view = View::over_retained(&bytes);
             assert_eq!(read(&mut view), Some(value));
         }
-        assert_eq!(write(&mut Vec::new(), 65_536 * 32_767 + 1), None);
+        assert_eq!(write(&mut Vec::new(), MAX_VALUE + 1), None);
     }
 
     #[test]
@@ -115,13 +106,17 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_and_zero_quotient_pointers_keep_the_cursor() {
+    fn incomplete_and_out_of_range_pointers_keep_the_cursor() {
         for bytes in [
             &[][..],
             &[0][..],
-            &[0x80, 0][..],
-            &[0x80, 0, 0][..],
+            &[0x80, 1][..],
+            &[0x80, 1, 0][..],
+            // Remainder word -32768 has no int16 magnitude.
+            &[0x80, 0, 0, 1][..],
+            // Quotient words zero and negative.
             &[0xff, 0xff, 0, 0][..],
+            &[0xff, 0xff, 0x80, 0][..],
         ] {
             let mut view = View::over_retained(bytes);
             assert_eq!(read(&mut view), None);

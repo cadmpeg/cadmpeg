@@ -914,6 +914,14 @@ fn positional_conic_local_system(
     candidate
 }
 
+const POSITIONAL_CONIC_GENERAL_INFO: &[u8] = &[0x02, 0x48, 0x10, 0x00, 0xeb, 0x10, 0, 0, 0, 0];
+
+fn unresolved_ellipse_flip_prefix(body: &[u8], type_id: u32) -> bool {
+    ConicType::from(type_id) == ConicType::Ellipse
+        && body.starts_with(POSITIONAL_CONIC_GENERAL_INFO)
+        && crate::psb::complete_compact_int(body, POSITIONAL_CONIC_GENERAL_INFO.len()).is_none()
+}
+
 fn positional_conic_body(
     body: &[u8],
     entity_id: u32,
@@ -921,10 +929,15 @@ fn positional_conic_body(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<Result<ReferenceConic, CodecError>> {
-    const GENERAL_INFO: &[u8] = &[0x02, 0x48, 0x10, 0x00, 0xeb, 0x10, 0, 0, 0, 0];
-    (body.get(..GENERAL_INFO.len()) == Some(GENERAL_INFO)).then_some(())?;
-    let (flip, mut cursor) = crate::psb::compact_int(body, GENERAL_INFO.len());
-    (cursor > GENERAL_INFO.len()).then_some(())?;
+    body.starts_with(POSITIONAL_CONIC_GENERAL_INFO)
+        .then_some(())?;
+    let (flip, mut cursor) = if ConicType::from(type_id) == ConicType::Ellipse {
+        crate::psb::complete_compact_int(body, POSITIONAL_CONIC_GENERAL_INFO.len())?
+    } else {
+        let (flip, cursor) = crate::psb::compact_int(body, POSITIONAL_CONIC_GENERAL_INFO.len());
+        (cursor > POSITIONAL_CONIC_GENERAL_INFO.len()).then_some(())?;
+        (flip, cursor)
+    };
     let mut endpoints = [[0.0; 3]; 2];
     for point in &mut endpoints {
         for value in point {
@@ -962,7 +975,10 @@ fn positional_conic_body(
 }
 
 /// Decode complete positional rows following an `ent_list(conic)` schema.
-pub(crate) fn positional_conics(payload: &[u8]) -> Result<Vec<ReferenceConic>, CodecError> {
+pub(crate) fn positional_conics(
+    payload: &[u8],
+    unresolved_flip_prefix: &mut bool,
+) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
     let cache = ScalarCache::from_section_checked(payload);
@@ -993,13 +1009,10 @@ pub(crate) fn positional_conics(payload: &[u8]) -> Result<Vec<ReferenceConic>, C
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _, _)| *next_close);
-            if let Some(conic) = positional_conic_body(
-                &payload[body_start..body_end],
-                entity_id,
-                type_id,
-                close + 1,
-                &cache,
-            ) {
+            let body = &payload[body_start..body_end];
+            *unresolved_flip_prefix |= unresolved_ellipse_flip_prefix(body, type_id);
+            if let Some(conic) = positional_conic_body(body, entity_id, type_id, close + 1, &cache)
+            {
                 let conic = conic?;
                 result.push(conic);
             }

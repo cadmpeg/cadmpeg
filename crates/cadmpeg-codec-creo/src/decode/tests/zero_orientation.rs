@@ -963,13 +963,11 @@ fn conflicting_section_sweep_names_remain_unresolved() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Extrude id 822".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::Conflicting,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .reference_names
@@ -1031,7 +1029,6 @@ fn conflicting_display_states_do_not_select_reference_family() {
             display_state_conflict: true,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .reference_names

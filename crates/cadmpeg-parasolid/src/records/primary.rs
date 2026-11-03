@@ -91,6 +91,14 @@ fn header(view: &mut View<'_>) -> Option<Header> {
     })
 }
 
+impl PrimaryRecord {
+    /// The node's byte range in the stream.
+    #[must_use]
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+}
+
 impl<'a> PrimaryRecords<'a> {
     fn matches_base(&self, record: &PrimaryRecord) -> bool {
         let Some(expected) = base::fields(self.version, record.definition.kind) else {
@@ -124,6 +132,15 @@ impl<'a> PrimaryRecords<'a> {
     /// Framed nodes in stream order.
     pub fn records(&self) -> &[PrimaryRecord] {
         &self.records
+    }
+
+    /// Byte offset where framing stopped, or `None` when a terminator ended the sequence.
+    #[must_use]
+    pub fn stop_offset(&self) -> Option<usize> {
+        match self.end {
+            PrimaryEnd::Terminated { .. } => None,
+            PrimaryEnd::Stopped { offset, .. } => Some(offset),
+        }
     }
 
     /// Frame the node sequence of `stream`.
@@ -301,6 +318,8 @@ fn consume_field(view: &mut View<'_>, data_type: DataType, count: u32) -> Result
 #[cfg(test)]
 mod tests;
 
+mod edges;
 mod group;
+pub use edges::EdgeFrame;
 pub use group::PrimaryGroup;
 mod membership;

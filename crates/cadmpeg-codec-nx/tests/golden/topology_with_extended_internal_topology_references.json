@@ -20,9 +20,9 @@
         "coedges": [
           {
             "edge": "nx:s0:edge#8",
-            "id": "nx:s0:fin#7",
-            "owner_loop": "nx:s0:loop#5",
-            "radial_next": "nx:s0:fin#7",
+            "id": "nx:s0:fin#40007",
+            "owner_loop": "nx:s0:loop#40005",
+            "radial_next": "nx:s0:fin#40007",
             "sense": "forward"
           }
         ],
@@ -51,9 +51,9 @@
             "carrier": {
               "curve": "nx:s0:crv#0"
             },
-            "end": "nx:s0:vertex#10",
+            "end": "nx:s0:vertex#40010",
             "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
+            "start": "nx:s0:vertex#40010",
             "tolerance": 0.3
           }
         ],
@@ -63,11 +63,11 @@
             "loops": {
               "classification": "unspecified",
               "loops": [
-                "nx:s0:loop#5"
+                "nx:s0:loop#40005"
               ]
             },
             "sense": "forward",
-            "shell": "nx:s0:shell#3",
+            "shell": "nx:s0:shell#40003",
             "surface": "nx:s0:surf#0",
             "tolerance": 0.2
           }
@@ -77,12 +77,12 @@
           {
             "boundary": {
               "coedges": [
-                "nx:s0:fin#7"
+                "nx:s0:fin#40007"
               ],
               "kind": "ring"
             },
             "face": "nx:s0:face#4",
-            "id": "nx:s0:loop#5"
+            "id": "nx:s0:loop#40005"
           }
         ],
         "occurrences": [],
@@ -109,14 +109,14 @@
             "body": "nx:s0:body#2",
             "id": "nx:s0:region#12",
             "shells": [
-              "nx:s0:shell#3"
+              "nx:s0:shell#40003"
             ]
           }
         ],
         "semantic_annotations": [],
         "shells": [
           {
-            "id": "nx:s0:shell#3",
+            "id": "nx:s0:shell#40003",
             "members": [
               {
                 "id": "nx:s0:face#4",
@@ -159,7 +159,7 @@
         "tessellations": [],
         "vertices": [
           {
-            "id": "nx:s0:vertex#10",
+            "id": "nx:s0:vertex#40010",
             "point": "nx:s0:pt#0",
             "tolerance": 0.1
           }
@@ -324,7 +324,7 @@
             },
             "scope": "fields"
           },
-          "nx:s0:vertex#10": {
+          "nx:s0:vertex#40010": {
             "fields": {
               "tolerance": "derived"
             },
@@ -343,12 +343,12 @@
             "tag": "BODY"
           },
           "nx:s0:crv#0": {
-            "offset": 328,
+            "offset": 344,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:edge#8": {
-            "offset": 205,
+            "offset": 219,
             "stream": "nx:parasolid#0:partition",
             "tag": "EDGE"
           },
@@ -357,38 +357,38 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
-          "nx:s0:fin#7": {
-            "offset": 180,
+          "nx:s0:fin#40007": {
+            "offset": 186,
             "stream": "nx:parasolid#0:partition",
             "tag": "FIN"
           },
-          "nx:s0:loop#5": {
-            "offset": 162,
+          "nx:s0:loop#40005": {
+            "offset": 166,
             "stream": "nx:parasolid#0:partition",
             "tag": "LOOP"
           },
           "nx:s0:pt#0": {
-            "offset": 441,
+            "offset": 459,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:region#12": {
-            "offset": 425,
+            "offset": 443,
             "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
-          "nx:s0:shell#3": {
+          "nx:s0:shell#40003": {
             "offset": 97,
             "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
-            "offset": 237,
+            "offset": 253,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
-          "nx:s0:vertex#10": {
-            "offset": 395,
+          "nx:s0:vertex#40010": {
+            "offset": 411,
             "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
           }
@@ -397,7 +397,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAA//8AAAACAAEABAABAAEADAABAA4ABAAAAAAAAD8qNuLrHEMtAAEAAQAFAAMABisAAAAAAAAAAAAAAA8ABQAAAAD//wAAAAcABAABABEAB///AAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAP//AAAAAAAAAAAACz8aNuLrHEMtAAAAEwAMAAAAAAAAAAAAAAAAAB0ACwAAAAD//wAAAAAAAAAAP4R64UeuFHs/lHrhR64Uez+euFHrhR64",
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAN47wAAQAAAAAAAQACAAEABAABAAEADAABAA4ABAAAAAAAAD8qNuLrHEMtAAEAAeO6AAHjvAABAAYrAAAAAAAAAAAAAAAP47oAAQAAAAAAAOO4AAEABAABABHjuAABAADjugAB47gAAeO4AAHjtQABAAEACAAJAAArABAACAAAAAAAAD8zqSowVTJh47gAAQAAAAAACQAAAAAAAAAyAAYAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHgAJAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABLjtQABAAAAAAAAAAAAAAAA47QAAT8aNuLrHEMtAAAAEwAMAAAAAAAAAAAAAAAAAB3jtAABAAAAAAAAAAAAAAAAP4R64UeuFHs/lHrhR64Uez+euFHrhR64",
             "retention": "inline"
           },
           "offset": 76,
@@ -445,7 +445,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 483,
+        "expanded": 501,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }

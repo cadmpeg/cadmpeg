@@ -8,8 +8,8 @@ pub(crate) mod revolution_frames;
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
@@ -196,133 +196,6 @@ pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
 
 pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
     assemble_f32_be(bytes)
-}
-
-/// Counted `double_xar` dictionary stored in a model-level scalar section.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DoubleXarTable {
-    /// Offset of the `double_xar` label in the expanded section.
-    pub(crate) offset: usize,
-    /// Entries in stored order, including an explicit terminal null slot.
-    pub(crate) entries: Vec<DoubleXarSlot>,
-}
-
-/// Defined value forms of a dictionary slot.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DoubleXarSlot {
-    StockZero,
-    StockOne,
-    /// A decoded scalar and its source token.
-    Literal {
-        /// Decoded scalar value.
-        value: f64,
-        /// Exact source token bytes.
-        raw: Vec<u8>,
-    },
-    TerminalNull,
-    RecursivePlaceholder1,
-    RecursivePlaceholder3,
-}
-
-impl DoubleXarSlot {
-    /// Exact bytes occupying this slot.
-    pub(crate) fn raw(&self) -> &[u8] {
-        match self {
-            Self::StockZero => &[0x0b],
-            Self::StockOne => &[0x10],
-            Self::Literal { raw, .. } => raw,
-            Self::TerminalNull => &[0xe0],
-            Self::RecursivePlaceholder1 => &[0xe5, 0x07, 0x23, 0x11, 0x2e],
-            Self::RecursivePlaceholder3 => &[0xe8, 0x26, 0xd6, 0x95],
-        }
-    }
-
-    pub(crate) fn value(&self) -> Option<f64> {
-        match self {
-            Self::StockZero => Some(0.0),
-            Self::StockOne => Some(1.0),
-            Self::Literal { value, .. } => Some(*value),
-            Self::TerminalNull | Self::RecursivePlaceholder1 | Self::RecursivePlaceholder3 => None,
-        }
-    }
-
-    pub(crate) fn kind(&self) -> &'static str {
-        match self {
-            Self::StockZero => "stock_zero",
-            Self::StockOne => "stock_one",
-            Self::Literal { .. } => "literal",
-            Self::TerminalNull => "terminal_null",
-            Self::RecursivePlaceholder1 => "recursive_placeholder_1",
-            Self::RecursivePlaceholder3 => "recursive_placeholder_3",
-        }
-    }
-}
-
-/// Decode every complete counted `double_xar` dictionary in one expanded section.
-pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
-    const LABEL: &[u8] = b"double_xar\0";
-    let mut tables = Vec::new();
-    let mut search = 0;
-    while let Some(offset) = find_from(data, LABEL, search) {
-        let count_offset = offset + LABEL.len();
-        if data.get(count_offset) != Some(&0xf8) {
-            search = count_offset;
-            continue;
-        }
-        let (count, mut cursor) = compact_int(data, count_offset + 1);
-        if cursor == count_offset + 1 {
-            search = count_offset + 1;
-            continue;
-        }
-        let mut entries = Vec::new();
-        for _ in 0..count {
-            let Some(head) = data.get(cursor).copied() else {
-                entries.clear();
-                break;
-            };
-            let (slot, end) = match head {
-                0x0b => (DoubleXarSlot::StockZero, cursor + 1),
-                0x10 => (DoubleXarSlot::StockOne, cursor + 1),
-                0xe0 => (DoubleXarSlot::TerminalNull, cursor + 1),
-                0xe5 if data.get(cursor..cursor + 5) == Some(&[0xe5, 0x07, 0x23, 0x11, 0x2e]) => {
-                    (DoubleXarSlot::RecursivePlaceholder1, cursor + 5)
-                }
-                0xe8 if data.get(cursor..cursor + 4) == Some(&[0xe8, 0x26, 0xd6, 0x95]) => {
-                    (DoubleXarSlot::RecursivePlaceholder3, cursor + 4)
-                }
-                _ => match decode(data, cursor) {
-                    Some((value, end)) => {
-                        let Some(raw) = data.get(cursor..end) else {
-                            entries.clear();
-                            break;
-                        };
-                        (
-                            DoubleXarSlot::Literal {
-                                value,
-                                raw: raw.to_vec(),
-                            },
-                            end,
-                        )
-                    }
-                    None => {
-                        entries.clear();
-                        break;
-                    }
-                },
-            };
-            entries.push(slot);
-            cursor = end;
-        }
-        if entries.len() == index_from_u32(count)
-            && entries
-                .last()
-                .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
-        {
-            tables.push(DoubleXarTable { offset, entries });
-        }
-        search = count_offset + 1;
-    }
-    tables
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
@@ -705,6 +578,22 @@ pub(crate) fn decode_two_chart_first_coordinate(
     decode_tabulated_cylinder_first_coordinate(data, offset, cache)
 }
 
+/// Decode a `4f`, `50`, or `57` second coordinate of a legacy two-chart
+/// sample: the prefix selects the IEEE high bytes `3f c1`, `3f c2`, or `3f ca`
+/// above six stored bytes.
+pub(crate) fn decode_two_chart_second_coordinate(
+    data: &[u8],
+    offset: usize,
+) -> Option<(f64, usize)> {
+    let head = match *data.get(offset)? {
+        0x4f => 0x3fc1,
+        0x50 => 0x3fc2,
+        0x57 => 0x3fca,
+        _ => return None,
+    };
+    ieee7_dict(data, offset, head)
+}
+
 /// Decode a model-space coordinate in an `ActDatums` outline.
 ///
 /// Named and positional datum outlines use the backed subset of the bounded
@@ -858,6 +747,20 @@ pub(crate) fn is_named_local_system_coordinate_opener(byte: u8) -> bool {
     )
 }
 
+/// Read a complete full-width section scalar image.
+pub(crate) fn decode_section_full_width_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+    use crate::layout::section_full_width_scalar;
+    let end = offset.checked_add(section_full_width_scalar::LEN)?;
+    let image = data.get(offset..end)?;
+    (image.get(..section_full_width_scalar::OPENER_VALUE.len())
+        == Some(&section_full_width_scalar::OPENER_VALUE))
+    .then_some(())?;
+    Some((
+        View::f64_be_at(image, section_full_width_scalar::PAYLOAD)?,
+        end,
+    ))
+}
+
 /// Decode one coordinate in a model-reference entity row.
 ///
 /// The `0xed` form stores a complete big-endian IEEE-754 value in the eight
@@ -977,6 +880,9 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
     Explicit(InlineLocalSystemFrame),
 }
 
+pub(crate) const MAX_INLINE_EXPLICIT_FRAME_CANDIDATES: usize = 16;
+pub(crate) const MAX_INLINE_ORIGIN_CANDIDATES: usize = 8;
+
 /// Decode the bounded local-system prefix used by inline non-plane rows.
 ///
 /// This lane is separate from the older positional-cylinder grammars. Compact
@@ -995,7 +901,7 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
             ))
         });
 
-    let mut explicit = [None; 16];
+    let mut explicit = [None; MAX_INLINE_EXPLICIT_FRAME_CANDIDATES];
     let mut count = 0;
     let mut values = [0.0; 12];
     walk_inline_explicit_local_system(
@@ -1025,7 +931,7 @@ pub(crate) fn decode_inline_non_plane_origin_prefix(
     cache: &ScalarCache,
 ) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
     let mut values = [0.0; 3];
-    let mut results = [None; 8];
+    let mut results = [None; MAX_INLINE_ORIGIN_CANDIDATES];
     let mut count = 0;
     walk_inline_origin(
         ctx,
@@ -1052,6 +958,22 @@ pub(crate) fn decode_inline_surface_suffix_scalar(
         0x18 => Some((0.0, offset + 1)),
         _ => decode_positive_dict(body, offset)
             .or_else(|| decode_in_surface_row_lane(body, offset, cache)),
+    }
+}
+
+/// Decode one type-26 `radius1` or `radius2` slot of an inline family suffix.
+///
+/// The slot extends the suffix lane with `0d` for one quarter and the
+/// eight-byte `2d <tail7>` form, which reconstructs `40 <tail7>`.
+pub(crate) fn decode_type26_radius_slot(
+    body: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    match body.get(offset)? {
+        0x0d => Some((0.25, offset + 1)),
+        0x2d => ieee8(body, offset, 0x40),
+        _ => decode_inline_surface_suffix_scalar(body, offset, cache),
     }
 }
 

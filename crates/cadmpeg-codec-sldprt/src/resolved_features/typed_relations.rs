@@ -745,6 +745,19 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             SketchConstraintDefinitionInput::EllipseAngle { entity, angle }
         }
         MarkerRelationGroup::Binary(binary) => {
+            if marker.links().iter().any(|link| {
+                !relation_link_identifies_owner(marker, link)
+                    && markers_by_id
+                        .get(link.entity_ref.as_str())
+                        .is_some_and(|operand| {
+                            matches!(
+                                operand.kind(),
+                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                            )
+                        })
+            }) {
+                return Ok(Some(native()?));
+            }
             let owner_entities =
                 relation_owner_curve_entities(ctx, marker, markers_by_id, loci_by_marker)?;
             let mut forward_entities = Vec::new();

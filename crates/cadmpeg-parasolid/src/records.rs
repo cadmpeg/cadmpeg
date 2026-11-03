@@ -16,7 +16,7 @@ pub mod group;
 pub mod primary;
 
 pub use deltas::DeltasRecords;
-pub use primary::PrimaryRecords;
+pub use primary::{EdgeFrame, PrimaryRecords};
 
 /// A base schema that embedded edit programs refer to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,8 +254,8 @@ fn short_string<'a>(view: &mut View<'a>) -> Option<&'a str> {
 
 /// Read one positive integer in the biased index encoding and return its logical value.
 ///
-/// A positive `i16` holds the value plus one. A negative `i16` remainder and a
-/// `u16` quotient hold `quotient * 32767 + |remainder|` plus one.
+/// A nonnegative `i16` holds the value plus one. A negative `i16` remainder and a
+/// positive `i16` quotient hold `quotient * 32767 + |remainder|` plus one.
 pub fn positive(view: &mut View<'_>) -> Option<u32> {
     crate::pointer::read(view)?.checked_sub(1)
 }

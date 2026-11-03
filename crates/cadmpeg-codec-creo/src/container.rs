@@ -35,6 +35,7 @@ use crate::curve::{
 use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
 use crate::feature;
 use crate::feature::definitions::FeatureDefinition;
+use crate::feature::dimensions::ModelDimension;
 use crate::feature::entity::{FeatureEntity, FeatureEntityReference, FeatureEntityTable};
 use crate::feature::operations::{
     FeatureOperation, FeatureOperationState, FeatureRecipe, FeatureReferenceName,
@@ -286,7 +287,7 @@ pub(crate) struct ExpandedSection {
     pub(crate) data: Vec<u8>,
 }
 
-/// One counted model-level `double_xar` dictionary from an expanded section.
+/// One owned scalar heap from an expanded model or unit section.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ModelDoubleXarTable {
     /// Normalized owning section name.
@@ -295,8 +296,10 @@ pub(crate) struct ModelDoubleXarTable {
     pub(crate) section_source_offset: usize,
     /// Offset of the table label in the expanded section.
     pub(crate) expanded_offset: usize,
-    /// Entries in stored order.
-    pub(crate) entries: Vec<crate::scalar::DoubleXarSlot>,
+    /// First physical scalar byte in the expanded section.
+    pub(crate) body_offset: usize,
+    pub(crate) logical_count: usize,
+    pub(crate) entries: Vec<crate::double_xar::DoubleXarSlot>,
 }
 
 /// The byte-backed count headers read from the visible-geometry section.
@@ -387,6 +390,8 @@ pub(crate) struct FramingScan<'a> {
     /// Local work-cap skips recorded while framing and decoding plane support
     /// frames.
     pub(crate) local_work_cap_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Readable physical sections whose labels do not establish a visible-geometry owner.
+    pub(crate) unowned_physical_geometry: BTreeSet<usize>,
     /// Identified layout family.
     pub(crate) layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -419,6 +424,7 @@ pub(crate) struct PrimitiveScan {
 
 /// Model-space reference entities decoded from `MdlRefInfo`.
 pub(crate) struct ReferenceScan {
+    pub(crate) unresolved_conic_sections: BTreeSet<usize>,
     /// Complete model-space line entities from `MdlRefInfo`.
     pub(crate) lines: Vec<ReferenceLine>,
     /// Complete model-Z circular entities from `MdlRefInfo` rows.
@@ -431,6 +437,12 @@ pub(crate) struct ReferenceScan {
 
 /// Typed surface rows, parameter bodies, and prototypes.
 pub(crate) struct SurfaceScan {
+    pub(crate) withheld_cone_origin_surface_ids: BTreeSet<u32>,
+    pub(crate) withheld_cone_origin_curve_ids: BTreeSet<u32>,
+    /// Visible surface identities whose cap chart was explicitly withheld.
+    pub(crate) withheld_cap_surface_ids: BTreeSet<u32>,
+    /// Visible curve identities whose cap chart was explicitly withheld.
+    pub(crate) withheld_cap_curve_ids: BTreeSet<u32>,
     /// Typed fixed-prefix surface rows from the selected material model
     /// geometry namespace. Parameter bodies are decoded separately.
     pub(crate) rows: Vec<SurfaceRow>,
@@ -475,6 +487,14 @@ pub(crate) struct SurfaceScan {
     pub(crate) nonvisible_prototype_field_refusals: Vec<String>,
     /// Complete analytic carriers from legacy visible surface prototypes.
     pub(crate) legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
+}
+
+impl SurfaceScan {
+    /// Whether a cap or cone-origin rule withheld this curve's chart paths.
+    pub(crate) fn withholds_curve_charts(&self, curve_id: u32) -> bool {
+        self.withheld_cap_curve_ids.contains(&curve_id)
+            || self.withheld_cone_origin_curve_ids.contains(&curve_id)
+    }
 }
 
 /// Plane support frames, envelopes, placed planes, and datum planes.
@@ -608,7 +628,7 @@ pub(crate) struct FeatureScan {
     pub(crate) definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
     pub(crate) section_transforms: Vec<FeatureSectionTransform>,
-    /// Every stored feature-operation state from `MdlStatus`, in byte order.
+    /// Every stored feature-operation state from `MdlStatus` and `DEPDB_DATA`, in byte order.
     pub(crate) operation_states: Vec<FeatureOperationState>,
     /// Unambiguous or consensus feature-operation projection for each identifier.
     pub(crate) operations: Vec<FeatureOperation>,
@@ -623,8 +643,8 @@ pub(crate) struct FeatureScan {
     pub(crate) entity_tables: Vec<FeatureEntityTable>,
     /// Legacy ASCII round features joined to their dimensions and result edges.
     pub(crate) legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
-    /// Dimension elements of the binary `BasFullData` `dim_array`.
-    pub(crate) dimensions: Vec<crate::feature::dimensions::ModelDimension>,
+    /// Dimension elements of the binary `FullMData` and `BasFullData` `dim_array`.
+    pub(crate) dimensions: Vec<ModelDimension>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: `#UGC:1` and `#UGC:2` are
@@ -1345,11 +1365,7 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Result<Option<u32>, CodecErr
 
 /// Read the visible-geometry namespace census from the `VisibGeom` section body.
 fn geom_census(sections: &[ScannedSection<'_>]) -> Result<GeomCensus, CodecError> {
-    let Some(vg) = sections
-        .iter()
-        .find(|s| s.section.name() == VISIBGEOM)
-        .or_else(|| sections.iter().find(|s| s.section.name() == "DEPDB_DATA"))
-    else {
+    let Some(vg) = sections.iter().find(|s| s.section.name() == VISIBGEOM) else {
         return Ok(GeomCensus::default());
     };
     let region = vg.region;
@@ -1374,7 +1390,7 @@ fn binary_principal_unit(data: &[u8]) -> BinaryUnitSelection {
     let mut from = 0;
     while let Some(found) = find(data, PRINCIPAL_UNIT_ID, from) {
         let start = found + PRINCIPAL_UNIT_ID.len();
-        let Some(&value) = data.get(start) else {
+        let Some((value, end)) = psb::complete_compact_int(data, start) else {
             return BinaryUnitSelection::Unsupported;
         };
         if let Some(previous) = selector {
@@ -1382,13 +1398,16 @@ fn binary_principal_unit(data: &[u8]) -> BinaryUnitSelection {
         } else {
             selector = Some(value);
         }
-        from = start;
+        from = end;
     }
     if conflicting {
         BinaryUnitSelection::Conflicting
     } else {
         match selector {
             None => BinaryUnitSelection::Absent,
+            Some(50) => {
+                BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::CentimeterGramSecond)
+            }
             Some(51) => {
                 BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::MillimeterNewtonSecond)
             }
@@ -1493,7 +1512,10 @@ fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTa
     Some(FamilyTableRecord { pointer, offset })
 }
 
-fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
+fn model_geometry_sections<'a>(
+    sections: &[ScannedSection<'a>],
+    unowned_physical_geometry: &mut BTreeSet<usize>,
+) -> Vec<ScannedSection<'a>> {
     let mut visible_namespace_present = false;
     for candidate in sections
         .iter()
@@ -1510,10 +1532,15 @@ fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSe
     for section in sections {
         let keep = if visible_namespace_present {
             section.section.name() == VISIBGEOM
-        } else if section.section.name() == "DEPDB_DATA" {
-            let payload = section.region;
-            find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
         } else {
+            if section.section.name() == "DEPDB_DATA" {
+                let payload = section.region;
+                if find(payload, b"srf_array\0", 0).is_some()
+                    || find(payload, b"crv_array\0", 0).is_some()
+                {
+                    unowned_physical_geometry.insert(section.section.offset());
+                }
+            }
             false
         };
         if keep {
@@ -2413,19 +2440,6 @@ fn feature_affected_ids(rows: &[FeatureRow], depdb_rows: &[FeatureRow]) -> Vec<F
     records
 }
 
-fn feature_revolution_extents(
-    rows: &[FeatureRow],
-    definitions: &[FeatureDefinition],
-    operations: &[FeatureOperation],
-) -> Vec<FeatureRevolutionExtent> {
-    let mut extents = feature::rows::revolution_extents(rows);
-    let definition_extents =
-        feature::definitions::definition_revolution_extents(definitions, operations);
-    extents.extend(definition_extents);
-    extents.as_mut_slice().sort_by_key(|left| left.offset);
-    extents
-}
-
 fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
@@ -2494,20 +2508,17 @@ fn feature_operation_states(
         |bytes| Ok(feature::operations::operation_states(bytes)),
         |record, base| {
             record.offset += base;
-            record.state_offset += base;
         },
         |record| record.offset,
     )
 }
 
-fn model_dimensions(
-    sections: &[ScannedSection<'_>],
-) -> Result<Vec<crate::feature::dimensions::ModelDimension>, CodecError> {
+fn model_dimensions(sections: &[ScannedSection<'_>]) -> Result<Vec<ModelDimension>, CodecError> {
     collect_section_records_result(
         sections
             .iter()
-            .filter(|section| section.section.name() == "BasFullData"),
-        |bytes| Ok(crate::feature::dimensions::dimensions(bytes)),
+            .filter(|section| matches!(section.section.name(), "FullMData" | "BasFullData")),
+        |bytes| Ok(feature::dimensions::dimensions(bytes)),
         |row, base| row.offset += base,
         |row| row.offset,
     )
@@ -2605,10 +2616,14 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
     values.all(|other| other == value).then_some(value)
 }
 
-fn reference_scan(sections: &[ScannedSection<'_>]) -> Result<ReferenceScan, CodecError> {
+fn reference_scan(
+    sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<ReferenceScan, CodecError> {
     let mut lines = Vec::new();
     let mut circles = Vec::new();
     let mut conics = Vec::new();
+    let mut unresolved_conic_sections = BTreeSet::new();
     for section in sections
         .iter()
         .filter(|section| section.section.name() == "MdlRefInfo")
@@ -2625,9 +2640,18 @@ fn reference_scan(sections: &[ScannedSection<'_>]) -> Result<ReferenceScan, Code
             circle.offset += section.section.offset();
             circles.push(circle);
         }
+        let mut unresolved_flip_prefix = false;
+        let positional = reference::positional_conics(payload, &mut unresolved_flip_prefix)?;
+        if unresolved_flip_prefix {
+            unresolved_conic_sections.insert(section.section.offset());
+            losses.push(crate::loss::CreoLossCode::ReferenceConicPrefixUnresolved.note(format!(
+                "MdlRefInfo section at offset {} has an unresolved positional ellipse flip prefix; complete source section retained opaque",
+                section.section.offset(),
+            )));
+        }
         for mut conic in reference::named_conics(payload)
             .into_iter()
-            .chain(reference::positional_conics(payload)?)
+            .chain(positional)
         {
             conic.offset += section.section.offset();
             conics.push(conic);
@@ -2635,6 +2659,7 @@ fn reference_scan(sections: &[ScannedSection<'_>]) -> Result<ReferenceScan, Code
     }
     let ellipses = reference::ellipse_carriers(&conics);
     Ok(ReferenceScan {
+        unresolved_conic_sections,
         lines,
         circles,
         conics,
@@ -2772,8 +2797,8 @@ pub(crate) fn scan_bytes<'a>(
     } else {
         readable_sections.as_slice()
     };
-    let primitives = scan_primitives(&expanded_sections)?;
-    let references = reference_scan(sections)?;
+    let primitives = scan_primitives(ctx, &expanded_sections)?;
+    let references = reference_scan(sections, &mut local_work_cap_losses)?;
     let assembly = assembly_scan(sections);
     let layout = identify_layout(&data, &all_sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
@@ -2794,7 +2819,8 @@ pub(crate) fn scan_bytes<'a>(
             crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
         })
         .unwrap_or_default();
-    let model_geometry_sections = model_geometry_sections(sections);
+    let mut unowned_physical_geometry = BTreeSet::new();
+    let model_geometry_sections = model_geometry_sections(sections, &mut unowned_physical_geometry);
     let census = geom_census(sections)?;
     let principal_unit = match binary_principal_unit(&data) {
         BinaryUnitSelection::Selected(unit) => Some(unit),
@@ -3078,7 +3104,7 @@ pub(crate) fn scan_bytes<'a>(
         &relation_dimension_symbols,
     )?;
     let feature_revolution_extents =
-        feature_revolution_extents(&feature_rows, &feature_definitions, &feature_operations);
+        feature::rows::revolution_extents(&feature_rows, &model_dimensions);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {
@@ -3117,6 +3143,7 @@ pub(crate) fn scan_bytes<'a>(
             expanded_sections,
             expansion_losses,
             local_work_cap_losses,
+            unowned_physical_geometry,
             layout,
             census,
             principal_unit,
@@ -3129,6 +3156,10 @@ pub(crate) fn scan_bytes<'a>(
         references,
         assembly,
         surfaces: SurfaceScan {
+            withheld_cone_origin_surface_ids: BTreeSet::new(),
+            withheld_cone_origin_curve_ids: BTreeSet::new(),
+            withheld_cap_surface_ids: BTreeSet::new(),
+            withheld_cap_curve_ids: BTreeSet::new(),
             rows: surface_rows,
             nonvisible_rows: nonvisible_surface_rows,
             row_owners: surface_row_owners,
@@ -3216,19 +3247,24 @@ pub(crate) fn scan_bytes<'a>(
     })
 }
 
-fn scan_primitives(expanded_sections: &[ExpandedSection]) -> Result<PrimitiveScan, CodecError> {
+fn scan_primitives(
+    ctx: &DecodeContext<'_>,
+    expanded_sections: &[ExpandedSection],
+) -> Result<PrimitiveScan, CodecError> {
     let mut double_xar_tables = Vec::new();
     let mut primitive_scalar_arrays = Vec::new();
     let mut primitive_triangle_strips = Vec::new();
     let mut conflicting_triangle_strip_representation_count = 0usize;
     let mut primitive_namespace_seen = false;
     for section in expanded_sections {
-        let tables = crate::scalar::double_xar_tables(&section.data);
+        let tables = crate::double_xar::tables(ctx, &section.name, &section.data)?;
         for table in tables {
             double_xar_tables.push(ModelDoubleXarTable {
                 section_name: section.name.clone(),
                 section_source_offset: section.source_offset,
                 expanded_offset: table.offset,
+                body_offset: table.body_offset,
+                logical_count: table.logical_count,
                 entries: table.entries,
             });
         }
@@ -3565,13 +3601,11 @@ mod feature_row_definition_tests {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Round id 42".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         };
         let reference = FeatureReferenceName {
             feature_id: 73,
@@ -3677,7 +3711,6 @@ mod feature_row_definition_tests {
             display_state_conflict: false,
             depdb: None,
             offset,
-            state_offset: offset,
         };
 
         assert_eq!(definitions.len(), 1);

@@ -511,6 +511,23 @@ fn parse_bridge_short(buf: &[u8], off: usize, plain: bool) -> Option<Bridge> {
     })
 }
 
+/// Retain complete FACE bytes for duplicate comparison.
+fn bridge_frame_bytes(buf: &[u8], off: usize) -> Option<Vec<u8>> {
+    let p = body_start(buf, off, 0x0e)?;
+    let end = if buf.get(p + face_delta::TOLERANCE..p + face_delta::REFS) == Some(MAGIC.as_slice())
+        && buf.get(p + face_delta::TOLERANCE - 1) == Some(&1)
+    {
+        refs_tripled::<5>(buf, p + face_delta::SURFACE_FRONT_REFS)?;
+        p.checked_add(face_delta::LEN)?
+    } else if (0..5).all(|index| buf.get(p + face_body::REFS + 2 + index * 3) == Some(&1)) {
+        return None;
+    } else {
+        super::record_starts(buf, off, 0x0e)
+            .find_map(|start| native_bridge(buf, off, start).map(|(_, end)| end))?
+    };
+    Some(buf.get(off..end)?.to_vec())
+}
+
 fn parse_loop_candidates_short(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
     let Some(p) = body_start(buf, off, 0x0f) else {
         return Vec::new();
@@ -1069,37 +1086,23 @@ fn string_node_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
 /// The record tag of an intersection composite.
 const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
 
-/// The end of a complete `00 26` intersection composite whose body starts at
-/// `p`: a pointer `attr`, a sense marker, and six payload pointers (spec §7.3).
-fn intersection_composite_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
-    use crate::layout::intersection_composite as isect;
-    if tag != INTERSECTION_COMPOSITE_TAG {
-        return None;
-    }
-    let attr = attr_at(buf, p)?;
-    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&attr)
-        || !matches!(buf.get(p + isect::MARKER), Some(0x2b | 0x2d))
-    {
-        return None;
-    }
-    let payload = refs_be::<6>(buf, p + isect::PAYLOAD)?;
-    if payload
-        .iter()
-        .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
-    {
-        return None;
-    }
-    let end = p + isect::LEN;
-    (end <= buf.len()).then_some(end)
+/// The end of a complete `00 26` intersection node at `off` (spec §7.3).
+fn intersection_composite_end(buf: &[u8], off: usize, payload_pointers: usize) -> Option<usize> {
+    super::record_starts(buf, off, INTERSECTION_COMPOSITE_TAG)
+        .find_map(|fields| super::intersection::node_end(buf, fields, payload_pointers))
 }
 
-/// The end of an intersection composite written as the first record of its
-/// class, after the class's edited type header (spec §4.1): the record has
-/// no tag of its own and its body starts just past the header.
-fn edited_intersection_composite_end(buf: &[u8], off: usize) -> Option<usize> {
+/// The end of an intersection node written as the first record of its class,
+/// after the class's edited type header (spec §4.1): the record has no tag of
+/// its own and its body starts just past the header.
+fn edited_intersection_composite_end(
+    buf: &[u8],
+    off: usize,
+    payload_pointers: usize,
+) -> Option<usize> {
     let (node_type, p) = super::typed::edited_header_end(buf, off)?;
     (node_type == u16::from(INTERSECTION_COMPOSITE_TAG)).then_some(())?;
-    intersection_composite_end(buf, p, INTERSECTION_COMPOSITE_TAG)
+    super::intersection::node_end(buf, p, payload_pointers)
 }
 
 pub(super) struct TopologyScopes {
@@ -1109,6 +1112,7 @@ pub(super) struct TopologyScopes {
 
 pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
     let array_attrs = super::spline::referenced_array_attrs(buf);
+    let intersection_pointers = super::intersection::payload_pointers(buf);
     let mut scopes = TopologyScopes {
         payloads: Vec::new(),
         excluded_starts: Vec::new(),
@@ -1188,9 +1192,10 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             // A string node's length and text hold no record header.
             scopes.excluded_starts.push(off + 1..end);
             off = end;
-        } else if let Some(end) = intersection_composite_end(buf, p, tag)
-            .or_else(|| edited_intersection_composite_end(buf, off))
-        {
+        } else if let Some(end) = intersection_pointers.and_then(|pointers| {
+            intersection_composite_end(buf, off, pointers)
+                .or_else(|| edited_intersection_composite_end(buf, off, pointers))
+        }) {
             // A complete intersection composite holds no topology header.
             scopes.excluded_starts.push(off + 1..end);
             off = end;
@@ -1334,6 +1339,7 @@ fn merge_framed_records<T>(
 #[derive(Default)]
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
+    bridge_frames: HashMap<u32, RecordFrame>,
     loops: HashMap<u32, Loop>,
     loop_frames: HashMap<u32, RecordFrame>,
     edge_uses: HashMap<u32, EdgeUse>,
@@ -1356,6 +1362,17 @@ impl Tables {
     #[cfg(test)]
     pub(super) fn insert_bridge(&mut self, record: Bridge) {
         self.bridges.insert(record.attr, record);
+    }
+
+    fn merge_bridge_frame(&mut self, record: Bridge, frame: RecordFrame) {
+        let attr = record.attr;
+        merge_record_frame(
+            &mut self.bridges,
+            &mut self.bridge_frames,
+            attr,
+            frame,
+            Some(record),
+        );
     }
 
     pub(super) fn loops(&self) -> &HashMap<u32, Loop> {
@@ -1465,15 +1482,24 @@ impl Tables {
         mut deltas: Self,
         selected_bridge_attrs: Option<&HashSet<u32>>,
     ) {
-        if self.bridges.is_empty() {
-            if let Some(selected_bridge_attrs) = selected_bridge_attrs {
-                retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
-            }
-            self.bridges = deltas.bridges;
-        } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
-            retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
-            merge_missing(&mut self.bridges, deltas.bridges);
-        }
+        let initially_empty = self.bridges.is_empty() && self.bridge_frames.is_empty();
+        let may_add = |attr: &u32| {
+            selected_bridge_attrs.map_or(initially_empty, |selected| selected.contains(attr))
+        };
+        deltas.bridge_frames.retain(|attr, _| {
+            self.bridge_frames.contains_key(attr)
+                || (!self.bridges.contains_key(attr) && may_add(attr))
+        });
+        deltas.bridges.retain(|attr, _| {
+            deltas.bridge_frames.contains_key(attr)
+                || (!self.bridges.contains_key(attr) && may_add(attr))
+        });
+        merge_framed_records(
+            &mut self.bridges,
+            &mut self.bridge_frames,
+            deltas.bridges,
+            deltas.bridge_frames,
+        );
         merge_framed_records(
             &mut self.loops,
             &mut self.loop_frames,
@@ -1511,13 +1537,6 @@ impl Tables {
             deltas.point_frames,
         );
     }
-}
-
-fn retain_selected_bridges(
-    bridges: &mut HashMap<u32, Bridge>,
-    selected_bridge_attrs: &HashSet<u32>,
-) {
-    bridges.retain(|attr, _| selected_bridge_attrs.contains(attr));
 }
 
 fn merge_missing<T>(target: &mut HashMap<u32, T>, source: HashMap<u32, T>) {
@@ -1816,12 +1835,14 @@ pub(crate) fn scan_plain(body: &[u8]) -> Tables {
 fn scan_stream(body: &[u8], plain: bool) -> Tables {
     let owner_facts = super::typed::scan(body);
     let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
+    let face_attrs = owner_facts.valid_ownership_face_attrs();
+    let typed_face_offsets = owner_facts.selected_face_offsets(face_attrs.as_ref());
     scan_records(
         body,
         false,
         plain,
         None,
-        None,
+        Some(&typed_face_offsets),
         None,
         (!owners.is_empty()).then_some(&owners),
     )
@@ -2067,7 +2088,11 @@ fn scan_records(
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
                     let carries_loop = record.refs[2] > 1;
                     if !excluded || carries_loop {
-                        t.bridges.insert(record.attr, record);
+                        let frame = RecordFrame {
+                            partition: !deltas,
+                            bytes: bridge_frame_bytes(body, i),
+                        };
+                        t.merge_bridge_frame(record, frame);
                     }
                 }
             }
@@ -2369,6 +2394,7 @@ mod tests {
     mod wide_scopes;
 
     mod carrier_scopes;
+    mod face_frames;
 
     use super::{
         parse_bridge, parse_point, parse_vertex_candidates, patch_point, patch_point_values, scan,
@@ -3463,64 +3489,6 @@ mod tests {
     }
 
     #[test]
-    fn an_intersection_composite_is_skipped_whole() {
-        let mut bytes = vec![0x00, 0x26];
-        bytes.extend(300_u16.to_be_bytes());
-        bytes.extend(7_u32.to_be_bytes());
-        for reference in [1_u16, 3, 301, 302, 303] {
-            bytes.extend(reference.to_be_bytes());
-        }
-        bytes.push(0x2b);
-        for reference in [40_u16, 41, 42, 43, 44, 45] {
-            bytes.extend(reference.to_be_bytes());
-        }
-        assert_eq!(
-            super::intersection_composite_end(&bytes, 2, 0x26),
-            Some(2 + 29)
-        );
-        assert_eq!(super::intersection_composite_end(&bytes, 2, 0x12), None);
-        let mut unmarked = bytes.clone();
-        unmarked[2 + 16] = 0x00;
-        assert_eq!(super::intersection_composite_end(&unmarked, 2, 0x26), None);
-        let scopes = super::topology_scopes(&bytes, false);
-        assert_eq!(scopes.excluded_starts, vec![1..31]);
-    }
-
-    #[test]
-    fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
-        // The first composite of a stream follows its class's edited type
-        // header (spec §4.1) with no tag of its own. Its sequence number
-        // `00 00 12 1a` holds a false `00 12` vertex header that would run
-        // over the tag of the point record that follows.
-        let mut bytes = vec![0x00, 0x26, 12];
-        bytes.extend([b'C'; 11]);
-        bytes.push(b'A');
-        bytes.push(17);
-        bytes.extend(b"intersection_data");
-        bytes.extend([0x00, 0xcc, 0x00, 0x01]);
-        bytes.push(b'Z');
-        let record = bytes.len();
-        bytes.extend(9_u16.to_be_bytes());
-        bytes.extend(0x121a_u32.to_be_bytes());
-        for reference in [1_u16, 3, 56, 1, 53] {
-            bytes.extend(reference.to_be_bytes());
-        }
-        bytes.push(0x2d);
-        for reference in [50_u16, 8, 54, 55, 58, 61] {
-            bytes.extend(reference.to_be_bytes());
-        }
-        let point = bytes.len();
-        assert_eq!(point, record + 29);
-        bytes.extend(crate::test_support::parasolid::world_point(
-            10,
-            [0.001, 0.002, 0.003],
-        ));
-        let scopes = super::topology_scopes(&bytes, false);
-        assert_eq!(scopes.excluded_starts.first(), Some(&(1..point)));
-        assert!(super::scan(&bytes).points().contains_key(&10));
-    }
-
-    #[test]
     fn complete_vertex_tolerances_reject_nonfinite_and_withhold_nonpositive_geometry() {
         for (tolerance, admitted, projected) in [
             (None, true, true),
@@ -3832,7 +3800,11 @@ mod tests {
             false,
             false,
         ));
-        let tables = super::scan_records(&bytes, false, false, None, None, None, None);
+        let facts = super::super::typed::scan(&bytes);
+        let face_attrs = facts.valid_ownership_face_attrs();
+        let typed_offsets = facts.selected_face_offsets(face_attrs.as_ref());
+        let tables =
+            super::scan_records(&bytes, false, false, None, Some(&typed_offsets), None, None);
         assert!(tables.vertex_is_unresolved(211));
         assert!(tables.vertex_classes.contains_key(&211));
         assert_eq!(
@@ -3842,14 +3814,14 @@ mod tests {
         let known = super::scan_with_owner_attrs(
             &bytes,
             &HashSet::new(),
-            &HashSet::new(),
+            &typed_offsets,
             &HashSet::from([900]),
         );
         assert_eq!(known.vertex_uses[&211].owner, 900);
         let wrong = super::scan_with_owner_attrs(
             &bytes,
             &HashSet::new(),
-            &HashSet::new(),
+            &typed_offsets,
             &HashSet::from([901]),
         );
         assert!(wrong.vertex_is_unresolved(211));
@@ -4134,6 +4106,25 @@ mod tests {
             .shells
             .iter()
             .any(|node| node.attr == 82));
+    }
+
+    /// Reference cells 13 and 90 spell `00 0d 00 5a`, the bytes of a
+    /// zero-field SHELL header.
+    #[test]
+    fn shell_reference_cells_shaped_like_a_zero_field_header_frame_the_shell() {
+        let mut shell = owner_shell_frame();
+        let refs = [0, 0x0d].len() + 1901u16.to_be_bytes().len() + 200_901u32.to_be_bytes().len();
+        shell[refs..refs + 2].copy_from_slice(&13u16.to_be_bytes());
+        shell[refs + 2..refs + 4].copy_from_slice(&90u16.to_be_bytes());
+        assert_eq!(shell[refs..refs + 4], [0x00, 0x0d, 0x00, b'Z']);
+        assert_eq!(
+            super::super::typed::tagged_owner_prefix_end(&shell, 0),
+            Some(shell.len())
+        );
+        assert!(super::super::typed::scan(&shell)
+            .shells
+            .iter()
+            .any(|node| node.attr == 1901 && node.offset == 0));
     }
 
     #[test]

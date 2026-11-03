@@ -308,6 +308,9 @@ that gate.
   dimension, relation, equation, and coordinate-derived candidates without source
   precedence. A non-finite source or any disagreement blocks every resolved
   scalar in that component; derived candidates cannot fill a conflicting member.
+- Full-width section variable lanes without established numeric roles keep
+  their exact bytes. The decode emits one
+  `creo/section.variable-scalar-opaque` with the lane count.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots
@@ -384,6 +387,9 @@ that gate.
 - Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
   do not override the persistence-layout discriminator, and missing
   discriminators remain unknown.
+- A physical `DEPDB_DATA` section with geometry-like labels and no proven
+  visible-geometry namespace owner keeps its complete bytes and emits
+  `creo/container.physical-geometry-owner-unresolved`.
 - Header-adjacent `P_OBJECT` start, end, and product-banner markers classify
   the legacy ASCII persistence family without interpreting its attribute
   payload as ND or DEPDB byte grammar. The decimal persistence schema and the
@@ -425,8 +431,21 @@ that gate.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
+- The complete physical `NeuPrtSld` section is retained byte-exact as opaque
+  metadata. It does not create typed appearances or material bindings. Failed
+  compressed expansions retain their existing unresolved classification.
+- Count-selected curve frames retain their exact parameter bodies and literal
+  topology references. When count evidence is necessary to fix a boundary, the
+  generic Native scalar view exposes only literal zero slots as numeric tokens.
+  The separate complete two-chart path decodes its scalar slots and can supply
+  numeric samples to the ordinary carrier checks. Counted framing alone does
+  not establish scalar meanings or geometry.
+- Cross-section curve rows keep their complete parameter-body bytes. The
+  decode emits one `creo/curve.cross-section-body-opaque` with the row count.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
+- A generated round-table entry with no surface row of its own and no
+  transferred carrier emits `creo/geometry.round-carrier-owner-unresolved`.
 - A round with a complete placed set of generated cylinder carriers transfers
   their common positive radius even when generated cap or support rows are
   also present. A complete direct rolling-radius sample set must agree with the
@@ -639,8 +658,7 @@ that gate.
   table. An incomplete variable table contributes no coordinate equations;
   missing declared rows are counted and raise a decode loss note. Complete
   variable rows retain the exact encoded value and pre-solve guess bodies
-  independently of scalar interpretation, including independent
-  dimension-driven sentinel state for each lane. Complete endpoints from
+  independently of scalar interpretation. Complete endpoints from
   uniquely joined saved lines and arcs, and the center of a joined saved arc or
   circle, seed the corresponding segment-point equations even when no variable
   table is present or the segment table is incomplete. A joined saved circle
@@ -664,6 +682,9 @@ that gate.
 - Positional `MdlRefInfo` conics require exactly one complete twelve-slot
   local-system prefix immediately before the trailing compound record;
   incomplete or competing frame boundaries remain unresolved.
+- A positional `MdlRefInfo` ellipse with an unresolved flip prefix keeps its
+  complete source section opaque and emits
+  `creo/reference.conic-prefix-unresolved`.
 - Type-zero and type-three coincidence incidences add point-coordinate
   equalities when their selected point or endpoint-bearing section entities are
   unique, including endpoints from unique ordinary line or arc rows in an
@@ -882,12 +903,7 @@ that gate.
    resolved and unresolved geometry. It also counts decoded and missing
    solver-variable rows separately. It counts
    decoded and transferred section dimensions separately and counts dimensions
-   whose scalar values resolve or remain unresolved. It counts decoded section
-   solver variables and dimension-driven sentinel values and pre-solve guesses.
-   Dimension-driven values are partitioned into coordinate types one and two,
-   whose exact ordinate may resolve through the complete equation system, and
-   other solver-variable types whose dimension semantics remain unresolved.
-   Every unresolved dimension-driven value or guess raises a decode loss note.
+   whose scalar values resolve or remain unresolved.
    The map likewise counts decoded, transferred, and evaluated active
    curve-equation assignments separately, counts typed table-cell targets, and
    partitions assignments by active, inactive, and unresolved-conditional
@@ -906,6 +922,17 @@ that gate.
 
 The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.
+
+- Class-932 positional cylinders with a complete cap-envelope body retain the
+  entire body as opaque Native data. Generic scalar and terminal-support frame
+  interpretations are withheld before Native and neutral construction. The
+  gate requires unique row ownership, a resolved feature class, and complete
+  body consumption; a short prefix alone does not select it. This does not
+  promote an axis, radius, chart direction, or face binding. Every curve whose
+  topology row references a withheld visible chart is excluded from pcurve
+  carrier and endpoint promotion, including its other chart. An ordinary
+  missing chart remains a separate case. Independent carrier recovery and
+  finite endpoint authority remain separate open questions in GS-17.
 
 Same-ID operation candidates project only when the family, recipe, root schema
 class, and parent identifier agree. Disagreement retains the native candidates
@@ -983,6 +1010,11 @@ source sample. A failed candidate emits
 `creo/geometry.sampled-pcurve-carrier-unresolved`; endpoint constraints and
 native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
+
+A model curve from a row that only a complete sample count frames takes its
+placement from its incident surface charts alone. Each such transfer emits
+`creo/geometry.count-framed-curve-carrier-unverified` with the curve
+identifier, in the inferred-carrier-axis taxonomy class.
 
 ## Angular sweep carriers
 
@@ -1076,8 +1108,7 @@ production owns that span after its direction columns satisfy the unit and
 orthogonality gate. Invalid rotation origins and reflected unit rotations
 retain their refusal gates.
 
-The retained Y-rotation inventory has 56 frames in seven local files. Each
-nonzero direction opener is `71` or `b9`. The rotation production also owns
+Each nonzero direction opener of a retained Y-rotation frame is `71` or `b9`. The rotation production also owns
 the explicit `41`/`45` floating forms; other DICT components retain generic
 support-frame ownership. All five original generic support byte images and
 assertions remain covered.

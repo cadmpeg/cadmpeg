@@ -377,6 +377,8 @@ mod carrier_rejection;
 
 mod recovery;
 
+mod principal_units;
+
 #[test]
 fn rotation_cylinder_pipeline_requires_the_stored_envelope_and_radius() {
     fn payload(radius: f64) -> Vec<u8> {

@@ -107,21 +107,27 @@ pub(crate) fn put_ref(rec: &mut [u8], at: usize, value: u16) {
 }
 
 pub(crate) fn encoded_xmt(value: u32) -> Vec<u8> {
-    if i16::try_from(value).is_ok() {
-        return (u16::try_from(value).expect("fixture value fits u16"))
-            .to_be_bytes()
-            .to_vec();
-    }
-    let quotient = value / 32_767;
-    let remainder = value % 32_767;
-    assert!(remainder > 0 && i16::try_from(remainder).is_ok());
-    let mut out = (-(i16::try_from(remainder).expect("fixture value fits i16")))
-        .to_be_bytes()
-        .to_vec();
-    out.extend_from_slice(
-        &(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes(),
-    );
+    let mut out = Vec::new();
+    cadmpeg_parasolid::pointer::write(&mut out, value).expect("fixture pointer is in range");
     out
+}
+
+/// Rewrite the two-byte pointer cell at each site offset to the cell of its
+/// value. Offsets index `stream` before the rewrite.
+pub(crate) fn rewrite_cells(stream: &mut Vec<u8>, sites: &[(usize, u32)]) {
+    let mut sites = sites.to_vec();
+    sites.sort_unstable_by_key(|&(at, _)| std::cmp::Reverse(at));
+    for (at, value) in sites {
+        stream.splice(at..at + 2, encoded_xmt(value));
+    }
+}
+
+/// The offset of the fixed record with type `tag` and two-byte identity `xmt`.
+pub(crate) fn record_offset(stream: &[u8], tag: u8, xmt: u8) -> usize {
+    stream
+        .windows(4)
+        .position(|window| window == [0, tag, 0, xmt])
+        .expect("fixed record")
 }
 
 /// One fixed-length analytic record: a `00 <tag>` header then zeroed payload the

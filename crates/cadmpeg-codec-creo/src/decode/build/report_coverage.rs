@@ -71,6 +71,17 @@ pub(super) fn push_coverage_drop_losses(
             ),
         );
     }
+    let cross_section_rows = coverage_count(coverage, "decoded_cross_section_curve_row_count");
+    if cross_section_rows != 0 {
+        push_report_loss(
+            losses,
+            CreoLossCode::CrossSectionCurveBodyOpaque,
+            format_args!(
+                "{cross_section_rows} cross-section curve row(s) retain complete parameter-body bytes \
+                 without independently established internal numeric roles."
+            ),
+        );
+    }
     let ambiguous_surface_rows = coverage_count(coverage, "ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
         push_report_loss(
@@ -332,42 +343,10 @@ pub(super) fn push_coverage_drop_losses(
             ),
         );
     }
-    let unresolved_dimension_driven_variables = coverage_count(
-        coverage,
-        "unresolved_feature_dimension_driven_variable_count",
-    );
-    if unresolved_dimension_driven_variables != 0 {
-        let unresolved_coordinate_variables = coverage_count(
-            coverage,
-            "unresolved_feature_dimension_driven_coordinate_variable_count",
-        );
-        let other_variables = coverage_count(
-            coverage,
-            "unresolved_feature_dimension_driven_other_variable_count",
-        );
-        push_report_loss(
-            losses,
-            CreoLossCode::SectionDimensionVariableUnresolved,
-            format_args!(
-                "{unresolved_dimension_driven_variables} dimension-driven section solver \
-             variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
-             coordinate variable(s) lack a complete dimension equation and {other_variables} \
-             variable(s) have a non-coordinate family whose dimension semantics are \
-             unresolved."
-            ),
-        );
-    }
-    let unresolved_dimension_driven_guesses =
-        coverage_count(coverage, "unresolved_feature_dimension_driven_guess_count");
-    if unresolved_dimension_driven_guesses != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::SectionDimensionGuessUnresolved,
-            format_args!(
-                "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
-             estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
-            ),
-        );
+    let opaque_lanes = coverage_count(coverage, "opaque_section_variable_lane_count");
+    if opaque_lanes != 0 {
+        push_report_loss(losses, CreoLossCode::SectionVariableScalarOpaque,
+            format_args!("{opaque_lanes} full-width section variable lane(s) retain exact bytes without independently established numeric roles."));
     }
     let missing_solver_variables =
         coverage_count(coverage, "missing_feature_solver_variable_count");

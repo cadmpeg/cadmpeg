@@ -314,6 +314,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     let mut ir = CadIr::empty();
@@ -388,6 +389,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     let mut ir = CadIr::empty();

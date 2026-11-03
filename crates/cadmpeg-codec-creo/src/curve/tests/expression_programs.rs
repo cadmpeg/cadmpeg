@@ -194,32 +194,42 @@ fn nested_conditional_frame_ends_with_its_parent_activation() {
 }
 
 #[test]
-fn depdb_segment_unique_candidates_parse_one_row() {
+fn depdb_segment_four_field_tail_is_incomplete() {
     let segment = [7, 8, 4, 1, 0xf6, 0, 9, 10, 0];
+    assert!(crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+    })
+    .expect("candidate scan succeeds")
+    .is_none());
+}
+
+#[test]
+fn depdb_segment_unique_candidates_parse_one_row() {
+    let segment = [7, 8, 4, 1, 0xf6, 0, 8, 0, 9, 10, 0];
     let row = crate::decode::with_service_context(|ctx| {
-        super::super::parse_depdb_curve_segment(
-            ctx,
-            &segment,
-            0,
-            &crate::scalar::ScalarCache::default(),
-        )
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
     })
     .expect("candidate scan succeeds")
     .expect("one prefix and one suffix");
     assert_eq!(row.id, 7);
-    assert_eq!(row.suffix.x1, 9);
+    assert_eq!(row.suffix.next_curve, 9);
 }
 
 #[test]
 fn depdb_segment_distinct_prefixes_remain_ambiguous() {
     let segment = [7, 8, 4, 1, 0xf6, 8, 8, 4, 1, 0xf6, 0, 9, 10, 0];
     assert!(crate::decode::with_service_context(|ctx| {
-        super::super::parse_depdb_curve_segment(
-            ctx,
-            &segment,
-            0,
-            &crate::scalar::ScalarCache::default(),
-        )
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+    })
+    .expect("ambiguous segment is parsed")
+    .is_none());
+}
+
+#[test]
+fn depdb_six_field_segment_distinct_prefixes_remain_ambiguous() {
+    let segment = [7, 8, 4, 1, 0xf6, 8, 8, 4, 1, 0xf6, 0, 8, 0, 9, 10, 0];
+    assert!(crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
     })
     .expect("ambiguous segment is parsed")
     .is_none());

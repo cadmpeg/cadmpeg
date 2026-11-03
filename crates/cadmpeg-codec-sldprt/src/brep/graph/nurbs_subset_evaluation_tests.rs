@@ -24,8 +24,13 @@ fn native_brep_nurbs_subset_evaluation_emits_one_nurbs_curve() {
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("basis-admission")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("basis-admission"),
+        false,
+    )
+    .unwrap();
     assert_eq!(
         brep.curves
             .iter()

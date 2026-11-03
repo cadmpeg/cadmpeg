@@ -11,10 +11,9 @@ use super::{
     decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
     decode_tabulated_cylinder_first_coordinate, decode_tabulated_cylinder_first_frame_coordinate,
     decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
-    decode_two_chart_first_coordinate, double_xar_tables, plane_support_layout,
-    valid_equal_scale_orthogonal_directions, CompactFrameAxes, DoubleXarSlot,
-    InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
-    POSITIONAL_SLOT_TABLE_WIDTH,
+    decode_two_chart_first_coordinate, plane_support_layout,
+    valid_equal_scale_orthogonal_directions, CompactFrameAxes, InlineNonPlaneLocalSystemPrefix,
+    PlaneSupportFrameLayout, ScalarCache, POSITIONAL_SLOT_TABLE_WIDTH,
 };
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
@@ -47,13 +46,6 @@ fn scalar_cache_deduplicates_equal_images() {
     let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
     let cache = ScalarCache::from_section_checked(&images);
     assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
-}
-
-#[test]
-fn double_xar_tables_parse_one_complete_table() {
-    let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-    let tables = double_xar_tables(bytes);
-    assert_eq!(tables.len(), 1);
 }
 
 #[test]
@@ -881,44 +873,6 @@ fn decodes_model_reference_low_positive_ieee_coordinate() {
 }
 
 #[test]
-fn decodes_counted_double_xar_dictionary() {
-    let mut data = b"prefix double_xar\0".to_vec();
-    data.extend_from_slice(&[
-        0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46, 0x08,
-        0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
-    ]);
-    let tables = double_xar_tables(&data);
-    let [table] = tables.as_slice() else {
-        panic!("complete dictionary");
-    };
-    assert_eq!(table.entries.len(), 7);
-    assert_eq!(
-        table
-            .entries
-            .iter()
-            .flat_map(DoubleXarSlot::raw)
-            .copied()
-            .collect::<Vec<_>>(),
-        data[b"prefix double_xar\0".len() + 2..],
-    );
-    assert_eq!(table.entries[0].value(), Some(1.0));
-    assert_eq!(table.entries[1].kind(), "recursive_placeholder_1");
-    assert_eq!(table.entries[2].value(), Some(0.0));
-    assert_eq!(table.entries[3].kind(), "recursive_placeholder_3");
-    assert_eq!(table.entries[4].value(), Some(3.0));
-    assert_eq!(table.entries[5].value(), Some(0.0));
-    assert_eq!(table.entries[6].kind(), "terminal_null");
-}
-
-#[test]
-fn withholds_incomplete_double_xar_dictionary() {
-    let first = b"double_xar\0\xf8\x02\x10";
-    assert!(double_xar_tables(first).is_empty());
-    let second = b"double_xar\0\xf8\x02\x10\x0b";
-    assert!(double_xar_tables(second).is_empty());
-}
-
-#[test]
 fn decodes_defined_ieee_forms() {
     assert_eq!(decode(&[0xe4], 0), Some((1.0, 1)));
     assert_eq!(decode(&[0x0d], 0), Some((-1.0, 1)));
@@ -1655,5 +1609,89 @@ fn compact_rotation_cylinder_scalars_keep_constant_low_bytes_and_tiny_signs() {
             super::StatefulScalarKind::Pcurve,
         )
         .is_none());
+    }
+}
+
+#[test]
+fn signed_surface_scalars_own_complete_delimiter_payloads() {
+    let cache = ScalarCache::default();
+    for tail in [[0; 6], [0xe3, 0xe0, 0x18, 0x73, 0xbb, 0xf8], [0xff; 6]] {
+        let mut values = [0.0; 2];
+        for (index, prefix) in [0x73, 0xbb].into_iter().enumerate() {
+            let mut encoded = [0; 7];
+            encoded[0] = prefix;
+            encoded[1..].copy_from_slice(&tail);
+            let mut ieee = [0; 8];
+            ieee[0] = if index == 0 { 0x3f } else { 0xbf };
+            ieee[1] = 0xe8;
+            ieee[2..].copy_from_slice(&tail);
+            let (value, end) =
+                decode_in_surface_row_lane(&encoded, 0, &cache).expect("complete surface scalar");
+            assert_eq!(end, encoded.len());
+            assert_eq!(value.to_bits(), f64::from_be_bytes(ieee).to_bits());
+            values[index] = value;
+            assert_eq!(decode_in_lane(&encoded, 0, &cache), None);
+            for length in 0..encoded.len() {
+                assert_eq!(
+                    decode_in_surface_row_lane(&encoded[..length], 0, &cache),
+                    None
+                );
+            }
+            let mut after_zero = [0; 8];
+            after_zero[0] = 0x18;
+            after_zero[1..].copy_from_slice(&encoded);
+            assert_eq!(
+                decode_in_surface_row_lane(&after_zero, 0, &cache),
+                Some((0.0, 1))
+            );
+            assert_eq!(
+                decode_in_surface_row_lane(&after_zero, 1, &cache),
+                Some((value, 8))
+            );
+        }
+        assert_eq!(values[1].to_bits(), (-values[0]).to_bits());
+    }
+}
+
+#[test]
+fn section_full_width_image_preserves_payload_and_exact_cursor() {
+    let data = [
+        0x18, 0xed, 0xbf, 0xf0, 0xe2, 0xe3, 0xe0, 0x00, 0x00, 0x01, 0x18,
+    ];
+    let expected = f64::from_bits(0xbff0_e2e3_e000_0001);
+    assert_eq!(
+        super::decode_section_full_width_scalar(&data, 1),
+        Some((expected, 10))
+    );
+    for len in 0..10 {
+        assert!(super::decode_section_full_width_scalar(&data[..len], 1).is_none());
+    }
+    assert!(super::decode_section_full_width_scalar(&data, 0).is_none());
+}
+
+#[test]
+fn two_chart_second_coordinate_forms_keep_the_explicit_ieee_tail() {
+    let cases = [
+        (
+            [0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+            [0x3f, 0xc1, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+        ),
+        (
+            [0x50, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+            [0x3f, 0xc2, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+        ),
+        (
+            [0x57, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+            [0x3f, 0xca, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+        ),
+    ];
+    for (raw, expected) in cases {
+        assert_eq!(
+            super::decode_two_chart_second_coordinate(&raw, 0),
+            Some((f64::from_be_bytes(expected), raw.len()))
+        );
+        for end in 0..raw.len() {
+            assert!(super::decode_two_chart_second_coordinate(&raw[..end], 0).is_none());
+        }
     }
 }

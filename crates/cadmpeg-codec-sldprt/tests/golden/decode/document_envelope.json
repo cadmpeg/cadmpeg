@@ -75,23 +75,6 @@
           ]
         },
         {
-          "id": "sldprt:metadata:part_record#247:248",
-          "name": "part_record",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 42
-            },
-            {
-              "kind": "integer",
-              "value": 2026
-            }
-          ]
-        },
-        {
           "id": "sldprt:metadata:source_linear_unit_code#492:10",
           "name": "source_linear_unit_code",
           "target": {
@@ -358,11 +341,6 @@
           "offset": 54,
           "stream": "SWObjects",
           "tag": "moDefaultRefPlnData_c"
-        },
-        "sldprt:metadata:part_record#247:248": {
-          "offset": 248,
-          "stream": "SWObjects",
-          "tag": "moPart_c"
         },
         "sldprt:metadata:source_linear_unit_code#492:10": {
           "offset": 10,

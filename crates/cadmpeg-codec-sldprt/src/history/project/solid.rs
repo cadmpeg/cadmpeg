@@ -14,7 +14,7 @@ use cadmpeg_ir::{
 };
 use std::collections::HashMap;
 
-use crate::history::classify::extrude_feature_op;
+use crate::history::classify::{extrude_feature_op, is_legacy_history_extrusion, source_depth};
 use crate::history::literals::{
     parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
     parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm, parse_vector3,
@@ -26,56 +26,28 @@ pub(super) fn project_extrude(
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
 ) -> Option<FeatureDefinition> {
-    let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
-        FeatureContent::Dimension(name) => Some(name.as_str()),
-        FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-    });
-    let source_depth = source_dimensions
-        .next()
-        .filter(|first| source_dimensions.all(|name| name == *first));
-    let legacy_history_extrusion = feature.input_class.is_none()
-        && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-        && source_depth.is_some();
-    // Some modern ICE extrusions retain the dissection-root marker but omit
-    // both the child list and the explicit profile property. Their profile is
-    // still the nearest preceding non-origin sketch in the source namespace,
-    // the same ownership rule used by the legacy history form. Restrict this
-    // fallback to a sole source dimension so an operation with several
-    // unassigned dimensions cannot acquire a profile by proximity alone.
-    let root_history_extrusion = feature
-        .properties
-        .get("DissectableRoot")
-        .is_some_and(|value| value == "true")
-        && !feature.properties.contains_key("DissectableChildren")
-        && !feature.properties.contains_key("Profile")
-        && source_depth.is_some();
-    let history_profile_extrusion = legacy_history_extrusion || root_history_extrusion;
+    let source_depth = source_depth(feature);
+    let legacy_history_extrusion = is_legacy_history_extrusion(feature);
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
-    let history_profile = history_profile_extrusion
-        .then(|| {
-            let source = feature.source_id?.value().map_or(-1i64, i64::from);
+    let legacy_history_join = legacy_history_extrusion
+        && feature.source_id.is_some_and(|source| {
+            let source = source.value().map_or(-1i64, i64::from);
             features_by_source
                 .iter()
-                .filter_map(|(candidate_source, candidate)| {
+                .any(|(candidate_source, candidate)| {
                     let candidate_source = candidate_source.value().map_or(-1i64, i64::from);
-                    (candidate_source < source
+                    candidate_source < source
                         && classify(candidate) == Some(FeatureClass::Sketch)
-                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
-                    .then_some((candidate_source, candidate.id.as_str()))
+                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c")
                 })
-                .max_by_key(|candidate| candidate.0)
-                .map(|(_, profile)| profile)
-        })
-        .flatten();
+        });
     let op = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| extrude_feature_op(feature))
-        .or_else(|| {
-            (legacy_history_extrusion && history_profile.is_some()).then_some(BooleanOp::Join)
-        })
+        .or_else(|| legacy_history_join.then_some(BooleanOp::Join))
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
         let mut values = feature.parameters.values();
@@ -96,9 +68,14 @@ pub(super) fn project_extrude(
             .get(name)
             .and_then(|value| parse_positive_length_mm(value))
             .or_else(|| {
-                (name == "Depth")
-                    .then(|| feature.parameters.get("D1"))
-                    .flatten()
+                let native = match name {
+                    "Depth" => "D1",
+                    "Depth2" => "D2",
+                    _ => return None,
+                };
+                feature
+                    .parameters
+                    .get(native)
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
     };
@@ -198,6 +175,11 @@ pub(super) fn project_extrude(
         },
         Some(_) => one_sided(LinearTermination::Unresolved {}),
     };
+    let extent = explicit_second_termination(
+        extent,
+        feature.properties.get("EndCondition2").map(String::as_str),
+        length("Depth2"),
+    )?;
     let direction = match feature.properties.get("Direction") {
         Some(value) => {
             let vector =
@@ -233,8 +215,6 @@ pub(super) fn project_extrude(
             )),
             None => ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone())),
         }
-    } else if let Some(profile) = history_profile {
-        ProfileRef::Planar(PlanarProfileRef::Native(profile.to_owned()))
     } else {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone()))
     };
@@ -775,4 +755,201 @@ pub(super) fn hole_sketch_construction(
 
 pub(crate) fn is_hole_profile_construction(feature: &Feature) -> Result<bool, CodecError> {
     Ok(hole_sketch_construction(feature)?.is_some())
+}
+
+/// Adds the second side of an enabled second direction. A blind second side
+/// without its own depth stays unresolved.
+fn explicit_second_termination(
+    extent: ExtrudeExtent,
+    second_condition: Option<&str>,
+    second_length: Option<PositiveLength>,
+) -> Option<ExtrudeExtent> {
+    let second = |termination| ExtrudeSide {
+        termination,
+        draft: None,
+    };
+    match (second_condition, extent) {
+        (None, extent) => Some(extent),
+        (Some("ThroughAll"), ExtrudeExtent::OneSided { side }) => Some(ExtrudeExtent::TwoSided {
+            first: side,
+            second: second(LinearTermination::ThroughAll {}),
+        }),
+        (Some("Blind"), ExtrudeExtent::OneSided { side }) => Some(ExtrudeExtent::TwoSided {
+            first: side,
+            second: second(
+                second_length.map_or(LinearTermination::Unresolved {}, |length| {
+                    LinearTermination::Blind {
+                        length: NonZeroLength::from(length),
+                    }
+                }),
+            ),
+        }),
+        (Some("Unresolved"), ExtrudeExtent::OneSided { side }) => Some(ExtrudeExtent::TwoSided {
+            first: side,
+            second: second(LinearTermination::Unresolved {}),
+        }),
+        (
+            Some("ThroughAll"),
+            extent @ ExtrudeExtent::TwoSided {
+                second:
+                    ExtrudeSide {
+                        termination: LinearTermination::ThroughAll {},
+                        ..
+                    },
+                ..
+            },
+        ) => Some(extent),
+        (Some(_), _) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn feature(second: Option<&str>) -> Feature {
+        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+            "id":"feature", "parent":"history", "ordinal":0,
+            "name":"Extrude", "kind":"Extrude", "xml_tag":"Extrusion",
+            "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm", "Draft":"1deg"},
+            "properties":{"EndCondition":"Blind"}
+        }))
+        .unwrap();
+        if let Some(second) = second {
+            feature.properties.insert(
+                cadmpeg_core::nonblank_literal!("EndCondition2"),
+                second.into(),
+            );
+        }
+        feature
+    }
+
+    #[test]
+    fn explicit_through_all_second_preserves_the_first_side_and_draft() {
+        let absent = project_extrude(&feature(None), &HashMap::new(), &HashMap::new()).unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided { side: first },
+            ..
+        }) = absent
+        else {
+            panic!("ordinary one-sided extent")
+        };
+        assert!(first.draft.is_some());
+        let projected = project_extrude(
+            &feature(Some("ThroughAll")),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent:
+                ExtrudeExtent::TwoSided {
+                    first: actual,
+                    second,
+                },
+            ..
+        }) = projected
+        else {
+            panic!("explicit second side retained");
+        };
+        assert_eq!(actual, first);
+        assert!(matches!(
+            second.termination,
+            LinearTermination::ThroughAll {}
+        ));
+        assert!(second.draft.is_none());
+    }
+
+    #[test]
+    fn explicit_unsupported_second_does_not_fall_back_to_one_sided() {
+        for second in ["Unknown", "ToFace", ""] {
+            assert!(
+                project_extrude(&feature(Some(second)), &HashMap::new(), &HashMap::new()).is_none()
+            );
+        }
+    }
+
+    fn two_sided(feature: &Feature) -> (ExtrudeSide, ExtrudeSide) {
+        let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::TwoSided { first, second },
+            ..
+        })) = project_extrude(feature, &HashMap::new(), &HashMap::new())
+        else {
+            panic!("two-sided extent");
+        };
+        (first, second)
+    }
+
+    #[test]
+    fn blind_second_direction_takes_its_own_depth() {
+        let mut native = feature(Some("Blind"));
+        native.parameters.clear();
+        for (name, value) in [("D1", "0.5mm"), ("D2", "0.75mm")] {
+            native.parameters.insert(
+                cadmpeg_core::text::NonBlankString::new(name.to_owned()).unwrap(),
+                value.to_owned(),
+            );
+        }
+        let (first, second) = two_sided(&native);
+        let blind = |mm| LinearTermination::Blind {
+            length: NonZeroLength::from(PositiveLength::new(mm).unwrap()),
+        };
+        assert_eq!(first.termination, blind(0.5));
+        assert_eq!(second.termination, blind(0.75));
+    }
+
+    #[test]
+    fn blind_second_direction_without_its_depth_stays_unresolved() {
+        let (first, second) = two_sided(&feature(Some("Blind")));
+        assert!(matches!(first.termination, LinearTermination::Blind { .. }));
+        assert!(first.draft.is_some());
+        assert!(matches!(
+            second.termination,
+            LinearTermination::Unresolved {}
+        ));
+        let (_, second) = two_sided(&feature(Some("Unresolved")));
+        assert!(matches!(
+            second.termination,
+            LinearTermination::Unresolved {}
+        ));
+    }
+
+    #[test]
+    fn explicit_second_requires_compatible_existing_extent() {
+        let first = ExtrudeSide {
+            termination: LinearTermination::ThroughAll {},
+            draft: None,
+        };
+        let both = ExtrudeExtent::TwoSided {
+            first: first.clone(),
+            second: first.clone(),
+        };
+        assert_eq!(
+            explicit_second_termination(both.clone(), Some("ThroughAll"), None),
+            Some(both)
+        );
+        assert!(explicit_second_termination(
+            ExtrudeExtent::Symmetric {
+                side: first.clone()
+            },
+            Some("ThroughAll"),
+            None
+        )
+        .is_none());
+        let blind = ExtrudeSide {
+            termination: LinearTermination::Blind {
+                length: NonZeroLength::from(PositiveLength::new(2.0).unwrap()),
+            },
+            draft: None,
+        };
+        assert!(explicit_second_termination(
+            ExtrudeExtent::TwoSided {
+                first,
+                second: blind
+            },
+            Some("ThroughAll"),
+            None
+        )
+        .is_none());
+    }
 }

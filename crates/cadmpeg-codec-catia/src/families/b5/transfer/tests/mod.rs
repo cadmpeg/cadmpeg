@@ -49,6 +49,48 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
 }
 
 #[test]
+fn b5_unsupported_face_carrier_reports_the_withheld_face() {
+    use crate::families::b5::graph::B5Surface;
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let mut graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("parse the graph")
+    .expect("closed B5 triangle graph");
+    let face = graph.faces[0].object_id;
+    let surface = graph.faces[0].surface;
+    let Some(B5Surface::Plane { direction_v, .. }) = graph.surfaces.get_mut(&surface) else {
+        panic!("plane carrier");
+    };
+    let [x, y, z] = direction_v.get();
+    *direction_v = crate::checked::ExactUnitVector3::new([-x, -y, -z]).expect("unit vector");
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let transferred = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::transfer(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+                .expect("identity grammar"),
+            &mut refusal,
+            &mut admission,
+        )
+    })
+    .expect("source limits admit the graph");
+    assert!(!transferred);
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one withheld-plan note");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyB5FacesWithheld.kind()
+    );
+    assert!(note.message.contains(&face.to_string()));
+}
+
+#[test]
 fn b5_closed_triangle_emits_its_vertex_points() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {

@@ -238,6 +238,14 @@ impl<'a> FeatureObjectNames<'a> {
         self.by_value.get(name).copied().flatten()
     }
 
+    /// Whether source-priority or display-name lookup has an owner candidate.
+    pub(super) fn has_candidate(&self, feature: &crate::records::Feature) -> bool {
+        feature
+            .source_value()
+            .is_some_and(|source| self.by_source.contains_key(&source))
+            || self.by_value.contains_key(feature.name.as_str())
+    }
+
     /// The name [`feature_object_name`] finds for `feature` in this lane.
     pub(crate) fn of(&self, feature: &crate::records::Feature) -> Option<&'a FeatureInputName> {
         self.get(feature.source_value(), &feature.name)

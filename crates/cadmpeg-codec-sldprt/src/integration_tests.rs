@@ -653,6 +653,12 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     assert_eq!(classify(written), claimed);
 }
 
+mod terminal_edge_ownership;
+
+mod default_properties;
+
+mod weldment_refusal;
+
 mod partition_sketches;
 
 fn face_table_bytes() -> Vec<u8> {

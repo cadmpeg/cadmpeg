@@ -45,6 +45,10 @@ pub(crate) enum CreoLossCode {
     ContainerCensus,
     /// A byte-bounded compressed section has invalid or incomplete LZW data.
     CompressedSectionUnexpanded,
+    /// Geometry-looking bytes in a physical section have no visible-namespace ownership.
+    PhysicalGeometryOwnerUnresolved,
+    /// A positional ellipse flip is not a complete compact integer.
+    ReferenceConicPrefixUnresolved,
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
@@ -113,6 +117,8 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    /// Model curves transferred from rows that only their sample count frames.
+    CountFramedCurveCarrierUnverified,
     HoleCircleIntervalUnresolved,
     HoleGeneratorUnresolved,
     SweepEnvelopeReplayUnresolved,
@@ -121,6 +127,10 @@ pub(crate) enum CreoLossCode {
     SampledPcurveEvaluationUnresolved,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
+    /// Cross-section curve parameter bodies retain unclassified bytes.
+    CrossSectionCurveBodyOpaque,
+    /// A generated round entry has no independently owned surface carrier.
+    RoundCarrierOwnerUnresolved,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -211,10 +221,8 @@ pub(crate) enum CreoLossCode {
     SectionIncidenceNative,
     /// Active section dimension relations retain native operands.
     SectionRelationNative,
-    /// Dimension-driven section solver variables retain unresolved exact values.
-    SectionDimensionVariableUnresolved,
-    /// Section solver pre-solve estimates use an unresolved dimension sentinel.
-    SectionDimensionGuessUnresolved,
+    /// Full-width section variable lanes retain opaque scalar roles.
+    SectionVariableScalarOpaque,
     /// Declared section solver variable rows did not decode.
     SectionSolverVariableMissing,
     /// Section dimensions retain source-native value tokens.
@@ -260,6 +268,8 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
+            Self::PhysicalGeometryOwnerUnresolved => "container.physical-geometry-owner-unresolved",
+            Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
             Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
@@ -310,12 +320,17 @@ impl CreoLossCode {
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::CountFramedCurveCarrierUnverified => {
+                "geometry.count-framed-curve-carrier-unverified"
+            }
             Self::HoleCircleIntervalUnresolved => "geometry.hole-circle-interval-unresolved",
             Self::HoleGeneratorUnresolved => "geometry.hole-generator-unresolved",
             Self::SampledPcurveEvaluationUnresolved => {
                 "geometry.sampled-pcurve-evaluation-unresolved"
             }
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
+            Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
+            Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
@@ -361,8 +376,7 @@ impl CreoLossCode {
             Self::SectionRelationJoinMissing => "section.relation-join-missing",
             Self::SectionIncidenceNative => "section.incidence-native",
             Self::SectionRelationNative => "section.relation-native",
-            Self::SectionDimensionVariableUnresolved => "section.dimension-variable-unresolved",
-            Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
+            Self::SectionVariableScalarOpaque => "section.variable-scalar-opaque",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
             Self::SectionDimensionValueUnresolved => "section.dimension-value-unresolved",
             Self::SectionDiameterValueUnresolved => "section.diameter-value-unresolved",
@@ -425,6 +439,8 @@ impl CreoLossCode {
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::SweepEnvelopeReplayUnresolved
             | Self::PcurveSampleCoordinatesDropped
@@ -459,10 +475,13 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::SectionSegmentGeometryUnresolved
@@ -481,8 +500,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
+            | Self::SectionVariableScalarOpaque
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -530,6 +548,8 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
@@ -561,6 +581,8 @@ impl CreoLossCode {
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
@@ -579,6 +601,7 @@ impl CreoLossCode {
             | Self::RevolutionCarrierUnresolved
             | Self::RevolutionBoundaryIntervalUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
+            Self::CountFramedCurveCarrierUnverified => LossTaxonomy::CarrierAxisInferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyUnownedComponent
             | Self::TopologyVertexIdentifierUnstatable
@@ -598,8 +621,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
+            | Self::SectionVariableScalarOpaque
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -660,6 +682,8 @@ mod tests {
             [
                 "container.census",
                 "container.compressed-section-unexpanded",
+                "container.physical-geometry-owner-unresolved",
+                "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
                 "legacy.integer-value-unresolved",
@@ -697,6 +721,7 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.count-framed-curve-carrier-unverified",
                 "geometry.hole-circle-interval-unresolved",
                 "geometry.hole-generator-unresolved",
                 "geometry.sweep-envelope-replay-unresolved",
@@ -704,6 +729,8 @@ mod tests {
                 "geometry.angular-pcurve-pair-unresolved",
                 "geometry.sampled-pcurve-evaluation-unresolved",
                 "geometry.visibgeom-curve-untransferred",
+                "curve.cross-section-body-opaque",
+                "geometry.round-carrier-owner-unresolved",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
@@ -749,8 +776,7 @@ mod tests {
                 "section.relation-join-missing",
                 "section.incidence-native",
                 "section.relation-native",
-                "section.dimension-variable-unresolved",
-                "section.dimension-guess-unresolved",
+                "section.variable-scalar-opaque",
                 "section.solver-variable-missing",
                 "section.dimension-value-unresolved",
                 "section.diameter-value-unresolved",

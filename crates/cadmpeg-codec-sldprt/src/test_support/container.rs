@@ -131,11 +131,6 @@ pub(crate) fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
     for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 0.3, -0.1, -0.2, -0.3, 0.5] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    payload.extend_from_slice(b"moPart_c");
-    let mut part = [0u8; 13];
-    part[0..4].copy_from_slice(&42u32.to_le_bytes());
-    part[8..12].copy_from_slice(&2026u32.to_le_bytes());
-    payload.extend_from_slice(&part);
     payload.extend_from_slice(b"moConfigurationMgr_c");
     let mut configuration = [0u8; 125];
     configuration[66..70].copy_from_slice(&17u32.to_le_bytes());
@@ -145,6 +140,14 @@ pub(crate) fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
     payload.extend_from_slice(b"moLengthUserUnits_c");
     payload.extend_from_slice(&[0xff, 0xfe, 0xff, 4, b'I', 0, b'N', 0]);
     f.extend(make_block(0x43, "SWObjects", &payload));
+    let mut part = vec![255, 255, 1, 0, 8, 0];
+    part.extend_from_slice(b"moPart_c");
+    part.extend_from_slice(&42u32.to_le_bytes());
+    part.extend_from_slice(&0u32.to_le_bytes());
+    part.extend_from_slice(&2026u32.to_le_bytes());
+    part.extend_from_slice(&[255, 255, 1, 0, 12, 0]);
+    part.extend_from_slice(b"moNodeName_c");
+    f.extend(make_block(0x43, "SWObjects/PartRoot", &part));
     f.extend(make_block(
         0x44,
         "Units",
