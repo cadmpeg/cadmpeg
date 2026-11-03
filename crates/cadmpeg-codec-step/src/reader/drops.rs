@@ -9,7 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::claims::SourceClaims;
 use super::collect_references;
+use super::presentation::is_style_graph_keyword;
 use crate::ids::{self, kind};
 use crate::parse::{Exchange, RawRecord};
 
@@ -256,6 +258,85 @@ pub(super) fn damage_reached(
         }
     }
     Ok(reached)
+}
+
+/// Live style-graph instances the damage stranded: unclaimed records of a
+/// style-graph keyword nothing references, closed under reference targets.
+/// A cut or damaged part severs the styled-item chain above them, so no
+/// stage claims them and the uncut decode consumes them into appearances.
+/// They are dropped with the damage by rule 2 instead of retained as named
+/// opaque records the uncut decode does not hold. Empty for a clean decode.
+///
+/// Only unclaimed instances qualify, so a claimed record is never named
+/// here; model-backed instances carry geometry keywords outside the style
+/// graph, so a held record is never named either.
+pub(super) fn stranded_style_instances(
+    exchange: &Exchange,
+    typed: &impl SourceClaims,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
+    let mut stranded = BTreeSet::new();
+    if exchange.dead_instances().is_empty() {
+        return Ok(stranded);
+    }
+    let mut candidates = BTreeSet::new();
+    for (&id, record) in exchange.records() {
+        if typed.contains(id) {
+            continue;
+        }
+        if record
+            .partials
+            .iter()
+            .any(|partial| is_style_graph_keyword(partial.name.as_str()))
+        {
+            candidates.insert(id);
+        }
+    }
+    if candidates.is_empty() {
+        return Ok(stranded);
+    }
+    let mut referrers: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+    let mut targets: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+    for (&id, record) in exchange.records() {
+        let refs = record_references(record, ctx)?;
+        for target in &refs {
+            referrers.entry(*target).or_default().insert(id);
+        }
+        if candidates.contains(&id) {
+            targets.insert(id, refs);
+        }
+    }
+    for (&id, record) in exchange.dead_records() {
+        for target in record_references(record, ctx)? {
+            referrers.entry(target).or_default().insert(id);
+        }
+    }
+    let mut worklist = Vec::new();
+    for &id in &candidates {
+        if referrers.get(&id).is_none_or(BTreeSet::is_empty) {
+            worklist.push(id);
+        }
+    }
+    while let Some(id) = worklist.pop() {
+        if !stranded.insert(id) {
+            continue;
+        }
+        let Some(next) = targets.get(&id) else {
+            continue;
+        };
+        for target in next {
+            if !candidates.contains(target) || stranded.contains(target) {
+                continue;
+            }
+            if referrers
+                .get(target)
+                .is_some_and(|refs| refs.iter().all(|peer| stranded.contains(peer)))
+            {
+                worklist.push(*target);
+            }
+        }
+    }
+    Ok(stranded)
 }
 
 /// Walk the undirected instance graph from the dead instances and ledger
