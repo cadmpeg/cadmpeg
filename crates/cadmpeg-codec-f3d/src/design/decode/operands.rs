@@ -49,6 +49,7 @@ use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
 use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
+use crate::layout::work_point_sketch_point_compact_identity as compact_identity;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -61,7 +62,7 @@ use crate::records::{
         work_geometry::{
             DesignEdgeTreatmentVertexOperand, DesignVertexRecipe, DesignWorkPlaneConstruction,
             DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, DesignWorkPointRule,
-            DesignWorkPointSketchPointSelection,
+            DesignWorkPointSketchPointIdentityForm, DesignWorkPointSketchPointSelection,
         },
     },
     parameters::{DesignParameter, DesignParameterOwner},
@@ -586,6 +587,7 @@ fn resolve_sketch_point_selection(
             context_id_offset: frame.context_id_offset,
             identity_record_index: frame.identity_record_index,
             identity_record_offset: frame.identity_record_offset,
+            identity_form: frame.identity_form,
             sketch_record_index: frame.sketch_record_index,
             sketch_record_index_offset: frame.sketch_record_index_offset,
             point_persistent_id: frame.point_persistent_id,
@@ -4100,6 +4102,7 @@ struct WorkPointSketchPointFrame {
     context_id_offset: u64,
     identity_record_index: u32,
     identity_record_offset: u64,
+    identity_form: DesignWorkPointSketchPointIdentityForm,
     sketch_record_index: u32,
     sketch_record_index_offset: u64,
     point_persistent_id: u64,
@@ -4111,9 +4114,10 @@ struct WorkPointSketchPointFrame {
 /// Parse the direct sketch-point identity variant of a `WorkPoint` input.
 ///
 /// The outer prefix is shared with persistent entity selections. Its identity
-/// record is a separate four-record envelope: nine zero bytes, a one-byte
-/// presence marker, two marked `u32` slots separated by zero `u32` values,
-/// and the following point-data record.
+/// record is a separate four-record envelope. The marked identity stores nine
+/// zero bytes, a one-byte presence marker, and two marked `u32` slots
+/// separated by zero `u32` values; the compact identity stores ten zero bytes
+/// and two `u64` slots. The following record is the point-data record.
 fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
     record_index: u32,
@@ -4144,28 +4148,57 @@ fn parse_work_point_sketch_point_frame(
     let (_, after_next_tag) =
         lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
-    if next_record_index != record_index.checked_add(4)?
-        || bytes
-            .get(identity_at + indexed_header::LEN..identity_at + sketch_point_identity::PRESENCE)?
-            != [0; 9]
-        || bytes.get(identity_at + sketch_point_identity::PRESENCE) != Some(&1)
-        || View::u32_le_at(bytes, identity_at + sketch_point_identity::PRESENCE + 1)? != 0
-        || View::u32_le_at(
-            bytes,
-            identity_at + sketch_point_identity::SKETCH_RECORD_INDEX + 4,
-        )? != 0
-        || identity_at.checked_add(sketch_point_identity::LEN)? != next_at
-    {
+    if next_record_index != record_index.checked_add(4)? {
         return None;
     }
-    let sketch_record_index = View::u32_le_at(
-        bytes,
-        identity_at + sketch_point_identity::SKETCH_RECORD_INDEX,
-    )?;
-    let point_persistent_id = u64::from(View::u32_le_at(
-        bytes,
-        identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
-    )?);
+    let (identity_form, sketch_record_index, point_persistent_id) =
+        if identity_at.checked_add(sketch_point_identity::LEN)? == next_at {
+            if bytes.get(
+                identity_at + indexed_header::LEN..identity_at + sketch_point_identity::PRESENCE,
+            )? != [0; 9]
+                || bytes.get(identity_at + sketch_point_identity::PRESENCE) != Some(&1)
+                || View::u32_le_at(bytes, identity_at + sketch_point_identity::PRESENCE + 1)? != 0
+                || View::u32_le_at(
+                    bytes,
+                    identity_at + sketch_point_identity::SKETCH_RECORD_INDEX + 4,
+                )? != 0
+            {
+                return None;
+            }
+            (
+                DesignWorkPointSketchPointIdentityForm::Marked,
+                View::u32_le_at(
+                    bytes,
+                    identity_at + sketch_point_identity::SKETCH_RECORD_INDEX,
+                )?,
+                u64::from(View::u32_le_at(
+                    bytes,
+                    identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
+                )?),
+            )
+        } else if identity_at.checked_add(compact_identity::LEN)? == next_at {
+            if bytes
+                .get(
+                    identity_at + indexed_header::LEN
+                        ..identity_at + compact_identity::SKETCH_RECORD_INDEX,
+                )?
+                .iter()
+                .any(|byte| *byte != 0)
+            {
+                return None;
+            }
+            (
+                DesignWorkPointSketchPointIdentityForm::Compact,
+                u32::try_from(View::u64_le_at(
+                    bytes,
+                    identity_at + compact_identity::SKETCH_RECORD_INDEX,
+                )?)
+                .ok()?,
+                View::u64_le_at(bytes, identity_at + compact_identity::POINT_PERSISTENT_ID)?,
+            )
+        } else {
+            return None;
+        };
     Some(WorkPointSketchPointFrame {
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
@@ -4173,14 +4206,15 @@ fn parse_work_point_sketch_point_frame(
         context_id_offset: prefix.context_id_offset,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
+        identity_form,
         sketch_record_index,
         sketch_record_index_offset: u64::try_from(
-            identity_at.checked_add(sketch_point_identity::SKETCH_RECORD_INDEX)?,
+            identity_at.checked_add(identity_form.sketch_record_index_offset())?,
         )
         .ok()?,
         point_persistent_id,
         point_persistent_id_offset: u64::try_from(
-            identity_at.checked_add(sketch_point_identity::POINT_PERSISTENT_ID)?,
+            identity_at.checked_add(identity_form.point_persistent_id_offset())?,
         )
         .ok()?,
         next_record_index,

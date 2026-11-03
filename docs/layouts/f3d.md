@@ -3131,6 +3131,22 @@ Unstated regions:
 - `29..33` (4 B): The second marked identity slot is zero in this selection form.
 - `37..41` (4 B): The identity record stores zero bytes at offsets 37 through 40.
 
+## `work_point_sketch_point_compact_identity`
+
+Spec §3.1 · layout: byte offsets · size: 37 B
+
+Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 8 | `sketch_record_index` | `u64` | little | spec | the owning Sketch entity record index as a u64 at offset 21 |
+| 29 | 8 | `point_persistent_id` | `u64` | little | spec | the sketch-point persistent id as a u64 at offset 29 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
+- `11..21` (10 B): The compact identity stores zero bytes at offsets 11 through 20.
+
 ## `class_338_sketch_curve_identity`
 
 Spec §3.1 · layout: byte offsets · size: 49 B
