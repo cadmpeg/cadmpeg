@@ -1,0 +1,76 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "entity_count": "3",
+        "unknown_entities": "COAXIALITY_TOLERANCE:1"
+      },
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "COAXIALITY_TOLERANCE #3 has no numeric magnitude",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 COAXIALITY_TOLERANCE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
+  ]
+}

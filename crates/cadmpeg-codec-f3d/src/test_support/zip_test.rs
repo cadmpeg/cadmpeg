@@ -181,6 +181,39 @@ pub(crate) fn f3d_with_unreadable_preview(smbh: &[u8]) -> Vec<u8> {
     bytes
 }
 
+/// An archive whose body entry fails its integrity check: the stored
+/// body stream keeps one flipped byte under a valid container, so the
+/// BREP framing fails and the entry is contained as a failed model
+/// stream while the document still decodes.
+pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
+    smbh: &[u8],
+    version: &str,
+) -> Vec<u8> {
+    const NAME: &str = "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
+    let bytes = f3d_with_smbh_and_manifest_version(smbh, version);
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        entries.push((name, content));
+    }
+    drop(archive);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, mut content) in entries {
+        if name == NAME {
+            content[0] ^= 1;
+        }
+        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.write_all(&content).expect("synthetic entry writes");
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
+}
+
 pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])
 }

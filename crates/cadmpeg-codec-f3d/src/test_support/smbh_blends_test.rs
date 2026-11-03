@@ -4,8 +4,8 @@
 use cadmpeg_asm::asm_header;
 
 use crate::test_support::smbh_blocks_test::{
-    generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
-    generated_surface_block,
+    generated_curve_block, generated_extrusion_cache_block, generated_pcurve_block,
+    generated_rational_surface_block, generated_surface_block,
 };
 use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
 use crate::test_support::smbh_surfaces_test::{
@@ -88,7 +88,7 @@ pub(crate) fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8>
 
 pub(crate) fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
-    let old = generated_surface_block();
+    let old = generated_extrusion_cache_block();
     let start = bytes
         .windows(old.len())
         .rposition(|window| window == old)

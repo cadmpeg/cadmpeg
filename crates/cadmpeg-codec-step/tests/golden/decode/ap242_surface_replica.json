@@ -1,0 +1,188 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#7",
+          "source_object": {
+            "format": "step",
+            "object_id": "#7"
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "unknowns": [
+          {
+            "id": "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "dropped": [
+          "step:data:point#3",
+          "step:data:surface#8"
+        ],
+        "message": "part step.simple_entity_instance stream=\"\" offset=590 length=31: malformed container: unresolved instance reference #999; dropped=[step:data:point#3, step:data:surface#8]",
+        "provenance": {
+          "byte_len": 31,
+          "format": "step",
+          "offset": 590
+        },
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "byte accounting: 306 structural, 348 typed, 31 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "9d2eefc99771d16deb005e136b2f9a7e328b13d919ecb594ef7f4542e0d2a53c",
+    "retained_records": {
+      "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345": {
+        "bytes": {
+          "data": "Izg9U1VSRkFDRV9SRVBMSUNBKCcnLCM3LCM5OTkpOw==",
+          "retention": "inline"
+        },
+        "offset": 590,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}
