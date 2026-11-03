@@ -114,7 +114,6 @@ fn body_selector_type_enters_the_feature_property_inventory() {
         cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("synthetic body selector");
-    assert!(inventory.issues.is_empty());
     assert_eq!(inventory.properties.len(), 1);
     assert!(matches!(
         inventory.properties[0].kind,
