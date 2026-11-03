@@ -59,14 +59,16 @@ pub(super) fn plan(
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
-    let source_trust = input.fidelity.map_or(super::SourceTrust::Authored, |fidelity| {
-        super::trust_source_image(
-            &fidelity.decode_digest,
-            fidelity
-                .retained_record(crate::SOURCE_IMAGE_ID)
-                .and_then(|image| image.data()),
-        )
-    });
+    let source_trust = input
+        .fidelity
+        .map_or(super::SourceTrust::Authored, |fidelity| {
+            super::trust_source_image(
+                &fidelity.decode_digest,
+                fidelity
+                    .retained_record(crate::SOURCE_IMAGE_ID)
+                    .and_then(|image| image.data()),
+            )
+        });
     let image_missing = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))

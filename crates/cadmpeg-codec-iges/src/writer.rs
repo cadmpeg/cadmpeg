@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsError, NurbsSurface, SurfaceParameterAxis},
     pcurve::{Pcurve, PcurveGeometry},
     sampled::{GeometryLayoutError, PolylineCurve},
     CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -480,10 +480,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = minimum_resolution_for_output(ir)?;
-    if let Some(loss) = minimum_resolution_loss(ir, minimum_resolution) {
-        graph.losses.push(loss);
-    }
+    let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
@@ -526,6 +523,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         regenerated_native: attribute_export.regenerated,
         coverage,
         bytes: encode_file(
+            ir,
             &graph.entities,
             &graph.presentations,
             version,
@@ -542,10 +540,11 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     let ctx = &ctx;
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
-    validate_analytic_surface_context(ir)?;
+    let (stripped, strip_losses) = strip_unusable_face_topology(ir);
+    let ir = stripped.as_ref().unwrap_or(ir);
     let mut losses = procedural_reduction_losses(ir)?;
+    losses.extend(strip_losses);
     losses.extend(arena_losses);
-    losses.extend(native_omission_losses(ir));
     for body in ir
         .model
         .bodies
@@ -661,12 +660,13 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {
-            let curve_id = edge.curve().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "IGES semantic writer does not encode carrier-less edge {}",
+            let Some(curve_id) = edge.curve() else {
+                losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                    "IGES edge {} has no curve carrier and is omitted",
                     edge.id
-                ))
-            })?;
+                )));
+                continue;
+            };
             let curve = ir
                 .model
                 .curves
@@ -904,25 +904,144 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
-    let writes_brep = has_brep_topology(ir);
-    if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
-        (matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(_)
-                    | SolvedSurfaceGeometry::Cone(_)
-                    | SolvedSurfaceGeometry::Sphere(_)
-                    | SolvedSurfaceGeometry::Torus(_)
-            )
-        )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
-    }) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
-            surface.id
-        )));
+/// Faces whose boundary no carrier reaches, with their topology stripped so
+/// the carrier surface still writes. A loop coedge whose edge names no model
+/// curve, or names one without solved geometry, can never supply a Type 141
+/// or Type 142 boundary; the face drops with a loss while its surface writes
+/// bare or domain-bounded. Faces the trimmed writer can encode are untouched.
+fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
+    if has_brep_topology(ir) || ir.model.faces.is_empty() {
+        return (None, Vec::new());
     }
-    Ok(())
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.as_str(), loop_))
+        .collect::<BTreeMap<_, _>>();
+    let coedges = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect::<BTreeMap<_, _>>();
+    let solved = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curve.geometry.solved().is_some())
+        .map(|curve| curve.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut bad = Vec::new();
+    for face in &ir.model.faces {
+        let mut missing = Vec::new();
+        let mut has_coedge = false;
+        for loop_id in face.loops.iter() {
+            let Some(loop_) = loops.get(loop_id.as_str()) else {
+                continue;
+            };
+            for coedge_id in loop_.coedges() {
+                has_coedge = true;
+                let carrier = coedges
+                    .get(coedge_id.as_str())
+                    .and_then(|coedge| edges.get(coedge.edge.as_str()))
+                    .and_then(|edge| edge.curve())
+                    .is_some_and(|curve_id| solved.contains(curve_id.as_str()));
+                if !carrier {
+                    missing.push(coedge_id.as_str().to_owned());
+                }
+            }
+        }
+        if !has_coedge || !missing.is_empty() {
+            bad.push((face.id.as_str().to_owned(), missing));
+        }
+    }
+    if bad.is_empty() {
+        return (None, Vec::new());
+    }
+    let bad_faces = bad
+        .iter()
+        .map(|(face, _)| face.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut bad_loops = BTreeSet::new();
+    for face in &ir.model.faces {
+        if bad_faces.contains(face.id.as_str()) {
+            bad_loops.extend(face.loops.iter().map(|loop_| loop_.as_str()));
+        }
+    }
+    let mut bad_coedges = BTreeSet::new();
+    for loop_id in &bad_loops {
+        if let Some(loop_) = loops.get(loop_id) {
+            bad_coedges.extend(loop_.coedges().iter().map(|coedge| coedge.as_str()));
+        }
+    }
+    let mut document = ir.clone();
+    document
+        .model
+        .faces
+        .retain(|face| !bad_faces.contains(face.id.as_str()));
+    document
+        .model
+        .loops
+        .retain(|loop_| !bad_loops.contains(loop_.id.as_str()));
+    document
+        .model
+        .coedges
+        .retain(|coedge| !bad_coedges.contains(coedge.id.as_str()));
+    let mut live_shells = BTreeSet::new();
+    document.model.shells.retain_mut(|shell| {
+        let faces = shell
+            .faces()
+            .iter()
+            .filter(|face| !bad_faces.contains(face.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        if shell.replace_faces(faces).is_ok() {
+            live_shells.insert(shell.id.as_str().to_owned());
+            true
+        } else {
+            false
+        }
+    });
+    for region in &mut document.model.regions {
+        region
+            .shells
+            .retain(|shell| live_shells.contains(shell.as_str()));
+    }
+    document
+        .model
+        .regions
+        .retain(|region| !region.shells.is_empty());
+    let live_regions = document
+        .model
+        .regions
+        .iter()
+        .map(|region| region.id.as_str())
+        .collect::<BTreeSet<_>>();
+    for body in &mut document.model.bodies {
+        body.regions
+            .retain(|region| live_regions.contains(region.as_str()));
+    }
+    document
+        .model
+        .bodies
+        .retain(|body| !body.regions.is_empty());
+    let losses = bad
+        .into_iter()
+        .map(|(face, missing)| {
+            IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES face {face} has no usable boundary carrier and is omitted: {}",
+                missing.join(", ")
+            ))
+        })
+        .collect();
+    (Some(document), losses)
 }
 
 impl crate::IgesVersion {
@@ -5075,84 +5194,12 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
     tolerance
 }
 
-fn generated_minimum_resolution(ir: &CadIr) -> Result<f64, CodecError> {
-    let topology_tolerance = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.tolerance)
-        .chain(
-            ir.model
-                .vertices
-                .iter()
-                .filter_map(|vertex| vertex.tolerance),
-        )
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
-        .map(effective_topology_tolerance)
-        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
-    let endpoint_scale = generated_endpoint_coordinate_scale(ir)?;
-    Ok(topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE))
-}
-
-fn minimum_resolution_for_output(ir: &CadIr) -> Result<f64, CodecError> {
-    let generated = generated_minimum_resolution(ir)?;
-    Ok(generated.max(ir.tolerances.linear.get()))
-}
-
-fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
-    ir.source.as_ref()?;
-    let declared = ir.tolerances.linear.get();
-    if emitted <= declared {
-        return None;
-    }
-    Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
-        "IGES Global minimum resolution changed from {declared:.17e} mm to {emitted:.17e} mm to cover the emitted geometry"
-    )))
-}
-
 fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
     if explicit_tolerance.is_finite() {
         explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
     } else {
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE
     }
-}
-
-fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
-    let mut scale = 1.0_f64;
-    for edge in &ir.model.edges {
-        for vertex_id in [&edge.start, &edge.end] {
-            if let Some(point) = vertex_position(ir, vertex_id) {
-                scale = scale.max(point_coordinate_scale(point));
-            }
-        }
-        let Some(curve_id) = edge.curve() else {
-            continue;
-        };
-        let Some(range) = edge.param_range() else {
-            continue;
-        };
-        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
-            continue;
-        };
-        for parameter in range {
-            if let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &curve.geometry,
-                parameter,
-            ))? {
-                scale = scale.max(point_coordinate_scale(point));
-            }
-        }
-    }
-    Ok(scale)
-}
-
-fn point_coordinate_scale(point: FinitePoint3) -> f64 {
-    [point.x, point.y, point.z]
-        .into_iter()
-        .map(f64::abs)
-        .fold(1.0, f64::max)
 }
 
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
@@ -5444,41 +5491,6 @@ fn synthesized_native_dispositions(
     dispositions
 }
 
-fn native_omission_losses(ir: &CadIr) -> Vec<LossNote> {
-    let Some(namespace) = ir.native.namespace("iges") else {
-        return Vec::new();
-    };
-    let represented_name_properties = represented_name_properties(ir, namespace);
-    let mut losses = Vec::new();
-    for (arena, records) in namespace.arenas() {
-        if records.is_empty() {
-            continue;
-        }
-        let message = match arena.as_str() {
-            "entities" => "IGES native entity records are regenerated from neutral content; fields without a neutral encoding are omitted".to_owned(),
-            "directions" => {
-                "IGES direction records are regenerated only for required \
-                 analytic-surface support; native direction identities and unrelated \
-                 records are omitted".to_owned()
-            }
-            "display_attributes" => {
-                "IGES display attributes are not regenerated by the bounded semantic writer".to_owned()
-            }
-            "product_occurrence_expansion" => {
-                "IGES product occurrence expansion is not regenerated by the bounded semantic writer".to_owned()
-            }
-            "attribute_table_definitions" | "attribute_table_instances" => continue,
-            arena if native_records::ARENAS.contains(&arena) => continue,
-            "product_properties" | "properties" if represented_name_properties.is_some() => continue,
-            "product_properties" | "properties" => continue,
-            arena if ALLOWED_NATIVE_ARENAS.contains(&arena) => continue,
-            _ => format!("IGES native arena {arena} is not regenerated; {} record(s) omitted", records.len()),
-        };
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
-    }
-    losses
-}
-
 #[derive(Clone, Copy)]
 struct Placement {
     rows: [[FiniteReal; 4]; 3],
@@ -5680,7 +5692,205 @@ fn append_surface_entities(
         .checked_add(surface_offset)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
+    domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
     Ok(Some(surface_index))
+}
+
+/// A Type 143 bounded surface over the domain rectangle of a faceless
+/// finite-domain NURBS carrier, so a re-decode face-projects the surface it
+/// would otherwise leave bare. Surfaces a face already owns keep their face's
+/// own boundary; unbounded carriers stay bare. Any extraction failure falls
+/// back to the bare carrier.
+fn domain_bounded_wrap(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    surface: &Surface,
+    version: crate::IgesVersion,
+    surface_index: usize,
+    entities: &mut Vec<Entity>,
+) -> Result<(), CodecError> {
+    if matches!(version, crate::IgesVersion::V4_0) {
+        return Ok(());
+    }
+    if ir
+        .model
+        .faces
+        .iter()
+        .any(|face| face.surface == surface.id)
+    {
+        return Ok(());
+    }
+    let Some((_domain, edges)) = wrap_isocurves(ctx, ir, surface) else {
+        return Ok(());
+    };
+    let mut edge_indices = Vec::new();
+    for isocurve in edges {
+        let mut entity = encode_nurbs(&isocurve.curve, isocurve.range, "NURBS")?;
+        entity.status = EntityStatus::PhysicallyDependent;
+        edge_indices.push(entities.len());
+        entities.push(entity);
+    }
+    let mut parameters = format!(
+        "0,{},{},{}",
+        BOUNDARY_PREFERENCE_MODEL_CURVES,
+        reference_marker(surface_index),
+        edge_indices.len()
+    );
+    for (position, index) in edge_indices.iter().enumerate() {
+        let sense = if position < 2 { 1 } else { 2 };
+        parameters.push(',');
+        parameters.push_str(&reference_marker(*index));
+        parameters.push(',');
+        parameters.push_str(&sense.to_string());
+        parameters.push_str(",0");
+    }
+    parameters.push(';');
+    entities.push(Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
+        type_code: 141,
+        form: 0,
+        label: String::new(),
+        status: EntityStatus::PhysicallyDependent,
+        parameter_body: parameters.into_bytes(),
+        transform: None,
+    });
+    let boundary_index = entities.len() - 1;
+    entities.push(Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
+        type_code: 143,
+        form: 0,
+        label: String::new(),
+        status: EntityStatus::Independent,
+        parameter_body: format!(
+            "0,{},1,{};",
+            reference_marker(surface_index),
+            reference_marker(boundary_index)
+        )
+        .into_bytes(),
+        transform: None,
+    });
+    Ok(())
+}
+
+struct WrapIsocurve {
+    curve: NurbsCurve,
+    range: FiniteVector<2>,
+}
+
+/// The active domain and its four boundary isocurves for a finite-domain
+/// NURBS carrier, in traversal order. Returns `None` for any other geometry
+/// or any extraction failure; the caller then writes the bare carrier.
+fn wrap_isocurves(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    surface: &Surface,
+) -> Option<([[f64; 2]; 2], [WrapIsocurve; 4])> {
+    let solved = surface.geometry.solved()?;
+    let SolvedSurfaceGeometry::Nurbs(nurbs) = solved else {
+        return None;
+    };
+    let construction = surface
+        .geometry
+        .procedural_construction()
+        .and_then(|id| {
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .find(|row| row.id == *id)
+        });
+    let legacy = construction.and_then(|row| match row.definition() {
+        ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+            cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
+            cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+        },
+        _ => None,
+    });
+    let natural = natural_nurbs_domain(nurbs)?;
+    let active = legacy.map_or(natural, |ranges| {
+        [
+            [ranges[0][0].get(), ranges[0][1].get()],
+            [ranges[1][0].get(), ranges[1][1].get()],
+        ]
+    });
+    if active[0][0] >= active[0][1] || active[1][0] >= active[1][1] {
+        return None;
+    }
+    if active == natural {
+        let [u_range, v_range] = natural;
+        return Some((
+            [u_range, v_range],
+            extract_rectangle(ctx, nurbs, u_range, v_range)?,
+        ));
+    }
+    let cropped = crate::entities::nurbs_controls::trim_surface(
+        ctx,
+        nurbs,
+        [active[0], active[1]],
+    )
+    .ok()??;
+    let domain = natural_nurbs_domain(&cropped)?;
+    Some((domain, extract_rectangle(ctx, &cropped, domain[0], domain[1])?))
+}
+
+/// The four boundary isocurves of a NURBS domain rectangle in traversal
+/// order: `v0` forward, `u1` forward, `v1` reversed, `u0` reversed.
+fn extract_rectangle(
+    ctx: &DecodeContext<'_>,
+    nurbs: &NurbsSurface,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+) -> Option<[WrapIsocurve; 4]> {
+    let mut edges = Vec::new();
+    for (axis, fixed) in [
+        (SurfaceParameterAxis::V, v_range[0]),
+        (SurfaceParameterAxis::U, u_range[1]),
+        (SurfaceParameterAxis::V, v_range[1]),
+        (SurfaceParameterAxis::U, u_range[0]),
+    ] {
+        let curve =
+            cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
+        let degree = usize::try_from(curve.degree()).ok()?;
+        let count = curve.control_points().len();
+        let domain = [curve.knots()[degree], curve.knots()[count]];
+        if domain[0] >= domain[1] {
+            return None;
+        }
+        edges.push(WrapIsocurve {
+            curve,
+            range: FiniteVector::new(domain)?,
+        });
+    }
+    edges.try_into().ok()
+}
+
+/// The full knot range of a NURBS surface basis.
+fn natural_nurbs_domain(nurbs: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
+    let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
+    let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
+    let u_count = nurbs.u_count();
+    let v_count = nurbs.v_count();
+    let u_knots: Vec<f64> = nurbs
+        .u_knots()
+        .finite_knots()
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .collect();
+    let v_knots: Vec<f64> = nurbs
+        .v_knots()
+        .finite_knots()
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .collect();
+    Some([[u_knots[u_degree], u_knots[u_count]], [
+        v_knots[v_degree],
+        v_knots[v_count],
+    ]])
 }
 
 fn surface_entities_for_ir(
@@ -8293,15 +8503,18 @@ impl Entity {
 
 /// (O-capacity) Counts and directory fields must fit the Fixed ASCII widths.
 fn encode_file(
+    ir: &CadIr,
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
 ) -> Result<Vec<u8>, CodecError> {
-    let generation_timestamp = generation_timestamp(SystemTime::now(), version)?;
+    let metadata = DocumentMetadata::of(ir);
+    let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
     let global = generated_global(
         version,
+        &metadata,
         &generation_timestamp,
         FiniteReal::new(minimum_resolution).ok_or_else(|| {
             CodecError::malformed("IGES output graph has a non-finite Global minimum resolution")
@@ -8482,7 +8695,14 @@ fn encode_file(
         }
     }
     let mut bytes = Vec::new();
-    bytes.extend(card(b"Generated by cadmpeg", b'S', 1)?);
+    let start = start_cards(&metadata);
+    let start_count = u32::try_from(start.len())
+        .map_err(|_| CodecError::InvalidInput("IGES Start section overflows".into()))?;
+    for (index, chunk) in start.iter().enumerate() {
+        let sequence = u32::try_from(index + 1)
+            .map_err(|_| CodecError::InvalidInput("IGES start sequence overflows".into()))?;
+        bytes.extend(card(chunk, b'S', sequence)?);
+    }
     for (index, chunk) in global_cards.iter().enumerate() {
         let sequence = u32::try_from(index + 1)
             .map_err(|_| CodecError::InvalidInput("IGES global sequence overflows".into()))?;
@@ -8496,8 +8716,7 @@ fn encode_file(
     }
     let parameter_count = parameter_sequence - 1;
     let terminate = format!(
-        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}",
-        start_count = 1
+        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}"
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
@@ -8516,6 +8735,29 @@ fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64)
     }
 }
 
+/// Generation timestamp: the held document date when the target version
+/// accepts its lexical form, else the current time in the target form. The
+/// four-digit year form the later versions admit is not a V4.0 or V5.0 field
+/// 18 value, so a held four-digit date is truncated to its two-digit form
+/// for those targets.
+fn generation_timestamp_for(
+    version: crate::IgesVersion,
+    held: Option<&str>,
+) -> Result<String, CodecError> {
+    if let Some(held) = held {
+        let truncated = held.len() == 15
+            && matches!(
+                version,
+                crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0
+            );
+        if !truncated {
+            return Ok(held.to_owned());
+        }
+        return Ok(held[2..].to_owned());
+    }
+    generation_timestamp(SystemTime::now(), version)
+}
+
 /// Renders one IGES global Hollerith field.
 ///
 /// Each caller passes an ASCII writer constant, an empty string, or the
@@ -8525,8 +8767,111 @@ fn global_hollerith(value: &str) -> String {
     format!("{}H{value}", value.len())
 }
 
+/// Document-scoped attribute values the decoder projects from the Start
+/// section and Global metadata (#222 §7.7). The writer authors those file
+/// positions from the held values so a re-decode projects the same
+/// attributes; positions the document does not hold keep writer constants.
+struct DocumentMetadata<'a> {
+    start: Option<&'a str>,
+    system_id: Option<&'a str>,
+    receiver: Option<&'a str>,
+    author: Option<&'a str>,
+    organization: Option<&'a str>,
+    generation_date: Option<&'a str>,
+    model_date: Option<&'a str>,
+}
+
+impl<'a> DocumentMetadata<'a> {
+    fn of(ir: &'a CadIr) -> Self {
+        Self {
+            start: document_metadata(ir, "start"),
+            system_id: document_metadata(ir, "system_id"),
+            receiver: document_metadata(ir, "receiver"),
+            author: document_metadata(ir, "author"),
+            organization: document_metadata(ir, "organization"),
+            generation_date: document_metadata(ir, "generation_date"),
+            model_date: document_metadata(ir, "model_date"),
+        }
+    }
+}
+
+/// One ASCII string value a document-scoped attribute holds for `name`.
+fn document_metadata<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
+    ir.model.attributes.iter().find_map(|attribute| {
+        if !matches!(
+            attribute.target,
+            cadmpeg_ir::attributes::AttributeTarget::Document
+        ) || attribute.name != name
+        {
+            return None;
+        }
+        let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
+            attribute.values.as_slice()
+        else {
+            return None;
+        };
+        is_ascii_text(value).then_some(value.as_str())
+    })
+}
+
+/// Document attributes the Start section and Global file positions carry, so
+/// they survive a re-decode that projects those positions back.
+pub(super) fn global_projected_attribute(
+    ir: &CadIr,
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
+) -> bool {
+    if !matches!(
+        attribute.target,
+        cadmpeg_ir::attributes::AttributeTarget::Document
+    ) {
+        return false;
+    }
+    if !matches!(
+        attribute.name.as_str(),
+        "start" | "system_id" | "receiver" | "author" | "organization" | "generation_date" | "model_date"
+    ) {
+        return false;
+    }
+    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
+        attribute.values.as_slice()
+    else {
+        return false;
+    };
+    if document_metadata(ir, &attribute.name) != Some(value.as_str()) {
+        return false;
+    }
+    if attribute.name == "start" {
+        return !value.is_empty() && !value.contains('\n') && value.len() <= 72;
+    }
+    true
+}
+
+/// Start section cards: the held text split into 72-byte lines.
+fn start_cards(metadata: &DocumentMetadata<'_>) -> Vec<Vec<u8>> {
+    const WRITER_START_TEXT: &str = "Generated by cadmpeg";
+    let Some(start) = metadata.start.filter(|start| !start.is_empty()) else {
+        return vec![WRITER_START_TEXT.as_bytes().to_vec()];
+    };
+    let cards = start
+        .split('\n')
+        .flat_map(|line| {
+            line.as_bytes()
+                .chunks(72)
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>()
+        })
+        .filter(|chunk| !chunk.is_empty())
+        .collect::<Vec<_>>();
+    if cards.is_empty() {
+        vec![WRITER_START_TEXT.as_bytes().to_vec()]
+    } else {
+        cards
+    }
+}
+
 fn generated_global(
     version: crate::IgesVersion,
+    metadata: &DocumentMetadata<'_>,
     generation_timestamp: &str,
     minimum_resolution: FiniteReal,
     maximum_coordinate: FiniteReal,
@@ -8536,7 +8881,7 @@ fn generated_global(
         "1H;".to_owned(),
         global_hollerith(WRITER_SENDER_PRODUCT),
         global_hollerith(WRITER_NATIVE_FILE_NAME),
-        global_hollerith(WRITER_NATIVE_SYSTEM_ID),
+        global_hollerith(metadata.system_id.unwrap_or(WRITER_NATIVE_SYSTEM_ID)),
         global_hollerith(WRITER_PREPROCESSOR_VERSION),
         WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
         WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
@@ -8544,11 +8889,11 @@ fn generated_global(
         WRITER_DOUBLE_PRECISION_MAGNITUDE.to_string(),
         WRITER_DOUBLE_PRECISION_SIGNIFICANCE.to_string(),
         global_hollerith(match version {
-            crate::IgesVersion::V4_0 => WRITER_SENDER_PRODUCT,
+            crate::IgesVersion::V4_0 => metadata.receiver.unwrap_or(WRITER_SENDER_PRODUCT),
             crate::IgesVersion::V5_0
             | crate::IgesVersion::V5_1
             | crate::IgesVersion::V5_2
-            | crate::IgesVersion::V5_3 => "",
+            | crate::IgesVersion::V5_3 => metadata.receiver.unwrap_or(""),
         }),
         WRITER_MODEL_SPACE_SCALE.to_owned(),
         WRITER_UNITS_FLAG.to_string(),
@@ -8558,16 +8903,18 @@ fn generated_global(
         global_hollerith(generation_timestamp),
         number(minimum_resolution),
         number(maximum_coordinate),
-        global_hollerith(WRITER_AUTHOR_NAME),
-        global_hollerith(WRITER_AUTHOR_ORGANIZATION),
+        global_hollerith(metadata.author.unwrap_or(WRITER_AUTHOR_NAME)),
+        global_hollerith(metadata.organization.unwrap_or(WRITER_AUTHOR_ORGANIZATION)),
         version.global_flag().to_string(),
         WRITER_DRAFTING_STANDARD_FLAG.to_string(),
     ];
     match version {
         crate::IgesVersion::V4_0 => {}
-        crate::IgesVersion::V5_0 => fields.push(global_hollerith("")),
+        crate::IgesVersion::V5_0 => {
+            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+        }
         crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-            fields.push(global_hollerith(""));
+            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
             fields.push(global_hollerith(""));
         }
     }

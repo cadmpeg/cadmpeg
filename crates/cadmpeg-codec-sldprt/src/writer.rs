@@ -160,13 +160,12 @@ pub(super) fn write_semantic_at(
                 if lane.native_payload.is_empty() {
                     continue;
                 }
-                let expected =
-                    crate::resolved_features::write_prepare::generated_native_lane(
-                        &native.feature_histories,
-                        &lane.id,
-                        lane.configuration.clone(),
-                        lane.native_payload.to_vec(),
-                    )?;
+                let expected = crate::resolved_features::write_prepare::generated_native_lane(
+                    &native.feature_histories,
+                    &lane.id,
+                    lane.configuration.clone(),
+                    lane.native_payload.to_vec(),
+                )?;
                 let mut entities = lane.sketch_entities.clone();
                 entities.sort_by_key(|entity| entity.ordinal());
                 let mut expected_entities = expected.sketch_entities.clone();

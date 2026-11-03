@@ -833,7 +833,7 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
         *entity.geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
     )));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
     assert_valid_document(result.ir());
 }
 
@@ -1303,12 +1303,25 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ..
         }
     ));
-    assert_eq!(result.report().losses.len(), 1);
+    // #209 §1.1: the fragment holds no model part; the wrapper appends
+    // depth.not-delivered after the codec loss.
+    assert_eq!(
+        result.ir().scope,
+        cadmpeg_ir::document::ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(result.report().losses.len(), 2);
     assert_eq!(
         result.report().losses[0].code,
         crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous
             .note("")
             .code
+    );
+    assert_eq!(
+        result.report().losses[1].code.local_code(),
+        "depth.not-delivered"
     );
 }
 
