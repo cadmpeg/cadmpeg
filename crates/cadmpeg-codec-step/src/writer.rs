@@ -14,6 +14,14 @@ use crate::options::StepSchema;
 
 pub(crate) mod target;
 
+/// STEP has no fixed-width field; every count chains or splits records, so
+/// there is no capacity row (#233).
+pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
+
+/// STEP stores no JSON path in reduced form; every written value round-trips
+/// at full precision (#232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+
 /// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Ref(pub u64);

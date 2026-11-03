@@ -5490,7 +5490,6 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 /// Refuses a vertex-normal lane that does not cover the vertex lane, and a
 /// tessellation the IR will not admit.
 pub(super) fn display_jt_tessellations(
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
@@ -5547,7 +5546,7 @@ pub(super) fn display_jt_tessellations(
                 match $value {
                     Some(value) => value,
                     None => {
-                        dropped_display_jt_mesh(source_untyped, losses, mesh);
+                        dropped_display_jt_mesh(losses, mesh);
                         continue 'meshes;
                     }
                 }
@@ -5580,20 +5579,16 @@ pub(super) fn display_jt_tessellations(
         };
         let Some(paths) = paths else {
             if !visits.exhausted() {
-                dropped_display_jt_mesh(source_untyped, losses, mesh);
+                dropped_display_jt_mesh(losses, mesh);
                 continue;
             }
             bounded_shape_nodes.insert(shape_node_key);
-            losses.push(NxLossCode::SourceScanBounded.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
-                format!(
+            losses.push(NxLossCode::SourceScanBounded.note(format!(
                 "The instance-path scan of Display-JT shape node {} reached its visit bound of {}; \
                  the meshes bound to that shape node were skipped.",
                 shape_node.object_id,
                 MAX_JT_NODE_PATH_VISITS,
-            )
-            }));
+            )));
             continue;
         };
         let mut mesh_tessellations = Vec::new();
@@ -5609,7 +5604,7 @@ pub(super) fn display_jt_tessellations(
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            dropped_display_jt_mesh(source_untyped, losses, mesh);
+            dropped_display_jt_mesh(losses, mesh);
             continue;
         }
         let vertex_header = required!(vertex_headers.get(shape_element.id.as_str()).copied());
@@ -5617,14 +5612,14 @@ pub(super) fn display_jt_tessellations(
             .then(|| normals.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            dropped_display_jt_mesh(source_untyped, losses, mesh);
+            dropped_display_jt_mesh(losses, mesh);
             continue;
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| colors.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            dropped_display_jt_mesh(source_untyped, losses, mesh);
+            dropped_display_jt_mesh(losses, mesh);
             continue;
         }
         let mut texture_arrays = Vec::new();
@@ -5640,7 +5635,7 @@ pub(super) fn display_jt_tessellations(
             .then(|| vertex_flags.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            dropped_display_jt_mesh(source_untyped, losses, mesh);
+            dropped_display_jt_mesh(losses, mesh);
             continue;
         }
         for path in paths {
@@ -5678,7 +5673,7 @@ pub(super) fn display_jt_tessellations(
                     if !(1..=4).contains(&count)
                         || !array.values.iter().all(|value| value.len() == count)
                     {
-                        dropped_display_jt_mesh(source_untyped, losses, mesh);
+                        dropped_display_jt_mesh(losses, mesh);
                         continue 'meshes;
                     }
                     texture_component_counts.push(count);
@@ -5830,19 +5825,14 @@ pub(super) fn display_jt_tessellations(
 }
 
 /// Report that `mesh` did not resolve and none of its tessellations are kept.
-fn dropped_display_jt_mesh(
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
-    losses: &mut Vec<LossNote>,
-    mesh: &DisplayJtPolygonMesh,
-) {
-    losses.push(NxLossCode::DisplayJtTessellationsDropped.note({
-        source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+fn dropped_display_jt_mesh(losses: &mut Vec<LossNote>, mesh: &DisplayJtPolygonMesh) {
+    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(
         format!(
             "Display-JT polygon mesh {} did not resolve to a tessellation; \
          the mesh was skipped.",
             mesh.id
-        )
-    }));
+        ),
+    ));
 }
 
 #[cfg(test)]

@@ -33,6 +33,7 @@ mod annotations;
 mod attributes;
 mod evidence;
 mod fem;
+mod patterns;
 mod products;
 pub(crate) use evidence::untyped_records;
 
@@ -2212,6 +2213,28 @@ pub(crate) fn store_physical_cards(
         overdeclared_counts: BTreeMap::new(),
         unstatable_attribute_tables: BTreeMap::new(),
     })
+}
+
+fn feature_directory_sequence(feature: &cadmpeg_ir::features::Feature) -> Option<u32> {
+    feature
+        .native_ref
+        .as_deref()?
+        .rsplit('#')
+        .next()?
+        .strip_prefix('D')?
+        .parse()
+        .ok()
+}
+
+fn renumber_features(ir: &mut CadIr) {
+    ir.model.features.sort_by_key(feature_directory_sequence);
+    let mut ordinal = 0_u64;
+    for feature in &mut ir.model.features {
+        feature.ordinal = ordinal;
+        if let Some(next) = ordinal.checked_add(1) {
+            ordinal = next;
+        }
+    }
 }
 
 pub(crate) fn store(
@@ -5728,12 +5751,37 @@ pub(crate) fn store(
             &product_occurrences,
             &subfigure_definitions,
             &network_definitions,
+            &solid_assemblies,
+            &solid_instances,
+            &external_references,
+            &selected_components,
+            &entries,
+            &by_directory,
+            occurrence_length_factor,
+            global.real_precision(),
             sequences,
             ctx,
         )?
     } else {
         Vec::new()
     };
+    if let Some(admitted) = structure_admitted {
+        let mut array_ordinal = 0_u64;
+        patterns::project(
+            ir,
+            &rectangular_arrays,
+            &circular_arrays,
+            &entries,
+            &by_directory,
+            occurrence_length_factor,
+            global.real_precision(),
+            &mut array_ordinal,
+            &mut projection_losses,
+            ctx,
+            &admitted.decoded,
+        )?;
+        renumber_features(ir);
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;
     namespace.set_arena_from(ctx, "directions", directions)?;

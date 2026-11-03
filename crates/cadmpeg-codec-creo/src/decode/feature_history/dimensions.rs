@@ -5,7 +5,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, FeatureSourceContent, ParameterId, ParameterValue,
+        DesignParameter, DimensionDisplay, Expression, FeatureSourceContent, ParameterId,
+        ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -30,13 +31,6 @@ fn insert_dimension_property(
     let key = key.to_owned();
     let value = format!("{value}");
     properties.insert(key, value);
-}
-
-fn dimension_expression(value: Option<f64>) -> Result<String, cadmpeg_core::CodecError> {
-    value
-        .map(|value| Ok(format!("{value}")))
-        .transpose()
-        .map(std::option::Option::unwrap_or_default)
 }
 
 pub(in crate::decode) fn dimension_measurement_value(
@@ -200,7 +194,7 @@ pub(in super::super) fn feature_relation_table_complete(
     feature_relation_table_expected_rows(table) == Some(table.rows.len())
 }
 
-pub(in super::super) fn feature_relation_table_expected_rows(
+pub(crate) fn feature_relation_table_expected_rows(
     table: &crate::feature::definitions::FeatureRelationTable,
 ) -> Option<usize> {
     match table.declared_count {
@@ -349,11 +343,13 @@ pub(in super::super) fn transfer_feature_dimensions(
             Exactness::Derived,
         )?;
         let mut properties = BTreeMap::new();
-        insert_dimension_property(&mut properties, "definition_id", definition.identity.id());
+        // §8: the sketch record named by `native_ref` already holds the
+        // definition id and the per-row direction byte as typed fields, so
+        // neither is repeated here. The remaining entries are the row's slot
+        // identity: they name the dimension-table row, not source layout.
         insert_dimension_property(&mut properties, "source_ordinal", source_ordinal);
         insert_dimension_property(&mut properties, "external_id", dimension.external_id);
         insert_dimension_property(&mut properties, "dimension_type", dimension.dimension_type);
-        insert_dimension_property(&mut properties, "direction_byte", dimension.direction_byte);
         if let Some(auxiliary) = dimension.auxiliary_value {
             insert_dimension_property(&mut properties, "auxiliary_value", auxiliary);
         }
@@ -370,7 +366,6 @@ pub(in super::super) fn transfer_feature_dimensions(
                 insert_dimension_property(&mut properties, "value_encoding", encoding);
             }
         }
-        let expression = dimension_expression(dimension_measurement_value(dimension))?;
         let value =
             dimension_measurement_value(dimension).and_then(|value| match dimension.unit() {
                 crate::feature::definitions::DimensionUnit::Radians => {
@@ -383,6 +378,13 @@ pub(in super::super) fn transfer_feature_dimensions(
                     cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real)
                 }
             });
+        // The expression renders the cached value in canonical literal
+        // form: a bare angle number now reads as degrees (#209 D5), so the
+        // stored radian value needs its `rad` suffix to stay equal.
+        let expression = value
+            .as_ref()
+            .map(ParameterValue::literal_expression)
+            .unwrap_or_else(|| Expression::text(String::new()));
         ctx.charge_entities(1, "admit Creo model parameters")?;
         source_carriers.admit_parameter(
             ir,
@@ -392,7 +394,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 owner: Some(owner_id.clone()),
                 ordinal,
                 name,
-                expression: expression.into(),
+                expression,
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 driving: true,

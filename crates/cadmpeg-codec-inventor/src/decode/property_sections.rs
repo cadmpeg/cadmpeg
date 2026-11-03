@@ -6,7 +6,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use crate::native::{PropertyRecord, PropertySectionRecord};
-use crate::property_set::{PropertySection, PropertySetDescriptor};
+use crate::property_set::PropertySetDescriptor;
+
+/// A staged property section: the parsed values behind one native section
+/// record.
+pub(super) struct PropertySection<'a> {
+    pub(super) fmtid: [u8; 16],
+    pub(super) properties: Vec<crate::property_set::Property<'a>>,
+}
 
 /// Metadata composition receives only a section whose native and asset stage
 /// committed. A failed callback cannot change the document's metadata builder.
@@ -51,13 +58,10 @@ pub(super) fn stage<'a>(
                 mut ranges,
                 names,
                 code_page,
-                offsets_ordered,
+                ..
             } = directory;
             let mut section = PropertySection {
                 fmtid,
-                code_page,
-                offsets_ordered,
-                dictionary_entries: names.len(),
                 properties: Vec::new(),
             };
             let set_name =
@@ -118,7 +122,7 @@ pub(super) fn stage<'a>(
                             raw,
                             property_id,
                             name,
-                            section.code_page,
+                            code_page,
                         )?;
                         property_stage.insert_native(
                             ctx,

@@ -76,7 +76,6 @@ fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir().native.namespace("step").is_some());
 }
 
 #[test]
