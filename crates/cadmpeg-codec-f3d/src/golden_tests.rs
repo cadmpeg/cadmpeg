@@ -983,11 +983,12 @@ fn an_edit_survives_the_patch_writer() {
     );
 }
 
-/// Rename every positional neutral identity in sorted order, rewriting
-/// all references consistently. Synthesis remints the positional BREP
-/// identities its blob order implies, and regenerates the native rows the
+/// Rename every positional neutral identity canonically, rewriting all
+/// references consistently. Synthesis remints the positional BREP
+/// identities its blob order implies and regenerates the native rows the
 /// neutral `native_ref` fields name, while a patch preserves the retained
-/// numbering; the canonical renaming compares structure.
+/// numbering. Model records rekey by arena and position; native references,
+/// which have no neutral home, rekey by kind in sorted order.
 fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     fn ephemeral_id(text: &str) -> bool {
         let Some(hash) = text.rfind('#') else {
@@ -998,21 +999,29 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             && !text[hash + 1..].is_empty()
             && text[hash + 1..].bytes().all(|byte| byte.is_ascii_digit())
     }
-    fn collect(value: &serde_json::Value, ids: &mut std::collections::BTreeSet<String>) {
+    fn collect_unmapped(
+        value: &serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+        kinds: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) {
         match value {
             serde_json::Value::String(text) => {
-                if ephemeral_id(text) {
-                    ids.insert(text.clone());
+                if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
+                    let kind = text.rsplit_once('#').map(|(kind, _)| kind).unwrap_or(text);
+                    kinds
+                        .entry(kind.to_owned())
+                        .or_default()
+                        .insert(text.clone());
                 }
             }
             serde_json::Value::Array(values) => {
                 for value in values {
-                    collect(value, ids);
+                    collect_unmapped(value, mapping, kinds);
                 }
             }
             serde_json::Value::Object(fields) => {
                 for value in fields.values() {
-                    collect(value, ids);
+                    collect_unmapped(value, mapping, kinds);
                 }
             }
             _ => {}
@@ -1041,19 +1050,35 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             _ => {}
         }
     }
-    let mut ids = std::collections::BTreeSet::new();
-    collect(value, &mut ids);
-    let mapping = ids
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, id)| (id, format!("ephemeral-neutral-identity#{ordinal}")))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut mapping = std::collections::BTreeMap::new();
+    if let Some(model) = value.get("model").and_then(|model| model.as_object()) {
+        for (arena, records) in model {
+            if let Some(records) = records.as_array() {
+                for (ordinal, record) in records.iter().enumerate() {
+                    if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                        if ephemeral_id(id) {
+                            mapping.insert(id.to_owned(), format!("{arena}#{ordinal}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut kinds: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    collect_unmapped(value, &mapping, &mut kinds);
+    for (kind, ids) in kinds {
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            mapping.insert(id, format!("{kind}#{ordinal}"));
+        }
+    }
     rewrite(value, &mapping);
 }
 
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
-fn an_edit_survives_native_writer_fallback() {    let mut measured_count = 0usize;
+fn an_edit_survives_native_writer_fallback() {
+    let mut measured_count = 0usize;
     let mut skipped = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -46,6 +48,7 @@ pub(crate) fn plan(
         recovered.recovered_edges,
     )?;
     let coverage = coverage(schema, &outcome.losses);
+    let written_drawing_targets = outcome.written_drawing_targets.clone();
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
         losses.push(StepLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -63,11 +66,7 @@ pub(crate) fn plan(
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
     Ok(ExportBody {
-        native_dispositions: NativeDispositions::for_namespace(
-            "step",
-            crate::reader::NATIVE_ARENAS,
-            NativeDisposition::Dropped,
-        ),
+        native_dispositions: native_dispositions(&written_drawing_targets),
         synthesis_cause: None,
         bytes,
         census: outcome.census,
@@ -81,11 +80,27 @@ pub(crate) fn plan(
     })
 }
 
+/// Native dispositions: retained `drawing_targets` records the writer
+/// re-emitted for a written drawing are written; everything else stays
+/// dropped.
+fn native_dispositions(written_drawing_targets: &BTreeSet<String>) -> NativeDispositions {
+    let mut dispositions = NativeDispositions::for_namespace(
+        "step",
+        crate::reader::NATIVE_ARENAS,
+        NativeDisposition::Dropped,
+    );
+    for id in written_drawing_targets {
+        dispositions.set_record("step", "drawing_targets", id, NativeDisposition::Written);
+    }
+    dispositions
+}
+
 /// What the STEP writer does with each model arena.
 ///
 /// `Builder::note_unrepresented` in `export.rs` charges a specific loss for
 /// every arena or record the graph does not carry. Arenas charged as a whole
-/// are `Dropped`.
+/// are `Dropped`; arenas the writer carries are `Written`, demoted to
+/// `Reported` below when the write reduces them.
 fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     let ap242 = |supported: bool| if supported { Written } else { Reported };
@@ -105,7 +120,7 @@ fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
         pcurves: Written,
         procedural_surfaces: Written,
         procedural_curves: Written,
-        assets: Dropped,
+        assets: Written,
         features: Dropped,
         feature_input_topologies: Dropped,
         feature_result_topologies: Dropped,
@@ -121,14 +136,14 @@ fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
         product_definitions: Written,
         occurrences: Written,
         assembly_joints: Dropped,
-        drawings: Dropped,
+        drawings: Written,
         semantic_annotations: Dropped,
         presentation_documents: Dropped,
         view_presentations: Dropped,
         tessellations: ap242(schema.supports_tessellation()),
         appearances: Written,
         appearance_bindings: Written,
-        attributes: Dropped,
+        attributes: Written,
         pmi: ap242(schema.supports_semantic_pmi()),
         presentation_layers: Written,
         physical_materials: Omitted,
@@ -294,6 +309,15 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::PmiAnnotationNotWritten,
     ]) {
         coverage.pmi = Reported;
+    }
+    if has(&[StepLossCode::DocumentAssetOmitted]) {
+        coverage.assets = Reported;
+    }
+    if has(&[StepLossCode::SourceAttributeNotWritten]) {
+        coverage.attributes = Reported;
+    }
+    if has(&[StepLossCode::DrawingPresentationRecordsOmitted]) {
+        coverage.drawings = Reported;
     }
     if has(&[
         StepLossCode::AppearanceReducedToBaseColor,
