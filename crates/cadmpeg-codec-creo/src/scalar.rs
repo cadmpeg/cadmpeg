@@ -1015,11 +1015,13 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
-/// image.
+/// image. `carried` is the image's final direction slot, the value an opening
+/// repeat token copies.
 pub(crate) fn decode_inline_non_plane_origin_prefix(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
+    carried: f64,
     cache: &ScalarCache,
 ) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
     let mut values = [0.0; 3];
@@ -1029,7 +1031,7 @@ pub(crate) fn decode_inline_non_plane_origin_prefix(
         ctx,
         body,
         cache,
-        (0, cursor),
+        (0, cursor, carried),
         &mut values,
         &mut results,
         &mut count,
@@ -1235,12 +1237,12 @@ fn walk_inline_origin(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-    position: (usize, usize),
+    position: (usize, usize, f64),
     values: &mut [f64; 3],
     results: &mut [Option<([f64; 3], usize)>; 8],
     count: &mut usize,
 ) -> Result<(), CodecError> {
-    let (slot, cursor) = position;
+    let (slot, cursor, previous) = position;
 
     let _depth = ctx.enter_nested("creo inline origin depth")?;
     if *count >= results.len() {
@@ -1251,9 +1253,41 @@ fn walk_inline_origin(
         *count += 1;
         return Ok(());
     }
-    for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
+    if let Some(token @ 0xe4..=0xe6) = body.get(cursor).copied() {
+        let next_slot = slot + usize::from(token - 0xe3);
+        if let Some(repeated) = values.get_mut(slot..next_slot) {
+            repeated.fill(previous);
+            walk_inline_origin(
+                ctx,
+                body,
+                cache,
+                (next_slot, cursor + 1, previous),
+                values,
+                results,
+                count,
+            )?;
+        }
+        return Ok(());
+    }
+    let signed = matches!(body.get(cursor), Some(0x2d | 0x46))
+        .then(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
+        .flatten();
+    let lanes = signed
+        .is_none()
+        .then(|| decode_inline_local_system_coordinates(body, cursor, slot + 9, cache))
+        .into_iter()
+        .flatten();
+    for (value, next) in signed.into_iter().chain(lanes) {
         values[slot] = value;
-        walk_inline_origin(ctx, body, cache, (slot + 1, next), values, results, count)?;
+        walk_inline_origin(
+            ctx,
+            body,
+            cache,
+            (slot + 1, next, value),
+            values,
+            results,
+            count,
+        )?;
     }
     Ok(())
 }
