@@ -2626,6 +2626,9 @@ pub(super) fn project_fixed_fillet_with_corners(
                 let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
                     return Ok(None);
                 };
+                if operand.layout().is_some_and(|layout| !layout.is_compact()) {
+                    return Ok(None);
+                }
                 identities.push(operand);
             }
             or_none!(radius_edge_identity_group_candidates(

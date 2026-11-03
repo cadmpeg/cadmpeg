@@ -526,6 +526,7 @@ mod tests {
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: Some(9),
+            null_construction: false,
             transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
             transform_offset: Some(20),
         };
