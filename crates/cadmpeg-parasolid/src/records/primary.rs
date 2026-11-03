@@ -322,4 +322,6 @@ mod edges;
 mod group;
 pub use edges::EdgeFrame;
 pub use group::PrimaryGroup;
+mod node;
+pub use node::Node;
 mod membership;
