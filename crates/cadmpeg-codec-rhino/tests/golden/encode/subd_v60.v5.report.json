@@ -88,7 +88,7 @@
       "presentation_documents": "reported",
       "presentation_layers": "reported",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
+      "procedural_surfaces": "reported",
       "product_definitions": "reported",
       "regions": "reported",
       "rigid_bodies": "omitted",
@@ -102,7 +102,7 @@
       "spatial_sketch_entities": "omitted",
       "spatial_sketches": "omitted",
       "spreadsheets": "omitted",
-      "subds": "dropped",
+      "subds": "reported",
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "reported",
@@ -115,28 +115,6 @@
     "target": "rhino:archive-50"
   },
   "losses": [
-    {
-      "code": {
-        "code": "writer.subds-omitted",
-        "kind": "subd_omitted",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "SubD rhino:object:subd#record-000000-offset-177 omitted: archives below 60 require a SubD mesh proxy, which is not implemented",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "export.no-exportable-solids",
-        "kind": "no_exportable_solids",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "the document holds no exportable geometry",
-      "severity": "warning"
-    },
     {
       "code": {
         "code": "target.source-dialect-displaced",

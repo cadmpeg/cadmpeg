@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 26884,
-      "payload_sha256": "16be58b0d4255fa9bc93f32846cde7ee29ed91a86535965a9f70a61b1f8a871f"
+      "payload_len": 25871,
+      "payload_sha256": "1f94c01a36638bd44ced7d784088e1a42d16d3f2bcb3fba7efa6b873637489d2"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -14,6 +14,11 @@
       "name": "Compound.brp",
       "payload_len": 1477,
       "payload_sha256": "292cad249fd2bcdc586bcd2fbb288c957c3c45a7b8a72866262ffea3d6102216"
+    },
+    {
+      "name": "CurveCarriers.brp",
+      "payload_len": 1471,
+      "payload_sha256": "4b9cffc8b360cf586f02d027fa5678a667cd1bb7e3991ee2c446cbf892094b8e"
     },
     {
       "name": "Degenerate.brp",
@@ -41,16 +46,6 @@
       "payload_sha256": "2408ad3056d54f570534bb5892ecd9c6aa4fcb7a109a9192d0ca372deb828824"
     },
     {
-      "name": "Shape1.brp",
-      "payload_len": 1471,
-      "payload_sha256": "4b9cffc8b360cf586f02d027fa5678a667cd1bb7e3991ee2c446cbf892094b8e"
-    },
-    {
-      "name": "Shape11.brp",
-      "payload_len": 559,
-      "payload_sha256": "1afb8e70bd80e080ffe87f0da06e5e438f9ac49817c23c5a118aacb9bf854f9a"
-    },
-    {
       "name": "Sheet.brp",
       "payload_len": 671,
       "payload_sha256": "cd047d96912f2846230c267959e9b23e9a751379cdf06fb8b10593c8c4125485"
@@ -69,6 +64,11 @@
       "name": "Void.brp",
       "payload_len": 5014,
       "payload_sha256": "8c53edf8918abc4cb1c4c7513263a6fcc731d93519bab950c77c96c2462b3a73"
+    },
+    {
+      "name": "Wire.brp",
+      "payload_len": 559,
+      "payload_sha256": "1afb8e70bd80e080ffe87f0da06e5e438f9ac49817c23c5a118aacb9bf854f9a"
     }
   ],
   "report": {
@@ -80,7 +80,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 13,
+        "attributes": 41,
         "bodies": 12,
         "coedges": 177,
         "colliders": 0,
@@ -92,12 +92,13 @@
         "faces": 48,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 12,
         "loops": 48,
         "mass_properties": 0,
         "native.fcstd.applications": 13,
         "native.fcstd.attachments": 12,
         "native.fcstd.carrier_census": 12,
+        "native.fcstd.design_census": 12,
         "native.fcstd.document": 1,
         "native.fcstd.element_maps": 3,
         "native.fcstd.entries": 16,
@@ -199,26 +200,6 @@
     "losses": [
       {
         "code": {
-          "code": "metadata.native-property-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "element map fcstd:native:element-map#CurveCarriers:Shape:map has an omitted shape property",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#CurveCarriers:Shape:map",
-        "severity": "info"
-      },
-      {
-        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
@@ -234,17 +215,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`: fcstd:native:property#Compound:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#CurveCarriers:ExpressionEngine, fcstd:native:property#CurveCarriers:Shape, fcstd:native:property#Degenerate:ExpressionEngine, fcstd:native:property#FreeformSurface:ExpressionEngine, fcstd:native:property#MultiShell:ExpressionEngine, fcstd:native:property#Revolved:ExpressionEngine, fcstd:native:property#Seam:ExpressionEngine, fcstd:native:property#Sheet:ExpressionEngine, fcstd:native:property#Solid:ExpressionEngine, fcstd:native:property#Swept:ExpressionEngine, fcstd:native:property#Void:ExpressionEngine, fcstd:native:property#Wire:ExpressionEngine, fcstd:native:property#Wire:Shape",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#CurveCarriers:Shape:CurveCarriers.Shape.brp, fcstd:native:shape-payload#Wire:Shape:Wire.Shape.brp",
+        "message": "the fcstd write omits 25 native record(s) from `fcstd.properties`: fcstd:native:property#Compound:ExpressionEngine, fcstd:native:property#Compound:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#CurveCarriers:ExpressionEngine, fcstd:native:property#CurveCarriers:Placement, fcstd:native:property#Degenerate:ExpressionEngine, fcstd:native:property#Degenerate:Placement, fcstd:native:property#FreeformSurface:ExpressionEngine, fcstd:native:property#FreeformSurface:Placement, fcstd:native:property#MultiShell:ExpressionEngine, fcstd:native:property#MultiShell:Placement, fcstd:native:property#Revolved:ExpressionEngine, fcstd:native:property#Revolved:Placement, fcstd:native:property#Seam:ExpressionEngine, fcstd:native:property#Seam:Placement, fcstd:native:property#Sheet:ExpressionEngine, fcstd:native:property#Sheet:Placement, fcstd:native:property#Solid:ExpressionEngine, fcstd:native:property#Solid:Placement, fcstd:native:property#Swept:ExpressionEngine, fcstd:native:property#Swept:Placement, fcstd:native:property#Void:ExpressionEngine, fcstd:native:property#Void:Placement, fcstd:native:property#Wire:ExpressionEngine, fcstd:native:property#Wire:Placement",
         "severity": "info"
       }
     ],
@@ -308,7 +279,21 @@
               }
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#Compound:projection": "regenerated",
+                "fcstd:native:design-census#CurveCarriers:projection": "regenerated",
+                "fcstd:native:design-census#Degenerate:projection": "regenerated",
+                "fcstd:native:design-census#FreeformSurface:projection": "regenerated",
+                "fcstd:native:design-census#MultiShell:projection": "regenerated",
+                "fcstd:native:design-census#Revolved:projection": "regenerated",
+                "fcstd:native:design-census#Seam:projection": "regenerated",
+                "fcstd:native:design-census#Sheet:projection": "regenerated",
+                "fcstd:native:design-census#Solid:projection": "regenerated",
+                "fcstd:native:design-census#Swept:projection": "regenerated",
+                "fcstd:native:design-census#Void:projection": "regenerated",
+                "fcstd:native:design-census#Wire:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -323,6 +308,7 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:element-map#Compound:Shape:map": "written",
+                "fcstd:native:element-map#CurveCarriers:Shape:map": "written",
                 "fcstd:native:element-map#MultiShell:Shape:map": "written"
               }
             },
@@ -350,19 +336,19 @@
             "objects": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:object#Compound": "written",
+                "fcstd:native:object#Compound": "regenerated",
                 "fcstd:native:object#CorpusMetadata": "written",
-                "fcstd:native:object#CurveCarriers": "written",
-                "fcstd:native:object#Degenerate": "written",
-                "fcstd:native:object#FreeformSurface": "written",
-                "fcstd:native:object#MultiShell": "written",
-                "fcstd:native:object#Revolved": "written",
-                "fcstd:native:object#Seam": "written",
-                "fcstd:native:object#Sheet": "written",
-                "fcstd:native:object#Solid": "written",
-                "fcstd:native:object#Swept": "written",
-                "fcstd:native:object#Void": "written",
-                "fcstd:native:object#Wire": "written"
+                "fcstd:native:object#CurveCarriers": "regenerated",
+                "fcstd:native:object#Degenerate": "regenerated",
+                "fcstd:native:object#FreeformSurface": "regenerated",
+                "fcstd:native:object#MultiShell": "regenerated",
+                "fcstd:native:object#Revolved": "regenerated",
+                "fcstd:native:object#Seam": "regenerated",
+                "fcstd:native:object#Sheet": "regenerated",
+                "fcstd:native:object#Solid": "regenerated",
+                "fcstd:native:object#Swept": "regenerated",
+                "fcstd:native:object#Void": "regenerated",
+                "fcstd:native:object#Wire": "regenerated"
               }
             },
             "product_nodes": {
@@ -382,21 +368,20 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#Compound:Label": "written",
-                "fcstd:native:property#Compound:Label2": "written",
-                "fcstd:native:property#Compound:Placement": "regenerated",
+                "fcstd:native:property#Compound:Label": "regenerated",
+                "fcstd:native:property#Compound:Label2": "regenerated",
                 "fcstd:native:property#Compound:Shape": "regenerated",
                 "fcstd:native:property#Compound:ShapeMaterial": "written",
-                "fcstd:native:property#Compound:Visibility": "written",
+                "fcstd:native:property#Compound:Visibility": "regenerated",
                 "fcstd:native:property#Compound:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "written",
@@ -405,80 +390,71 @@
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "written",
                 "fcstd:native:property#CorpusMetadata:Visibility": "written",
-                "fcstd:native:property#CurveCarriers:Label": "written",
-                "fcstd:native:property#CurveCarriers:Label2": "written",
-                "fcstd:native:property#CurveCarriers:Placement": "regenerated",
+                "fcstd:native:property#CurveCarriers:Label": "regenerated",
+                "fcstd:native:property#CurveCarriers:Label2": "regenerated",
+                "fcstd:native:property#CurveCarriers:Shape": "regenerated",
                 "fcstd:native:property#CurveCarriers:ShapeMaterial": "written",
-                "fcstd:native:property#CurveCarriers:Visibility": "written",
+                "fcstd:native:property#CurveCarriers:Visibility": "regenerated",
                 "fcstd:native:property#CurveCarriers:_ElementMapVersion": "written",
-                "fcstd:native:property#Degenerate:Label": "written",
-                "fcstd:native:property#Degenerate:Label2": "written",
-                "fcstd:native:property#Degenerate:Placement": "regenerated",
+                "fcstd:native:property#Degenerate:Label": "regenerated",
+                "fcstd:native:property#Degenerate:Label2": "regenerated",
                 "fcstd:native:property#Degenerate:Shape": "regenerated",
                 "fcstd:native:property#Degenerate:ShapeMaterial": "written",
-                "fcstd:native:property#Degenerate:Visibility": "written",
+                "fcstd:native:property#Degenerate:Visibility": "regenerated",
                 "fcstd:native:property#Degenerate:_ElementMapVersion": "written",
-                "fcstd:native:property#FreeformSurface:Label": "written",
-                "fcstd:native:property#FreeformSurface:Label2": "written",
-                "fcstd:native:property#FreeformSurface:Placement": "regenerated",
+                "fcstd:native:property#FreeformSurface:Label": "regenerated",
+                "fcstd:native:property#FreeformSurface:Label2": "regenerated",
                 "fcstd:native:property#FreeformSurface:Shape": "regenerated",
                 "fcstd:native:property#FreeformSurface:ShapeMaterial": "written",
-                "fcstd:native:property#FreeformSurface:Visibility": "written",
+                "fcstd:native:property#FreeformSurface:Visibility": "regenerated",
                 "fcstd:native:property#FreeformSurface:_ElementMapVersion": "written",
-                "fcstd:native:property#MultiShell:Label": "written",
-                "fcstd:native:property#MultiShell:Label2": "written",
-                "fcstd:native:property#MultiShell:Placement": "regenerated",
+                "fcstd:native:property#MultiShell:Label": "regenerated",
+                "fcstd:native:property#MultiShell:Label2": "regenerated",
                 "fcstd:native:property#MultiShell:Shape": "regenerated",
                 "fcstd:native:property#MultiShell:ShapeMaterial": "written",
-                "fcstd:native:property#MultiShell:Visibility": "written",
+                "fcstd:native:property#MultiShell:Visibility": "regenerated",
                 "fcstd:native:property#MultiShell:_ElementMapVersion": "written",
-                "fcstd:native:property#Revolved:Label": "written",
-                "fcstd:native:property#Revolved:Label2": "written",
-                "fcstd:native:property#Revolved:Placement": "regenerated",
+                "fcstd:native:property#Revolved:Label": "regenerated",
+                "fcstd:native:property#Revolved:Label2": "regenerated",
                 "fcstd:native:property#Revolved:Shape": "regenerated",
                 "fcstd:native:property#Revolved:ShapeMaterial": "written",
-                "fcstd:native:property#Revolved:Visibility": "written",
+                "fcstd:native:property#Revolved:Visibility": "regenerated",
                 "fcstd:native:property#Revolved:_ElementMapVersion": "written",
-                "fcstd:native:property#Seam:Label": "written",
-                "fcstd:native:property#Seam:Label2": "written",
-                "fcstd:native:property#Seam:Placement": "regenerated",
+                "fcstd:native:property#Seam:Label": "regenerated",
+                "fcstd:native:property#Seam:Label2": "regenerated",
                 "fcstd:native:property#Seam:Shape": "regenerated",
                 "fcstd:native:property#Seam:ShapeMaterial": "written",
-                "fcstd:native:property#Seam:Visibility": "written",
+                "fcstd:native:property#Seam:Visibility": "regenerated",
                 "fcstd:native:property#Seam:_ElementMapVersion": "written",
-                "fcstd:native:property#Sheet:Label": "written",
-                "fcstd:native:property#Sheet:Label2": "written",
-                "fcstd:native:property#Sheet:Placement": "regenerated",
+                "fcstd:native:property#Sheet:Label": "regenerated",
+                "fcstd:native:property#Sheet:Label2": "regenerated",
                 "fcstd:native:property#Sheet:Shape": "regenerated",
                 "fcstd:native:property#Sheet:ShapeMaterial": "written",
-                "fcstd:native:property#Sheet:Visibility": "written",
+                "fcstd:native:property#Sheet:Visibility": "regenerated",
                 "fcstd:native:property#Sheet:_ElementMapVersion": "written",
-                "fcstd:native:property#Solid:Label": "written",
-                "fcstd:native:property#Solid:Label2": "written",
-                "fcstd:native:property#Solid:Placement": "regenerated",
+                "fcstd:native:property#Solid:Label": "regenerated",
+                "fcstd:native:property#Solid:Label2": "regenerated",
                 "fcstd:native:property#Solid:Shape": "regenerated",
                 "fcstd:native:property#Solid:ShapeMaterial": "written",
-                "fcstd:native:property#Solid:Visibility": "written",
+                "fcstd:native:property#Solid:Visibility": "regenerated",
                 "fcstd:native:property#Solid:_ElementMapVersion": "written",
-                "fcstd:native:property#Swept:Label": "written",
-                "fcstd:native:property#Swept:Label2": "written",
-                "fcstd:native:property#Swept:Placement": "regenerated",
+                "fcstd:native:property#Swept:Label": "regenerated",
+                "fcstd:native:property#Swept:Label2": "regenerated",
                 "fcstd:native:property#Swept:Shape": "regenerated",
                 "fcstd:native:property#Swept:ShapeMaterial": "written",
-                "fcstd:native:property#Swept:Visibility": "written",
+                "fcstd:native:property#Swept:Visibility": "regenerated",
                 "fcstd:native:property#Swept:_ElementMapVersion": "written",
-                "fcstd:native:property#Void:Label": "written",
-                "fcstd:native:property#Void:Label2": "written",
-                "fcstd:native:property#Void:Placement": "regenerated",
+                "fcstd:native:property#Void:Label": "regenerated",
+                "fcstd:native:property#Void:Label2": "regenerated",
                 "fcstd:native:property#Void:Shape": "regenerated",
                 "fcstd:native:property#Void:ShapeMaterial": "written",
-                "fcstd:native:property#Void:Visibility": "written",
+                "fcstd:native:property#Void:Visibility": "regenerated",
                 "fcstd:native:property#Void:_ElementMapVersion": "written",
-                "fcstd:native:property#Wire:Label": "written",
-                "fcstd:native:property#Wire:Label2": "written",
-                "fcstd:native:property#Wire:Placement": "regenerated",
+                "fcstd:native:property#Wire:Label": "regenerated",
+                "fcstd:native:property#Wire:Label2": "regenerated",
+                "fcstd:native:property#Wire:Shape": "regenerated",
                 "fcstd:native:property#Wire:ShapeMaterial": "written",
-                "fcstd:native:property#Wire:Visibility": "written",
+                "fcstd:native:property#Wire:Visibility": "regenerated",
                 "fcstd:native:property#Wire:_ElementMapVersion": "written"
               }
             },
@@ -486,6 +462,7 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:shape-payload#Compound:Shape:Compound.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#CurveCarriers:Shape:CurveCarriers.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#Degenerate:Shape:Degenerate.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#FreeformSurface:Shape:FreeformSurface.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#MultiShell:Shape:MultiShell.Shape.brp": "regenerated",
@@ -494,7 +471,8 @@
                 "fcstd:native:shape-payload#Sheet:Shape:Sheet.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#Solid:Shape:Solid.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#Swept:Shape:Swept.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#Void:Shape:Void.Shape.brp": "regenerated"
+                "fcstd:native:shape-payload#Void:Shape:Void.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Wire:Shape:Wire.Shape.brp": "regenerated"
               }
             },
             "string_tables": {

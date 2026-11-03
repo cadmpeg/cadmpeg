@@ -134,7 +134,9 @@ declarations, in the same order and with the same names. Each `ObjectDeps.Count`
 of `Dep` children. `ObjectDeps` names are unique. An optional `AllowPartial` is a positive integer
 and remains attached to its object. A section without `Dependencies` contains no `ObjectDeps`
 elements. Dependency records preserve directed edges; the native envelope does not require the
-dependency graph to be acyclic.
+dependency graph to be acyclic. For non-container features, feature dependencies are the
+link-property operands of the definition, in source order. `ObjectDeps` records are native
+and add no feature dependency, although the dense-ordinal ranking may use their edges.
 
 ## 3. Version dispatch
 
@@ -183,6 +185,21 @@ contain one `LinkSub` with a `value` object name and a `count` of `Sub` children
 `count` equals the number of `Link` children, and each child has an `obj` object name and a `sub`
 subelement name. A `Link` root, a `Link` child, or a `Sub` child in these local carriers has no
 element children. `PropertyPlacementLink` uses the `PropertyLink` grammar.
+
+A local link with one or more subelement names projects as a subelement reference
+carrying the linked object's native identity, or no object when the source value
+is empty; a local link with no subelement name projects as a plain reference, or
+as an empty reference when the source value is also empty. A link into another
+document projects as an external reference carrying the file text and the
+possibly absent object name with its subelement names. A value slot whose part
+was given up stays a hole at its source position. `App::PropertyMap` holds a
+`Map` root with a count and ordered `Item` key/value pairs; repeated keys stay
+separate entries in source order, and the map projects as one map attribute
+value. `App::PropertyPythonObject` in JSON mode projects its decoded JSON tree
+as one JSON attribute value. An `ExpressionEngine` row whose path selects a held
+control parameter belongs to that parameter's expression; any other admitted
+row projects as one expression attribute value with its path, parameter-token
+expression, and comment.
 
 `PropertyXLink`, `PropertyXLinkSub`, and `PropertyXLinkSubHidden` contain one `XLink`. Its `name`
 is the object name. An optional `file` is the external document path; an absent or empty `file`
@@ -1204,7 +1221,9 @@ Neutral presentation dispatch requires both the exact property name and runtime 
 are `App::PropertyColor`; shape material is `App::PropertyMaterial`; face, line, and point color
 arrays are `App::PropertyColorList`; `ShapeAppearance` is `App::PropertyMaterialList`; and line
 width and point size are `App::PropertyFloatConstraint`. A same-named property of another runtime
-type remains native and does not populate the neutral field.
+type remains native and does not populate the neutral field. A material slot's `image` is the
+texture image text (base64 of the image bytes) and `imagePath` is a texture file path, used when
+`image` is empty; an empty string means no value.
 
 The neutral view-provider carrier set is closed. This is a CADIR decision: `ShowInTree` and
 `OnTopWhenSelected` remain native because they control the application tree and selection overlay,
@@ -1219,15 +1238,16 @@ standard and module-defined providers alike and does not infer a neutral field f
 value tag, or numeric type alone.
 
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
-scalars describe the application object's exact-shape property named `Shape`. They produce an
-object appearance and explicit bindings only for bodies transferred from that property. Other
-exact-shape properties on the same object do not inherit this view-provider state. Packed colors
-decode as red, green, blue, and reserved low byte; the independent transparency percentage
-determines opacity. The effective body display fields mirror this object-level assignment, except
-that intermediate shapes remain hidden under the structural rule above.
-`ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
-color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
-transparency, four packed material colors, shininess, and UUID. Multiple materials correspond in
+scalars describe the application object's exact-shape property named `Shape`. The shape color
+feeds the object's neutral appearance and its binding to every body transferred from that
+property, carrying the shape material values when a shape material is present. No body display
+field is filled from this color. `ShapeAppearance` is the current shape material carrier with
+one appearance per list entry: a single entry binds every shape body, and each entry of a longer
+list binds the material of its position to the face of the same position. When the entry count
+differs from the face count, or the group is missing, the decoder charges
+`appearance.topology-color-count-mismatch`, makes no face binding, and still creates the
+entry appearances. `DiffuseColor`, `LineColorArray`, and `PointColorArray` keep their appearances
+with no display-colour copy. Multiple materials correspond in
 order to the shape's indexed Face subelements. These indices belong to the saved shape topology;
 they do not require persistent element names. An element-map group can name only a subset of the
 indexed subelements, or describe ranges through child maps, so its direct name count is not the
@@ -1955,9 +1975,11 @@ properties, with an Error loss, so independent content still forms a valid archi
 The current synthesized writer drops subds, assets, feature topology bindings,
 configurations, spatial sketches and their entities/constraints, drawings, semantic
 annotations, tessellations, PMI, and presentation layers. Unconsumed admitted
-scalar, vector, and simple-reference properties project to neutral attributes
-and are written from those attributes. Other admitted typed property forms
-remain native content and receive a named projection loss. Opaque payloads stay
+scalar, vector, link, map, JSON, UUID, and integer-list properties project to
+neutral attributes and are written from those attributes. Identity-only Python
+payloads, object materials, and other admitted typed property forms without a
+neutral home remain native content and are re-emitted without an attribute or
+a loss. Opaque payloads stay
 in fidelity and mark their served classes unrepresented. Each populated
 dropped arena has an export loss. Geometry omissions use Error severity; unsupported
 nonstructural metadata uses Warning. Omitted native namespaces use the shared

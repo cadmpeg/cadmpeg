@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6177,
-      "payload_sha256": "ad7d4c7f048316b701828eda4c440109524b8bfe49194467fc8e03f9473a3dc6"
+      "payload_len": 6148,
+      "payload_sha256": "3dd74e7d5f2a9be53d6ed030c9947ec02f5110d72fdf30bebe43af1a7b1be3a4"
     },
     {
       "name": "BinaryCarrier.brp",
@@ -25,7 +25,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 13,
+        "attributes": 19,
         "bodies": 1,
         "coedges": 9,
         "colliders": 0,
@@ -37,12 +37,13 @@
         "faces": 3,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 1,
         "loops": 3,
         "mass_properties": 0,
         "native.fcstd.applications": 2,
         "native.fcstd.attachments": 1,
         "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 2,
         "native.fcstd.objects": 2,
@@ -158,7 +159,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#BinaryCarrier:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.properties`: fcstd:native:property#BinaryCarrier:ExpressionEngine, fcstd:native:property#BinaryCarrier:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -189,7 +190,10 @@
               }
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#BinaryCarrier:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -227,7 +231,7 @@
             "objects": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:object#BinaryCarrier": "written",
+                "fcstd:native:object#BinaryCarrier": "regenerated",
                 "fcstd:native:object#CorpusMetadata": "written"
               }
             },
@@ -248,21 +252,20 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Label": "written",
-                "fcstd:native:property#BinaryCarrier:Label2": "written",
-                "fcstd:native:property#BinaryCarrier:Placement": "regenerated",
+                "fcstd:native:property#BinaryCarrier:Label": "regenerated",
+                "fcstd:native:property#BinaryCarrier:Label2": "regenerated",
                 "fcstd:native:property#BinaryCarrier:Shape": "regenerated",
                 "fcstd:native:property#BinaryCarrier:ShapeMaterial": "written",
-                "fcstd:native:property#BinaryCarrier:Visibility": "written",
+                "fcstd:native:property#BinaryCarrier:Visibility": "regenerated",
                 "fcstd:native:property#BinaryCarrier:_ElementMapVersion": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "written",
