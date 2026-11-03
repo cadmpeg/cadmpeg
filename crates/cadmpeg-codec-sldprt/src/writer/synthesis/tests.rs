@@ -659,3 +659,50 @@ fn multi_segment_composites_keep_their_refusal() {
     )));
     assert!(losses.is_empty());
 }
+
+#[test]
+fn incoherent_edge_endpoints_are_carried_as_stated() {
+    use cadmpeg_ir::topology::ParameterInterval;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let edge_id = ir.model.edges[0].id.clone();
+    ir.model.edges[0].set_param_range(Some(
+        ParameterInterval::new([0.0, 1.0]).expect("unit range admitted"),
+    ));
+    let end = ir.model.edges[0].end.clone();
+    let point = ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == end)
+        .expect("end vertex held")
+        .point
+        .clone();
+    let record = ir
+        .model
+        .points
+        .iter_mut()
+        .find(|record| record.id == point)
+        .expect("end point held");
+    let moved = record.position().get();
+    record.set_position(
+        cadmpeg_ir::features::FinitePoint3::new([moved.x + 5.0, moved.y, moved.z].into())
+            .expect("moved point is finite"),
+    );
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("neutral validation runs");
+    assert!(
+        validation.findings.iter().any(|finding| finding
+            .message
+            .starts_with("edge curve endpoints miss the edge's vertex positions")
+            && finding.entity.as_deref() == Some(edge_id.as_str())),
+        "the moved vertex is genuinely incoherent with its curve"
+    );
+    let mut losses = Vec::new();
+    super::cascade_validation_errors(&mut ir, &mut losses)
+        .expect("an incoherent edge does not refuse the write");
+    assert!(
+        ir.model.edges.iter().any(|edge| edge.id == edge_id),
+        "the incoherent edge is carried, not dropped"
+    );
+}
