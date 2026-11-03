@@ -361,8 +361,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-nx`       | `src/jt_topology.rs`                               | `MAX_TOPOLOGY_SLOTS`                      | `8_000_000`                                             | 2    | Running vertex and face slot total before `alloc_filled`. Excess leaves the topology undecoded.                                                                                                                                                                              |
 | `cadmpeg-codec-nx`       | `src/om/state_block.rs`                            | `MAX_STATE_BLOCK_TAIL_BYTES`              | `64 * 1024`                                             | 1    | Tail admitted after a state-block path when no exact boundary exists; a framing discriminator.                                                                                                                                                                               |
 | `cadmpeg-codec-nx`       | `src/om/state_counter.rs`                          | `MAX_COUNTER_TAIL_BYTES`                  | `64`                                                    | 1    | Tail admitted after a counter run; a framing discriminator.                                                                                                                                                                                                                  |
-| `cadmpeg-parasolid`      | `src/deltas/pmark_state.rs`                        | `MAX_XMT`                                 | `65_535 * 32_767 + 32_768`                              | 1    | Largest XMT identity the escaped two-word encoding can express in a PMARK field. A larger value is malformed.                                                                                                                                                                |
-| `cadmpeg-parasolid`      | `src/deltas/section.rs`                            | `MAX_MAP_XMT`                             | `65_535 * 32_767 + 32_767`                              | 1    | Largest nonnull XMT identity of a Deltas map entry. A larger value ends the map section as malformed.                                                                                                                                                                        |
+| `cadmpeg-parasolid` | `src/pointer.rs` | `MAX_VALUE` | `32_768 * 32_767` | 1 | Largest value of the two-word pointer form, with an `int16` remainder and quotient. A larger value does not encode, and an XMT identity above it is refused. |
 | `cadmpeg-codec-nx`       | `src/om/state_status.rs`                           | `MAX_OPAQUE_STATUS_BYTES`                 | `64 * 1024`                                             | 1    | Window searched for the opaque status terminator.                                                                                                                                                                                                                            |
 | `cadmpeg-codec-nx`       | `src/decode/geometry_work.rs`                      | `MAX_ADAPTIVE_GEOMETRY_WORK`              | `8_000_000`                                             | 4    | Model-wide `GeometryWorkBudget` for adaptive certification (`build.rs`). Exhaustion leaves results untyped and reports `geometry.adaptive-work-bounded`. Each of the five model-wide geometry limits is the larger of its constant and `GEOMETRY_WORK_PER_RECORD` (4096) × selected Parasolid records. |
 | `cadmpeg-codec-nx`       | `src/decode/geometry_work.rs`                      | `MAX_PCURVE_COMPLETION_GEOMETRY_WORK`     | `8_000_000`                                             | 4    | Floor of the model-wide geometry budget for intersection pcurve completion, scaled like the adaptive row. Exhaustion leaves lanes incomplete and reports `intersection.pcurve-completion-bounded`. |
@@ -399,6 +398,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/container.rs`                                 | `MAX_UNCOMP`                              | `512 * 1024 * 1024`                                     | 2    | Declared uncompressed size of a block-marker candidate. Excess rejects the candidate and the marker walk continues.                                                                                                                                                          |
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
+| `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_STRING_NODE_BYTES` | `4096` | 1 | Reader's framing window for the stated text length of a KEY or CHAR_VALUES node in the topology scope pass. A node that states a longer text does not frame, and its bytes are scanned as other unframed bytes. |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_DIMENSIONS`                          | `7`                                                     | 1    | Dimension slots of the recognized hole-sketch shape. More dimensions mean the shape does not match (`None`).                                                                                                                                                                 |
@@ -519,25 +519,25 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 302.
+Production `MAX_*` constants: 304.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 39    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 151   |
+| 4    | Local work cap             | 153   |
 | N    | Not a decode bound         | 41    |
-|      | Total                      | 302   |
+|      | Total                      | 304   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 2, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 20,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 33,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
 `cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 

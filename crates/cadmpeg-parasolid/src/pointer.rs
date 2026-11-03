@@ -8,7 +8,7 @@ use cadmpeg_core::decode::View;
 const QUOTIENT_UNIT: u32 = 32_767;
 
 /// The largest pointer: quotient and remainder magnitude 32767.
-pub const MAX: u32 = 32_768 * 32_767;
+pub const MAX_VALUE: u32 = 32_768 * 32_767;
 
 /// Read one complete pointer and advance the view.
 ///
@@ -57,7 +57,7 @@ pub fn write(out: &mut Vec<u8>, value: u32) -> Option<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{read, write, MAX};
+    use super::{read, write, MAX_VALUE};
     use cadmpeg_core::decode::View;
 
     #[test]
@@ -75,7 +75,7 @@ mod tests {
             (&[0x80, 0x01, 0, 1][..], 65_534),
             (&[0xff, 0xff, 0, 2][..], 65_535),
             (&[0xff, 0xfe, 0, 2][..], 0x1_0000),
-            (&[0x80, 0x01, 0x7f, 0xff][..], MAX),
+            (&[0x80, 0x01, 0x7f, 0xff][..], MAX_VALUE),
         ] {
             let mut view = View::over_retained(bytes);
             assert_eq!(read(&mut view), Some(expected));
@@ -85,14 +85,14 @@ mod tests {
 
     #[test]
     fn written_pointers_take_the_shortest_form_and_read_back() {
-        for value in [0, 1, 0x7fff, 0x8000, 36_225, 65_534, 65_535, 0x1_0000, MAX] {
+        for value in [0, 1, 0x7fff, 0x8000, 36_225, 65_534, 65_535, 0x1_0000, MAX_VALUE] {
             let mut bytes = Vec::new();
             write(&mut bytes, value).unwrap();
             assert_eq!(bytes.len(), if value <= 0x7fff { 2 } else { 4 });
             let mut view = View::over_retained(&bytes);
             assert_eq!(read(&mut view), Some(value));
         }
-        assert_eq!(write(&mut Vec::new(), MAX + 1), None);
+        assert_eq!(write(&mut Vec::new(), MAX_VALUE + 1), None);
     }
 
     #[test]

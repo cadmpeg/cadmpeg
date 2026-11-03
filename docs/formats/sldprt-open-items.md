@@ -80,7 +80,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a complete variable-radius law, including intermediate controls, map to the parameterization and individual faces of every result patch?
 
-**Known.** The design law and evaluated result have separate carriers. An owned generated-surface identity joins a typed FACE through its complete `FACE_ID_2001` identity; the FACE's surface reference selects the stored NURBS carrier. Resolve the attribute definition's identifier, not an adjacent KEY name. Two independently checked joins retain ordered endpoint radii of 5–50 mm and 50–4 mm, and four rational NURBS endpoint sections reproduce those radii. The existing reader retains both laws and the generated identities. These bounded observations do not establish a corpus census or a general interpolation rule.
+**Known.** The design law and evaluated result have separate carriers. An owned generated-surface identity joins a typed FACE through its complete `FACE_ID_2001` identity; the FACE's surface reference selects the stored NURBS carrier. Resolve the attribute definition's identifier, not an adjacent KEY name. Two independently checked joins retain ordered endpoint radii of 5–50 mm and 50–4 mm, and four rational NURBS endpoint sections reproduce those radii. The existing reader retains both laws and the generated identities.
 
 **Need.** Prove intermediate-control parameterization, complete selector-tail and collision behavior, and the explicit per-feature result-face association across arbitrary patches. Missing or nonunique complete identities must remain unresolved; geometric resemblance and history order cannot choose a result.
 

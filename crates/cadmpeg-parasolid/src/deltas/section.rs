@@ -50,7 +50,7 @@ pub(crate) enum MapRead {
 impl TryFrom<[u32; 2]> for MapEntry {
     type Error = &'static str;
     fn try_from([xmt, kind]: [u32; 2]) -> Result<Self, Self::Error> {
-        if xmt > crate::pointer::MAX {
+        if xmt > crate::pointer::MAX_VALUE {
             return Err("map XMT exceeds the canonical encoding range");
         }
         Ok(Self(
