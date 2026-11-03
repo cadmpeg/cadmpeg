@@ -15,6 +15,7 @@ mod synthesis;
 pub(crate) mod target;
 mod write_error;
 
+use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
@@ -128,6 +129,33 @@ pub(crate) fn write_semantic_with_records(
     )
 }
 
+/// Validation Errors the writer carries as stated instead of refusing.
+///
+/// An edge whose curve endpoints miss its vertex positions (or run against
+/// its curve) is incoherent input, but its curve and vertex records encode
+/// structurally on their own: the lump carries both, and the re-decode
+/// holds the same values. Refusing the write would drop the whole document
+/// for one incoherent edge, so the writer carries the edge as stated and
+/// leaves the incoherence to the check report (#237).
+fn write_through_validation_error(
+    finding: &cadmpeg_ir::report::check::Finding,
+    ir: &CadIr,
+) -> bool {
+    use cadmpeg_ir::report::check::Check;
+    if !matches!(finding.check, Check::GeometricConsistency) {
+        return false;
+    }
+    if !finding
+        .message
+        .starts_with("edge curve endpoints miss the edge's vertex positions")
+        && !finding.message.starts_with("edge runs against its curve")
+    {
+        return false;
+    }
+    let entity = finding.entity.as_deref().unwrap_or_default();
+    ir.model.edges.iter().any(|edge| edge.id.as_str() == entity)
+}
+
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
     ir: &CadIr,
@@ -198,13 +226,12 @@ pub(super) fn write_semantic_at(
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
     let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("IR validation failed", |finding| finding.message.as_str());
-        return Err(CodecError::Malformed(detail.into()));
+    let blocking = validation.findings.iter().find(|finding| {
+        finding.severity >= cadmpeg_ir::report::Severity::Error
+            && !write_through_validation_error(finding, &normalized)
+    });
+    if let Some(finding) = blocking {
+        return Err(CodecError::Malformed(finding.message.clone()));
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -239,15 +266,12 @@ pub(super) fn write_semantic_at(
     };
     custom_properties::synchronize(ir, &mut native)?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("transformed IR validation failed", |finding| {
-                finding.message.as_str()
-            });
-        return Err(CodecError::Malformed(detail.into()));
+    let blocking = validation.findings.iter().find(|finding| {
+        finding.severity >= cadmpeg_ir::report::Severity::Error
+            && !write_through_validation_error(finding, ir)
+    });
+    if let Some(finding) = blocking {
+        return Err(CodecError::Malformed(finding.message.clone()));
     }
     check_semantic_support(ir, annotations)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
@@ -463,6 +487,7 @@ pub(super) fn write_semantic_at(
         &emitted_sections,
         retain_native_brep,
         patch_active_configuration,
+        &mut normalization_losses,
     )?;
     consumed_source_layout |= !opaque.is_empty();
     let document_envelope = crate::container::first_solidworks_envelope(
@@ -963,35 +988,30 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 
 /// The u8 UTF-16 code-unit count of one SWObjects material name.
 pub(crate) fn material_name_len(name: &str) -> Result<u8, CodecError> {
-    let count = name.encode_utf16().count();
-    if u64::try_from(count).is_ok_and(|count| count > CAPACITY_FIELDS[0].limit) {
+    let units = name.encode_utf16().count();
+    if u64::try_from(units).is_ok_and(|units| units > CAPACITY_FIELDS[0].limit) {
         // (O-capacity): the target field cannot encode a value outside its width.
         return Err(CodecError::NotImplemented(
             "SLDPRT material name is too long".into(),
         ));
     }
-    u8::try_from(count).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("SLDPRT material name is too long".into())
-    })
+    u8::try_from(units)
+        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))
 }
 
 /// The u32 type id of one container section by position.
 pub(crate) fn section_type_id_at(index: usize) -> Result<u32, CodecError> {
-    let offset = u32::try_from(index).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
-    })?;
-    if u64::from(offset) > CAPACITY_FIELDS[1].limit {
+    if u64::try_from(index).is_ok_and(|index| index > CAPACITY_FIELDS[1].limit) {
         // (O-capacity): the target field cannot encode a value outside its width.
         return Err(CodecError::NotImplemented(
             "SLDPRT section count exceeds type-id space".into(),
         ));
     }
-    0x20u32.checked_add(offset).ok_or_else(|| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("SLDPRT type-id overflow".into())
-    })
+    0x20u32
+        .checked_add(u32::try_from(index).map_err(|_| {
+            CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
+        })?)
+        .ok_or_else(|| CodecError::NotImplemented("SLDPRT type-id overflow".into()))
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
@@ -1334,31 +1354,6 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-fn encodable_curve(geometry: &cadmpeg_ir::geometry::CurveGeometry) -> bool {
-    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-    if matches!(
-        geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-    ) {
-        return true;
-    }
-    curve_values(geometry, 1.0).is_ok()
-}
-
-fn encodable_surface(geometry: &cadmpeg_ir::geometry::SurfaceGeometry) -> bool {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-    let SurfaceGeometry::Solved(solved) = geometry else {
-        return false;
-    };
-    if matches!(solved, SolvedSurfaceGeometry::Nurbs(_)) {
-        return true;
-    }
-    let Some(reference) = geometry.solved().map(surface_reference) else {
-        return false;
-    };
-    surface_values(geometry, reference, 1.0).is_ok()
-}
-
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
@@ -1442,11 +1437,6 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    // Ownerless carriers stay representable without topology: an unreferenced
-    // support point, plane or curve still reappears when the target encodes
-    // it (§5.2). A carrier without source provenance is unreachable alone, so
-    // only referenced carriers and provenanced encodable ones stay. The
-    // boundary topology above and the pcurve uses below trim unconditionally.
     let points = subset
         .model
         .vertices
@@ -1456,27 +1446,27 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     subset
         .model
         .points
-        .retain(|point| points.contains(&point.id) || point.source_object.is_some());
+        .retain(|point| points.contains(&point.id));
     let surfaces = subset
         .model
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
-    subset.model.surfaces.retain(|surface| {
-        surfaces.contains(&surface.id)
-            || (surface.source_object.is_some() && encodable_surface(&surface.geometry))
-    });
+    subset
+        .model
+        .surfaces
+        .retain(|surface| surfaces.contains(&surface.id));
     let curves = subset
         .model
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
-    subset.model.curves.retain(|curve| {
-        curves.contains(&curve.id)
-            || (curve.source_object.is_some() && encodable_curve(&curve.geometry))
-    });
+    subset
+        .model
+        .curves
+        .retain(|curve| curves.contains(&curve.id));
     let pcurves = subset
         .model
         .coedges
@@ -1528,6 +1518,7 @@ fn opaque_blocks(
     emitted_sections: &HashSet<String>,
     retain_native_brep: bool,
     patch_active_configuration: bool,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let native = ir
         .native
@@ -1536,11 +1527,18 @@ fn opaque_blocks(
         .transpose()
         .map_err(CodecError::from)?;
     let mut seen = HashSet::new();
-    records
+    let mut unplaced = Vec::new();
+    let sections = records
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(record.id.as_str())?;
+            let provenance = match annotations.provenance.get(record.id.as_str()) {
+                Some(provenance) => provenance,
+                None => {
+                    unplaced.push(record.id.as_str().to_owned());
+                    return None;
+                }
+            };
             let section = provenance.stream();
             if matches!(
                 provenance.tag.as_deref(),
@@ -1585,7 +1583,13 @@ fn opaque_blocks(
                 }
                 return None;
             }
-            let mut payload = record.data?.to_vec();
+            let mut payload = match record.data {
+                Some(data) => data.to_vec(),
+                None => {
+                    unplaced.push(record.id.as_str().to_owned());
+                    return None;
+                }
+            };
             if let Some(active) = ir
                 .model
                 .configurations
@@ -1622,7 +1626,16 @@ fn opaque_blocks(
             }
             Some(Ok((section.to_string(), payload)))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if !unplaced.is_empty() {
+        unplaced.sort();
+        losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+            "{} retained block(s) have no provenance or payload and were not re-emitted: {}",
+            unplaced.len(),
+            unplaced.join(", ")
+        )));
+    }
+    Ok(sections)
 }
 
 fn retained_swobjects_sections(

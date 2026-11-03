@@ -39,6 +39,17 @@ fn cascade_validation_errors(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::report::check::Check;
+    // Errors the writer carries as stated need no drop: acknowledging the
+    // exact finding keeps the cascade from re-finding it on the next pass,
+    // while a later finding on the same record still blocks.
+    let mut acknowledged = std::collections::BTreeSet::new();
+    let acked = |finding: &&cadmpeg_ir::report::check::Finding,
+                 acknowledged: &std::collections::BTreeSet<(String, String)>| {
+        acknowledged.contains(&(
+            finding.entity.clone().unwrap_or_default(),
+            finding.message.clone(),
+        ))
+    };
     for _ in 0..1024 {
         let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
         let errors: Vec<_> = validation
@@ -46,14 +57,18 @@ fn cascade_validation_errors(
             .iter()
             .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
             .collect();
-        if errors.is_empty() {
+        let pending: Vec<_> = errors
+            .iter()
+            .filter(|finding| !acked(finding, &acknowledged))
+            .collect();
+        if pending.is_empty() {
             return Ok(());
         }
         // Cascade the first resolvable holder: a record that needs a record
         // the document does not hold, a repeated identity, or a wire edge
         // that lost its shell membership drops with its loss instead of
         // refusing the write. Anything else keeps its refusal below.
-        let cascaded = errors.iter().find(|finding| {
+        let cascaded = pending.iter().find(|finding| {
             let entity = finding.entity.clone().unwrap_or_default();
             if entity.is_empty() {
                 return false;
@@ -67,7 +82,17 @@ fn cascade_validation_errors(
             )
         });
         let Some(finding) = cascaded else {
-            let first = errors[0];
+            let carried = pending
+                .iter()
+                .find(|finding| super::write_through_validation_error(finding, projected));
+            if let Some(finding) = carried {
+                acknowledged.insert((
+                    finding.entity.clone().unwrap_or_default(),
+                    finding.message.clone(),
+                ));
+                continue;
+            }
+            let first = pending[0];
             return Err(CodecError::Malformed(first.message.clone()));
         };
         let entity = finding.entity.clone().unwrap_or_default();
@@ -220,7 +245,47 @@ pub(super) fn plan(
     // cannot be re-emitted or regenerated from. Clear such references and
     // write the neutral content without its native link (#237).
     null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
+    // A solved cache is the document's carrier, independently of the source
+    // partition. Reduce before the validation cascade so a construction the
+    // cache disagrees with does not refuse a write the cache can carry.
+    for surface in &mut projected.model.surfaces {
+        if let Some(cache) = surface.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "surface {} was written from its solved carrier",
+                surface.id
+            )));
+            surface.geometry = SurfaceGeometry::Solved(cache.clone());
+        }
+    }
+    for curve in &mut projected.model.curves {
+        if let Some(cache) = curve.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "curve {} was written from its solved carrier",
+                curve.id
+            )));
+            curve.geometry = CurveGeometry::Solved(cache.clone());
+        }
+    }
+    projected.model.procedural_surfaces.clear();
+    projected.model.procedural_curves.clear();
     cascade_validation_errors(&mut projected, &mut losses)?;
+    // D13: the synthesis base is the active configuration. A document with no
+    // active configuration still writes its base state instead of refusing at
+    // the semantic support gate below. design::prepare repeats this for the
+    // native lanes; the fidelity path keeps the decoder's association.
+    if !projected.model.configurations.is_empty()
+        && !projected
+            .model
+            .configurations
+            .iter()
+            .any(|configuration| configuration.active)
+    {
+        projected.model.configurations[0].active = true;
+        losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+            "configuration {}: no configuration was active; the base configuration acts",
+            projected.model.configurations[0].id
+        )));
+    }
     let retained_native = projected
         .native
         .namespace("sldprt")
@@ -257,7 +322,8 @@ pub(super) fn plan(
     // The encode session ceiling bounds the work on the input document: charge
     // its records so a caller ceiling refuses instead of truncating (#217).
     slot_context.charge_entities(
-        u64::try_from(input.ir.model.entity_count()).unwrap_or(u64::MAX),
+        u64::try_from(input.ir.model.entity_count())
+            .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
         "sldprt synthesis",
     )?;
     prepare_native(&slot_context, &mut projected, &mut losses)?;
@@ -265,27 +331,6 @@ pub(super) fn plan(
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
     presentation::reduce(&mut projected, &mut losses)?;
-    // A solved cache is the document's carrier, independently of the source partition.
-    for surface in &mut projected.model.surfaces {
-        if let Some(cache) = surface.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "surface {} was written from its solved carrier",
-                surface.id
-            )));
-            surface.geometry = SurfaceGeometry::Solved(cache.clone());
-        }
-    }
-    for curve in &mut projected.model.curves {
-        if let Some(cache) = curve.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "curve {} was written from its solved carrier",
-                curve.id
-            )));
-            curve.geometry = CurveGeometry::Solved(cache.clone());
-        }
-    }
-    projected.model.procedural_surfaces.clear();
-    projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
@@ -346,6 +391,11 @@ pub(super) fn plan(
             .as_ref()
             .is_none_or(|body| supported.contains(body))
     });
+    crate::history::write::configurations::ensure_default_configuration(
+        &mut projected,
+        &supported,
+        &mut losses,
+    )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
         design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;

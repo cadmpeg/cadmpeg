@@ -3,8 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::PartSpec;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
 use crate::native::{
     DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
@@ -51,7 +52,19 @@ struct DependencyInfo {
     order: usize,
 }
 
+/// Per-property-value part support for the decode path.
+///
+/// A value that cannot be read is given up as its own `freecad.property_value`
+/// part while the property record keeps its name and type with no body. The
+/// pure path passes no stages and stays strict.
+pub(crate) struct ValueStages<'a> {
+    pub ctx: &'a DecodeContext<'a>,
+    pub stage: &'a mut PartOutput,
+    pub view: View<'a>,
+}
+
 /// Recovered persistence graph.
+#[derive(Debug)]
 pub(crate) struct Graph {
     /// Declared objects.
     pub(crate) objects: Vec<ObjectRecord>,
@@ -135,7 +148,8 @@ pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
-    parse_document_impl(xml, schema, None, None, None)
+    let mut none = None;
+    parse_document_impl(xml, schema, None, None, None, &mut none)
 }
 
 pub(crate) fn parse_document_source_with_properties(
@@ -144,9 +158,18 @@ pub(crate) fn parse_document_source_with_properties(
     schema: Vocabulary,
     strings: Option<&document_properties::RootProperties>,
     declarations: Option<&object_parts::ObjectDeclarations>,
+    stages: Option<ValueStages<'_>>,
 ) -> Result<Graph, CodecError> {
     let source = source::Source::new(view, xml)?;
-    parse_document_impl(xml, schema, Some(&source), strings, declarations)
+    let mut stages = stages;
+    parse_document_impl(
+        xml,
+        schema,
+        Some(&source),
+        strings,
+        declarations,
+        &mut stages,
+    )
 }
 
 fn parse_document_impl(
@@ -155,6 +178,7 @@ fn parse_document_impl(
     source: Option<&source::Source<'_>>,
     strings: Option<&document_properties::RootProperties>,
     declarations: Option<&object_parts::ObjectDeclarations>,
+    stages: &mut Option<ValueStages<'_>>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     let mut losses = Vec::new();
@@ -346,6 +370,8 @@ fn parse_document_impl(
                         &mut losses,
                         source,
                         true,
+                        stages,
+                        &objects,
                     )?;
                 }
                 properties.sort_by_key(|property| (!property.is_transient(), property.order));
@@ -357,6 +383,8 @@ fn parse_document_impl(
                     &mut property_sources,
                     &mut losses,
                     source,
+                    stages,
+                    &objects,
                 )?;
             }
         }
@@ -473,6 +501,8 @@ fn parse_document_impl(
                     &mut property_sources,
                     &mut losses,
                     source,
+                    stages,
+                    &objects,
                 )?;
             }
         }
@@ -500,6 +530,8 @@ fn parse_document_impl(
                         &mut property_sources,
                         &mut losses,
                         source,
+                        stages,
+                        &objects,
                     )?;
                 }
             }
@@ -639,6 +671,8 @@ fn parse_properties(
     property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_>>,
+    stages: &mut Option<ValueStages<'_>>,
+    objects: &[ObjectRecord],
 ) -> Result<(), CodecError> {
     parse_properties_impl(
         container,
@@ -648,6 +682,8 @@ fn parse_properties(
         losses,
         source,
         false,
+        stages,
+        objects,
     )
 }
 
@@ -659,6 +695,8 @@ fn parse_properties_impl(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_>>,
     skip_adopted: bool,
+    stages: &mut Option<ValueStages<'_>>,
+    objects: &[ObjectRecord],
 ) -> Result<(), CodecError> {
     let property_nodes = container
         .children()
@@ -725,7 +763,7 @@ fn parse_properties_impl(
         if skip_adopted && document_properties::selected(node) {
             continue;
         }
-        let property = parse_persisted_property(node, owner, order, losses, source)?;
+        let property = parse_persisted_property(node, owner, order, source, stages, objects)?;
         property_sources.insert(property.id.clone(), crate::fidelity::property_source(node));
         output.push(property);
     }
@@ -768,15 +806,29 @@ fn parse_persisted_property(
     node: roxmltree::Node<'_, '_>,
     owner: &str,
     order: usize,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_>>,
+    stages: &mut Option<ValueStages<'_>>,
+    objects: &[ObjectRecord],
 ) -> Result<PropertyRecord, CodecError> {
     let mut property = property_header(node, owner, order, source)?;
-    let body = property_body(node, owner, &property.name, &property.type_name, losses)?;
-    if !matches!(body, crate::native::PropertyBody::Unreadable(_)) {
-        property.dynamic = dynamic_property_metadata(node, source)?;
+    property.dynamic = dynamic_property_metadata(node, source)?;
+    let name = property.name.clone();
+    let type_name = property.type_name.clone();
+    let Some(stages) = stages.as_mut() else {
+        property.body = Some(property_body(node, owner, &name, &type_name)?);
+        return Ok(property);
+    };
+    let extent = match node.children().find(roxmltree::Node::is_element) {
+        Some(value) => crate::fidelity::relative_xml_extent(stages.view, value.range())?,
+        None => crate::fidelity::relative_xml_extent(stages.view, node.range())?,
+    };
+    let mut spec = document_part("freecad.property_value");
+    if let Some(class) = crate::fidelity::property_value_class(objects, owner, &type_name) {
+        spec = spec.holding([class]);
     }
-    property.body = Some(body);
+    property.body = stages.ctx.decode_part(stages.stage, extent, spec, |_| {
+        Ok(property_body(node, owner, &name, &type_name)?)
+    })?;
     Ok(property)
 }
 
@@ -785,61 +837,40 @@ fn property_body(
     owner: &str,
     name: &str,
     type_name: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<crate::native::PropertyBody, CodecError> {
-    let mut payload_error = None;
     let links = if link_grammar(type_name).is_some() {
-        match parse_link_targets(node, type_name) {
-            Ok(links) => links,
-            Err(CodecError::Malformed(detail)) => {
-                losses.push(
-                    crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                        "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-                    )),
-                );
-                payload_error = Some(detail);
-                Vec::new()
-            }
-            Err(error) => return Err(error),
-        }
+        parse_link_targets(node, type_name).map_err(|error| match error {
+            CodecError::Malformed(detail) => CodecError::malformed(format_args!(
+                "property {owner}/{name} value cannot be read: {detail}"
+            )),
+            error => error,
+        })?
     } else {
         Vec::new()
     };
-    if payload_error.is_none() {
-        if let Err(error) = validate_scalar_payload(node, type_name) {
-            let detail = error.to_string();
-            losses.push(
-                crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                    "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-                )),
-            );
-            payload_error = Some(detail);
-        }
+    if let Err(error) = validate_scalar_payload(node, type_name) {
+        return Err(CodecError::malformed(format_args!(
+            "property {owner}/{name} value cannot be read: {error}"
+        )));
     }
     // Nested value elements copy overlapping XML ranges, so their total
-    // is bounded per property. A larger payload stays as its exact XML.
+    // is bounded per property. A larger payload is given up as its part.
     let value_xml_bytes = node
         .descendants()
-        .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
+        .filter(|value| value.is_element() && *value != node)
         .try_fold(0_usize, |total, value| {
             total.checked_add(value.range().len())
         });
     if value_xml_bytes.is_none_or(|bytes| bytes > MAX_PROPERTY_VALUE_XML_BYTES) {
-        let detail = format!(
-            "value XML copies exceed the {MAX_PROPERTY_VALUE_XML_BYTES}-byte value copy bound"
-        );
-        losses.push(
-            crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-            )),
-        );
-        payload_error = Some(detail);
+        return Err(CodecError::malformed(format_args!(
+            "property {owner}/{name} value cannot be read: value XML copies exceed the {MAX_PROPERTY_VALUE_XML_BYTES}-byte value copy bound"
+        )));
     }
     let mut values = Vec::new();
     let mut value_indices = HashMap::new();
     for (value_order, value) in node
         .descendants()
-        .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
+        .filter(|value| value.is_element() && *value != node)
         .enumerate()
     {
         value_indices.insert(value.id(), value_order);
@@ -868,14 +899,10 @@ fn property_body(
             }
         }
     }
-    Ok(if let Some(detail) = payload_error {
-        crate::native::PropertyBody::Unreadable(detail)
-    } else {
-        crate::native::PropertyBody::Persisted {
-            values,
-            links,
-            side_entries,
-        }
+    Ok(crate::native::PropertyBody::Persisted {
+        values,
+        links,
+        side_entries,
     })
 }
 
