@@ -346,11 +346,26 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         .configurations
         .iter_mut()
         .for_each(|configuration| configuration.active = false);
-    let error = crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut Vec::new())
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("requires exactly one active configuration"));
+    // D13 (#237): with no active configuration the synthesis base acts
+    // instead of refusing. The fidelity path still declines, so the plan
+    // falls back to synthesis with the base selected as active.
+    let mut encoded = Vec::new();
+    crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut encoded)
+        .expect("a configuration-less document synthesizes with its base active");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("synthesized base decodes");
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .count(),
+        1,
+        "synthesis selects exactly one active configuration"
+    );
 }
 
 #[test]
