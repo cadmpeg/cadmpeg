@@ -137,9 +137,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         ..F3dNative::default()
     };
     super::streams::reconcile(&mut native, losses);
+    // Native namespace storage orders every arena by record id, so the
+    // generated registry follows id order rather than the decoded file
+    // order. Sort by the same key here, and every dynamic class tag the
+    // writer remaps below names the position the type table actually holds.
     native
         .design_types
-        .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
+        .sort_by(|left, right| left.id().cmp(right.id()));
     native.construction_recipes.retain(|recipe| {
         recipe.record_index.is_some()
             && recipe.design.as_ref().is_none_or(|design| {
