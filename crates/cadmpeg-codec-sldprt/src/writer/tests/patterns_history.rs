@@ -174,16 +174,14 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    // The pattern omitting its seed cascades under W1 instead of refusing
+    // (#237): the write succeeds without the seedless pattern.
+    crate::test_support::plan_fixture_write_with_native_envelope(
         &inconsistent,
         decoded.source_fidelity(),
         &mut Vec::new(),
     )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("pattern omits seed feature"),
-        "{error}"
-    );
+    .expect("a pattern omitting its seed cascades");
 
     let mut encoded = Vec::new();
     crate::test_support::serialize_edited_history(
