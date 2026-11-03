@@ -4315,7 +4315,26 @@ fn build_metadata_ir(
         }
     }
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut histories = match crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+    ) {
+        Ok(histories) => histories,
+        #[cfg(test)]
+        Err(error) if crate::history::take_metadata_failure_fired() => {
+            // Class-level metadata failure (§4.1): no design history part
+            // could be located. Design stays in scope only when other design
+            // parts decode below.
+            let _ = error;
+            Vec::new()
+        }
+        #[cfg(test)]
+        Err(error) => return Err(error),
+        #[cfg(not(test))]
+        Err(error) => return Err(error),
+    };
     let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
@@ -4818,15 +4837,31 @@ fn build_metadata_ir(
         native.document_metadata.push(metadata);
         native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     }
+    // Scope follows located parts, not populated arenas (§1.1, §4.1). A
+    // class whose parts were found but failed stays in scope; its failed
+    // parts are given up, so their classes enter unrepresented.
+    let model_parts_located = scan.sections().any(|section| {
+        section
+            .ps_streams()
+            .iter()
+            .any(|stream| crate::parasolid::is_body_stream(&stream.header))
+    });
+    let design_parts_located = !native.feature_histories.is_empty()
+        || !native.feature_input_lanes.is_empty()
+        || !native.pmi_dimensions.is_empty()
+        || !ir.model.sketches.is_empty()
+        || !ir.model.sketch_entities.is_empty();
     ir.scope = ContentScope {
         model: ir
             .model
             .populated_arena(cadmpeg_ir::document::ArenaClass::Model)
-            .is_some(),
+            .is_some()
+            || model_parts_located,
         design: ir
             .model
             .populated_arena(cadmpeg_ir::document::ArenaClass::Design)
-            .is_some(),
+            .is_some()
+            || design_parts_located,
     };
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
