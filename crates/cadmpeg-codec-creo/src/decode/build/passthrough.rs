@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
-use crate::container::SectionRole;
 use crate::container::Section;
+use crate::container::SectionRole;
 
 use crate::decode::native::CreoArena;
 use cadmpeg_core::decode::DecodeContext;
@@ -37,10 +37,17 @@ pub(super) fn preserve_passthrough_sections(
 ) -> Result<Vec<(UnknownRecord, cadmpeg_ir::ArenaClasses)>, CodecError> {
     let mut unknowns = Vec::new();
     let driver_table = container::undecoded_driver_table_section(scan).map(Section::offset);
+    let incomplete: std::collections::BTreeSet<usize> = scan
+        .framing
+        .incomplete_sections
+        .iter()
+        .map(|section| section.offset)
+        .collect();
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
             || Some(section.offset()) == driver_table
+            || incomplete.contains(&section.offset())
             || scan
                 .framing
                 .expansion_losses
@@ -152,6 +159,21 @@ pub(super) fn preserve_passthrough_sections(
             ])
         } else if Some(section.offset()) == driver_table {
             cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
+        } else if incomplete.contains(&section.offset()) {
+            // A given-up section's bytes can hold either class; geometry and
+            // thumbnail sections keep their precise class below.
+            match section.role() {
+                SectionRole::PsbGeometry | SectionRole::Thumbnail => {
+                    cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+                }
+                SectionRole::ModelData => {
+                    cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
+                }
+                SectionRole::Metadata | SectionRole::Opaque => cadmpeg_ir::ArenaClasses::from([
+                    cadmpeg_ir::ArenaClass::Model,
+                    cadmpeg_ir::ArenaClass::Design,
+                ]),
+            }
         } else {
             cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
         };

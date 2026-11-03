@@ -742,8 +742,14 @@ fn full_decode_projects_thumbnail_as_asset_with_native_ref() {
     );
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
-    assert_eq!(asset.name.as_ref().map(|name| name.as_str()), Some("THMB_IMG_MAIN"));
-    assert_eq!(asset.media_type.as_ref().map(|media| media.as_str()), Some("image/jpeg"));
+    assert_eq!(
+        asset.name.as_ref().map(|name| name.as_str()),
+        Some("THMB_IMG_MAIN")
+    );
+    assert_eq!(
+        asset.media_type.as_ref().map(|media| media.as_str()),
+        Some("image/jpeg")
+    );
     let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
         panic!("thumbnail asset is embedded");
     };
@@ -755,7 +761,9 @@ fn full_decode_projects_thumbnail_as_asset_with_native_ref() {
         .source_fidelity()
         .retained_record(unknowns[0].id.as_str())
         .expect("retained thumbnail");
-    assert!(retained.untyped().contains(&cadmpeg_ir::document::ArenaClass::Model));
+    assert!(retained
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
     assert!(result
         .source_fidelity()
         .unrepresented()
@@ -793,14 +801,14 @@ fn full_decode_retains_undecoded_driver_table_section_named_by_loss() {
         .source_fidelity()
         .retained_record(&retained_id)
         .expect("retained driver-table section");
-    assert!(retained.untyped().contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert!(retained
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
     let loss = result
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.code == crate::loss::CreoLossCode::ConfigurationDriverUnresolved.kind()
-        })
+        .find(|loss| loss.code == crate::loss::CreoLossCode::ConfigurationDriverUnresolved.kind())
         .expect("driver-table loss names the retained record");
     assert!(loss.message.contains(&retained_id), "{loss:#?}");
     assert!(result
