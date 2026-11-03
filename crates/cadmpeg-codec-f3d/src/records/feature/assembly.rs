@@ -160,6 +160,7 @@ impl DesignAssemblyLegacyOperands {
             Ok(DesignAssemblyOperandFrame {
                 reference_record_index: references[index].value,
                 reference_offset: references[index].offset,
+                null_construction: false,
                 transform: transform.try_into()?,
                 transform_offset: solved.transform_offset,
             })
@@ -1455,6 +1456,10 @@ pub(crate) struct DesignAssemblyOperandFrame {
     /// Byte offset of `reference_record_index`.
     #[serde(skip)]
     pub(crate) reference_offset: Option<u64>,
+    /// The locator record carries the construction reference itself: the
+    /// frame names the locator record in place of a construction record.
+    #[serde(default)]
+    pub(crate) null_construction: bool,
     /// Row-major operand-local-to-model transform.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first transform scalar.
