@@ -32,6 +32,9 @@ pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
             "THMB_IMG_MAIN",
             "section"
         )),
+        "FamilyInf" => Some(cadmpeg_ir::identity_namespace!(
+            "creo", "FamilyInf", "section"
+        )),
         _ => None,
     }
 }

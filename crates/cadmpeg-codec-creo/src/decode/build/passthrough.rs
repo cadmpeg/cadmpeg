@@ -2,6 +2,7 @@
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
 use crate::container::SectionRole;
+use crate::container::Section;
 
 use crate::decode::native::CreoArena;
 use cadmpeg_core::decode::DecodeContext;
@@ -18,24 +19,28 @@ use super::super::native::annotate;
 use super::super::native::emit_arena;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-/// Retain PSB geometry, thumbnail payloads, and every failed expansion.
+/// Retain PSB geometry, thumbnail payloads, the undecoded `FamilyInf`
+/// driver-table section, and every failed expansion.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. The declared
 /// extent is the record, so a shortened region would retain bytes the source
 /// never stated.
 /// Retained sections with the neutral classes their bytes can hold (§1.3):
-/// geometry and thumbnail sections hold model bytes, while a section kept
-/// only because its compressed payload would not expand names both classes.
+/// geometry and thumbnail sections hold model bytes, the driver-table section
+/// holds design bytes, while a section kept only because its compressed
+/// payload would not expand names both classes.
 pub(super) fn preserve_passthrough_sections(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<(UnknownRecord, cadmpeg_ir::ArenaClasses)>, CodecError> {
     let mut unknowns = Vec::new();
+    let driver_table = container::undecoded_driver_table_section(scan).map(Section::offset);
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
+            || Some(section.offset()) == driver_table
             || scan
                 .framing
                 .expansion_losses
@@ -105,6 +110,13 @@ pub(super) fn preserve_passthrough_sections(
                     Exactness::ByteExact,
                 )
             }
+        } else if Some(section.offset()) == driver_table {
+            (
+                section_bytes,
+                section.offset(),
+                "familyinf_driver_table",
+                Exactness::Unknown,
+            )
         } else {
             (
                 section_bytes,
@@ -138,6 +150,8 @@ pub(super) fn preserve_passthrough_sections(
                 cadmpeg_ir::ArenaClass::Model,
                 cadmpeg_ir::ArenaClass::Design,
             ])
+        } else if Some(section.offset()) == driver_table {
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
         } else {
             cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
         };

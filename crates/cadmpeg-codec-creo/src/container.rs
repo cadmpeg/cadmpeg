@@ -1483,6 +1483,25 @@ fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTa
     Some(FamilyTableRecord { pointer, offset })
 }
 
+/// The `FamilyInf` section whose binary driver-table entity has no decoded
+/// grammar, when `drv_tbl_ptr` names one. The pointer is decoded
+/// (`CreoFamilyTableRecord`); the entity it names is not, so the section that
+/// frames it is the retained extent.
+pub(crate) fn undecoded_driver_table_section<'a>(
+    scan: &'a ContainerScan<'a>,
+) -> Option<&'a Section> {
+    if !matches!(
+        scan.framing.family_table?.pointer,
+        FamilyTablePointer::Entity(_)
+    ) {
+        return None;
+    }
+    scan.framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "FamilyInf")
+}
+
 fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
     let mut visible_namespace_present = false;
     for candidate in sections
