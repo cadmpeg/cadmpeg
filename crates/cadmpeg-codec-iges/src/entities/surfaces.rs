@@ -2122,8 +2122,8 @@ pub(super) fn project(
             ))
         })?;
         let bounds = RecordBounds::try_new([
-            Some(cached_interval[0]),
-            Some(cached_interval[1]),
+            Some(carrier_interval[0]),
+            Some(carrier_interval[1]),
             None,
             None,
         ])
@@ -2578,8 +2578,8 @@ pub(super) fn project(
                 )
                 .and_then(|admitted_payload| {
                     RecordBounds::try_new([
-                        Some(cached_interval[0]),
-                        Some(cached_interval[1]),
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
                         None,
                         None,
                     ])

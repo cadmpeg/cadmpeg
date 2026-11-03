@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record identities and located payloads with flat wire fields.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::pmdc::type_id_string;
@@ -114,6 +115,22 @@ pub(crate) fn push_record<T>(
         ordinal,
     ));
     Ok(())
+}
+
+/// Parse one framed bulk record inside its own part. A parse failure or a
+/// Part-scoped refusal gives up the record payload (§4.5) and admits nothing;
+/// a `Session` refusal or I/O error is returned.
+pub(crate) fn admit_record_part<T>(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    extent: View<'_>,
+    token: &str,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    let spec = crate::decode::part_spec("inventor.rse_record_body", extent, || {
+        crate::decode::expanded_bulk_stream(token)
+    })?;
+    ctx.decode_part(parts, extent, spec, |_| parse())
 }
 
 impl<T: RecordPayload> Located<T> {
