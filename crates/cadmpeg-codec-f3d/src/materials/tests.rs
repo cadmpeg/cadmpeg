@@ -1016,7 +1016,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
 }
 
 #[test]
-fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
+fn legacy_face_assignment_color_yields_to_bound_appearance() {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::topology::Color;
@@ -1070,7 +1070,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let mut ir = make_ir();
     crate::decode::resolve_face_appearance_bindings(&mut ir, std::slice::from_ref(&assignment))
         .expect("legacy face assignment");
-    assert_eq!(ir.model.faces[0].color, Some(assignment_color));
+    assert_eq!(ir.model.faces[0].color, None);
     assert_eq!(ir.model.appearance_bindings.len(), 1);
 
     let mut explicit = make_ir();
