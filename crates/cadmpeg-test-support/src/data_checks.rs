@@ -16,6 +16,8 @@ pub struct DecodeGolden {
     pub path: String,
     /// The `ir` member of the golden.
     pub ir: Value,
+    /// The `report` member of the golden, or `null`.
+    pub report: Value,
     /// The `source_fidelity` member of the golden, or `null`.
     pub fidelity: Value,
 }
@@ -74,6 +76,7 @@ pub fn decode_goldens(crate_name: &str) -> Vec<DecodeGolden> {
             Some(DecodeGolden {
                 path: relative.display().to_string(),
                 ir: ir.clone(),
+                report: decode.get("report").cloned().unwrap_or(Value::Null),
                 fidelity: decode
                     .get("source_fidelity")
                     .cloned()
@@ -287,6 +290,40 @@ pub fn solidworks_stale_findings(document: &Value) -> Vec<String> {
         .filter(|feature| feature.get("needs_recompute") != Some(&Value::Bool(needs_update)))
         .map(|feature| format!("{}: needs_recompute is not {needs_update}", id(feature)))
         .collect()
+}
+
+/// Check 5 for `Creo`: a stale feature and a charged `evaluation.stale`
+/// loss arrive together.
+///
+/// The decoder sets `needs_recompute` exactly where its stored station
+/// values disagree with the dimension-table values, and charges
+/// `evaluation.stale` on the same branch; the station values survive only
+/// in decoder internals, so the golden-level check pairs the stored flag
+/// with the charged loss instead of re-deriving the disagreement.
+#[must_use]
+pub fn creo_stale_findings(document: &Value, report: &Value) -> Vec<String> {
+    let stale = records(document, "features")
+        .iter()
+        .filter(|feature| feature.get("needs_recompute") == Some(&Value::Bool(true)))
+        .count();
+    let charged = report
+        .get("losses")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|loss| {
+            loss.pointer("/code/code").and_then(Value::as_str) == Some("evaluation.stale")
+        })
+        .count();
+    if stale == 0 && charged == 0 {
+        return Vec::new();
+    }
+    if stale > 0 && charged > 0 {
+        return Vec::new();
+    }
+    vec![format!(
+        "{stale} stale feature(s) but {charged} evaluation.stale loss(es)"
+    )]
 }
 
 /// Check 6, first rule: no text token, trimmed, spells a parameter name,
