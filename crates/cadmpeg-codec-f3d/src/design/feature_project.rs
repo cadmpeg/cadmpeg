@@ -912,14 +912,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut hole_losses,
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
-                Some(DesignFeatureFamily::Split) => {
-                    project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
-                        })
+                Some(DesignFeatureFamily::Split) => project_split(
+                    scope,
+                    scopes,
+                    construction_groups,
+                    entity_selection_operands,
+                    face_operands,
+                )?
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: scope.kind_name().into(),
+                        parameters: BTreeMap::new(),
                     })
-                }
+                }),
                 Some(DesignFeatureFamily::CircularPattern) => project_circular_pattern(
                     scope,
                     construction_groups,
@@ -1462,10 +1467,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     add_dependency(plane)?;
                 }
             }
-            FeatureDefinition::Operation(FeatureOperation::SplitFace {
-                tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
-                ..
-            }) => add_dependency(plane)?,
+            FeatureDefinition::Operation(
+                FeatureOperation::SplitFace {
+                    tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
+                    ..
+                }
+                | FeatureOperation::SplitBody {
+                    tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                    ..
+                },
+            ) => add_dependency(plane)?,
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
                 ..
@@ -8010,10 +8021,14 @@ pub(crate) fn bind_surface_trim_cell_selections(
 
 pub(super) fn project_split(
     scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{
+        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
+    };
 
     let parsed = (|| {
         if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Split
@@ -8067,7 +8082,7 @@ pub(super) fn project_split(
     let Some((stream, tool_group, targets)) = parsed else {
         return Ok(None);
     };
-    let tools = match tool_group.role() {
+    let tool = match tool_group.role() {
         DesignOperandRole::ROLE_0X9 => {
             let [crate::records::identity::Located {
                 value: tool_record_index,
@@ -8104,15 +8119,24 @@ pub(super) fn project_split(
                 }
                 _ => {}
             }
-            tools
+            SplitBodyTool::Faces(tools)
         }
-        DesignOperandRole::ROLE_0X21 => FaceSelection::Native(tool_group.id.clone()),
+        DesignOperandRole::ROLE_0X21 => {
+            match selected_work_planes(scope, tool_group, entity_selection_operands, scopes)
+                .as_deref()
+            {
+                Some([plane]) => SplitBodyTool::Plane {
+                    plane: crate::ids::neutral_feature_id(plane),
+                },
+                _ => SplitBodyTool::Faces(FaceSelection::Native(tool_group.id.clone())),
+            }
+        }
         _ => return Ok(None),
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SplitBody {
             targets: BodySelection::Native(targets.id.clone()),
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
+            tool,
         },
     )))
 }
