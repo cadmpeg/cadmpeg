@@ -30,7 +30,8 @@ use super::super::sweep::surfaces::{sampled_sweep_circle_range, SampledCircleRan
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,
-    ordered_parameter_face_loops, placed_carriers,
+    ordered_parameter_face_loops, placed_carriers, polygon_strictly_contains_polygon,
+    valid_parameter_polygon,
 };
 use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
@@ -1116,6 +1117,127 @@ fn planar_circle_loop_parameters(
     .then_some((center_uv, circle.radius))
 }
 
+fn proved_circle_loop_parameters(
+    lp: &crate::topology::Loop,
+    polygon: &[[f64; 2]],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<([f64; 2], f64)> {
+    let bounded = lp.half_edges().iter().any(|edge| {
+        evidence.model_curves.iter().any(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                edge.curve_id,
+            ) && curve.parameter_range.is_some()
+        })
+    });
+    if bounded {
+        bounded_planar_circle_loop_parameters(lp, polygon, surface, evidence)
+    } else {
+        planar_circle_loop_parameters(lp, polygon, surface, evidence)
+    }
+}
+
+/// The plane-chart polygon of a loop's solved start vertices.
+fn chart_loop_polygon(
+    lp: &crate::topology::Loop,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<[f64; 2]>> {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface else {
+        return None;
+    };
+    let origin = plane.origin().get();
+    let normal = plane.frame().axis().as_raw();
+    let mut polygon = Vec::new();
+    for half_edge in lp.half_edges() {
+        let binding = incidence.get(half_edge)?;
+        let point = Point3::from(*solved_vertices.get(&binding.start_vertex_id.get())?);
+        let delta = point.vector_from(origin);
+        (delta.dot(*normal).abs() <= EPS_GEOMETRY_AGREE * delta.norm().max(1.0)).then_some(())?;
+        let uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, point)?.get();
+        polygon.push([uv.u, uv.v]);
+    }
+    valid_parameter_polygon(&polygon).then_some(polygon)
+}
+
+/// Orders a planar face whose two-edge loops are proved circles and whose
+/// other loops are chart polygons of solved vertices.
+fn ordered_chart_polygon_hole_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    loops: &[&'a crate::topology::Loop],
+    face: (u32, &SurfaceGeometry),
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &NativePcurveCandidates,
+    curve_evidence: NativeCurveEvidence<'_>,
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let mut polygons = Vec::new();
+    let mut circles = Vec::new();
+    for (index, lp) in loops.iter().enumerate() {
+        if lp.half_edges().len() != 2 {
+            let Some(polygon) = chart_loop_polygon(lp, face.1, incidence, solved_vertices) else {
+                return Ok(None);
+            };
+            polygons.push((index, polygon));
+            continue;
+        }
+        let Some(polygon) = native_parameter_loop_polygon(
+            ctx,
+            lp,
+            face,
+            incidence,
+            solved_vertices,
+            native_pcurves,
+            curve_evidence.typed_nonlinear_curve_ids,
+        )?
+        .or_else(|| {
+            projected_circle_loop_polygon(
+                lp,
+                face,
+                incidence,
+                solved_vertices,
+                native_pcurves,
+                curve_evidence,
+            )
+        }) else {
+            return Ok(None);
+        };
+        let Some(circle) = proved_circle_loop_parameters(lp, &polygon, face.1, curve_evidence)
+        else {
+            return Ok(None);
+        };
+        circles.push(circle);
+    }
+    if circles.is_empty() {
+        return Ok(None);
+    }
+    let Some(outer) = exactly_one(
+        polygons
+            .iter()
+            .filter(|(index, polygon)| {
+                polygons.iter().all(|(other, inner)| {
+                    other == index || polygon_strictly_contains_polygon(polygon, inner)
+                }) && crate::decode::sweep::revolution_cap::polygon_contains_circles(
+                    polygon, &circles,
+                )
+            })
+            .map(|(index, _)| *index),
+    ) else {
+        return Ok(None);
+    };
+    let mut ordered = vec![loops[outer]];
+    ordered.extend(
+        loops
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lp)| (index != outer).then_some(*lp)),
+    );
+    Ok(Some(ordered))
+}
+
 fn ordered_polygon_circle_loops<'a>(
     loops: &[&'a crate::topology::Loop],
     polygons: &[Vec<[f64; 2]>],
@@ -1146,21 +1268,12 @@ fn ordered_polygon_circle_loops<'a>(
     let mut circles = Vec::new();
     for (index, lp) in loops.iter().enumerate() {
         if index != outer {
-            let bounded = lp.half_edges().iter().any(|edge| {
-                evidence.model_curves.iter().any(|curve| {
-                    crate::identity::matches_numbered_identity(
-                        curve.id.as_str(),
-                        "creo:visibgeom:curve#",
-                        edge.curve_id,
-                    ) && curve.parameter_range.is_some()
-                })
-            });
-            let circle = if bounded {
-                bounded_planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
-            } else {
-                planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
-            }?;
-            circles.push(circle);
+            circles.push(proved_circle_loop_parameters(
+                lp,
+                &polygons[index],
+                surface,
+                evidence,
+            )?);
         }
     }
     crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(
@@ -2260,6 +2373,11 @@ pub(in super::super) fn transfer_native_brep(
             &incidence,
             solved_vertices,
         );
+        let curve_evidence = NativeCurveEvidence {
+            typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+            model_curves: &ir.model.curves,
+            source_carriers,
+        };
         let ordered = if ordered.is_some() {
             ordered
         } else {
@@ -2270,11 +2388,20 @@ pub(in super::super) fn transfer_native_brep(
                 &incidence,
                 solved_vertices,
                 &native_pcurves,
-                NativeCurveEvidence {
-                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                    model_curves: &ir.model.curves,
-                    source_carriers,
-                },
+                curve_evidence,
+            )?
+        };
+        let ordered = if ordered.is_some() {
+            ordered
+        } else {
+            ordered_chart_polygon_hole_loops(
+                ctx,
+                loops,
+                (face_id, source_carriers.surface_geometry(surface)),
+                &incidence,
+                solved_vertices,
+                &native_pcurves,
+                curve_evidence,
             )?
         };
         let Some(ordered) = ordered else {

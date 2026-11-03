@@ -21,6 +21,7 @@ use super::{
 };
 
 mod body_index;
+mod chart_hole_order;
 mod component_topology;
 mod eligible_index;
 mod face_references;
