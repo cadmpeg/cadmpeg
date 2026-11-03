@@ -310,6 +310,12 @@ fn write_buffered<'budget>(
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(record, "retain Rhino archive bytes")?;
     }
+    let history_exported = tables::history::records(ir)?;
+    plan.losses.extend(history_exported.losses);
+    for record in &history_exported.records {
+        ctx.charge_entities(1, "write Rhino history record")?;
+        output.append(record, "retain Rhino archive bytes")?;
+    }
 
     output.append(
         &short_chunk(TCODE_ENDOFTABLE, 0),
@@ -320,7 +326,7 @@ fn write_buffered<'budget>(
     let patched = output.overwrite(table_start + 4, &body_len.to_le_bytes());
     debug_assert!(patched, "the staged Rhino object table header exists");
     output.append(
-        &table(ctx, TCODE_HISTORY_RECORD_TABLE, &[])?,
+        &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history_exported.records)?,
         "retain Rhino archive bytes",
     )?;
     let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
@@ -386,6 +392,7 @@ fn write_archive_prefix(
         "retain Rhino archive bytes",
     )?;
     let mut image_losses = Vec::new();
+    let mut dimstyle_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -413,6 +420,11 @@ fn write_archive_prefix(
             TCODE_MATERIAL_TABLE => materials.encode(ir)?,
             TCODE_GROUP_TABLE => tables::native::groups(ir)?,
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
+            TCODE_DIMSTYLE_TABLE => {
+                let exported = tables::dimstyles::styles(ir, version)?;
+                dimstyle_losses.extend(exported.losses);
+                exported.records
+            }
             _ => Vec::new(),
         };
         output.append(
@@ -430,6 +442,8 @@ fn write_archive_prefix(
     losses.extend(setting_losses);
     losses.extend(views.losses);
     losses.extend(image_losses);
+    losses.extend(dimstyle_losses);
+    losses.extend(tables::unwritten::losses(ir));
     Ok(losses)
 }
 
@@ -872,6 +886,28 @@ fn native_dispositions(
                 };
                 dispositions.set_record("rhino", arena, record.id(), disposition);
             }
+        }
+    }
+    let emitted_history = tables::history::records(ir)?;
+    for record in records_in(ir, "history_records") {
+        if emitted_history.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "history_records",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
+    let emitted_styles = tables::dimstyles::styles(ir, version)?;
+    for record in records_in(ir, "dimension_styles") {
+        if emitted_styles.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "dimension_styles",
+                record.id(),
+                NativeDisposition::Written,
+            );
         }
     }
     let views = tables::views::settings(ir)?;

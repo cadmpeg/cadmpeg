@@ -265,6 +265,21 @@ fn step_edits_reach_the_output() {
 }
 
 #[test]
+fn rhino_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Rhino, &["rhino"], false));
+}
+
+#[test]
+fn rhino_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Rhino, "rhino"));
+}
+
+#[test]
+fn rhino_edits_reach_the_output() {
+    assert_none(&edits(Format::Rhino, "rhino", "rhino", &[false]));
+}
+
+#[test]
 fn cadir_declares_no_reduced_fields() {
     assert!(cadmpeg_ir::codec::write::REDUCED_FIELDS.is_empty());
 }
