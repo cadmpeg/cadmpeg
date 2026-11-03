@@ -45,29 +45,6 @@ fn record_ids(document: &serde_json::Value) -> BTreeSet<String> {
     ids
 }
 
-/// The ids of every `unknowns` stub the document holds.
-fn stub_ids(document: &serde_json::Value) -> BTreeSet<String> {
-    let mut stubs = BTreeSet::new();
-    if let Some(native) = document
-        .get("native")
-        .and_then(serde_json::Value::as_object)
-    {
-        for namespace in native.values() {
-            if let Some(rows) = namespace
-                .get("unknowns")
-                .and_then(serde_json::Value::as_array)
-            {
-                for row in rows {
-                    if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
-                        stubs.insert(id.to_owned());
-                    }
-                }
-            }
-        }
-    }
-    stubs
-}
-
 /// Whether a report JSON loss charges the one part give-up the helper reports.
 fn is_unreadable(loss: &serde_json::Value) -> bool {
     match loss.get("code") {
@@ -191,7 +168,7 @@ fn check_format(format: &str) {
                     let document = super::support::document(&decoded);
                     let report = super::support::report(&decoded);
                     let held = record_ids(&document);
-                    let stubs = stub_ids(&document);
+                    let stubs = support::stub_ids(format, &document);
                     for added in held.difference(&uncut_ids) {
                         if !stubs.contains(added) {
                             findings.push(format!(

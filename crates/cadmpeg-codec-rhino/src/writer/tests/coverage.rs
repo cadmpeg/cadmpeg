@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Model arenas the 3DM write does not represent are reported, not dropped.
+//! Product structure the 3DM write carries as instance definitions.
+//!
+//! #235 writes neutral products and occurrences: definitions become instance
+//! definitions and root occurrences become instance references, so neither
+//! arena is an export omission.
+
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -99,7 +106,7 @@ fn placed_point_product() -> CadIr {
 }
 
 #[test]
-fn unrepresented_product_structure_is_an_export_loss() {
+fn product_structure_is_written_as_instance_definitions_and_references() {
     let ir = placed_point_product();
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -111,30 +118,51 @@ fn unrepresented_product_structure_is_an_export_loss() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .expect("the point body is writable");
-    let omitted = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.namespace() == "export")
-        .collect::<Vec<_>>();
-    let expected: [(&str, &[&str]); 2] = [
-        ("product_definitions", &["cadir:model:product#pin"]),
+    let report = plan.report();
+    for (arena, kind) in [
         (
-            "occurrences",
-            &[
-                "cadir:model:occurrence#pin.0",
-                "cadir:model:occurrence#pin.1",
-            ],
+            "product_definitions",
+            cadmpeg_ir::schema::EntityKind::ProductDefinition,
         ),
-    ];
-    assert_eq!(omitted.len(), expected.len(), "{omitted:?}");
-    for (loss, (arena, ids)) in omitted.iter().zip(expected) {
-        assert_eq!(loss.code.local_code(), "arena.omitted", "{loss:?}");
-        assert!(loss.message.contains(arena), "{loss:?}");
-        assert_eq!(
-            crate::test_support::omitted_record_ids(&loss.message),
-            ids,
-            "{loss:?}"
+        ("occurrences", cadmpeg_ir::schema::EntityKind::Occurrence),
+    ] {
+        assert!(
+            report.coverage.disposition(kind).carries(),
+            "{arena}: coverage must state that the target carries products"
         );
     }
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export"
+                && loss.code.local_code() == "arena.omitted"
+                && loss.message.contains("`product_definitions`")
+        }),
+        "product definitions are written, not omitted: {:?}",
+        report.losses
+    );
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export"
+                && loss.code.local_code() == "arena.omitted"
+                && loss.message.contains("`occurrences`")
+        }),
+        "occurrences are written, not omitted: {:?}",
+        report.losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("write the product structure");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read the written products");
+    assert_eq!(
+        decoded.ir().model.product_definitions.len(),
+        1,
+        "the part definition reappears"
+    );
+    assert_eq!(
+        decoded.ir().model.occurrences.len(),
+        2,
+        "both placements reappear"
+    );
 }

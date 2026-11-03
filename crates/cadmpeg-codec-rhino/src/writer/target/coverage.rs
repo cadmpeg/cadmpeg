@@ -61,6 +61,16 @@ pub(super) fn verified(
         tessellations,
         subds,
         procedural_curves,
+        assets,
+        presentation_layers,
+        product_definitions,
+        occurrences,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        appearances,
+        appearance_bindings,
+        attributes,
     );
     coverage
 }

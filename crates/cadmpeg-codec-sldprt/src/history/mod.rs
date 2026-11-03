@@ -119,76 +119,77 @@ pub(crate) fn histories(
                 continue;
             }
         };
-            let root = doc.root_element();
-            if !root.tag_name().name().contains("Keywords") {
-                return Ok(histories);
-            }
-            let stream = section.source_stream();
-            let parent = format!("sldprt:history:feature-history#{source}");
-            let configurations = root
-                .children()
-                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
-                .enumerate()
-                .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
-                    let id = format!("sldprt:history:configuration#{source}:{ordinal}");
-                    crate::annotations::note(
-                        annotations,
-                        id.as_str(),
-                        stream,
-                        cadmpeg_core::decode::u64_from_index(node.range().start),
-                        "Configuration",
-                        Exactness::ByteExact,
-                    )?;
-                    let properties = keyed_attributes(
-                        losses,
-                        &id,
-                        node.attributes()
-                            .filter(|attribute| {
-                                !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
-                            })
-                            .map(|attribute| (attribute.name(), attribute.value())),
-                    );
-                    configurations.push(Configuration {
-                        id,
-                        parent: parent.clone(),
-                        ordinal: u32::try_from(ordinal).map_err(|_| {
-                            CodecError::malformed(
-                                "SLDPRT history configuration ordinal exceeds u32",
-                            )
-                        })?,
-                        source_index: node
-                            .attribute("SourceIndex")
-                            .and_then(|value| value.parse().ok()),
-                        name: node.attribute("Name").unwrap_or("").to_owned(),
-                        material: node
-                            .attribute("Material")
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_owned),
-                        properties,
-                    });
-                    Ok::<_, CodecError>(configurations)
-                })?;
-            let feature_nodes = || {
-                root.descendants().filter(|node| {
-                    node.is_element()
-                        && !matches!(
-                            node.tag_name().name(),
-                            "Keywords" | "Configuration" | "Dimension"
-                        )
-                })
-            };
-            let feature_ids = feature_nodes()
-                .enumerate()
-                .map(|(ordinal, node)| {
-                    (
-                        node.range().start,
-                        format!("sldprt:history:feature#{source}:{ordinal}"),
+        let root = doc.root_element();
+        if !root.tag_name().name().contains("Keywords") {
+            // A non-history XML block (document metadata, envelopes)
+            // is not a feature history; it does not end the scan.
+            continue;
+        }
+        let stream = section.source_stream();
+        let parent = format!("sldprt:history:feature-history#{source}");
+        let configurations = root
+            .children()
+            .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
+            .enumerate()
+            .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
+                let id = format!("sldprt:history:configuration#{source}:{ordinal}");
+                crate::annotations::note(
+                    annotations,
+                    id.as_str(),
+                    stream,
+                    cadmpeg_core::decode::u64_from_index(node.range().start),
+                    "Configuration",
+                    Exactness::ByteExact,
+                )?;
+                let properties = keyed_attributes(
+                    losses,
+                    &id,
+                    node.attributes()
+                        .filter(|attribute| {
+                            !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
+                        })
+                        .map(|attribute| (attribute.name(), attribute.value())),
+                );
+                configurations.push(Configuration {
+                    id,
+                    parent: parent.clone(),
+                    ordinal: u32::try_from(ordinal).map_err(|_| {
+                        CodecError::malformed("SLDPRT history configuration ordinal exceeds u32")
+                    })?,
+                    source_index: node
+                        .attribute("SourceIndex")
+                        .and_then(|value| value.parse().ok()),
+                    name: node.attribute("Name").unwrap_or("").to_owned(),
+                    material: node
+                        .attribute("Material")
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned),
+                    properties,
+                });
+                Ok::<_, CodecError>(configurations)
+            })?;
+        let feature_nodes = || {
+            root.descendants().filter(|node| {
+                node.is_element()
+                    && !matches!(
+                        node.tag_name().name(),
+                        "Keywords" | "Configuration" | "Dimension"
                     )
-                })
-                .collect::<HashMap<_, _>>();
-            let features = feature_nodes().enumerate().try_fold(
-                Vec::new(),
-                |mut features, (ordinal, node)| {
+            })
+        };
+        let feature_ids = feature_nodes()
+            .enumerate()
+            .map(|(ordinal, node)| {
+                (
+                    node.range().start,
+                    format!("sldprt:history:feature#{source}:{ordinal}"),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let features =
+            feature_nodes()
+                .enumerate()
+                .try_fold(Vec::new(), |mut features, (ordinal, node)| {
                     let source_id = feature_ids.get(&node.range().start).ok_or_else(|| {
                         CodecError::malformed("missing SLDPRT history feature identity")
                     })?;
@@ -315,109 +316,107 @@ pub(crate) fn histories(
                         content,
                     });
                     Ok::<_, CodecError>(features)
-                },
-            )?;
-            let mut configuration_ordinal = 0usize;
-            let content = root
-                .children()
-                .filter_map(|child| {
-                    if child.is_text() {
-                        let value = child.text().unwrap_or_default().trim();
-                        (!value.is_empty()).then(|| HistoryContent::Text(value.to_owned()))
-                    } else if !child.is_element() {
-                        None
-                    } else if child.tag_name().name() == "Configuration" {
-                        let id = format!(
-                            "sldprt:history:configuration#{source}:{configuration_ordinal}"
-                        );
-                        configuration_ordinal += 1;
-                        Some(HistoryContent::Configuration(id))
-                    } else {
-                        feature_ids
-                            .get(&child.range().start)
-                            .map(|id| HistoryContent::Feature(id.clone()))
-                    }
+                })?;
+        let mut configuration_ordinal = 0usize;
+        let content = root
+            .children()
+            .filter_map(|child| {
+                if child.is_text() {
+                    let value = child.text().unwrap_or_default().trim();
+                    (!value.is_empty()).then(|| HistoryContent::Text(value.to_owned()))
+                } else if !child.is_element() {
+                    None
+                } else if child.tag_name().name() == "Configuration" {
+                    let id =
+                        format!("sldprt:history:configuration#{source}:{configuration_ordinal}");
+                    configuration_ordinal += 1;
+                    Some(HistoryContent::Configuration(id))
+                } else {
+                    feature_ids
+                        .get(&child.range().start)
+                        .map(|id| HistoryContent::Feature(id.clone()))
+                }
+            })
+            .collect::<Vec<_>>();
+        let id = parent;
+        crate::annotations::note(
+            annotations,
+            id.as_str(),
+            stream,
+            0,
+            "Keywords",
+            Exactness::ByteExact,
+        )?;
+        let mut properties = keyed_attributes(
+            losses,
+            &id,
+            root.attributes()
+                .filter(|attribute| attribute.name() != "Name")
+                .map(|attribute| (attribute.name(), attribute.value())),
+        );
+        let mut spans: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+        for node in feature_nodes() {
+            let Some(raw) = node.attribute("id") else {
+                continue;
+            };
+            if crate::records::FeatureSource::try_from(raw).is_err() {
+                continue;
+            }
+            let range = node.range();
+            let Some(len) = range.end.checked_sub(range.start) else {
+                return Err(CodecError::malformed(
+                    "SLDPRT history feature range ends before it starts",
+                ));
+            };
+            spans
+                .entry(raw.to_owned())
+                .or_default()
+                .push((range.start, len));
+        }
+        let mut duplicates: Vec<(String, Vec<(usize, usize)>)> = spans
+            .into_iter()
+            .filter(|(_, occurrences)| occurrences.len() > 1)
+            .collect();
+        duplicates.sort();
+        duplicates.truncate(8);
+        if !duplicates.is_empty() {
+            let ids = duplicates
+                .iter()
+                .map(|(source, _)| source.clone())
+                .collect::<Vec<_>>()
+                .join(",");
+            let span_text = duplicates
+                .iter()
+                .map(|(source, occurrences)| {
+                    let list = occurrences
+                        .iter()
+                        .map(|(offset, len)| format!("{offset}+{len}"))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("source {source} at {list}")
                 })
-                .collect::<Vec<_>>();
-            let id = parent;
-            crate::annotations::note(
-                annotations,
-                id.as_str(),
-                stream,
-                0,
-                "Keywords",
-                Exactness::ByteExact,
-            )?;
-            let mut properties = keyed_attributes(
-                losses,
-                &id,
-                root.attributes()
-                    .filter(|attribute| attribute.name() != "Name")
-                    .map(|attribute| (attribute.name(), attribute.value())),
-            );
-            let mut spans: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
-            for node in feature_nodes() {
-                let Some(raw) = node.attribute("id") else {
-                    continue;
-                };
-                if crate::records::FeatureSource::try_from(raw).is_err() {
-                    continue;
-                }
-                let range = node.range();
-                let Some(len) = range.end.checked_sub(range.start) else {
-                    return Err(CodecError::malformed(
-                        "SLDPRT history feature range ends before it starts",
-                    ));
-                };
-                spans
-                    .entry(raw.to_owned())
-                    .or_default()
-                    .push((range.start, len));
-            }
-            let mut duplicates: Vec<(String, Vec<(usize, usize)>)> = spans
-                .into_iter()
-                .filter(|(_, occurrences)| occurrences.len() > 1)
-                .collect();
-            duplicates.sort();
-            duplicates.truncate(8);
-            if !duplicates.is_empty() {
-                let ids = duplicates
-                    .iter()
-                    .map(|(source, _)| source.clone())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let span_text = duplicates
-                    .iter()
-                    .map(|(source, occurrences)| {
-                        let list = occurrences
-                            .iter()
-                            .map(|(offset, len)| format!("{offset}+{len}"))
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!("source {source} at {list}")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                for (key, value) in [
-                    ("duplicate_source_ids", ids),
-                    ("duplicate_source_spans", span_text),
-                ] {
-                    if let Some(key) = cadmpeg_core::text::NonBlankString::new(key.to_owned()) {
-                        properties.insert(key, value);
-                    }
+                .collect::<Vec<_>>()
+                .join("; ");
+            for (key, value) in [
+                ("duplicate_source_ids", ids),
+                ("duplicate_source_spans", span_text),
+            ] {
+                if let Some(key) = cadmpeg_core::text::NonBlankString::new(key.to_owned()) {
+                    properties.insert(key, value);
                 }
             }
-            histories.push(FeatureHistory {
-                id,
-                part_name: root
-                    .attribute("Name")
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned),
-                properties,
-                content,
-                configurations,
-                features,
-            });
+        }
+        histories.push(FeatureHistory {
+            id,
+            part_name: root
+                .attribute("Name")
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned),
+            properties,
+            content,
+            configurations,
+            features,
+        });
     }
     Ok(histories)
 }

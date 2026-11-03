@@ -17,6 +17,10 @@ use crate::history::literals::{
     valid_plane_frame,
 };
 
+/// Relative agreement below which height, pitch and turns count as a
+/// consistent authored triple, so no independent pair is inferred.
+const EPS_NATIVE_AXIS_HELIX_CONSISTENT_LAW_E9: f64 = 1.0e-9;
+
 pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let normal = parse_vector3(feature.properties.get("Normal")?)?;
@@ -230,12 +234,47 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     }))
 }
 
-pub(super) fn project_native_axis_helix(_feature: &Feature) -> Option<FeatureDefinition> {
-    // The observed D3/D4/D5 records contain height, pitch and turns without a
-    // decoded authoring-law discriminator. Selecting an independent pair from
-    // numerical agreement would invent intent. Native projection retains all
-    // three canonical parameter identities and reports the unresolved law.
-    None
+pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
+    // D3/D4/D5 hold height, pitch and turns, but no authoring-law
+    // discriminator. A height that agrees with pitch and turns does not
+    // identify the authored pair, so no law is inferred from agreement.
+    // A height below both the implied height and the turn count shows
+    // the turns value is independently authored, so the pitch/revolutions
+    // law is admitted. Any other disagreement stays native.
+    let height =
+        crate::history::literals::parse_dimension_length_mm(feature.parameters.get("D3")?)?;
+    let pitch = crate::history::literals::parse_dimension_length_mm(feature.parameters.get("D4")?)?;
+    let turns = feature
+        .parameters
+        .get("D5")?
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|turns| turns.is_finite() && *turns > 0.0)?;
+    let implied = pitch.get() * turns;
+    let agrees = (height.get() - implied).abs()
+        <= EPS_NATIVE_AXIS_HELIX_CONSISTENT_LAW_E9 * implied.abs().max(height.get().abs()).max(1.0);
+    if agrees || !(height.get() < turns) {
+        return None;
+    }
+    let pitch = super::parameter_dimension(feature, &["D4"])?;
+    let revolutions = super::parameter_dimension(feature, &["D5"])?;
+    let start_angle = super::parameter_dimension(feature, &["D7"]).unwrap_or(
+        cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::scalar::Angle::ZERO),
+    );
+    let clockwise = feature
+        .properties
+        .get("Clockwise")
+        .and_then(|value| parse_bool(value))
+        .unwrap_or(false);
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::HelixNativeAxis {
+            axis_native_ref: cadmpeg_core::text::NonBlankString::new(feature.id.clone())?,
+            law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions },
+            start_angle,
+            clockwise,
+        },
+    ))
 }
 
 pub(super) fn project_wrap(

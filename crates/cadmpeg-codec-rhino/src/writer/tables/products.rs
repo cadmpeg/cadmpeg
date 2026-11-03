@@ -208,12 +208,20 @@ fn modern_definition(
     )
 }
 
+/// Emitted instance-reference objects with the neutral occurrences they carry.
+pub(in crate::writer) struct ReferenceExport {
+    pub(in crate::writer) records: Vec<Vec<u8>>,
+    pub(in crate::writer) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Neutral occurrence ids actually emitted as reference objects.
+    pub(in crate::writer) written: std::collections::BTreeSet<String>,
+}
+
 pub(in crate::writer) fn references(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
-) -> Result<(Vec<Vec<u8>>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+) -> Result<ReferenceExport, CodecError> {
     let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
-    let losses = ir
+    let mut losses = ir
         .model
         .occurrences
         .iter()
@@ -224,8 +232,9 @@ pub(in crate::writer) fn references(
                 occurrence.id
             ))
         })
-        .collect();
+        .collect::<Vec<_>>();
     let mut result = Vec::new();
+    let mut written = std::collections::BTreeSet::new();
     let mut selected = ir
         .model
         .occurrences
@@ -242,6 +251,12 @@ pub(in crate::writer) fn references(
             continue;
         }
         let PrototypeReference::Local { definition } = &occurrence.prototype else {
+            losses.push(
+                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                    "occurrence {} omitted because its prototype names a document its definition does not hold",
+                    occurrence.id
+                )),
+            );
             continue;
         };
         if !ir
@@ -250,6 +265,12 @@ pub(in crate::writer) fn references(
             .iter()
             .any(|row| row.id == *definition)
         {
+            losses.push(
+                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                    "occurrence {} omitted because its prototype names a definition the document does not hold",
+                    occurrence.id
+                )),
+            );
             continue;
         }
         let mut payload = vec![0x10];
@@ -258,6 +279,12 @@ pub(in crate::writer) fn references(
             .effective_transform()
             .map_err(CodecError::malformed)?
         else {
+            losses.push(
+                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                    "occurrence {} omitted because its own placement is unknown",
+                    occurrence.id
+                )),
+            );
             continue;
         };
         for value in transform.rows().iter().flatten() {
@@ -278,8 +305,13 @@ pub(in crate::writer) fn references(
             display,
             materials,
         )?);
+        written.insert(occurrence.id.to_string());
     }
-    Ok((result, losses))
+    Ok(ReferenceExport {
+        records: result,
+        losses,
+        written,
+    })
 }
 
 #[cfg(test)]

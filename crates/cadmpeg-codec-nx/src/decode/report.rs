@@ -269,8 +269,8 @@ pub(super) fn build_geometry_report(
         notes,
     } = geometry_report_facts;
 
-    let has_untransferred_attribute_fields = model
-        .is_some_and(|model| model.has_untransferred_parasolid_attribute_fields());
+    let has_untransferred_attribute_fields =
+        model.is_some_and(|model| model.has_untransferred_parasolid_attribute_fields());
     let mut losses = Vec::new();
 
     push_report_loss(

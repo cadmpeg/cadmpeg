@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-granular sheet degradation after native Brep admission declines.
 
+use super::WriteError;
 use crate::loss::RhinoLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -422,17 +423,17 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
 /// a face; malformed input, native capacity, and resource errors propagate.
 pub(super) fn sheet(
     ir: &CadIr,
-    admit: impl Fn(&CadIr) -> Result<(), CodecError>,
-) -> Result<(Option<CadIr>, Vec<LossNote>), CodecError> {
+    admit: impl Fn(&CadIr) -> Result<(), WriteError>,
+) -> Result<(Option<CadIr>, Vec<LossNote>), WriteError> {
     if ir
         .model
         .bodies
         .first()
         .is_none_or(|body| body.kind != BodyKind::Sheet)
     {
-        return Err(CodecError::malformed(
+        return Err(WriteError::Fail(CodecError::malformed(
             "sheet reduction requires one sheet body",
-        ));
+        )));
     }
     validate(ir)?;
     let mut selected = BTreeSet::new();
@@ -443,7 +444,7 @@ pub(super) fn sheet(
         let candidate = retain_faces(ir, &selected)?;
         match admit(&candidate) {
             Ok(()) => accepted = Some(candidate),
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(WriteError::Omit(reason)) => {
                 selected.remove(face.id.as_str());
                 losses.push(
                     RhinoLossCode::WriterEntityOmitted

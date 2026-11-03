@@ -15,8 +15,8 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_nurbs_curve, close_point,
-    nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, LINE_CLASS, NURBS_CURVE_CLASS,
-    POINT_CLASS, POINT_CLOUD_CLASS,
+    nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, WriteError, LINE_CLASS,
+    NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -25,7 +25,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     losses: &mut Vec<LossNote>,
     materials: &super::tables::materials::MaterialPlan,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let body = &ir.model.bodies[0];
     let mut seen_vertices = BTreeSet::new();
     let free = ir
@@ -38,18 +38,24 @@ pub(super) fn write(
     let mut points = Vec::new();
     let mut seen_points = BTreeSet::new();
     for id in &free {
-        let vertex = ir
-            .model
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == **id)
-            .ok_or_else(|| CodecError::malformed("free vertex is missing"))?;
-        let point = ir
+        let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == **id) else {
+            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                "free vertex {id} omitted: dangling vertex reference"
+            )));
+            continue;
+        };
+        let Some(point) = ir
             .model
             .points
             .iter()
             .find(|point| point.id == vertex.point)
-            .ok_or_else(|| CodecError::malformed("free vertex point is missing"))?;
+        else {
+            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                "free vertex {} omitted: dangling point reference",
+                vertex.id
+            )));
+            continue;
+        };
         if vertex.tolerance.is_some() || super::is_support(point.source_object.as_ref()) {
             losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
                 "free vertex {} tolerance or dependent-point role has no standalone encoding",
@@ -113,12 +119,13 @@ pub(super) fn write(
         .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
         .collect::<BTreeSet<_>>();
     for id in &wires {
-        let edge = ir
-            .model
-            .edges
-            .iter()
-            .find(|edge| edge.id == **id)
-            .ok_or_else(|| CodecError::malformed("wire edge is missing"))?;
+        let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == **id) else {
+            losses.push(
+                RhinoLossCode::WriterEntityOmitted
+                    .note(format!("wire edge {id} omitted: dangling edge reference")),
+            );
+            continue;
+        };
         match curve_payload(ir, edge) {
             Ok((class, payload)) => {
                 ctx.charge_entities(1, "write Rhino object record")?;
@@ -140,7 +147,7 @@ pub(super) fn write(
                 )?;
                 count += 1;
             }
-            Err(CodecError::UnsupportedContent(reason)) => losses.push(
+            Err(WriteError::Omit(reason)) => losses.push(
                 RhinoLossCode::WriterEntityOmitted
                     .note(format!("wire edge {} omitted: {reason}", edge.id)),
             ),
@@ -156,36 +163,30 @@ pub(super) fn write(
     Ok(count)
 }
 
-fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, CodecError> {
+fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteError> {
     let id = edge.curve().ok_or_else(|| {
-        CodecError::UnsupportedContent(
-            "an edge without a held curve has no exact standalone encoding".into(),
-        )
+        WriteError::Omit("an edge without a held curve has no exact standalone encoding".into())
     })?;
-    let curve = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::malformed("wire curve is missing"))?;
+    let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *id) else {
+        return Err(WriteError::Omit(format!(
+            "dangling curve reference for wire edge {}",
+            edge.id
+        )));
+    };
     let domain = edge
         .param_range()
         .ok_or_else(|| {
-            CodecError::UnsupportedContent(
-                "an unbounded wire edge has no finite standalone encoding".into(),
-            )
+            WriteError::Omit("an unbounded wire edge has no finite standalone encoding".into())
         })?
         .finite_components();
     let [lo, hi] = cadmpeg_ir::scalar::FiniteReal::raw_array(domain);
     if lo == hi {
-        return Err(CodecError::UnsupportedContent(
-            "wire edge has an empty interval".into(),
-        ));
+        return Err(WriteError::Omit("wire edge has an empty interval".into()));
     }
     let geometry = match curve.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line)) => {
             if (line.direction().as_raw().norm() - 1.0).abs() > super::EPS_WRITE_DEGENERATE {
-                return Err(CodecError::UnsupportedContent(
+                return Err(WriteError::Omit(
                     "wire line parameterization exceeds Rhino's unit-direction bound".into(),
                 ));
             }
@@ -194,7 +195,9 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, CodecEr
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             check_nurbs_curve(curve.id.as_str(), nurbs)?;
             let degree = usize::try_from(nurbs.degree()).map_err(|_| {
-                CodecError::InvalidInput("NURBS degree exceeds address space".into())
+                WriteError::Fail(CodecError::InvalidInput(
+                    "NURBS degree exceeds address space".into(),
+                ))
             })?;
             let range = [lo.min(hi), lo.max(hi)];
             if [
@@ -202,39 +205,44 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, CodecEr
                 nurbs.knots()[nurbs.control_points().len()],
             ] != range
             {
-                return Err(CodecError::UnsupportedContent(
+                return Err(WriteError::Omit(
                     "a trimmed NURBS wire requires an independent trimmed-curve encoding".into(),
                 ));
             }
             WritableEdgeCurve::Nurbs(nurbs)
         }
         _ => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(WriteError::Omit(
                 "wire carrier has no supported exact standalone encoding".into(),
             ));
         }
     };
     let mut endpoints = Vec::new();
     for (id, parameter) in [&edge.start, &edge.end].into_iter().zip(domain) {
-        let vertex = ir
-            .model
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == *id)
-            .ok_or_else(|| CodecError::malformed("wire endpoint is missing"))?;
-        let point = ir
+        let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == *id) else {
+            return Err(WriteError::Omit(format!(
+                "dangling vertex reference for wire edge {}",
+                edge.id
+            )));
+        };
+        let Some(point) = ir
             .model
             .points
             .iter()
             .find(|point| point.id == vertex.point)
-            .ok_or_else(|| CodecError::malformed("wire endpoint point is missing"))?;
+        else {
+            return Err(WriteError::Omit(format!(
+                "dangling point reference for wire edge {}",
+                edge.id
+            )));
+        };
         let expected = geometry
             .point(parameter)
             .map_err(|failure| match failure {
                 cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                    CodecError::ResourceLimit(limit)
+                    WriteError::Fail(CodecError::ResourceLimit(limit))
                 }
-                _ => CodecError::UnsupportedContent(format!(
+                _ => WriteError::Omit(format!(
                     "wire edge {} endpoint evaluation has no supported finite result",
                     edge.id,
                 )),
@@ -245,7 +253,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, CodecEr
             cadmpeg_ir::scalar::PositiveReal::get,
         );
         if !close_point(expected, point.position().get(), tolerance) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Omit(format!(
                 "wire edge {} carrier disagrees with its endpoint",
                 edge.id,
             )));

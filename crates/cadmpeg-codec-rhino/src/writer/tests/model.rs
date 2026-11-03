@@ -26,10 +26,7 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino cannot write a zero-length domain");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
+    assert!(matches!(error, crate::writer::WriteError::Omit(_)));
 }
 
 #[test]
@@ -50,10 +47,7 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter direction bound");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
+    assert!(matches!(error, crate::writer::WriteError::Omit(_)));
 }
 
 #[test]
@@ -75,10 +69,7 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter frame bound");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
+    assert!(matches!(error, crate::writer::WriteError::Omit(_)));
 }
 
 #[test]
@@ -245,7 +236,7 @@ fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry(
     };
     assert!(matches!(
         crate::writer::model::WritableObjectCurve::try_new(&curve),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(crate::writer::WriteError::Omit(_))
     ));
     curve.parameter_range = Some(
         cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
@@ -260,7 +251,7 @@ fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry(
     ));
     assert!(matches!(
         crate::writer::model::WritableObjectCurve::try_new(&curve),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(crate::writer::WriteError::Omit(_))
     ));
 }
 
@@ -285,5 +276,5 @@ fn shell_face_listing_order_is_not_the_arena_order() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("a shell face missing from the arena is inconsistent");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(error, crate::writer::WriteError::Omit(_)));
 }
