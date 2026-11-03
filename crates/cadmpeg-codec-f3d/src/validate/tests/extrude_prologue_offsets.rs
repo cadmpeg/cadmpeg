@@ -90,15 +90,13 @@ fn has_invalid_frame(scope: DesignParameterScope) -> bool {
     native.design_parameter_scopes.push(scope);
     // The native namespace wire drops the scope layout offsets, so the
     // layout check runs on the directly built records.
-    crate::test_support::with_decode_context(|ctx| {
-        super::super::validate_loaded(ctx, &ir, &native)
-    })
-    .unwrap()
-    .iter()
-    .any(|finding| {
-        finding.entity.as_deref() == Some(SCOPE_ID)
-            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
-    })
+    crate::test_support::with_decode_context(|ctx| super::super::validate_loaded(ctx, &ir, &native))
+        .unwrap()
+        .iter()
+        .any(|finding| {
+            finding.entity.as_deref() == Some(SCOPE_ID)
+                && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+        })
 }
 
 #[test]

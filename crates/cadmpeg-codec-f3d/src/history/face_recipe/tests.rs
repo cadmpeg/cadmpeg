@@ -307,5 +307,3 @@ fn bounded_face_nodes_bind_two_edge_loops_with_two_shared_vertices() {
     }
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
 }
-
-

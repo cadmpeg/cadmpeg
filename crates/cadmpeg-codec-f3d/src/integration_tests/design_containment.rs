@@ -18,7 +18,8 @@ use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
 use crate::test_support::zip_test::{
-    f3d_with_damaged_protein_asset, f3d_with_smbh, f3d_with_smbh_and_protein,
+    f3d_with_damaged_design_bulkstream, f3d_with_damaged_protein_asset, f3d_with_smbh,
+    f3d_with_smbh_and_protein,
 };
 use crate::F3dCodec;
 
@@ -429,4 +430,32 @@ fn one_damaged_protein_asset_gives_up_only_its_part() {
         .retained_records()
         .keys()
         .any(|id| id.as_str().starts_with("f3d:source:part#")));
+}
+
+#[test]
+fn one_damaged_primary_index_gives_up_only_its_stream() {
+    let full = decode(design_archive());
+    let damaged = decode(f3d_with_damaged_design_bulkstream(
+        &synthetic_geometry_with_history_smbh(),
+    ));
+    let damaged_bodies = &damaged.ir().model.bodies;
+    let full_bodies = &full.ir().model.bodies;
+    assert_eq!(
+        damaged_bodies.len(),
+        full_bodies.len(),
+        "damaged BulkStream keeps the body count"
+    );
+    for (damaged_body, full_body) in damaged_bodies.iter().zip(full_bodies.iter()) {
+        assert_eq!(damaged_body.id, full_body.id);
+        assert_eq!(damaged_body.kind, full_body.kind);
+        assert_eq!(damaged_body.regions, full_body.regions);
+    }
+    assert!(damaged.ir().scope.design);
+    assert!(!f3d_native(damaged.ir()).asm_histories.is_empty());
+    assert!(damaged
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert_valid(&damaged);
 }
