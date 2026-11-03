@@ -502,16 +502,11 @@ fn decode_exchange_mode(
     session.absorb(&mut validation);
 
     // Rules 2 and 3 for damaged decodes: the stages above drop what they
-    // cannot build. The ledger below names each given-up part's drops,
-    // resurrects stranded vertices, and emits dead-style appearances.
+    // cannot build. The ledger below names each given-up part's drops
+    // and emits dead-style appearances.
     let mut damage_ledger = drops::DropLedger::new();
-    let dropped_points = resolve_damage_drops(
-        exchange,
-        &mut session.ir,
-        &mut session.typed_records,
-        &mut damage_ledger,
-        session.ctx,
-    )?;
+    let dropped_points =
+        resolve_damage_drops(exchange, &mut session.ir, &mut damage_ledger, session.ctx)?;
     let damage_starts: BTreeMap<u64, u64> = exchange
         .dead_spans()
         .iter()
@@ -835,8 +830,8 @@ fn insert_retained_identity(identities: &mut BTreeSet<String>, identity: &str) {
 }
 
 /// Resolve the rule 2 and 3 drops of one damaged decode: emit the
-/// appearances of dead styles, build the vertices the damage stranded,
-/// and ledger every stranded record the decode drops.
+/// appearances of dead styles and ledger every stranded record the decode
+/// drops.
 ///
 /// A truncated envelope additionally drops every record whose value derives
 /// from statements the cut may have removed: uncorroborated occurrences,
@@ -846,7 +841,6 @@ fn insert_retained_identity(identities: &mut BTreeSet<String>, identity: &str) {
 fn resolve_damage_drops(
     exchange: &Exchange,
     ir: &mut CadIr,
-    typed_records: &mut ClaimSets,
     ledger: &mut drops::DropLedger,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
@@ -857,57 +851,12 @@ fn resolve_damage_drops(
     }
     if !exchange.dead_instances().is_empty() {
         presentation::emit_dead_style_appearances(exchange, ir, ctx)?;
-        emit_stranded_vertices(exchange, ir, typed_records)?;
         drops::ledger_stranded_drops(exchange, ir, ledger, ctx)?;
     }
     drops::drop_uncorroborated_occurrences(exchange, ir, ledger);
     drops::drop_detached_meshes(damaged, ir, ledger);
     drops::drop_incomplete_dimensions(truncated, ir, ledger);
     drops::drop_stranded_points(exchange, truncated, ir, ledger, ctx)
-}
-
-/// Build the vertices the damage stranded: live vertex points whose
-/// point carrier survived. Shell building never attempts them, so this
-/// pass mints their plain identities.
-fn emit_stranded_vertices(
-    exchange: &Exchange,
-    ir: &mut CadIr,
-    typed_records: &mut ClaimSets,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::ids::{PointId, VertexId};
-    use cadmpeg_ir::topology::Vertex;
-
-    let mut emitted = std::collections::HashSet::new();
-    for (&id, record) in exchange.records() {
-        if typed_records.contains(id) {
-            continue;
-        }
-        let point = record
-            .partials
-            .iter()
-            .find(|partial| partial.name == "VERTEX_POINT")
-            .and_then(|partial| partial.parameters.iter().find_map(Value::reference));
-        let Some(point) = point else {
-            continue;
-        };
-        let point_id = PointId::from(ids::data(kind!("point"), point));
-        if !ir.model.points.iter().any(|known| known.id == point_id) {
-            continue;
-        }
-        let vertex_id = VertexId::from(ids::data(kind!("vertex"), id));
-        if ir.model.vertices.iter().any(|known| known.id == vertex_id) {
-            continue;
-        }
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id,
-            point: point_id,
-            tolerance: None,
-        });
-        emitted.insert(id);
-    }
-    typed_records.admit(emitted);
-    Ok(())
 }
 
 fn retain_unowned_carriers(
