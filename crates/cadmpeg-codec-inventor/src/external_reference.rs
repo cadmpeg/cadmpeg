@@ -11,17 +11,8 @@ use crate::rse::DocumentKind;
 pub(crate) enum UfrxState<'a> {
     Absent,
     Parsed(Box<UfrxDocument<'a>>),
-    Unsupported {
-        stream: CompoundStreamId,
-        schema: u16,
-        section_versions: Vec<u16>,
-        source: View<'a>,
-        detail: String,
-    },
-    Malformed {
-        stream: CompoundStreamId,
-        detail: String,
-    },
+    Unsupported { source: View<'a>, detail: String },
+    Malformed { source: View<'a>, detail: String },
 }
 
 #[derive(Debug)]
@@ -31,10 +22,10 @@ pub(crate) struct UfrxDocument<'a> {
     pub(crate) section_versions: Vec<u16>,
     pub(crate) original_file_name: String,
     pub(crate) caption: String,
-    pub(crate) representation: Option<UfrxRepresentationState>,
+    pub(crate) representation: Option<UfrxRepresentationState<'a>>,
     pub(crate) model_states: Vec<UfrxModelState<'a>>,
     pub(crate) levels_of_detail: Vec<UfrxLevelOfDetail>,
-    pub(crate) references: Vec<InventorExternalReference>,
+    pub(crate) references: Vec<InventorExternalReference<'a>>,
     pub(crate) embedded_references: Vec<InventorEmbeddedReference<'a>>,
     pub(crate) occurrences: Vec<UfrxOccurrence<'a>>,
     pub(crate) unparsed_tail: View<'a>,
@@ -98,6 +89,7 @@ pub(crate) struct UfrxModelState<'a> {
     pub(crate) prefix_count: u32,
     pub(crate) parameters: Vec<UfrxModelStateParameter>,
     pub(crate) suffix: View<'a>,
+    pub(crate) source: View<'a>,
 }
 
 /// One pre-schema-15 level-of-detail record.
@@ -129,14 +121,15 @@ pub(crate) enum UfrxLevelOfDetailMemberKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UfrxRepresentationState {
+#[derive(Debug, Clone)]
+pub(crate) struct UfrxRepresentationState<'a> {
     pub(crate) prefix: u16,
     /// The stored `(name, kind)` representation list of an assembly; a part stores none.
     pub(crate) design_views: Option<Vec<(String, String)>>,
     pub(crate) secondary_active_lod_state: [u16; 2],
     pub(crate) active_design_view: String,
     pub(crate) active_design_view_state: [u16; 2],
+    pub(crate) source: View<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,8 +142,8 @@ pub(crate) struct UfrxModelStateParameter {
     pub(crate) trailer: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct InventorExternalReference {
+#[derive(Debug, Clone)]
+pub(crate) struct InventorExternalReference<'a> {
     pub(crate) path: String,
     pub(crate) library_id: i32,
     pub(crate) library_name: String,
@@ -163,6 +156,7 @@ pub(crate) struct InventorExternalReference {
     pub(crate) occurrence_count: u32,
     pub(crate) version: u32,
     pub(crate) flags: u32,
+    pub(crate) source: View<'a>,
 }
 
 #[derive(Debug)]
@@ -193,18 +187,15 @@ pub(crate) fn parse<'a>(
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
             Ok(document) => UfrxState::Parsed(Box::new(document)),
-            Err(CodecError::NotImplemented(detail)) => {
-                let (schema, section_versions) = parse_schema_table(source)?;
-                UfrxState::Unsupported {
-                    stream: stream.id(),
-                    schema,
-                    section_versions,
+            Err(CodecError::NotImplemented(detail)) => match parse_schema_table(source) {
+                Ok(_) => UfrxState::Unsupported { source, detail },
+                Err(error) => UfrxState::Malformed {
                     source,
-                    detail,
-                }
-            }
+                    detail: crate::issue_detail(error)?,
+                },
+            },
             Err(error) => UfrxState::Malformed {
-                stream: stream.id(),
+                source,
                 detail: crate::issue_detail(error)?,
             },
         },
@@ -303,6 +294,7 @@ fn parse_stream_grammar<'a>(
         }
     }
     let representation = if schema == 15 {
+        let start = cursor.position();
         let prefix = cursor.u16("representation prefix")?;
         let mut design_views = Vec::new();
         for _ in 0..design_view_count {
@@ -311,7 +303,7 @@ fn parse_stream_grammar<'a>(
                 cursor.utf16(ctx, "design view kind", 65_536)?,
             ));
         }
-        Some(UfrxRepresentationState {
+        let representation = UfrxRepresentationState {
             prefix,
             design_views: Some(design_views),
             secondary_active_lod_state: [
@@ -323,7 +315,13 @@ fn parse_stream_grammar<'a>(
                 cursor.u16("active design-view state")?,
                 cursor.u16("active design-view state")?,
             ],
-        })
+            source: source
+                .child(source.start() + start, source.start() + cursor.position())
+                .ok_or_else(|| {
+                    CodecError::Malformed("UFRxDoc representation range is invalid".into())
+                })?,
+        };
+        Some(representation)
     } else {
         if section_versions[2] >= 12 {
             cursor.utf16(ctx, "active design view", 65_536)?;
@@ -376,6 +374,7 @@ fn parse_stream_grammar<'a>(
     cursor.u32("external-reference table state")?;
     let mut references = Vec::new();
     for _ in 0..reference_count {
+        let start = cursor.position();
         let path = cursor.utf16(ctx, "external path", 65_536)?;
         let library_id = cursor.i32("reference library id")?;
         let library_name = cursor.utf16(ctx, "library name", 65_536)?;
@@ -402,6 +401,13 @@ fn parse_stream_grammar<'a>(
         ];
         let document_id = cursor.array("referenced document id")?;
         let database_id = cursor.array("referenced database id")?;
+        let reference_id = cursor.u32("reference id")?;
+        let occurrence_count = cursor.u32("reference occurrence count")?;
+        let version = cursor.u32("reference version")?;
+        let flags = cursor.u32("reference flags")?;
+        let record = source
+            .child(source.start() + start, source.start() + cursor.position())
+            .ok_or_else(|| CodecError::Malformed("UFRxDoc reference range is invalid".into()))?;
         references.push(InventorExternalReference {
             path,
             library_id,
@@ -411,10 +417,11 @@ fn parse_stream_grammar<'a>(
             state,
             document_id,
             database_id,
-            reference_id: cursor.u32("reference id")?,
-            occurrence_count: cursor.u32("reference occurrence count")?,
-            version: cursor.u32("reference version")?,
-            flags: cursor.u32("reference flags")?,
+            reference_id,
+            occurrence_count,
+            version,
+            flags,
+            source: record,
         });
     }
     if section_versions[4] >= 2 && cursor.u8("external-reference terminator")? != 0 {
@@ -832,6 +839,7 @@ fn parse_model_states<'a>(
     let record_count = if version_17 { count.min(1) } else { count };
     let mut states = Vec::new();
     for _ in 0..record_count {
+        let start = cursor.position();
         let prefix = cursor.u8("model-state prefix")?;
         let name = cursor.utf16(ctx, "model-state name", 65_536)?;
         let state = [
@@ -882,6 +890,11 @@ fn parse_model_states<'a>(
             prefix_count,
             parameters,
             suffix,
+            source: source
+                .child(source.start() + start, source.start() + cursor.position())
+                .ok_or_else(|| {
+                    CodecError::Malformed("UFRxDoc model-state range is invalid".into())
+                })?,
         });
     }
     Ok(states)

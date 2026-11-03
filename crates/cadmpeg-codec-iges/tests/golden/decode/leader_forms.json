@@ -105,7 +105,104 @@
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D1",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D1",
+          "object": "iges:entity:directory#1",
+          "order": 0,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D11",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D11",
+          "object": "iges:entity:directory#11",
+          "order": 5,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D13",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D13",
+          "object": "iges:entity:directory#13",
+          "order": 6,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D15",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D15",
+          "object": "iges:entity:directory#15",
+          "order": 7,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D17",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D17",
+          "object": "iges:entity:directory#17",
+          "order": 8,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D19",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D19",
+          "object": "iges:entity:directory#19",
+          "order": 9,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D21",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D21",
+          "object": "iges:entity:directory#21",
+          "order": 10,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D23",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D23",
+          "object": "iges:entity:directory#23",
+          "order": 11,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D3",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D3",
+          "object": "iges:entity:directory#3",
+          "order": 1,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D5",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D5",
+          "object": "iges:entity:directory#5",
+          "order": 2,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D7",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D7",
+          "object": "iges:entity:directory#7",
+          "order": 3,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D9",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D9",
+          "object": "iges:entity:directory#9",
+          "order": 4,
+          "runtime_type": "iges:214"
+        }
+      ],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],

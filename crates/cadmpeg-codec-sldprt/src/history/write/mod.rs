@@ -105,9 +105,11 @@ fn validate_surface_sweep_profile_edits(
                 .native_ref
                 .as_deref()
                 .and_then(|native_id| {
-                    native.feature_histories.iter().flat_map(|history| &history.features).find(
-                        |record| record.id.as_str() == native_id,
-                    )
+                    native
+                        .feature_histories
+                        .iter()
+                        .flat_map(|history| &history.features)
+                        .find(|record| record.id.as_str() == native_id)
                 })
                 .is_some_and(|record| record.properties.contains_key("Profile"));
             (matches!(profile, PlanarProfileRef::Generated { .. }) || !native_states_profile)

@@ -41,9 +41,17 @@
         "vertices": [],
         "view_presentations": []
       },
-      "native": {},
+      "native": {
+        "nx": {
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            }
+          ]
+        }
+      },
       "scope": {
-        "design": false,
+        "design": true,
         "model": false
       },
       "source": {
@@ -114,7 +122,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
           "severity": "error"
         }
       ],
@@ -125,22 +133,36 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
+          "design": true,
           "model": false
         }
       }
     },
     "source_fidelity": {
-      "annotations": {},
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "scope": "entity"
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 76,
+            "stream": "nx:container",
+            "tag": "preview"
+          }
+        }
+      },
       "decode_digest": "b84e774ba933fd90d0cf95063b336a8800f9d2e48e94800a401ccf2ffae0a64c",
       "retained_records": {
-        "nx:source:image#whole": {
+        "nx:container:parasolid#0": {
           "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADcAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACQAAAAAAAAAHgBrZC7DcMwEEMpAW6ClNnCQ6jMTvkXGSFbBEiRX5nMYtwCHsFPJ7uwC1cW7sMTKQmUDlpptGr7K9hPQaeM4AJYiqBYVbn2SbMv2g/5Jl/kE+3RT5eKZvmouXJtd54CzEW67ZrtY7MfNOk6nqf7aaLXGUU0DGI/9hNWfbo4h2m6R2q9SYXJX6GyBqYDuz8tmkZPT1RFUgAAAAAAAAAA",
+            "data": "AHwACgAAAAAAAAAAAAAAAAAAK+O/AAHjvgABAH7jvwABAAAAAQABAAAAAgAAAAIFBQAAAAIAAAACAAAAAAAA47YAAeO1AAHjtAAB47MAAeOyAAEAfeO+AAEAfeO+AAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAM46sAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP5R64UeuFHsAAAAAAAAAAD+EeuFHrhR7AAAAAAAAAAAAAAAAAAAAAD+EeuFHrhR7P5R64UeuFHsAAAAAAAAAAAB/AAAAAuO1AAEAAgACAH8AAAAC47QAAQACAAIAgAAAAALjswABAAAAAAAAAAA/8AAAAAAAAACAAAAAAuOyAAEAAAAAAAAAAD/wAAAAAAAA",
             "retention": "inline"
           },
-          "offset": 0,
-          "stream": "nx:source",
+          "offset": 76,
+          "stream": "nx:container",
           "untyped": [
             "model"
           ]

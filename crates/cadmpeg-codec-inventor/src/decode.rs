@@ -46,7 +46,7 @@ use crate::native::{
     AssemblyPlacementRecord, DatabaseRecord, DesignViewRepresentationRecord,
     DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetRecord,
     PropertyValueKind, RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
+    StorageBandRecord, VersionTupleRecord,
 };
 use crate::property_set::PropertyValue;
 use crate::protein::ProteinState;
@@ -167,16 +167,19 @@ fn decode_container<'a>(
     let ProteinNativeRecords {
         assets: protein_assets,
     } = project_protein_records(ctx, &mut assembly_inventory.parts, protein_instances)?;
-    let mut ufrx_issues = Vec::new();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_issues)?;
-    let ufrx_issue_count = ufrx_issues.len();
-    let mut structural_issues = ufrx_issues;
-    let ufrx_model_states = ufrx.model_states();
-    let external_references = ufrx.external_references();
-    let embedded_references = ufrx.embedded_references();
-    let ufrx_occurrences = ufrx.occurrences();
+    let ufrx = project_ufrx_state(ctx, &mut assembly_inventory.parts, &container.ufrx)?;
+    let ufrx_model_states: &[UfrxModelStateRecord] =
+        ufrx.as_ref().map_or(&[], |record| record.model_states());
+    let external_references: &[ExternalReferenceRecord] = ufrx
+        .as_ref()
+        .map_or(&[], |record| record.external_references());
+    let embedded_references: &[EmbeddedReferenceRecord] = ufrx
+        .as_ref()
+        .map_or(&[], |record| record.embedded_references());
+    let ufrx_occurrences: &[UfrxOccurrenceRecord] =
+        ufrx.as_ref().map_or(&[], |record| record.occurrences());
     if matches!(document_kind, DocumentKind::Unknown | DocumentKind::Mixed) {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
@@ -310,15 +313,13 @@ fn decode_container<'a>(
     };
     let source_meta_type_count = container.rse.source_meta_type_count;
     let projection = rse_native_projection::project(ctx, &container)?;
-    structural_issues.extend(projection.identity_issues);
+    let mut identity_losses = projection.identity_losses;
     let segment_pairs = projection.segment_pairs;
     let segment_meta = projection.segment_meta;
     let meta_sections = projection.meta_sections;
-    let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
     let drawing_inventory = crate::drawing::inventory(ctx, &container, &rse_records)?;
     let segment_bulk = projection.segment_bulk;
-    let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
     admit_native_items(ctx, 1)?;
     let active_carrier = ActiveCarrierRecord::from_state(&container.rse.active_carrier);
@@ -383,7 +384,8 @@ fn decode_container<'a>(
         "admit Inventor pre-assembly entities",
     )?;
     let active_design_view = ufrx
-        .representation()
+        .as_ref()
+        .and_then(|record| record.representation())
         .map(|representation| representation.active_design_view.as_str());
     let unprojected_occurrences = crate::assembly::project_occurrences_into(
         ufrx_occurrences,
@@ -408,7 +410,6 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "databases", &databases)?;
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
-    namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
     namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
     namespace.set_arena::<PropertySectionRecord>(ctx, "property_sections", &[])?;
     namespace.set_arena::<PropertyRecord>(ctx, "properties", &[])?;
@@ -424,7 +425,16 @@ fn decode_container<'a>(
         }
     }
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
-    ufrx.install(ctx, namespace)?;
+    match &ufrx {
+        Some(record) => record.install(ctx, namespace)?,
+        None => {
+            namespace.set_arena::<UfrxRecord>(ctx, "ufrx", &[])?;
+            namespace.set_arena::<UfrxModelStateRecord>(ctx, "ufrx_model_states", &[])?;
+            namespace.set_arena::<ExternalReferenceRecord>(ctx, "external_references", &[])?;
+            namespace.set_arena::<EmbeddedReferenceRecord>(ctx, "embedded_references", &[])?;
+            namespace.set_arena::<UfrxOccurrenceRecord>(ctx, "ufrx_occurrences", &[])?;
+        }
+    }
     namespace.set_arena::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences", &[])?;
     namespace.set_arena::<AssemblyPlacementRecord>(ctx, "assembly_placements", &[])?;
     namespace.set_arena::<DesignViewRepresentationRecord>(
@@ -535,10 +545,8 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
     namespace.set_arena::<crate::native::MetaTypeRecord>(ctx, "meta_types", &[])?;
-    namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
     namespace.set_arena(ctx, "rse_records", &rse_records)?;
-    namespace.set_arena(ctx, "segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
@@ -636,7 +644,7 @@ fn decode_container<'a>(
         stored_body_losses = projection.losses;
     }
     if !ctx.container_only() {
-        document_native_projection::project(ctx, &mut ir, &ufrx, &mut losses)?;
+        document_native_projection::project(ctx, &mut ir, ufrx.as_ref(), &mut losses)?;
     }
     let composite_links = if delivered == DecodeDepth::Full {
         crate::feature::composite::links(
@@ -785,18 +793,6 @@ fn decode_container<'a>(
             losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
                 "Retained {} structurally paired RSe segment(s) without record semantics.",
                 segment_pairs.len()
-            )));
-        }
-        if !segment_meta_issues.is_empty() {
-            losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
-                "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
-                segment_meta_issues.len()
-            )));
-        }
-        if !segment_bulk_issues.is_empty() {
-            losses.push(InventorLossCode::RseBulkStreamMalformed.note(format!(
-                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                segment_bulk_issues.len()
             )));
         }
         let unnamed_labels = feature_inventory
@@ -1024,26 +1020,8 @@ fn decode_container<'a>(
                 )),
             );
         }
-        if ufrx_issue_count != 0 {
-            losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
-                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
-            )));
-        }
         match &container.ufrx {
-            UfrxState::Malformed { .. } => losses.push(
-                InventorLossCode::UfrxTableMalformed
-                    .note("The UFRxDoc external-reference table is malformed.".to_string()),
-            ),
-            UfrxState::Unsupported { schema, .. } => {
-                let code = if matches!(document_kind, DocumentKind::Assembly) {
-                    InventorLossCode::UfrxSchemaUnsupportedAssembly
-                } else {
-                    InventorLossCode::UfrxSchemaUnsupported
-                };
-                losses.push(code.note(format!(
-                    "Retained unsupported UFRxDoc schema {schema} semantic branch without transfer."
-                )));
-            }
+            UfrxState::Malformed { .. } | UfrxState::Unsupported { .. } => {}
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
                     losses.push(InventorLossCode::AssemblyComponentExternal.note({
@@ -1158,6 +1136,7 @@ fn decode_container<'a>(
         destination.append(&mut records);
     }
     losses.append(&mut part_losses);
+    losses.append(&mut identity_losses);
     let preview_asset_count = ir.model.assets.len();
     let mut source_fidelity = part_fidelity;
     let mut annotations = AnnotationBuilder::new();
@@ -1224,18 +1203,10 @@ fn decode_container<'a>(
         (crate::coverage::RSE_SEGMENT_PAIRS, segment_pairs.len()),
         (crate::coverage::RSE_SEGMENT_META, segment_meta.len()),
         (crate::coverage::RSE_META_TYPES, source_meta_type_count),
-        (
-            crate::coverage::RSE_SEGMENT_META_ISSUES,
-            segment_meta_issues.len(),
-        ),
         (crate::coverage::RSE_SEGMENT_BULK, segment_bulk.len()),
         (
             crate::coverage::RSE_RECORDS,
             rse_records.len() + staged_rse_record_count,
-        ),
-        (
-            crate::coverage::RSE_SEGMENT_BULK_ISSUES,
-            segment_bulk_issues.len(),
         ),
         (crate::coverage::PROPERTY_SETS, property_set_count),
         (crate::coverage::PROPERTIES, property_count),
@@ -1766,45 +1737,41 @@ pub(crate) fn nested_visibility_loss(nested_hidden: usize) -> Option<LossNote> {
 
 fn project_ufrx_state(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     state: &UfrxState<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
-) -> Result<UfrxRecord, CodecError> {
+) -> Result<Option<UfrxRecord>, CodecError> {
     admit_native_items(ctx, 1)?;
     Ok(match state {
-        UfrxState::Absent => UfrxRecord::Absent {
+        UfrxState::Absent => Some(UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".to_owned(),
-        },
-        UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
-            id: "inventor:ufrx:state#root".to_owned(),
-            directory_id: stream.directory_id(),
-            detail: detail.to_owned(),
-        },
-        UfrxState::Unsupported {
-            stream,
-            schema,
-            section_versions,
-            source,
-            detail,
-        } => UfrxRecord::Unsupported {
-            id: "inventor:ufrx:state#root".to_owned(),
-            directory_id: stream.directory_id(),
-            schema: *schema,
-            section_versions: section_versions.clone(),
-            tail_len: cadmpeg_core::decode::u64_from_index(source.window().len()),
-            tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(source.window()),
-            detail: detail.to_owned(),
-        },
+        }),
+        UfrxState::Malformed { source, detail, .. } => {
+            // A malformed table gives up its stream part (§4.5).
+            let spec = part_spec("inventor.ufrx_stream", *source, || "UFRxDoc".to_owned())?;
+            ctx.decode_part(output, *source, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail.clone()))
+            })?;
+            None
+        }
+        UfrxState::Unsupported { source, detail, .. } => {
+            // An unsupported schema gives up its stream part (§4.5).
+            let spec = part_spec("inventor.ufrx_stream", *source, || "UFRxDoc".to_owned())?;
+            ctx.decode_part(output, *source, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail.clone()))
+            })?;
+            None
+        }
         UfrxState::Parsed(document) => {
             let mut model_states = Vec::new();
             for (ordinal, state) in document.model_states.iter().enumerate() {
-                if let Some(record) = project_ufrx_model_state(ctx, ordinal, state, issues)? {
+                if let Some(record) = project_ufrx_model_state(ctx, output, ordinal, state)? {
                     model_states.push(record);
                 }
             }
             let mut references = Vec::new();
             for (ordinal, reference) in document.references.iter().enumerate() {
                 if let Some(record) =
-                    project_ufrx_external_reference(ctx, ordinal, reference, issues)?
+                    project_ufrx_external_reference(ctx, output, ordinal, reference)?
                 {
                     references.push(record);
                 }
@@ -1812,24 +1779,24 @@ fn project_ufrx_state(
             let mut embedded = Vec::new();
             for (ordinal, reference) in document.embedded_references.iter().enumerate() {
                 if let Some(record) =
-                    project_ufrx_embedded_reference(ctx, ordinal, reference, issues)?
+                    project_ufrx_embedded_reference(ctx, output, ordinal, reference)?
                 {
                     embedded.push(record);
                 }
             }
             let mut occurrences = Vec::new();
             for (ordinal, occurrence) in document.occurrences.iter().enumerate() {
-                if let Some(record) = project_ufrx_occurrence(ctx, ordinal, occurrence, issues)? {
+                if let Some(record) = project_ufrx_occurrence(ctx, output, ordinal, occurrence)? {
                     occurrences.push(record);
                 }
             }
             let representation = document
                 .representation
                 .as_ref()
-                .map(|state| project_ufrx_representation(ctx, state, issues))
+                .map(|state| project_ufrx_representation(ctx, output, state))
                 .transpose()?
                 .flatten();
-            UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
+            Some(UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
                 id: "inventor:ufrx:state#root".to_owned(),
                 directory_id: document.stream.directory_id(),
                 schema: document.schema,
@@ -1848,7 +1815,7 @@ fn project_ufrx_state(
                 tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                     document.unparsed_tail.window(),
                 ),
-            }))
+            })))
         }
     })
 }
@@ -1889,9 +1856,9 @@ fn project_ufrx_levels_of_detail(
 
 fn project_ufrx_model_state(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     ordinal: usize,
     state: &crate::external_reference::UfrxModelState<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxModelStateRecord>, CodecError> {
     let parameters = state
         .parameters
@@ -1921,15 +1888,14 @@ fn project_ufrx_model_state(
             state.suffix.window(),
         )),
     });
-    let scope = format!("ufrx-model-state-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    admit_ufrx_record(ctx, output, admitted, state.source)
 }
 
 fn project_ufrx_external_reference(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     ordinal: usize,
-    reference: &crate::external_reference::InventorExternalReference,
-    issues: &mut Vec<StructuralIssueRecord>,
+    reference: &crate::external_reference::InventorExternalReference<'_>,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
     let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
         id: format!("inventor:ufrx:external-reference#{ordinal}"),
@@ -1947,15 +1913,14 @@ fn project_ufrx_external_reference(
         version: reference.version,
         flags: reference.flags,
     });
-    let scope = format!("ufrx-external-reference-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    admit_ufrx_record(ctx, output, admitted, reference.source)
 }
 
 fn project_ufrx_embedded_reference(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     ordinal: usize,
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
     let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
         id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
@@ -1977,15 +1942,14 @@ fn project_ufrx_embedded_reference(
             reference.source.window(),
         )),
     });
-    let scope = format!("ufrx-embedded-reference-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    admit_ufrx_record(ctx, output, admitted, reference.source)
 }
 
 fn project_ufrx_occurrence(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     ordinal: usize,
     occurrence: &crate::external_reference::UfrxOccurrence<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
     let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
         id: format!("inventor:ufrx:occurrence#{ordinal}"),
@@ -2005,14 +1969,13 @@ fn project_ufrx_occurrence(
             occurrence.source.window(),
         )),
     });
-    let scope = format!("ufrx-occurrence-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    admit_ufrx_record(ctx, output, admitted, occurrence.source)
 }
 
 fn project_ufrx_representation(
     ctx: &DecodeContext<'_>,
-    state: &crate::external_reference::UfrxRepresentationState,
-    issues: &mut Vec<StructuralIssueRecord>,
+    output: &mut PartOutput,
+    state: &crate::external_reference::UfrxRepresentationState<'_>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
     let design_views = state.design_views.as_ref().map(|views| {
         views
@@ -2032,9 +1995,9 @@ fn project_ufrx_representation(
     };
     admit_ufrx_record(
         ctx,
+        output,
         UfrxRepresentationRecord::try_from(wire),
-        "ufrx-representation",
-        issues,
+        state.source,
     )
 }
 
@@ -2118,9 +2081,9 @@ fn apply_kernel_header(
 
 fn admit_ufrx_record<T>(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     admitted: Result<T, String>,
-    scope: &str,
-    issues: &mut Vec<StructuralIssueRecord>,
+    extent: View<'_>,
 ) -> Result<Option<T>, CodecError> {
     match admitted {
         Ok(record) => {
@@ -2128,23 +2091,14 @@ fn admit_ufrx_record<T>(
             Ok(Some(record))
         }
         Err(detail) => {
-            issues.push(structural_issue(ctx, scope, &detail)?);
+            // A validation failure gives up the record's part (§4.5).
+            let spec = part_spec("inventor.ufrx_record", extent, || "UFRxDoc".to_owned())?;
+            ctx.decode_part(output, extent, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail))
+            })?;
             Ok(None)
         }
     }
-}
-
-fn structural_issue(
-    ctx: &DecodeContext<'_>,
-    scope: &str,
-    detail: &str,
-) -> Result<StructuralIssueRecord, CodecError> {
-    ctx.charge_entities(1, "admit Inventor structural issue")?;
-    Ok(StructuralIssueRecord {
-        id: format!("inventor:rse:structural-issue#{scope}"),
-        scope: scope.to_owned(),
-        detail: detail.to_owned(),
-    })
 }
 
 const FMTID_SUMMARY_INFORMATION: [u8; 16] = [

@@ -207,7 +207,92 @@
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D1",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D1",
+          "object": "iges:entity:directory#1",
+          "order": 1,
+          "runtime_type": "iges:212",
+          "text": [
+            "A"
+          ]
+        },
+        {
+          "dimension_kind": {
+            "kind": "angle"
+          },
+          "id": "iges:model:semantic-annotation#D13",
+          "kind": "dimension",
+          "native_ref": "iges:presentation:annotation#D13",
+          "object": "iges:entity:directory#13",
+          "order": 4,
+          "runtime_type": "iges:202"
+        },
+        {
+          "dimension_kind": {
+            "kind": "distance"
+          },
+          "id": "iges:model:semantic-annotation#D15",
+          "kind": "dimension",
+          "native_ref": "iges:presentation:annotation#D15",
+          "object": "iges:entity:directory#15",
+          "order": 5,
+          "runtime_type": "iges:204"
+        },
+        {
+          "dimension_kind": {
+            "kind": "diameter"
+          },
+          "id": "iges:model:semantic-annotation#D17",
+          "kind": "dimension",
+          "native_ref": "iges:presentation:annotation#D17",
+          "object": "iges:entity:directory#17",
+          "order": 6,
+          "runtime_type": "iges:206"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D19",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D19",
+          "object": "iges:entity:directory#19",
+          "order": 7,
+          "runtime_type": "iges:208"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D21",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D21",
+          "object": "iges:entity:directory#21",
+          "order": 8,
+          "runtime_type": "iges:210"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D3",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D3",
+          "object": "iges:entity:directory#3",
+          "order": 2,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D5",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D5",
+          "object": "iges:entity:directory#5",
+          "order": 3,
+          "runtime_type": "iges:214"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D7",
+          "kind": "leader",
+          "native_ref": "iges:native:copious-data#D7",
+          "object": "iges:entity:directory#7",
+          "order": 0,
+          "runtime_type": "iges:106"
+        }
+      ],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -1891,24 +1976,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "presentation.display-data-not-projected",
-          "kind": "material_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES entity type 106 form 40 display data was not projected: copious presentation tuples have no neutral display carrier",
-        "provenance": {
-          "format": "iges",
-          "offset": 729,
-          "stream": "iges",
-          "tag": "directory_entry:D7"
-        },
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "entities=11",
       "entity.100.form.0=1",

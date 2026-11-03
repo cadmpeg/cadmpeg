@@ -158,6 +158,29 @@ pub(crate) fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) ->
     zip.finish().unwrap().into_inner()
 }
 
+/// An archive whose preview entry fails its integrity check: the stored
+/// payload keeps one flipped byte, so the entry cannot be opened and is
+/// given up as a `zip.entry` part while the document still decodes.
+pub(crate) fn f3d_with_unreadable_preview(smbh: &[u8]) -> Vec<u8> {
+    const NAME: &str = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let mut bytes = f3d_with_configuration(smbh, NAME, b"preview-image-payload");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let payload = usize::try_from(
+        archive
+            .entry(NAME)
+            .unwrap()
+            .data_start
+            .expect("stored preview frame"),
+    )
+    .unwrap();
+    drop(ctx);
+    bytes[payload] ^= 1;
+    bytes
+}
+
 pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])
 }

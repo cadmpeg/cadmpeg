@@ -284,9 +284,10 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
     }
 }
 
-/// The decode report line names the content scope the codec delivered. A codec with
-/// no geometry-depth cut delivers `full` for STEP's geometry request, with or
-/// without `--full-decode`, which excludes `--container-only`.
+/// The decode report line names the content scope the codec delivered. A
+/// geometryless source locates no design parts, so the delivered scope is
+/// `model` with or without `--full-decode`, which excludes
+/// `--container-only` (#229 scope, #209 §1.1).
 #[test]
 fn convert_reports_the_delivered_scope() {
     let dir = tempdir().unwrap();
@@ -300,7 +301,7 @@ fn convert_reports_the_delivered_scope() {
             .assert()
             .success()
             .stderr(predicate::str::contains(
-                "scope=model+design, geometry_transferred=false",
+                "scope=model, geometry_transferred=false",
             ));
     }
     Command::cargo_bin("cadmpeg")

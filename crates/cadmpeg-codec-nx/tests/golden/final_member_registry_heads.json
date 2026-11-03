@@ -250,8 +250,8 @@
         }
       },
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -302,17 +302,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -323,25 +312,14 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
-          "model": false
+          "design": true,
+          "model": true
         }
       }
     },
     "source_fidelity": {
       "annotations": {},
       "decode_digest": "632394c016c2349ebe737d628628688dad539506ab547f7df8cd8081f263744e",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABTAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAHAgAAAAAAAP////8AAAAAAAAAcE9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbHgBEmZpcnN0X3JlY29yZF9hcmVhgM8C/////wAAAAAAAAByT00BAQ5VR1M6Ok9NOjpNZXRhAgEUVUdTOjpPTTo6Um9vdE9iamVjdDgAEBESExQVFhcBFVVHUzo6T006OkNoaWxkT2JqZWN0gMkBICEiIyQlJicBAghtX2ZpbmFsgNCAABJmaXJzdF9yZWNvcmRfYXJlYYDPAv////8AAAAAAAAAdE9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbKA33qAAARJmaXJzdF9yZWNvcmRfYXJlYYDPAv////8AAAAAAAAAcU9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbIOHAhJmaXJzdF9yZWNvcmRfYXJlYYDPAkZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },

@@ -48,7 +48,8 @@ impl MapImage<'_> {
         };
         let start = piece.start().checked_add(self.key_len)?;
         let end = start.checked_add(self.value_len)?;
-        (end <= piece.start().checked_add(piece.window().len())?).then(|| piece.child(start, end))?
+        (end <= piece.start().checked_add(piece.window().len())?)
+            .then(|| piece.child(start, end))?
     }
 }
 
