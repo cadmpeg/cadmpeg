@@ -8,42 +8,9 @@ use sha2::{Digest, Sha256};
 use crate::loss::F3dLossCode;
 
 pub(super) fn prepare(target: &mut CadIr, losses: &mut Vec<LossNote>) {
-    use cadmpeg_ir::appearance::AppearanceTarget;
-    let mut bindings = std::collections::BTreeMap::new();
-    for binding in &target.model.appearance_bindings {
-        bindings
-            .entry(binding.target.clone())
-            .or_insert_with(Vec::new)
-            .push(binding);
-    }
-    for (owner, assignments) in bindings {
-        if let [binding] = assignments.as_slice() {
-            if let Some(color) = target
-                .model
-                .appearances
-                .iter()
-                .find(|appearance| appearance.id == binding.appearance)
-                .and_then(|appearance| appearance.base_color)
-            {
-                match owner {
-                    AppearanceTarget::Body(id) => {
-                        if let Some(body) =
-                            target.model.bodies.iter_mut().find(|body| body.id == id)
-                        {
-                            body.color.get_or_insert(color);
-                        }
-                    }
-                    AppearanceTarget::Face(id) => {
-                        if let Some(face) = target.model.faces.iter_mut().find(|face| face.id == id)
-                        {
-                            face.color.get_or_insert(color);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
+    // Appearance bindings stay bindings: the writer never copies a bound
+    // appearance color into a body or face display color. Dropped bindings
+    // are reported through the appearance-bindings arena disposition.
     target.model.appearance_bindings.clear();
     let mut omitted = std::collections::BTreeSet::new();
     for appearance in &mut target.model.appearances {

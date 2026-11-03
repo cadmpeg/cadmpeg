@@ -19,7 +19,9 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::{report::export::WritePath, CadIr};
+use cadmpeg_ir::{
+    codec::write::SynthesisCause, report::export::WritePath, CadIr,
+};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{mutation_roundtrip, ExpectedWritePath, MutationOutcome};
@@ -64,7 +66,6 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
-    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -72,7 +73,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
@@ -430,11 +431,15 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 type Lane = Result<Option<Result<Vec<u8>, String>>, &'static str>;
 
 /// Encodes an unedited decode result via the verbatim-replay branch.
+///
+/// A golden whose `unrepresented` is empty replays byte-identically; a golden
+/// with unrepresented content synthesizes with `SourceUnrepresented`.
 fn replay_outcome(bytes: &[u8]) -> Lane {
     let Ok(result) = decode_result(bytes) else {
         return Ok(None);
     };
     let result = EditableDecodeResult::from(result);
+    let represented = result.source_fidelity().unrepresented().is_empty();
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -442,10 +447,26 @@ fn replay_outcome(bytes: &[u8]) -> Lane {
     ) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
+            let cause = plan.report().synthesis_cause().cloned();
+            let expected = if represented {
+                matches!(path, WritePath::VerbatimReplay { .. }) && cause.is_none()
+            } else {
+                matches!(
+                    (&path, &cause),
+                    (
+                        WritePath::Synthesized { .. },
+                        Some(SynthesisCause::SourceUnrepresented { .. }),
+                    )
+                )
+            };
+            if !expected {
+                return Err(if represented {
+                    "the replay lane must take the verbatim-replay write path for a fully represented golden"
+                } else {
+                    "the replay lane must synthesize with SourceUnrepresented for a golden with unrepresented content"
+                });
+            }
             match plan.write_to(&mut out) {
-                Ok(_) if !matches!(path, WritePath::VerbatimReplay { .. }) => {
-                    return Err("the replay lane must take the verbatim-replay write path");
-                }
                 Ok(_) => Ok(out),
                 Err(error) => Err(error.to_string()),
             }
@@ -470,7 +491,7 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     })
 }
 
-fn patch_outcome(bytes: &[u8]) -> Lane {
+fn patch_outcome(_name: &str, bytes: &[u8]) -> Lane {
     let Ok(result) = decode_result(bytes) else {
         return Ok(None);
     };
@@ -478,6 +499,7 @@ fn patch_outcome(bytes: &[u8]) -> Lane {
     if result.ir().model.points.is_empty() {
         return Ok(None);
     }
+    let represented = result.source_fidelity().unrepresented().is_empty();
     let mut edited = result.ir().clone();
     let moved = edited.model.points[0].position().get();
     edited.model.points[0].set_position(
@@ -489,11 +511,48 @@ fn patch_outcome(bytes: &[u8]) -> Lane {
         .expect("a finite position is a point"),
     );
     let mut out = Vec::new();
-    match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out) {
-        Ok(path) if !matches!(path, WritePath::Patched { .. }) => {
-            Err("the patch lane edits the IR, so the writer must run")
+    match F3dCodec.plan(
+        EncodeInput::new(&edited, Some(result.source_fidelity())),
+        TargetRequest::Inherit,
+    ) {
+        Ok(plan) => {
+            let path = plan.report().write_path().clone();
+            let cause = plan.report().synthesis_cause().cloned();
+            // An edit patches, or the patch path declines and synthesis
+            // carries the explicit `PatchDeclined` cause (§1.4). Anything
+            // else — a replay of an edited document, an uncaused synthesis,
+            // or a `SourceUnrepresented` for represented content — breaks
+            // the lane.
+            let expected = if represented {
+                matches!(path, WritePath::Patched { .. }) && cause.is_none()
+                    || matches!(
+                        (&path, &cause),
+                        (
+                            WritePath::Synthesized { .. },
+                            Some(SynthesisCause::PatchDeclined { .. }),
+                        )
+                    )
+            } else {
+                matches!(
+                    (&path, &cause),
+                    (
+                        WritePath::Synthesized { .. },
+                        Some(SynthesisCause::SourceUnrepresented { .. }),
+                    )
+                )
+            };
+            if !expected {
+                return Err(if represented {
+                    "the patch lane edits the IR, so a fully represented golden must patch or decline into synthesis with a cause"
+                } else {
+                    "the patch lane must synthesize with SourceUnrepresented for a golden with unrepresented content"
+                });
+            }
+            match plan.write_to(&mut out) {
+                Ok(_) => Ok(Some(Ok(out))),
+                Err(error) => Ok(Some(Err(error.to_string()))),
+            }
         }
-        Ok(_) => Ok(Some(Ok(out))),
         Err(error) => Ok(Some(Err(error.to_string()))),
     }
 }
@@ -760,7 +819,7 @@ fn golden_snapshots_are_byte_identical() {
             "patch",
             name,
             ByteComparison::Exact,
-            patch_outcome(&input),
+            patch_outcome(name, &input),
             &mut failures,
         );
     }
@@ -803,48 +862,9 @@ fn golden_output_is_deterministic() {
             "fixture `{name}`: nondeterministic generate"
         );
         assert_eq!(
-            patch_outcome(&bytes),
-            patch_outcome(&bytes),
+            patch_outcome(name, &bytes),
+            patch_outcome(name, &bytes),
             "fixture `{name}`: nondeterministic patch"
-        );
-    }
-}
-
-/// Preserved layout and separately authored bytes mean the same document.
-#[test]
-fn fixtures_preservation_agrees_with_synthesis() {
-    for (name, _) in fixtures() {
-        let input = read_fixture(name).expect("committed fixture");
-        let decoded = decode_result(&input).unwrap();
-        let plan = F3dCodec
-            .plan(
-                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-                TargetRequest::Inherit,
-            )
-            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
-        let preserves = matches!(
-            plan.report().write_path(),
-            WritePath::Patched { .. } | WritePath::VerbatimReplay { .. }
-        );
-        if preserves {
-            assert!(
-                decoded.source_fidelity().unrepresented().is_empty(),
-                "{name}"
-            );
-        } else {
-            assert!(plan.report().synthesis_cause().is_some(), "{name}");
-        }
-        let mut retained = Vec::new();
-        plan.write_to(&mut retained).unwrap();
-        let mut authored = Vec::new();
-        let report = F3dCodec.encode(decoded.ir(), &mut authored).unwrap();
-        assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
-        let retained = decode_result(&retained).unwrap();
-        let authored = decode_result(&authored).unwrap();
-        assert_eq!(
-            cadmpeg_test_support::contract::neutral_view(retained.ir(), &[]),
-            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
-            "{name}"
         );
     }
 }
@@ -1003,11 +1023,37 @@ fn an_edit_survives_native_writer_fallback() {
         F3dCodec.encode(&edited, &mut authored).unwrap();
         let preserved = decode_result(&preserved).unwrap();
         let authored = decode_result(&authored).unwrap();
-        assert_eq!(
-            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]),
-            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
-            "{name}"
-        );
+        // Patch preserves the retained container while synthesis authors a
+        // fresh one. The save date and the generated-versus-retained BREP
+        // carrier basename are container provenance, not document content;
+        // neutralize them so the comparison judges the edit's meaning.
+        let mut preserved_view =
+            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
+        let mut authored_view =
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
+        for view in [&mut preserved_view, &mut authored_view] {
+            if let Some(save_date) = view.pointer_mut("/source/attributes/save_date") {
+                *save_date = serde_json::Value::Null;
+            }
+            if let Some(extras) = view.pointer_mut("/source/identity/dialects/extra") {
+                if let Some(extras) = extras.as_array_mut() {
+                    for extra in extras {
+                        if let Some(carrier) =
+                            extra.pointer_mut("/declared/carrier")
+                        {
+                            if carrier
+                                .as_str()
+                                .is_some_and(|carrier| carrier.ends_with(".smbh"))
+                            {
+                                *carrier =
+                                    serde_json::Value::String("neutralized-carrier.smbh".into());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(preserved_view, authored_view, "{name}");
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");

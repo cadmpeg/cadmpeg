@@ -272,4 +272,6 @@ damaged_part! {
     inventor_damaged_part => "inventor", inventor_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/structural.ipt"];
     f3d_damaged_part => "f3d", f3d_damaged_parts_give_up_only_the_damaged_part, [Some("topology_base.f3d") => "damaged/unreadable_preview.f3d"];
     rhino_damaged_part => "rhino", rhino_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/reject_v1.3dm", None::<&str> => "damaged/reject_v2.3dm"];
+    sat_damaged_part => "sat", sat_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/corrupt_record.sat"];
+    nx_damaged_part => "nx", nx_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/corrupt_entry.prt"];
 }
