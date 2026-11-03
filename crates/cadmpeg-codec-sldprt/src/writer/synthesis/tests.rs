@@ -689,8 +689,8 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
         cadmpeg_ir::features::FinitePoint3::new([moved.x + 5.0, moved.y, moved.z].into())
             .expect("moved point is finite"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
-        .expect("neutral validation runs");
+    let validation =
+        cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation runs");
     assert!(
         validation.findings.iter().any(|finding| finding
             .message
