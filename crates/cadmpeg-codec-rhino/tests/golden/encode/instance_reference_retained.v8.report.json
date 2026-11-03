@@ -64,8 +64,8 @@
       "appearances": "reported",
       "articulations": "omitted",
       "assembly_joints": "omitted",
-      "assets": "omitted",
-      "attributes": "dropped",
+      "assets": "reported",
+      "attributes": "reported",
       "bodies": "reported",
       "coedges": "reported",
       "colliders": "omitted",
@@ -80,21 +80,21 @@
       "features": "dropped",
       "loops": "reported",
       "mass_properties": "omitted",
-      "occurrences": "omitted",
+      "occurrences": "reported",
       "parameters": "dropped",
       "pcurves": "reported",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
       "points": "reported",
-      "presentation_documents": "omitted",
-      "presentation_layers": "omitted",
+      "presentation_documents": "reported",
+      "presentation_layers": "reported",
       "procedural_curves": "reported",
       "procedural_surfaces": "dropped",
-      "product_definitions": "omitted",
+      "product_definitions": "written",
       "regions": "reported",
       "rigid_bodies": "omitted",
-      "semantic_annotations": "omitted",
+      "semantic_annotations": "reported",
       "shells": "reported",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
@@ -108,7 +108,7 @@
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "reported",
-      "view_presentations": "omitted"
+      "view_presentations": "reported"
     },
     "coverage": "declared"
   },
@@ -141,32 +141,12 @@
     },
     {
       "code": {
-        "code": "arena.omitted",
-        "kind": "assembly_placements_not_transferred",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted: rhino:model:product#61616161-6161-6161-6161-616161616161",
-      "severity": "warning"
-    },
-    {
-      "code": {
         "code": "native.records-omitted",
         "kind": "record_not_typed",
         "namespace": "export",
         "scope": "namespaced"
       },
       "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.product_definitions`: rhino:product:definition#61616161-6161-6161-6161-616161616161",
       "severity": "info"
     },
     {
@@ -229,6 +209,9 @@
           "layers": {
             "disposition": "dropped"
           },
+          "legacy_v1_records": {
+            "disposition": "dropped"
+          },
           "lights": {
             "disposition": "dropped"
           },
@@ -245,7 +228,10 @@
             "disposition": "dropped"
           },
           "product_definitions": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:product:definition#61616161-6161-6161-6161-616161616161": "regenerated"
+            }
           },
           "product_occurrences": {
             "disposition": "dropped"
