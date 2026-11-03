@@ -2308,8 +2308,22 @@ pub(crate) fn decode_bodies(
         entity_streams.push((body, is_deltas_stream(header)));
     }
     let mut typed_streams = Vec::new();
-    for (body, prefixed) in &entity_streams {
-        typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+    let mut node_tables = Vec::new();
+    for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
+        let node_stream = (!prefixed)
+            .then(|| topology::nodes::sequence(payload))
+            .flatten()
+            .and_then(|records| {
+                let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
+                Some((typed::nodes::facts(&records, header.body_offset)?, tables))
+            });
+        if let Some((facts, tables)) = node_stream {
+            typed_streams.push(facts);
+            node_tables.push(Some(tables));
+        } else {
+            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            node_tables.push(None);
+        }
     }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
@@ -2322,8 +2336,11 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
-    for (stream_order, ((payload, header), stream_typed_facts)) in
-        ordered.into_iter().zip(typed_streams).enumerate()
+    for (stream_order, (((payload, header), stream_typed_facts), node_tables)) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2331,7 +2348,10 @@ pub(crate) fn decode_bodies(
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
         carriers.merge_missing(scan_carriers_for_role(ctx, body, is_deltas)?);
         let curve_attrs = carriers.curve_attrs();
-        let scanned_tables = if is_deltas {
+        let scanned_tables = if let Some(mut tables) = node_tables {
+            topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);
+            tables
+        } else if is_deltas {
             topology::scan_deltas_with_owner_attrs(
                 body,
                 &curve_attrs,

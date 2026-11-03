@@ -2384,6 +2384,8 @@ fn scan_records(
     t
 }
 
+pub(super) mod nodes;
+
 #[cfg(test)]
 mod scope_tests;
 
