@@ -628,6 +628,18 @@ pub(super) fn referenced_revolve_angle_owner<'a>(
     revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |_| true)
 }
 
+/// The zero-valued owner at local ordinal zero that a to-object `Revolve`
+/// scope names.
+pub(super) fn to_object_revolve_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: u32,
+) -> Option<&'a DesignParameterOwner> {
+    revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |value| {
+        value == 0.0
+    })
+}
+
 fn revolve_angle_owner<'a>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],

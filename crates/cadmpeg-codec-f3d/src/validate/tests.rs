@@ -55,6 +55,7 @@ mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
 mod repro_fragments;
+mod revolve_target_roles;
 mod sweep_body_roles;
 mod thread_link;
 mod timeline;

@@ -5949,6 +5949,76 @@ pub(crate) mod unmarked_referenced_angle_revolve_prologue {
     pub(crate) const ANGLE_REFERENCE: usize = 35;
 }
 
+/// Byte offsets for the `marked_to_object_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 62 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 61 is one null byte or an eleven-byte marked reference.
+/// ```
+pub(crate) mod marked_to_object_revolve_prologue {
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_VALUE: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 29;
+    /// Stated value of `extent_kind` (`u32`). Spec §3.1.
+    pub(crate) const EXTENT_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 33;
+    /// Stated value of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND_VALUE: u8 = 0;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 34;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 35;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 36;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 39;
+    /// Offset of `axis_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AXIS_GROUP_REFERENCE: usize = 50;
+    /// Offset of `side_two_target` (`u8`). Spec §3.1.
+    pub(crate) const SIDE_TWO_TARGET: usize = 61;
+}
+
+/// Byte offsets for the `unmarked_to_object_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 58 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 57 is one null byte or an eleven-byte marked reference.
+/// ```
+pub(crate) mod unmarked_to_object_revolve_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 25;
+    /// Stated value of `extent_kind` (`u32`). Spec §3.1.
+    pub(crate) const EXTENT_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Stated value of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND_VALUE: u8 = 0;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 30;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 31;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 32;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 35;
+    /// Offset of `axis_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AXIS_GROUP_REFERENCE: usize = 46;
+    /// Offset of `side_two_target` (`u8`). Spec §3.1.
+    pub(crate) const SIDE_TWO_TARGET: usize = 57;
+}
+
 /// Byte offsets for the `two_sided_revolve_prologue` record.
 ///
 /// Spec §3.1. Record length 60 B.

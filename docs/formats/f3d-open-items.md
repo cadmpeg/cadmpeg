@@ -1079,6 +1079,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 
+### DR-206. Sides of a two-sided to-object Revolve
+
+**Question.** Which side of the profile plane does each target of a two-sided to-object `Revolve` end?
+
+**Known.** The frame stores the side-one and side-two target groups and no side flag. Two scopes whose side-one and side-two target planes are exchanged store the same frame and produce the same body. In each two-sided scope, each side of the profile plane ends at the first target that its travel reaches, and the two sides reach different targets first.
+
+**Need.** Two-sided to-object scopes whose travels on both sides reach the same target first, and scopes whose targets are faces or bodies.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps both target groups in the native construction and projects a two-sided extent whose two terminations are unresolved.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
