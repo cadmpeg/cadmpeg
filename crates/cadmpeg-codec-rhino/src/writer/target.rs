@@ -64,41 +64,67 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let model = &input.ir.model;
-    for (name, count, code) in [
+    for (name, ids, code) in [
         (
             "features",
-            model.features.len(),
+            model
+                .features
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
         (
             "configurations",
-            model.configurations.len(),
+            model
+                .configurations
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
         (
             "parameters",
-            model.parameters.len(),
+            model
+                .parameters
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
         (
             "sketches",
-            model.sketches.len(),
+            model
+                .sketches
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
         (
             "sketch_entities",
-            model.sketch_entities.len(),
+            model
+                .sketch_entities
+                .iter()
+                .map(|row| row.id().as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
         (
             "sketch_constraints",
-            model.sketch_constraints.len(),
+            model
+                .sketch_constraints
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
         ),
     ] {
-        if count != 0 {
+        if !ids.is_empty() {
             losses.push(code.note(format!(
-                "model arena {name}: {count} record(s) reduced or omitted"
+                "model arena {name}: {} record(s) reduced or omitted: {}",
+                ids.len(),
+                ids.join(", ")
             )));
         }
     }
@@ -212,7 +238,8 @@ pub(crate) fn plan(
         .filter(|point| {
             !owned_points.contains(&point.id) && super::is_support(point.source_object.as_ref())
         })
-        .count();
+        .map(|point| point.id.as_str())
+        .collect::<Vec<_>>();
     let curves = input
         .ir
         .model
@@ -221,10 +248,20 @@ pub(crate) fn plan(
         .filter(|curve| {
             !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
         })
-        .count();
-    if points != 0 || curves != 0 {
+        .collect::<Vec<_>>();
+    if !points.is_empty() || !curves.is_empty() {
+        let mut withheld: Vec<&str> = points.clone();
+        withheld.extend(curves.iter().map(|curve| curve.id.as_str()));
+        for curve in &curves {
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                withheld.push(construction.as_str());
+            }
+        }
         losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
-            "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
+            "{} support point record(s) and {} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry: {}",
+            points.len(),
+            curves.len(),
+            withheld.join(", ")
         )));
     }
     if let Some(message) = target.displacement_message() {

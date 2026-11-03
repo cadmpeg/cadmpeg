@@ -111,6 +111,11 @@ impl LexError {
     pub(crate) fn offset(&self) -> usize {
         self.offset
     }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
     pub(crate) fn into_codec_error(self) -> CodecError {
         match self.resource {
             Some(error) => error,

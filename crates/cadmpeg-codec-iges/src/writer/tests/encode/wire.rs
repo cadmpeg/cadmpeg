@@ -117,7 +117,7 @@ fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     crate::writer::tests::assert_degraded_plan(
         plan_at(IgesVersion::V5_0, decoded.ir(), None),
-        "shared wire vertex",
+        crate::loss::IgesLossCode::WriterEntityOmitted,
     );
 }
 
