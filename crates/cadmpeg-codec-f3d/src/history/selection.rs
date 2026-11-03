@@ -1214,17 +1214,17 @@ pub(crate) fn bind_mirror_selection_planes(
             if matching_identities.next().is_some() {
                 continue;
             }
-            let persistent_candidates = if let Some(identity) = identity
-                .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                entity_selection_face_candidates(identity.local_id, histories)
+            if let Some(plane) = design_geometry_mirror_plane(operand.primary_identity) {
+                Some(plane)
             } else {
-                Vec::new()
-            };
-            let primary_candidates =
-                entity_selection_face_candidates(operand.primary_identity, histories);
-            if primary_candidates.is_empty() && persistent_candidates.is_empty() {
-                design_geometry_mirror_plane(operand.primary_identity)
-            } else {
+                let persistent_candidates = if let Some(identity) = identity
+                    .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                    entity_selection_face_candidates(identity.local_id, histories)
+                } else {
+                    Vec::new()
+                };
+                let primary_candidates =
+                    entity_selection_face_candidates(operand.primary_identity, histories);
                 let Some(candidate) =
                     unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
                 else {
@@ -1352,10 +1352,8 @@ pub(crate) struct HistoricalMirrorPlane {
 
 /// Resolve the three built-in Design Geometry origin planes.
 ///
-/// These identities are outside the ASM history namespace. A numeric identity
-/// is admitted here only after both the primary and persistent history lookups
-/// have found no candidate, so a topology identity with the same value keeps
-/// the normal historical-resolution path.
+/// A body face selected as a plane is a face-recipe operand, so an ASM entity
+/// that carries the same identity value is a different entity.
 pub(crate) fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirrorPlane> {
     let normal = match primary_identity {
         42 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),

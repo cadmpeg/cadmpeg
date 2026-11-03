@@ -198,6 +198,54 @@ pub(crate) mod design_parameter_tail {
     pub(crate) const ZERO_RUN_6: usize = 6;
 }
 
+/// Byte offsets for the `design_parameter_wide_expression_trailer` record.
+///
+/// Spec §3.1. Record length 11 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+/// ```
+pub(crate) mod design_parameter_wide_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 0;
+    /// Offset of `driven` (`u8`). Spec §3.1.
+    pub(crate) const DRIVEN: usize = 6;
+    /// Offset of `reserved_7` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_7: usize = 7;
+    /// Stated value of `reserved_7` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_7_VALUE: u8 = 0;
+    /// Offset of `favorite` (`u8`). Spec §3.1.
+    pub(crate) const FAVORITE: usize = 8;
+    /// Offset of `reserved_9` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_9: usize = 9;
+    /// Stated value of `reserved_9` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_9_VALUE: u8 = 0;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 10;
+}
+
+/// Byte offsets for the `design_parameter_compact_owned_expression_trailer` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter.
+/// ```
+pub(crate) mod design_parameter_compact_owned_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `reserved_0` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_0: usize = 0;
+    /// Stated value of `reserved_0` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_0_VALUE: u8 = 0;
+    /// Offset of `driven` (`u8`). Spec §3.1.
+    pub(crate) const DRIVEN: usize = 1;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 2;
+}
+
 /// Byte offsets for the `design_parameter_owner_prefix` record.
 ///
 /// Spec §3.1. Record length 39 B.
@@ -227,7 +275,7 @@ pub(crate) mod design_parameter_owner_prefix {
 /// Spec §3.1. Record length 68 B.
 ///
 /// ```text
-/// Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+/// Offsets are relative to the legacy parameter-owner primary header. The scope and local-ordinal lanes are absent; the scalar lane at offset 24 is nine zero bytes or 00 + f64.
 /// ```
 pub(crate) mod design_parameter_owner_legacy_68 {
     /// Record length in bytes. Spec §3.1.
@@ -236,8 +284,14 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_8: usize = 11;
     /// Offset of `first_marker` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MARKER: usize = 19;
-    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_13: usize = 20;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 20;
+    /// Offset of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 24;
+    /// Stated value of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u8 = 0;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 25;
     /// Offset of `parameter_marker` (`u8`). Spec §3.1.
     pub(crate) const PARAMETER_MARKER: usize = 33;
     /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
@@ -246,8 +300,12 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_6: usize = 38;
     /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OWNED_ORDINAL: usize = 44;
-    /// Offset of `zero_run_7` (`bytes[7]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_7: usize = 48;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 48;
+    /// Offset of `first_flag` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_FLAG: usize = 53;
+    /// Offset of `second_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_FLAG: usize = 54;
     /// Offset of `companion_marker` (`u8`). Spec §3.1.
     pub(crate) const COMPANION_MARKER: usize = 55;
     /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.

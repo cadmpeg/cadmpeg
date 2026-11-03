@@ -1127,6 +1127,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Two other public frames of this form store zero at offset 29.
 
+### DR-251. Compact parameter frame with a null owner and trailer byte 3
+
+**Question.** Which grammar admits a compact parameter frame with a null owner, and what does byte 3 of its compact expression trailer state?
+
+**Known.** Five Linear Dimension parameter frames store the compact header with `u8 0` at offset 30 and the LP-UTF16 expression at offset 31, followed by the five-byte trailer `00 00 00 01 00`, the source kind, the unit, the name, the evaluated scalar, and the parameter tail. Their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. The class-`287` grammar admits the same trailer `00 00 00 01 00`.
+
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form.
+
+**Conflict.** None.
+
+**Note.** The five frames match no grammar.
+
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
 **Question.** How do ownerless fixed scalar lanes assign radius laws to several role-`0x0000000800000000` Fillet groups?

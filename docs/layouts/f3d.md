@@ -189,6 +189,39 @@ Parsed by:
 | 2 | 4 | `collection_record_index` | `u32` | little | spec | The twelve-byte parameter tail is |
 | 6 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The twelve-byte parameter tail is |
 
+## `design_parameter_wide_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The wide expression trailer is eleven bytes |
+| 6 | 1 | `driven` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 7 | 1 | `reserved_7` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
+| 8 | 1 | `favorite` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 9 | 1 | `reserved_9` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
+| 10 | 1 | `document` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+
+## `design_parameter_compact_owned_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reserved_0` | `u8` | little | spec | The compact owned expression trailer is five bytes · value `0` |
+| 1 | 1 | `driven` | `u8` | little | spec | The compact owned expression trailer is five bytes |
+| 2 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The compact owned expression trailer is five bytes |
+
 ## `design_parameter_owner_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 39 B
@@ -213,7 +246,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 68 B
 
-Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+Offsets are relative to the legacy parameter-owner primary header. The scope and local-ordinal lanes are absent; the scalar lane at offset 24 is nine zero bytes or 00 + f64.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
@@ -223,12 +256,16 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte indexed header |
 | 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes |
 | 19 | 1 | `first_marker` | `u8` | little | spec | `u8 1` |
-| 20 | 13 | `zero_run_13` | `bytes[13]` | little | spec | thirteen zero bytes |
+| 20 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes, a nine-byte scalar lane |
+| 24 | 1 | `scalar_marker` | `u8` | little | spec | The scalar lane is nine zero bytes or the scalar envelope · value `0` |
+| 25 | 8 | `scalar` | `f64` | little | spec | The scalar lane is nine zero bytes or the scalar envelope |
 | 33 | 1 | `parameter_marker` | `u8` | little | spec | `u8 1 + u32 parameter_record_index` |
 | 34 | 4 | `parameter_record_index` | `u32` | little | spec | `u8 1 + u32 parameter_record_index` |
 | 38 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
 | 44 | 4 | `owned_ordinal` | `u32` | little | spec | `u32 owned_ordinal` |
-| 48 | 7 | `zero_run_7` | `bytes[7]` | little | spec | seven zero bytes |
+| 48 | 5 | `zero_run_5` | `bytes[5]` | little | spec | five zero bytes, two flag bytes |
+| 53 | 1 | `first_flag` | `u8` | little | spec | Each flag byte is zero or one |
+| 54 | 1 | `second_flag` | `u8` | little | spec | Each flag byte is zero or one |
 | 55 | 1 | `companion_marker` | `u8` | little | spec | `u8 1 + u32 companion_record_index` |
 | 56 | 4 | `companion_record_index` | `u32` | little | spec | `u8 1 + u32 companion_record_index` |
 | 60 | 8 | `zero_run_8_tail` | `bytes[8]` | little | spec | eight zero bytes |

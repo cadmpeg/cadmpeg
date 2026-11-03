@@ -3112,6 +3112,12 @@ pub(crate) fn bind_sketch_feature_geometry(
                     add_dependency(sketch_point_dependency(point))?;
                 }
             }
+            FeatureDefinition::Operation(FeatureOperation::Hole {
+                profile: Some(profile),
+                ..
+            }) => {
+                add_dependency(planar_profile_dependency(profile))?;
+            }
             _ => {}
         }
     }
@@ -3191,6 +3197,79 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                     },
                 }));
             }
+        });
+    }
+}
+
+/// Bind the sketch points that place a sketch-point `Hole` as its profile
+/// after the sketch arenas have been projected. Every location names one
+/// planar sketch point, and all of them belong to one sketch.
+pub(crate) fn bind_hole_sketch_point_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+) {
+    use crate::records::feature::work_geometry::DesignWorkPointInputCarrier;
+    use cadmpeg_ir::features::{
+        holes::HoleProfileFilter, FeatureDefinition, FeatureOperation, PlanarProfileRef,
+    };
+
+    for feature in features.iter_mut() {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Hole {
+                profile: profile @ None,
+                profile_filter,
+                ..
+            }) = definition
+            else {
+                return;
+            };
+            let Some(construction) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+                .and_then(DesignParameterScope::hole_construction)
+            else {
+                return;
+            };
+            if !construction.placed_by_sketch_points() || construction.entry_points().is_none() {
+                return;
+            }
+            let Some(points) = construction
+                .locations
+                .iter()
+                .map(|location| {
+                    let DesignWorkPointInputCarrier::SketchPoint { selection } =
+                        location.vertex_input.as_ref()?.carrier()?
+                    else {
+                        return None;
+                    };
+                    let mut matches = sketch_entities.iter().filter(|entity| {
+                        entity.native_ref.as_deref() == Some(selection.point_native_id.as_str())
+                    });
+                    match (matches.next(), matches.next()) {
+                        (Some(entity), None) => Some(entity),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                return;
+            };
+            let Some(sketch) = points.first().map(|entity| &entity.sketch) else {
+                return;
+            };
+            if points.iter().any(|entity| &entity.sketch != sketch) {
+                return;
+            }
+            let Ok(selected) = PlanarProfileRef::sketch_entities(
+                sketch.clone(),
+                points.iter().map(|entity| entity.id().clone()).collect(),
+            ) else {
+                return;
+            };
+            *profile = Some(selected);
+            *profile_filter = Some(HoleProfileFilter::Points);
         });
     }
 }
@@ -6186,9 +6265,9 @@ fn analytic_surface_axis(
 
 /// Resolve a Revolve axis selection that names a Design Geometry origin axis.
 ///
-/// The identity is admitted only when no Sketch placement in the stream owns
-/// it and the selection has no historical edge or face candidate, so an ASM
-/// topology identity with the same value keeps its historical resolution.
+/// The identity is admitted when no Sketch placement in the stream owns it.
+/// A body edge or face axis is a recipe operand, so an ASM topology identity
+/// with the same value is a different entity.
 fn design_geometry_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
@@ -6204,13 +6283,10 @@ fn design_geometry_axis_selection(
             && operand.group_member_ordinal == 0
             && operand.record_index() == axis_member
     }))?;
-    if !selection.historical_edge_candidates.is_empty()
-        || !selection.historical_face_candidates.is_empty()
-        || placements.iter().any(|placement| {
-            native_stream(&placement.id) == Some(stream)
-                && placement.entity_id.suffix() == selection.primary_identity
-        })
-    {
+    if placements.iter().any(|placement| {
+        native_stream(&placement.id) == Some(stream)
+            && placement.entity_id.suffix() == selection.primary_identity
+    }) {
         return None;
     }
     let direction = match selection.primary_identity {
