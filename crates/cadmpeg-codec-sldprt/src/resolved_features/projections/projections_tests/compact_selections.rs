@@ -276,10 +276,33 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
     let mut plane = compact_edge_projection_feature();
     plane.id = FeatureId::mint("synthetic:test:id#face-alias-plane").expect("identity grammar");
     plane.native_ref = Some("native-plane".into());
-    plane.source_properties.insert(
-        cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"),
-        "native-thread".into(),
-    );
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "native-plane".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            ordinal: 0,
+            name: "Plane".into(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"),
+                "native-thread".into(),
+            )]),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
     plane
         .evaluation
         .set_definition(FeatureDefinition::Operation(
@@ -291,7 +314,8 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
             },
         ));
     let mut features = [thread, plane];
-    project_compact_surface_selections(&mut features, &[], &[]).expect("face alias projection");
+    project_compact_surface_selections(&mut features, &histories, &[])
+        .expect("face alias projection");
     assert!(matches!(features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face {

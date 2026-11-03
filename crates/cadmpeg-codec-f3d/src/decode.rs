@@ -2974,10 +2974,6 @@ impl<'a> F3dDecodeSession<'a> {
                     "{} ACT source records have no typed semantic payload",
                     act.untyped_records
                 )));
-            self.untyped.extend([
-                cadmpeg_ir::document::ArenaClass::Model,
-                cadmpeg_ir::document::ArenaClass::Design,
-            ]);
         }
         let unresolved_links = act
             .component_links
@@ -4569,7 +4565,7 @@ fn decode_result(
     report_scope: crate::report::ReportScope,
     mut ir: CadIr,
     mut report: DecodeBody,
-    retained: RetainedArtifacts,
+    mut retained: RetainedArtifacts,
     admitted_entities: &mut u64,
 ) -> Result<AuthoredDecoded, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
@@ -4583,6 +4579,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
+    let entry_part_ids = give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let source = crate::report::classify_document(
@@ -4631,6 +4628,9 @@ fn decode_result(
     if missing_images != 0 {
         untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
     }
+    for id in &entry_part_ids {
+        source_fidelity.mark_untyped(id, [cadmpeg_ir::document::ArenaClass::Model])?;
+    }
     // These typed source envelopes explicitly contain uninterpreted payloads;
     // their raw frames travel in fidelity, never as synthesized content.
     if native
@@ -4673,6 +4673,63 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
         scan.source_image.to_vec(),
         Vec::new(),
     )
+}
+
+/// Give up every archive entry the container scan could not open as a
+/// `zip.entry` part: retain its stored bytes untyped, stub the part, and
+/// charge `record.unreadable` with the entry span. Returns the stub ids for
+/// the untyped marking, which runs after the stubs attach.
+fn give_up_unreadable_entries(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<String>, CodecError> {
+    let mut staged = Vec::new();
+    for part in &scan.unreadable_entries {
+        let (start, end) = (
+            usize::try_from(part.range.start).unwrap_or(usize::MAX),
+            usize::try_from(part.range.end).unwrap_or(usize::MAX),
+        );
+        let bytes = scan.source_image.get(start..end).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "unreadable ZIP entry {} runs past the end of the source",
+                part.name
+            ))
+        })?;
+        let stream = part.name.clone();
+        let mut address = Vec::new();
+        for field in ["zip.entry".as_bytes(), stream.as_bytes()] {
+            address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+            address.extend_from_slice(field);
+        }
+        address.extend_from_slice(&part.range.start.to_be_bytes());
+        let id = UnknownId::mint(format!(
+            "f3d:source:part#{}",
+            cadmpeg_ir::hash::sha256_hex(&address)
+        ))
+        .map_err(CodecError::malformed)?;
+        let retained = u64_from_index(bytes.len())
+            .checked_add(u64_from_index(id.as_str().len()))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "given-up ZIP entry {} size overflows",
+                    part.name
+                ))
+            })?;
+        ctx.retain_bytes(retained, "given-up ZIP entry source bytes")?;
+        let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up ZIP entry source bytes")?;
+        data.copy_from_slice(bytes);
+        unknowns.push(UnknownRecord::retained(
+            id.clone(),
+            part.range.start,
+            data,
+            Vec::new(),
+        ));
+        losses.push(crate::report::entry_part_loss(part)?);
+        staged.push(id.into_string());
+    }
+    Ok(staged)
 }
 
 /// Charge source-only content to the retained image containing it. The shared
@@ -5675,11 +5732,13 @@ pub(crate) fn resolve_face_appearance_bindings(
             None
         };
         for face in faces {
-            if let Some(color) = assignment.color {
-                if let Some(index) = face_indices.get(face.as_str()).copied() {
-                    let target = &mut ir.model.faces[index];
-                    if target.color.is_none() {
-                        target.color = Some(color);
+            if appearance.is_none() {
+                if let Some(color) = assignment.color {
+                    if let Some(index) = face_indices.get(face.as_str()).copied() {
+                        let target = &mut ir.model.faces[index];
+                        if target.color.is_none() {
+                            target.color = Some(color);
+                        }
                     }
                 }
             }

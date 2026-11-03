@@ -521,19 +521,31 @@ impl<'a> ScopeHistoryGraph<'a> {
                 return Ok(ScopeHistoryPredecessor::None);
             };
             let [candidate] = candidates.as_slice() else {
+                let revisit = candidates.iter().any(|candidate| {
+                    candidate.id == scope.id || visited.contains(candidate.id.as_str())
+                });
+                if revisit {
+                    return Err(CodecError::Malformed(
+                        "Design scope history-state dependency is cyclic".into(),
+                    ));
+                }
                 return Ok(ScopeHistoryPredecessor::Ambiguous);
             };
             if candidate.id == scope.id {
                 if visited.is_empty() {
                     return Ok(ScopeHistoryPredecessor::None);
                 }
-                return Ok(ScopeHistoryPredecessor::Ambiguous);
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
             }
             if projected(candidate) {
                 return Ok(ScopeHistoryPredecessor::Scope(candidate));
             }
             if !visited.insert(candidate.id.as_str()) {
-                return Ok(ScopeHistoryPredecessor::Ambiguous);
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
             }
             let Some(previous_state_id) = candidate.previous_history_state_id() else {
                 return Ok(ScopeHistoryPredecessor::None);
@@ -891,10 +903,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::CircularPattern) => {
-                    // The retained total angle and count do not establish whether
-                    // the endpoint is included. Preserve their canonical links
-                    // without inventing a circular distribution mode.
-                    native_scope_definition(scope, &parameters)?
+                    project_circular_pattern_scalars(
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        &parameters,
+                        entity_selection_operands,
+                        scopes,
+                    )
+                    .unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Native {
+                            kind: scope.kind_name().into(),
+                            parameters: BTreeMap::new(),
+                        })
+                    })
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
                     project_rectangular_pattern_scalars(
@@ -1383,13 +1405,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
-        let ScopeHistoryPredecessor::Scope(predecessor_scope) =
-            scope_history.predecessor(scope, |candidate| {
-                let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
-                scope_ids.contains_key(&(stream, candidate.record_index))
-            })?
-        else {
-            continue;
+        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+            let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
+            scope_ids.contains_key(&(stream, candidate.record_index))
+        }) {
+            Ok(ScopeHistoryPredecessor::Scope(predecessor_scope)) => predecessor_scope,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Ok(_) | Err(_) => continue,
         };
         let stream = native_stream(&predecessor_scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {
@@ -6629,6 +6651,94 @@ fn entity_selection_feature_seeds(
         })
         .collect()
 }
+fn project_circular_pattern_scalars(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    parameters: &[(u32, &DesignParameter)],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let construction = scope.circular_pattern_construction()?;
+    let stream = native_stream(&scope.id)?;
+    let mut matching_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && matches!(
+                group.role(),
+                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+            )
+            && !group.members().is_empty()
+    });
+    let (first, second) = (matching_groups.next(), matching_groups.next());
+    let Some(group) = first.filter(|_| second.is_none()) else {
+        return None;
+    };
+    let seeds = pattern_group_seeds(
+        scope,
+        group,
+        face_operands,
+        entity_selection_operands,
+        scopes,
+    );
+    if seeds.is_empty() {
+        return None;
+    }
+    let (origin, direction) = match &construction.axis {
+        crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
+            origin,
+            direction,
+            ..
+        } => {
+            let displacement = Vector3::from(*direction.as_raw());
+            Some((
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    origin[0].get() * 10.0,
+                    origin[1].get() * 10.0,
+                    origin[2].get() * 10.0,
+                ))?,
+                cadmpeg_ir::features::FeatureDirection3::from(
+                    cadmpeg_ir::units::UnitVector3::normalized(displacement)?,
+                ),
+            ))
+        }
+        crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+            resolved,
+            ..
+        } => resolved.as_ref().and_then(|axis| {
+            Some((
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    axis.origin.get().x,
+                    axis.origin.get().y,
+                    axis.origin.get().z,
+                ))?,
+                cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
+            ))
+        }),
+    }?;
+    let count = dimension_bindings::owner(parameters, construction.count_record_index, construction.count.get());
+    let angle = dimension_bindings::owner(parameters, construction.angle_record_index, construction.angle);
+    let pattern = PatternKind::new(PatternTransform::Circular {
+        axis_origin: origin,
+        axis_dir: direction,
+        angle: cadmpeg_ir::features::patterns::PatternAngle::Span {
+            angle,
+            distribution: cadmpeg_ir::features::patterns::CircularPatternDistribution::Inclusive,
+        },
+        count,
+    })
+    .ok()?;
+    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds,
+        pattern,
+    }))
+}
+
 fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],

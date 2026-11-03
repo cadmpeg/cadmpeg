@@ -1174,36 +1174,6 @@
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated pcurve catia:consolidated:pcurve#0 has no neutral pcurve in this projection.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated pcurve catia:consolidated:pcurve#1 has no neutral pcurve in this projection.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated edge run catia:consolidated:edge-run#0 has no neutral edge in this projection.",
-        "severity": "warning"
       }
     ],
     "notes": [

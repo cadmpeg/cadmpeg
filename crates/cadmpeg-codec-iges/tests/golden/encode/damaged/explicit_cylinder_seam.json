@@ -12,24 +12,24 @@
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "written",
-        "bodies": "written",
-        "coedges": "written",
+        "attributes": "dropped",
+        "bodies": "reported",
+        "coedges": "reported",
         "colliders": "omitted",
         "configurations": "dropped",
         "curves": "reported",
         "declared_measures": "omitted",
         "drawings": "dropped",
         "edges": "reported",
-        "faces": "written",
+        "faces": "reported",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
         "features": "dropped",
-        "loops": "written",
+        "loops": "reported",
         "mass_properties": "omitted",
         "occurrences": "dropped",
         "parameters": "dropped",
-        "pcurves": "written",
+        "pcurves": "reported",
         "physical_materials": "omitted",
         "physics_scenes": "omitted",
         "pmi": "dropped",
@@ -39,10 +39,10 @@
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
-        "regions": "written",
+        "regions": "reported",
         "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
-        "shells": "written",
+        "shells": "reported",
         "sketch_constraints": "dropped",
         "sketch_entities": "dropped",
         "sketches": "dropped",
@@ -76,6 +76,26 @@
       },
       {
         "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported model arena presentation_layers",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.passthrough-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES direction records are regenerated only for required analytic-surface support; native direction identities and unrelated records are omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "writer.passthrough-omitted",
           "kind": "passthrough_record_omitted",
           "namespace": "iges",
@@ -106,6 +126,139 @@
       },
       {
         "code": {
+          "code": "writer.passthrough-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES native arena unknowns is not regenerated; 1 record(s) omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.entity-omitted",
+          "kind": "geometry_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "IGES entity iges:model:surface#D5 is omitted: IGES analytic surface iges:model:surface#D5 requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "writer.support-geometry-not-represented",
+          "kind": "geometry_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 support geometry record (iges:model:curve#D13) has no exported owner and was withheld",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.support-geometry-not-represented",
+          "kind": "geometry_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 support geometry record (iges:model:curve#D7) has no exported owner and was withheld",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#D13:0:0 is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#D5:0:0 is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#D7:0:0 is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:author is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:generation_date is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:organization is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:receiver is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:start is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:system_id is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "export.no-exportable-solids",
           "kind": "no_exportable_solids",
           "namespace": "iges",
@@ -132,7 +285,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1",
+        "message": "the iges write omits 38 native record(s) from `iges.cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#2, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#29, iges:physical:card#3, iges:physical:card#30, iges:physical:card#31, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#37, iges:physical:card#38, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
         "severity": "info"
       },
       {
@@ -142,7 +295,27 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
+        "message": "the iges write omits 1 native record(s) from `iges.directions`: iges:native:direction#D3",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the iges write omits 10 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the iges write omits 11 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -179,7 +352,7 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped"
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -191,7 +364,7 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "regenerated"
+              "disposition": "dropped"
             },
             "definition_levels": {
               "disposition": "dropped"
@@ -230,7 +403,7 @@
               "disposition": "dropped"
             },
             "manifold_solids": {
-              "disposition": "regenerated"
+              "disposition": "dropped"
             },
             "network_definitions": {
               "disposition": "dropped"
@@ -255,12 +428,6 @@
             },
             "properties": {
               "disposition": "regenerated"
-            },
-            "quarantined_directory_records": {
-              "disposition": "dropped"
-            },
-            "quarantined_parameter_records": {
-              "disposition": "dropped"
             },
             "rectangular_arrays": {
               "disposition": "dropped"
@@ -290,7 +457,7 @@
               "disposition": "dropped"
             },
             "transformations": {
-              "disposition": "regenerated"
+              "disposition": "dropped"
             },
             "units_data": {
               "disposition": "dropped"

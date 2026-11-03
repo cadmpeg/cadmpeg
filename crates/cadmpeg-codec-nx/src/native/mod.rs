@@ -10,6 +10,8 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use crate::decode::Scan;
 
+pub(crate) use attach::retain_deltas_gaps;
+
 pub(crate) mod assembly_placement;
 mod attach;
 pub(crate) mod catalogue;
@@ -38,6 +40,8 @@ pub(crate) enum TypedNative {
 /// Attach a pre-extracted [`crate::native::model::NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`crate::native::model::NativeModel::extract`].
 /// Returns whether native attachment was retained.
+/// The boolean is false only when the class-level attachment failure gave up
+/// the design class.
 pub(crate) fn attach_annotations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -46,8 +50,9 @@ pub(crate) fn attach_annotations(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
-    attach::attach(ctx, ir, model, scan, annotations, unknowns, losses)
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<bool, CodecError> {
+    attach::attach(ctx, ir, model, scan, annotations, unknowns, losses, parts)
 }
 
 /// Preserve container-layer records without extracting typed native entities.
@@ -149,6 +154,8 @@ pub(crate) mod attach_failure {
         Entry,
         /// After attachment has written everything.
         Exit,
+        /// Inside the feature-operation projection lane.
+        FeatureOperations,
     }
 
     /// An injected failure: where it occurs and the error it returns.

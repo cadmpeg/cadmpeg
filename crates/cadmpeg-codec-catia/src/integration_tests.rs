@@ -637,7 +637,9 @@ fn sketch_geometry_without_construction_state_stays_native() {
 }
 
 #[test]
-fn operation_schema_buckets_stay_native_without_feature_ownership() {
+fn operation_schema_buckets_transfer_as_native_operations() {
+    // §2.2: an owner-declared operation bucket projects as a native operation
+    // with its native reference instead of remaining unresolved.
     use crate::test_support::test_container::outer_container_catpart;
     use crate::test_support::test_object_graph::{
         catalog_stream, entity_backed_object_graph, object_graph_record,
@@ -692,9 +694,26 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
             Some(label)
         );
         assert_eq!(bucket.fields.len(), 2);
-        assert!(
-            result.ir().model.features.is_empty(),
-            "schema label {label} has no operation closure"
+        let bucket_features: Vec<_> = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .filter(|feature| feature.native_ref.as_deref() == Some(bucket.id.as_str()))
+            .collect();
+        assert_eq!(
+            bucket_features.len(),
+            1,
+            "schema label {label} projects one native operation"
+        );
+        assert_eq!(
+            bucket_features[0].evaluation.definition(),
+            &cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind: cadmpeg_ir::features::NativeFeatureKind::from(label),
+                    parameters: std::collections::BTreeMap::new(),
+                }
+            )
         );
         let records: Vec<crate::native::CatiaObjectRecord> = namespace
             .arena_as("object_graph_records")
@@ -834,6 +853,74 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
         .unwrap();
     assert_eq!(reconstructed.ir().model, expected.ir().model);
     assert_eq!(reconstructed.ir().model.surfaces.len(), 1);
+}
+
+#[test]
+fn undecodable_object_record_gives_up_one_part_and_continues() {
+    // §4.5: a 7C09 record whose 7C0A payload fails to decode gives up that
+    // catia.object_record part while the walk continues at its end.
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_backed_object_graph, object_graph_record,
+    };
+    let bad = object_graph_record(&[0x04, 0x01, 0x82, 0x83], &[0xfe, 0xaa]);
+    let good = object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0x81, 0x85, 0x3a, 0x87, 0xfe]);
+    let mut stream = entity_backed_object_graph(&[bad.clone(), good.clone()], &[1, 2]);
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "TargetValue",
+    ]));
+    let (bytes, _) = crate::test_support::test_container::outer_container_catpart(&stream);
+    let bad_pos = bytes
+        .windows(bad.len())
+        .position(|window| window == bad.as_slice())
+        .expect("bad record present");
+    let good_pos = bytes
+        .windows(good.len())
+        .position(|window| window == good.as_slice())
+        .expect("good record present");
+    let result = decode(bytes);
+    let unreadable: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    let loss = unreadable[0];
+    assert_eq!(loss.severity, Severity::Error);
+    assert!(
+        loss.message.starts_with("part catia.object_record "),
+        "unexpected give-up label: {}",
+        loss.message
+    );
+    let provenance = loss.provenance.as_ref().expect("give-up span");
+    assert_eq!(provenance.offset, bad_pos as u64);
+    assert_eq!(provenance.byte_len(), Some(bad.len() as u64));
+    let stubs: Vec<_> = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(id, _)| id.as_str().contains(":source:part#"))
+        .map(|(_, record)| record)
+        .collect();
+    assert_eq!(stubs.len(), 1, "one part stub is retained");
+    assert_eq!(stubs[0].offset(), bad_pos as u64);
+    assert_eq!(stubs[0].data(), Some(bad.as_slice()));
+    assert_eq!(loss.dropped.len(), 2, "give-up names its records");
+    let namespace = result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("catia namespace");
+    let records: Vec<crate::native::CatiaObjectRecord> = namespace
+        .arena_as("object_graph_records")
+        .expect("typed object records");
+    assert_eq!(records.len(), 1, "the walk continues at the part end");
+    assert_eq!(records[0].byte_offset, good_pos as u64);
+    assert_valid(&result);
 }
 
 mod float_packed_fixtures;

@@ -447,10 +447,7 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#348",
             "names": [],
-            "payload_evidence": {
-              "byte_len": 913,
-              "sha256": "6eb2c4589967364606489b3451dfea24b3d5053b60708fed7870e9a1cecaf4b4"
-            },
+            "native_payload": "ffff01000d007367506f696e7448616e646c65ffff01000c0073674c696e6548616e646c65ffff01000b00736741726348616e646c650480fffeff0753006b00650074006300680031000480fffeff0d42006f00730073002d0045007800740072007500640065003100ffff01000c007367506e74506e74446973740480fffeff02440031000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000010000000200000000000000d6800000ffffffff00000000d6800200ffffffff00000000ffff1f0003ffffffffffffffff000080bf0000000000000400020001000000000080bf00000400000000000000000000000000000000f03f00000000000000000000000000000000000000000000f0bf000000000000000001000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000004000000000000000000000000000000000000000000000f0bf000000000000000002000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000084000000000000000000000000000000000000000000000f0bf000000000000000003000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000104000000000000000000000000000000000000000000000f0bf000000000000000004000000231dd571da8148a2a85898b21b89ef9900000000789c0a08666060904f4b4d2c292d4a55c8cc2b282d5148cecf2d284a2d2e4e4d5128ce4e2d49ce6060100a76f6880f0e8f37363634308e373434303060306248614001daa85cdcc0fe032a8d01f818b8208c437b26f5cfcc838a8a00710ab225fc60211090036b1004d22065f20c0a0cc6409606484a1b282c0f1656004a9b00599a306105b0b01c50da08c8d282080b40b4a1d90d05cc2d4079c0c0faf1c8830dc2292f04b60c016c60eac072206723802d8a9c098a9c1d929c2c830d8a1c2e20cb608bccc519feb20c76e8422080a19ee73fd072c62e150656063606460874e87700cbd9b956f63d32e8b18288323230313232b7c2148120731b94c5fb1f28c12c701428d4822229fc1f48b14c4f834930b70633f0fd0746359b541703233c7c411a188046a46803003a105111",
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -723,46 +720,6 @@
           "scope": "namespaced"
         },
         "message": "source record sldprt:file:block#1100 has no typed neutral or native payload representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:223 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:315 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:407 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:499 has no neutral geometry or constraint projection; its typed native marker is retained",
         "severity": "warning"
       }
     ],

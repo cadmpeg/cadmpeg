@@ -1048,3 +1048,24 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
     );
     assert!(parameter.native_ref.is_some());
 }
+
+#[test]
+fn native_arena_declarations_cover_the_decoded_input() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let source = sldprt_with_body(&triangle_body());
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("triangle body decodes");
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("triangle body plans");
+    cadmpeg_test_support::contract::assert_declarations_cover_input(
+        "sldprt",
+        decoded.ir(),
+        plan.report(),
+    );
+}

@@ -36,7 +36,7 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
             crate::test_support::test_fixtures::model_state_envelope_fixture(),
         ),
         (
-            "structural".to_string(),
+            "damaged/structural".to_string(),
             crate::test_support::test_fixtures::fixture(true),
         ),
         (
@@ -125,7 +125,9 @@ fn source_model_state_has_a_neutral_configuration() {
         .iter()
         .find(|configuration| configuration.name.as_deref() == Some("Master"))
         .expect("typed model state projects");
-    assert!(configuration.active);
+    // The representation names the active design view, not the active model
+    // state, so no configuration is marked active.
+    assert!(!configuration.active);
     assert!(configuration.parameter_overrides.is_empty());
     assert!(configuration.parameter_values.is_empty());
     assert!(configuration.feature_states.is_empty());

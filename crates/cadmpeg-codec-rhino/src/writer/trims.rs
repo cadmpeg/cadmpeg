@@ -6,7 +6,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 
-use super::{close_point, WritableEdge, WritableEdgeCurve, WritablePcurve};
+use super::{close_point, WritableEdge, WritableEdgeCurve, WritablePcurve, WriteError};
 
 pub(super) fn validate_plane_trim(
     origin: Point3,
@@ -16,7 +16,7 @@ pub(super) fn validate_plane_trim(
     edge: &WritableEdge<'_>,
     sense: Sense,
     explicit: &WritablePcurve<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let domain = edge.domain;
     let mut breaks = vec![domain[0].get(), domain[1].get()];
     if let WritableEdgeCurve::Nurbs(curve) = edge.curve {
@@ -102,10 +102,10 @@ pub(super) fn validate_plane_trim(
             {
                 // (S-entity) Equal interior parameters are not a geometric
                 // correspondence between independently parameterized curves.
-                return Err(CodecError::UnsupportedContent(reason));
+                return Err(WriteError::Omit(reason));
             }
             // (C) Endpoint images disagree, or a held carrier is non-finite.
-            return Err(CodecError::malformed(reason));
+            return Err(WriteError::Omit(reason));
         }
     }
 

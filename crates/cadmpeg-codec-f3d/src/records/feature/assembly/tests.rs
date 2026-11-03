@@ -163,6 +163,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
     let frame = crate::records::feature::assembly::DesignAssemblyOperandFrame {
         reference_record_index: 10,
         reference_offset: Some(11),
+        null_construction: false,
         transform: [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],

@@ -17,6 +17,7 @@ use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -28,7 +29,7 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
@@ -86,10 +87,25 @@ impl SketchPlaneFrame {
     }
 }
 
-fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlaneUAxisSource {
+fn native_properties_by_ref(
+    histories: &[crate::records::FeatureHistory],
+) -> HashMap<&str, &BTreeMap<NonBlankString, String>> {
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|record| (record.id.as_str(), &record.properties))
+        .collect()
+}
+
+fn feature_u_axis_source(
+    feature: &cadmpeg_ir::features::Feature,
+    native_properties: &std::collections::HashMap<&str, &BTreeMap<NonBlankString, String>>,
+) -> SketchPlaneUAxisSource {
     if feature
-        .source_properties
-        .get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY)
+        .native_ref
+        .as_deref()
+        .and_then(|native| native_properties.get(native))
+        .and_then(|properties| properties.get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY))
         .map(String::as_str)
         == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
     {
@@ -1292,6 +1308,7 @@ pub(super) fn sketch_plane_frames(
         };
         source_by_feature.entry(neutral_id).or_insert(source);
     }
+    let native_properties = native_properties_by_ref(histories);
     let mut frames_by_feature = HashMap::new();
     for feature in features {
         let frame = (|| {
@@ -1307,7 +1324,7 @@ pub(super) fn sketch_plane_frames(
                         frame.normal().get(),
                         frame.u_axis().get(),
                     ),
-                    feature_u_axis_source(feature),
+                    feature_u_axis_source(feature, &native_properties),
                 ),
                 _ => return None,
             };
@@ -1376,6 +1393,7 @@ pub(super) fn lane_sketch_plane_frames(
     lane: &FeatureInputLane,
 ) -> HashMap<u32, SketchPlaneFrame> {
     let mut frames = sketch_plane_frames(features, histories);
+    let native_properties = native_properties_by_ref(histories);
     let neutral_features = features_by_native_ref(features);
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     let names = FeatureObjectNames::new(&lane.names);
@@ -1400,7 +1418,7 @@ pub(super) fn lane_sketch_plane_frames(
                         frame.normal().get(),
                         frame.u_axis().get(),
                     ),
-                    feature_u_axis_source(feature),
+                    feature_u_axis_source(feature, &native_properties),
                 )
             }
             _ => continue,

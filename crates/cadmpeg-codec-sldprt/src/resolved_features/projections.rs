@@ -241,6 +241,34 @@ pub(super) fn bind_circular_profile_by_dimension(
     }
 }
 
+/// Point every unbound neutral parameter at its native history feature.
+///
+/// Scalar-bound parameters keep the scalar identity that `bind_parameter_scalars`
+/// resolves. Every other parameter links its dimension record through the
+/// owning feature, so no parameter is left without a native home.
+pub(crate) fn fill_parameter_native_refs(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    features: &[cadmpeg_ir::features::Feature],
+) {
+    let owners = features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|native| (feature.id.clone(), native.to_owned()))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    for parameter in parameters {
+        if parameter.native_ref.is_some() {
+            continue;
+        }
+        if let Some(owner) = parameter.owner.as_ref().and_then(|owner| owners.get(owner)) {
+            parameter.native_ref = Some(owner.clone());
+        }
+    }
+}
+
 /// Bind neutral parameters to uniquely owned native scalar records.
 pub(crate) fn bind_parameter_scalars<'a>(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
@@ -1831,8 +1859,18 @@ pub(crate) fn project_compact_surface_selections(
         let face_copy = face.clone();
         face_aliases.insert(native_key, face_copy);
     }
+    let native_properties_by_ref = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|record| (record.id.as_str(), &record.properties))
+        .collect::<HashMap<_, _>>();
     for feature in features {
-        let Some(target) = feature.source_properties.get("ReferenceFaceFeature") else {
+        let Some(target) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_properties_by_ref.get(native))
+            .and_then(|properties| properties.get("ReferenceFaceFeature"))
+        else {
             continue;
         };
         if !matches!(

@@ -2,11 +2,10 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use cadmpeg_ir::native::bytes::NativeBytes;
-use cadmpeg_ir::source_fidelity::SourceEvidence;
 
 use crate::card::{CardScan, ScannedLine, Section};
 
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
+use crate::directory::{DirectoryEntry, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
     resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError,
@@ -20,8 +19,8 @@ use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, MacroDataError,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
-    Token, TokenValue, TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, ResolvedGroups, TextNodeLayout, Token, TokenValue,
+    TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -34,6 +33,7 @@ mod annotations;
 mod attributes;
 mod evidence;
 mod fem;
+mod patterns;
 mod products;
 pub(crate) use evidence::untyped_records;
 
@@ -71,8 +71,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "product_occurrences",
     "product_properties",
     "properties",
-    "quarantined_directory_records",
-    "quarantined_parameter_records",
     "rectangular_arrays",
     "segmented_visibility",
     "selected_components",
@@ -126,27 +124,6 @@ impl Serialize for CardId {
     }
 }
 
-struct QuarantinedId {
-    section: &'static str,
-    sequence: u32,
-}
-
-impl std::fmt::Display for QuarantinedId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "iges:quarantine:{}#{}",
-            self.section, self.sequence
-        )
-    }
-}
-
-impl Serialize for QuarantinedId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
 impl Serialize for NativeCard<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -156,7 +133,9 @@ impl Serialize for NativeCard<'_> {
         }
         let section = match self.line {
             ScannedLine::Card { section, .. } => Some(*section),
-            ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => None,
+            ScannedLine::GivenUp { .. }
+            | ScannedLine::Trailing(_)
+            | ScannedLine::DroppedFinal(_) => None,
         };
         Wire {
             id: CardId(
@@ -167,60 +146,6 @@ impl Serialize for NativeCard<'_> {
             section,
         }
         .serialize(serializer)
-    }
-}
-
-enum NativeQuarantinedRecord<'a> {
-    Directory(&'a QuarantinedDirectoryRecord),
-    Parameter(&'a QuarantinedParameterRecord),
-}
-
-impl Serialize for QuarantinedDirectoryRecord {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        NativeQuarantinedRecord::Directory(self).serialize(serializer)
-    }
-}
-
-impl Serialize for QuarantinedParameterRecord {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        NativeQuarantinedRecord::Parameter(self).serialize(serializer)
-    }
-}
-
-impl Serialize for NativeQuarantinedRecord<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<D: Serialize> {
-            id: QuarantinedId,
-            section: &'static str,
-            sequence: u32,
-            evidence: SourceEvidence,
-            defect: D,
-        }
-        match self {
-            Self::Directory(record) => Wire {
-                id: QuarantinedId {
-                    section: "directory",
-                    sequence: record.sequence,
-                },
-                section: "directory-entry",
-                sequence: record.sequence,
-                evidence: SourceEvidence::of(&record.bytes),
-                defect: record.defect,
-            }
-            .serialize(serializer),
-            Self::Parameter(record) => Wire {
-                id: QuarantinedId {
-                    section: "parameter",
-                    sequence: record.sequence,
-                },
-                section: "parameter-data",
-                sequence: record.sequence,
-                evidence: SourceEvidence::of(record.bytes()),
-                defect: record.defect,
-            }
-            .serialize(serializer),
-        }
     }
 }
 
@@ -312,17 +237,16 @@ struct NativeDisplayAttributes {
     id: String,
     source_entity: String,
     visible: bool,
-    line_font: DisplayRef,
-    level: DisplayRef,
+    line_font: Option<DisplayRef>,
+    level: Option<DisplayRef>,
     view: Option<i64>,
     line_weight_number: Option<i64>,
     line_weight_mm: Option<f64>,
-    color: DisplayRef,
+    color: Option<DisplayRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum DisplayRef {
-    Unreadable,
     Number(u64),
     Definition {
         pointer: i64,
@@ -333,7 +257,7 @@ enum DisplayRef {
 impl DisplayRef {
     fn definition(&self) -> Option<&str> {
         match self {
-            Self::Unreadable | Self::Number(_) => None,
+            Self::Number(_) => None,
             Self::Definition { target, .. } => target.as_deref(),
         }
     }
@@ -342,7 +266,6 @@ impl DisplayRef {
 impl Serialize for DisplayRef {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Unreadable => serializer.serialize_none(),
             Self::Number(number) => serializer.serialize_u64(*number),
             Self::Definition { pointer, .. } => serializer.serialize_i64(*pointer),
         }
@@ -356,14 +279,14 @@ impl Serialize for NativeDisplayAttributes {
             id: &'a str,
             source_entity: &'a str,
             visible: bool,
-            line_font_number: &'a DisplayRef,
+            line_font_number: &'a Option<DisplayRef>,
             line_font_definition: Option<&'a str>,
-            level_number: &'a DisplayRef,
+            level_number: &'a Option<DisplayRef>,
             level_definition: Option<&'a str>,
             view: Option<i64>,
             line_weight_number: Option<i64>,
             line_weight_mm: Option<f64>,
-            color_number: &'a DisplayRef,
+            color_number: &'a Option<DisplayRef>,
             color_definition: Option<&'a str>,
         }
         Wire {
@@ -371,14 +294,14 @@ impl Serialize for NativeDisplayAttributes {
             source_entity: &self.source_entity,
             visible: self.visible,
             line_font_number: &self.line_font,
-            line_font_definition: self.line_font.definition(),
+            line_font_definition: self.line_font.as_ref().and_then(DisplayRef::definition),
             level_number: &self.level,
-            level_definition: self.level.definition(),
+            level_definition: self.level.as_ref().and_then(DisplayRef::definition),
             view: self.view,
             line_weight_number: self.line_weight_number,
             line_weight_mm: self.line_weight_mm,
             color_number: &self.color,
-            color_definition: self.color.definition(),
+            color_definition: self.color.as_ref().and_then(DisplayRef::definition),
         }
         .serialize(serializer)
     }
@@ -390,12 +313,10 @@ fn resolve_display_ref(
     pointer: Option<i64>,
     kind: ReferenceKind,
     arena: &str,
-) -> DisplayRef {
-    let Some(pointer) = pointer else {
-        return DisplayRef::Unreadable;
-    };
+) -> Option<DisplayRef> {
+    let pointer = pointer?;
     if pointer >= 0 {
-        return DisplayRef::Number(pointer.unsigned_abs());
+        return Some(DisplayRef::Number(pointer.unsigned_abs()));
     }
     let target = references
         .get(&source_sequence)
@@ -405,7 +326,7 @@ fn resolve_display_ref(
                 .find_map(|reference| reference.resolved_target_sequence_for(kind))
         })
         .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"));
-    DisplayRef::Definition { pointer, target }
+    Some(DisplayRef::Definition { pointer, target })
 }
 
 fn resolved_label_display_definition(
@@ -1441,13 +1362,6 @@ pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
 
-/// The two quarantine lists a decode carries into the native store.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct QuarantinedRecords<'a> {
-    pub(crate) directory: &'a [QuarantinedDirectoryRecord],
-    pub(crate) parameters: &'a [QuarantinedParameterRecord],
-}
-
 pub(crate) struct AmbiguousParameterBoundary {
     pub(crate) sequence: u32,
     pub(crate) ambiguity: ParameterBoundaryAmbiguity,
@@ -2222,8 +2136,6 @@ where
 }
 
 struct NativeInputIndexes<'a> {
-    quarantined_directory_records: Vec<&'a QuarantinedDirectoryRecord>,
-    quarantined_parameter_records: Vec<&'a QuarantinedParameterRecord>,
     cards: Vec<NativeCard<'a>>,
     by_directory: BTreeMap<u32, &'a ParameterRecord>,
     entries: BTreeMap<u32, &'a DirectoryEntry>,
@@ -2233,12 +2145,7 @@ fn index_native_inputs<'a>(
     scan: &'a CardScan<'_>,
     directory: &'a [DirectoryEntry],
     parameters: &'a [ParameterRecord],
-    quarantine: QuarantinedRecords<'a>,
 ) -> NativeInputIndexes<'a> {
-    let mut quarantined_directory_records = Vec::new();
-    quarantined_directory_records.extend(quarantine.directory.iter());
-    let mut quarantined_parameter_records = Vec::new();
-    quarantined_parameter_records.extend(quarantine.parameters.iter());
     let mut cards = Vec::new();
     cards.extend(
         scan.lines
@@ -2255,8 +2162,6 @@ fn index_native_inputs<'a>(
         entries.insert(entry.sequence, entry);
     }
     NativeInputIndexes {
-        quarantined_directory_records,
-        quarantined_parameter_records,
         cards,
         by_directory,
         entries,
@@ -2269,10 +2174,13 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) directory: &'a [DirectoryEntry],
     pub(crate) parameters: &'a [ParameterRecord],
     pub(crate) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
-    pub(crate) quarantine: QuarantinedRecords<'a>,
     pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
     pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
+    /// Directory sequences with given-up Parameter Data fields. A native
+    /// record that needs a tainted entity is dropped with it (#215 rule 2);
+    /// the covering loss names the entity.
+    pub(crate) given_up_fields: &'a BTreeMap<u32, Vec<String>>,
 }
 
 pub(crate) fn store_physical_cards(
@@ -2307,6 +2215,28 @@ pub(crate) fn store_physical_cards(
     })
 }
 
+fn feature_directory_sequence(feature: &cadmpeg_ir::features::Feature) -> Option<u32> {
+    feature
+        .native_ref
+        .as_deref()?
+        .rsplit('#')
+        .next()?
+        .strip_prefix('D')?
+        .parse()
+        .ok()
+}
+
+fn renumber_features(ir: &mut CadIr) {
+    ir.model.features.sort_by_key(feature_directory_sequence);
+    let mut ordinal = 0_u64;
+    for feature in &mut ir.model.features {
+        feature.ordinal = ordinal;
+        if let Some(next) = ordinal.checked_add(1) {
+            ordinal = next;
+        }
+    }
+}
+
 pub(crate) fn store(
     ir: &mut CadIr,
     inputs: NativeStoreInputs<'_, '_>,
@@ -2320,22 +2250,20 @@ pub(crate) fn store(
         directory,
         parameters,
         trailing_pointer_analysis,
-        quarantine,
         structure_admitted,
         sequences,
         boundary_vertex_derivations,
+        given_up_fields,
     } = inputs;
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(scan.lines.len()),
         "iges_native_entities",
     )?;
     let NativeInputIndexes {
-        quarantined_directory_records,
-        quarantined_parameter_records,
         cards,
         by_directory,
         entries,
-    } = index_native_inputs(scan, directory, parameters, quarantine);
+    } = index_native_inputs(scan, directory, parameters);
     let mut macro_definitions = Vec::new();
     for entry in directory.iter().filter(|entry| entry.entity_type == 306) {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
@@ -2704,41 +2632,49 @@ pub(crate) fn store(
             })
         },
     )?;
-    let display_attributes = collect_native_items(directory.iter(), |entry| {
-        Ok(NativeDisplayAttributes {
-            id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
-            source_entity: format!("iges:entity:directory#{}", entry.sequence),
-            visible: entry.status.is_visible(),
-            line_font: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.line_font,
-                ReferenceKind::LineFont,
-                "line-font",
-            ),
-            level: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.level,
-                ReferenceKind::Level,
-                "definition-levels",
-            ),
-            view: entry.view,
-            line_weight_number: entry.line_weight,
-            line_weight_mm: global.length_context().and_then(|context| {
-                entry
-                    .line_weight
-                    .and_then(|number| context.line_weight_mm(number))
-            }),
-            color: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.color,
-                ReferenceKind::Color,
-                "color",
-            ),
-        })
-    })?;
+    // A display record needs its entity; a tainted entity is named as
+    // changed in the covering loss, so its display record is dropped with
+    // it (#215 rule 2). The closure covers the drop without naming it.
+    let display_attributes = collect_native_items(
+        directory
+            .iter()
+            .filter(|entry| !given_up_fields.contains_key(&entry.sequence)),
+        |entry| {
+            Ok(NativeDisplayAttributes {
+                id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                visible: entry.status.is_visible(),
+                line_font: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.line_font,
+                    ReferenceKind::LineFont,
+                    "line-font",
+                ),
+                level: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.level,
+                    ReferenceKind::Level,
+                    "definition-levels",
+                ),
+                view: entry.view,
+                line_weight_number: entry.line_weight,
+                line_weight_mm: global.length_context().and_then(|context| {
+                    entry
+                        .line_weight
+                        .and_then(|number| context.line_weight_mm(number))
+                }),
+                color: resolve_display_ref(
+                    references,
+                    entry.sequence,
+                    entry.color,
+                    ReferenceKind::Color,
+                    "color",
+                ),
+            })
+        },
+    )?;
     let line_fonts = collect_native_items(
         directory
             .iter()
@@ -3472,7 +3408,7 @@ pub(crate) fn store(
                                         &[0],
                                     )
                                 })
-                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                .map(|sequence| format!("iges:product:connect-point#D{sequence}"))
                         })
                         .collect::<Vec<_>>()
                 } else {
@@ -3543,7 +3479,7 @@ pub(crate) fn store(
                                     &[0],
                                 )
                             })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            .map(|sequence| format!("iges:product:connect-point#D{sequence}"))
                     })
                     .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
@@ -3619,7 +3555,18 @@ pub(crate) fn store(
                             |target| matches!(target.entity_type, 320 | 420),
                         )
                     })
-                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                    // Link through the network native record the network
+                    // ProductDefinition names with its native_ref (#222 §7.7);
+                    // a definition owner names its definition record and an
+                    // instance owner its instance record.
+                    .and_then(|sequence| {
+                        let target = entries.get(&sequence)?;
+                        match target.entity_type {
+                            320 => Some(format!("iges:product:network-definition#D{sequence}")),
+                            420 => Some(format!("iges:product:network-instance#D{sequence}")),
+                            _ => None,
+                        }
+                    }),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -4638,8 +4585,8 @@ pub(crate) fn store(
                     definition,
                     value_start,
                 ),
-                // The instance has no Parameter Data record at all, which its
-                // own quarantine loss already names.
+                // The instance has no Parameter Data record at all; geometry
+                // reports the missing record.
                 None => Ok(None),
             };
             let rows = match grid {
@@ -5789,8 +5736,6 @@ pub(crate) fn store(
         product_occurrence_expansion.len(),
         macro_definitions.len(),
         macro_instances.len(),
-        quarantined_directory_records.len(),
-        quarantined_parameter_records.len(),
     ]
     .into_iter()
     .map(u64_from_index)
@@ -5806,12 +5751,37 @@ pub(crate) fn store(
             &product_occurrences,
             &subfigure_definitions,
             &network_definitions,
+            &solid_assemblies,
+            &solid_instances,
+            &external_references,
+            &selected_components,
+            &entries,
+            &by_directory,
+            occurrence_length_factor,
+            global.real_precision(),
             sequences,
             ctx,
         )?
     } else {
         Vec::new()
     };
+    if let Some(admitted) = structure_admitted {
+        let mut array_ordinal = 0_u64;
+        patterns::project(
+            ir,
+            &rectangular_arrays,
+            &circular_arrays,
+            &entries,
+            &by_directory,
+            occurrence_length_factor,
+            global.real_precision(),
+            &mut array_ordinal,
+            &mut projection_losses,
+            ctx,
+            &admitted.decoded,
+        )?;
+        renumber_features(ir);
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;
     namespace.set_arena_from(ctx, "directions", directions)?;
@@ -5863,16 +5833,6 @@ pub(crate) fn store(
     if !macro_instances.is_empty() {
         namespace.set_arena_from(ctx, "macro_instances", macro_instances)?;
     }
-    namespace.set_arena_from(
-        ctx,
-        "quarantined_directory_records",
-        quarantined_directory_records,
-    )?;
-    namespace.set_arena_from(
-        ctx,
-        "quarantined_parameter_records",
-        quarantined_parameter_records,
-    )?;
     if structure_admitted.is_some() {
         projection_losses.extend(attributes::project(
             ir,

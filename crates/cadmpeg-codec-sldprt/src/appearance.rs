@@ -112,27 +112,38 @@ fn definition_at(
     let Some(packed_color) = View::u32_le_at(bytes, packed_offset) else {
         return Ok(None);
     };
-    let name_header = packed_offset + 16;
-    if bytes.get(name_header..name_header + 3) != Some(&[0xff, 0xfe, 0xff]) {
+    // Two framed UTF-16 strings follow the COLORREFs; the definition name
+    // is the second. A fixed offset would land inside a non-empty first
+    // string.
+    let mut view = View::over_retained(bytes);
+    if view
+        .seek(packed_offset.checked_add(12).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT appearance strings exceed their section")
+        })?)
+        .is_none()
+    {
         return Ok(None);
     }
-    let Some(count) = bytes.get(name_header + 3).map(|count| usize::from(*count)) else {
+    let first = match crate::framed_string::read_framed_string(ctx, &mut view) {
+        Ok(first) => first,
+        Err(_) => return Ok(None),
+    };
+    if first.is_none() {
         return Ok(None);
+    }
+    let name = match crate::framed_string::read_framed_string(ctx, &mut view) {
+        Ok(Some(second)) => second.value,
+        Ok(None) | Err(_) => return Ok(None),
     };
-    let start = name_header + 4;
-    let Some(raw_name) = count
-        .checked_mul(2)
-        .and_then(|length| start.checked_add(length))
-        .and_then(|end| bytes.get(start..end))
-    else {
-        return Ok(None);
+    let name = if name.trim().is_empty() {
+        first
+            .as_ref()
+            .map(|first| first.value.clone())
+            .unwrap_or_default()
+    } else {
+        name
     };
-    let decoded = match ctx.utf16le_text(raw_name, count, false, "decode SLDPRT appearance name") {
-        Ok(text) => text,
-        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    let trimmed = decoded.trim();
+    let trimmed = name.trim();
     let name = if trimmed.is_empty() {
         "SolidWorks appearance".to_owned()
     } else {

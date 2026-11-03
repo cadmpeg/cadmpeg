@@ -126,3 +126,84 @@ fn active_configuration_rebuild_flag_marks_current_features_stale() {
     assert!(active.parameter_values.is_empty());
     assert!(active.parameter_overrides.is_empty());
 }
+
+fn injected_metadata_unreadable() -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::malformed("injected metadata failure")
+}
+
+#[test]
+fn metadata_unreadable_delivers_empty_scope() {
+    crate::history::inject_metadata_failure(injected_metadata_unreadable);
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(design_without_geometry()),
+            &DecodeOptions::default(),
+        )
+        .expect("unreadable metadata still decodes");
+    let (ir, report, _) = decoded.into_parts();
+    assert_eq!(ir.scope, ContentScope::container());
+    assert_eq!(report.scope(), ir.scope);
+    assert!(!report.geometry_transferred());
+    assert!(ir.model.populated_arena(ArenaClass::Model).is_none());
+    assert!(ir.model.populated_arena(ArenaClass::Design).is_none());
+}
+
+#[test]
+fn metadata_unreadable_keeps_design_when_other_parts_decode() {
+    use crate::test_support::history::resolved_features_payload;
+    let mut source = design_without_geometry();
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    crate::history::inject_metadata_failure(injected_metadata_unreadable);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("unreadable metadata still decodes around lanes");
+    let (ir, report, _) = decoded.into_parts();
+    assert_eq!(
+        ir.scope,
+        ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(report.scope(), ir.scope);
+    assert!(!crate::native::SldprtNative::load(
+        ir.native
+            .namespace("sldprt")
+            .expect("typed native metadata")
+    )
+    .expect("lanes pass typed admission")
+    .feature_input_lanes
+    .is_empty());
+}
+
+#[test]
+fn one_failed_metadata_part_keeps_design_in_scope() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Boss-Extrude1" Type="Extrusion" id="10"><Dimension Name="D1">10mm</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords-damaged",
+        b"<Keywords><Feature Name=\"Broken\"",
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("one failed metadata part still decodes");
+    let (ir, report, _) = decoded.into_parts();
+    assert_eq!(
+        ir.scope,
+        ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(report.scope(), ir.scope);
+    assert!(!ir.model.features.is_empty());
+}

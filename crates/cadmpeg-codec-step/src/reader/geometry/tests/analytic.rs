@@ -96,7 +96,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         )
         .expect("decode curve-bounded surface");
     let mut bytes = Vec::new();
-    let report = write_step(
+    let _report = write_step(
         bounded.ir(),
         &mut bytes,
         StepSchema::Ap214,
@@ -104,15 +104,11 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     )
     .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
-    assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
-    assert!(!text.contains("GEOMETRIC_SET"));
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains("geometry carrier(s) were not written")));
+    assert!(text.contains("CURVE_BOUNDED_SURFACE"));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written curve-bounded surface");
-    assert!(!decoded
+    assert!(decoded
         .ir()
         .model
         .procedural_surfaces

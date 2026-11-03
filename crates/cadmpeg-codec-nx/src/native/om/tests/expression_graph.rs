@@ -401,7 +401,6 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -447,7 +446,6 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -520,7 +518,6 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -545,25 +542,11 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             .as_slice(),
         [ir.model.parameters[1].id.clone()]
     );
-    assert_eq!(
-        ir.model.parameters[0]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("millimeter")
-    );
-    assert_eq!(
-        ir.model.parameters[1]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("degree")
-    );
+    // Bare authored numbers read in neutral units (millimetres, degrees),
+    // so the degree parameters verify against their caches.
     assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
-    ir.model.parameters[0]
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
+    ir.model.parameters[0].value = None;
     assert_eq!(
         feature_completeness::incomplete_expression_parameters(&ir),
         [
@@ -616,7 +599,6 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -737,7 +719,6 @@ fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -778,11 +759,7 @@ fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
             .collect()
     );
     let mut losses = Vec::new();
-    crate::decode::report::append_design_intent_losses(
-        &mut cadmpeg_ir::ArenaClasses::default(),
-        &ir,
-        &mut losses,
-    );
+    crate::decode::report::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("2 NX expression parameter(s)"));
 }
@@ -817,7 +794,6 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -910,76 +886,6 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
             .map(|binding| binding.source_offset)
             .collect::<Vec<_>>(),
         [20, 30]
-    );
-}
-
-#[test]
-fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
-    let expression = crate::native::om::ParameterFormula {
-        id: "nx:test:expression#20".to_string(),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: "5".to_string(),
-        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
-        source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: 20,
-    };
-    let parameter_use = crate::native::features::FeatureParameterUse {
-        id: "use".to_string(),
-        operation_label: "nx:feature-history:operation-label#1-2".to_string(),
-        expression: expression.id.clone(),
-        bindings: vec![crate::native::features::FeatureParameterUseBinding {
-            binding: "binding".to_string(),
-            source_offset: 30,
-        }],
-    };
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::expressions::attach_expression_parameters(
-            ctx,
-            &mut ir,
-            &[expression],
-            &[],
-            &mut annotations,
-            &mut Vec::new(),
-        )
-    })
-    .expect("valid exactness fields");
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect();
-    let dependencies = {
-        crate::native::attach::parameter_owner_dependencies(
-            &parameter_owners,
-            &[
-                cadmpeg_ir::features::ParameterId::mint(
-                    parameter_use
-                        .expression
-                        .replace(":expression#", ":parameter#"),
-                )
-                .expect("identity grammar"),
-                cadmpeg_ir::features::ParameterId::mint(
-                    parameter_use
-                        .expression
-                        .replace(":expression#", ":parameter#"),
-                )
-                .expect("identity grammar"),
-            ],
-        )
-    };
-
-    assert_eq!(ir.model.features[0].ordinal, 0);
-    assert_eq!(
-        dependencies,
-        [ir.model.parameters[0].owner.clone().unwrap()]
     );
 }
 

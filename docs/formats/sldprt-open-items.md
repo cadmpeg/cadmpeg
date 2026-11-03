@@ -146,34 +146,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Container metadata
 
-### CM-01. Cache-cell prefix
-
-**Question.** Which producer rule generates a new cache cell's opaque prefix values when no source bytes are available?
-
-**Known.** The prefix occupies the `N=L/S` bytes between an independently anchored cell start and its marker. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal prefix values. Retained cells preserve these bytes without assigning a producer meaning.
-
-**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
-
-### CM-02. Cache-cell fill
-
-**Question.** Which producer rule generates a new cache cell's opaque trailing values when no source bytes are available?
-
-**Known.** The trailing field extends from the encoded name's end to `cell_start+S`. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal trailing values. Zero and `ff` are opaque byte values, not structural rejection conditions. Retained cells preserve the complete range.
-
-**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
-
-### CM-04. Opaque tail residual generation
-
-**Question.** How does the producer generate the opaque prefix and residual bytes in the named tail-padding and anonymous footer cells?
-
-**Known.** `sldprt.md` §1.4 defines the named-grid scales, footer scales, exact cell extents, EOCD count, and both central-directory locator equations. Bytes outside those fields remain opaque and are retained exactly; they do not select directory members.
-
-**Need.** An independent producer oracle that explains or generates those residual bytes for newly constructed cells.
-
-**Conflict.** None.
-
-**Note.** Parsed grid geometry and EOCD fields do not establish a regeneration rule for opaque residuals.
-
 ### CM-07. Transformed enclosure opaque prologue
 
 **Question.** How does the producer generate the 24 opaque bytes in a `moTransRefPlaneData_c` serializer prologue?
@@ -185,16 +157,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Conflict.** None.
 
 **Note.** Retained prologue bytes can be preserved without assigning a generation rule.
-
-### CM-10. Parasolid stream boundary
-
-**Question.** What fixes the end of a Parasolid stream inside one block payload?
-
-**Known.** `sldprt.md` §3.1 gives the stream header: the `PS 00 00` signature, `desc_len u16 BE`, the description, the padding, `schema_len u8`, and the schema. The header has no total-length field. `sldprt.md` §3.2 states that a block can hold a partition stream and a deltas stream, and gives no delimiter between them.
-
-A later `PS\0\0` is a boundary only when the bytes from that position contain a complete stream header with a bounded description and schema token. An unframed signature in coordinate or string data remains part of the current stream.
-
-**Need.** We must know the authoritative boundary to distinguish a real following stream from payload bytes that happen to contain a complete header-shaped sequence.
 
 ### CM-14. Configuration body membership
 
@@ -646,22 +608,6 @@ unrelated preceding feature as the pattern seed.
 **Conflict.** The decoder gives an unbound instance the class of its `Type` siblings, so these `Boss-Extrude` instances take `moExtrusion_c`. The serialized feature-input lanes do not hold the archive class map, so a validator cannot find the class of a repeated class token from them. The decoder maps form code `5` under `moICE_c` to a cut, and the `Type` token gives a boss.
 
 ## 6. Container record semantics
-
-### EV-03. `SWObjects` record content
-
-**Question.** What fields and relations occupy the unresolved bytes of each `SWObjects` metadata record?
-
-**Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
-
-**Need.** We must define the remaining fields before the complete metadata record can be generated from typed content. The defined color, name, unit, and configuration fields do not supply those remaining fields.
-
-### EV-04. Tail-directory descriptor semantics
-
-**Question.** Which value does a tail-directory entry's 14-byte descriptor hold?
-
-**Known.** `sldprt.md` §1.3 defines a 14-byte descriptor and a 6-byte trailer for each tail-directory entry. The trailer has one value for all entries in a file, and its first four bytes are the directory separator.
-
-**Need.** We must know the descriptor semantics before a new entry can derive a nonzero descriptor without a same-name source entry.
 
 ### EV-05. Leading word of a compound-file `ResolvedFeatures` stream
 

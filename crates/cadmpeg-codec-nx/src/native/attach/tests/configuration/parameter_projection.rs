@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::attach::expressions::attach_expression_parameters;
-use crate::native::attach::expressions::expression_parameter_id;
-use crate::native::attach::parameter_owner_dependencies;
 
 #[test]
-fn nx_block_dimension_parameters_name_the_block_as_consumer() {
+fn nx_block_dimension_parameters_list_source_content() {
     let expression = |key: u32| crate::native::om::ParameterFormula {
         id: format!("nx:test:expression#{key}"),
         owner: None,
@@ -20,18 +18,6 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
-    let dimensions = crate::native::features::FeatureBlockDimensions {
-        id: "dimensions".into(),
-        operation_label: "nx:feature-history:operation-label#1-4".into(),
-        construction: "construction".into(),
-        anchor_bindings: vec!["binding".into()],
-        dimensions: std::array::from_fn(|slot| crate::native::features::FeatureBlockDimension {
-            declaration: ["d20", "d21", "d22"][slot].into(),
-            expression: expressions[slot].id.clone(),
-            value: cadmpeg_ir::scalar::FiniteReal::new([20.0, 21.0, 22.0][slot])
-                .expect("finite dimension"),
-        }),
-    };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     crate::test_support::with_decode_context(|ctx| {
@@ -39,27 +25,11 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
     })
     .expect("valid exactness fields");
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect();
-    let parameter_references = dimensions
-        .dimensions
-        .iter()
-        .filter_map(|dimension| expression_parameter_id(&dimension.expression))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        (parameter_owner_dependencies(&parameter_owners, &parameter_references)),
-        [ir.model.features[0].id.clone()]
-    );
     assert_eq!(
         (&*ir.model.features[0].source_content),
         ir.model
@@ -101,7 +71,6 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             ctx,
             &mut ir,
             &expressions,
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -120,13 +89,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             cadmpeg_ir::scalar::Length::new(6.0 * 25.4).unwrap()
         ))
     );
-    assert_eq!(
-        ir.model.parameters[0]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("inch")
-    );
+    // Bare inch numbers verify against their millimetre caches.
     assert!(crate::decode::feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 }
 
@@ -153,7 +116,6 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
             ctx,
             &mut ir,
             &[expression],
-            &[],
             &mut annotations,
             &mut Vec::new(),
         )
@@ -161,13 +123,6 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     .expect("valid exactness fields");
 
     assert_eq!(ir.model.parameters[0].value, None);
-    assert_eq!(
-        ir.model.parameters[0]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("custom/unit")
-    );
     assert_eq!(
         crate::decode::feature_completeness::incomplete_expression_parameters(&ir),
         [ir.model.parameters[0].id.clone()].into()

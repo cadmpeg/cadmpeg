@@ -71,8 +71,6 @@ pub(crate) enum SldprtLossCode {
     FeatureIncoherentOutputs,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
-    /// Sketch geometry record retains a native kind without solved geometry.
-    SketchNativeGeometry,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -271,7 +269,6 @@ impl SldprtLossCode {
         Self::FeatureUnresolvedOutputScope,
         Self::FeatureIncoherentOutputs,
         Self::SketchNativeConstraint,
-        Self::SketchNativeGeometry,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -372,7 +369,6 @@ impl SldprtLossCode {
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
             Self::FeatureIncoherentOutputs => "feature.incoherent-outputs",
             Self::SketchNativeConstraint => "sketch.native-constraint",
-            Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
@@ -505,7 +501,6 @@ impl SldprtLossCode {
             | Self::FeatureUnresolvedOutputScope
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
-            | Self::SketchNativeGeometry
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -652,7 +647,6 @@ impl SldprtLossCode {
             | Self::FeatureUnresolvedOutputScope
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
-            | Self::SketchNativeGeometry
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -826,7 +820,6 @@ mod tests {
                 "feature.unresolved-output-scope",
                 "feature.incoherent-outputs",
                 "sketch.native-constraint",
-                "sketch.native-geometry",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",

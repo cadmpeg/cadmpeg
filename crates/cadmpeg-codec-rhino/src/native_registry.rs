@@ -17,6 +17,7 @@ pub(crate) const ARENAS: &[&str] = &[
     "hatch_patterns",
     "history_records",
     "layers",
+    "legacy_v1_records",
     "lights",
     "linetypes",
     "materials",

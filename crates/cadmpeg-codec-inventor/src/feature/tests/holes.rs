@@ -2,9 +2,10 @@
 //! Hole forms, center selections, and extent projection.
 
 use crate::feature::hole;
+use crate::feature::tests::helpers::with_record;
 use crate::feature::tests::{
     inventory, neutral_parameter, raw_parameter, reference, reference_list, references, segment,
-    test_feature, test_header, test_label, test_projection_index, test_property, with_record,
+    test_feature, test_header, test_label, test_projection_index, test_property,
 };
 use crate::feature::{
     project_hole, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel, PmDcFeatureProperty,
@@ -198,7 +199,13 @@ impl HoleFixture {
                     POINT_TYPE,
                     &bytes,
                     DecodePolicy::service(),
-                    crate::sketch::inventory,
+                    |ctx, document| {
+                        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                            cadmpeg_ir::CodecFormat::Inventor,
+                            ctx,
+                        );
+                        crate::sketch::inventory(ctx, document, &mut parts)
+                    },
                 )
                 .expect("point inventory");
                 let point = parsed
@@ -657,7 +664,7 @@ fn hole_inventory_reads_only_referenced_selection_records() {
             } else {
                 &bytes
             };
-            let parsed = with_record(
+            let (parsed, parts) = with_record(
                 type_id,
                 payload,
                 DecodePolicy::service(),
@@ -667,7 +674,12 @@ fn hole_inventory_reads_only_referenced_selection_records() {
                     } else {
                         Vec::new()
                     };
-                    inventory_with_hole(ctx, document, &slots)
+                    let mut record_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                        cadmpeg_ir::CodecFormat::Inventor,
+                        ctx,
+                    );
+                    inventory_with_hole(ctx, document, &slots, &mut record_parts)
+                        .map(|inventory| (inventory, record_parts))
                 },
             )
             .expect("selection inventory");
@@ -684,16 +696,16 @@ fn hole_inventory_reads_only_referenced_selection_records() {
                     .count(),
                 usize::from(selected && !malformed)
             );
-            assert_eq!(
-                parsed
-                    .issues
-                    .iter()
-                    .filter(|issue| { Some(issue.record_ordinal) == selected_ordinal })
-                    .count(),
-                usize::from(selected && malformed)
-            );
+            let (_, _, _, losses) = parts.into_parts();
+            if malformed {
+                crate::test_support::assert_single_part_give_up(
+                    &losses,
+                    "inventor.rse_record_body",
+                );
+            } else {
+                assert!(losses.is_empty(), "{losses:#?}");
+            }
             assert_eq!(parsed.properties.len(), usize::from(!malformed));
-            assert_eq!(parsed.issues.len(), usize::from(malformed));
             if let Some(selection) = parsed.properties.first() {
                 assert_eq!(selection.identity.record_ordinal, 0);
                 assert_eq!(
@@ -711,7 +723,11 @@ fn hole_inventory_reads_only_referenced_selection_records() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let refused = with_record(type_id, &bytes, policy, |ctx, document| {
-        inventory_with_hole(ctx, document, &[(slot, 0)])
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+            ctx,
+        );
+        inventory_with_hole(ctx, document, &[(slot, 0)], &mut parts)
     });
     assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
 }
@@ -720,8 +736,9 @@ fn inventory_with_hole(
     ctx: &DecodeContext<'_>,
     document: &crate::rse::RseInventory<'_>,
     slots: &[(usize, u32)],
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<super::super::FeatureInventory, CodecError> {
-    let mut parsed = inventory(ctx, document)?;
+    let mut parsed = inventory(ctx, document, parts)?;
     let token = document.segments[0].pair.token.key();
     let mut feature = test_feature(100, 25, slots);
     feature.identity.segment_token = token.clone();

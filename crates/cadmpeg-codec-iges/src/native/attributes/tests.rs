@@ -25,7 +25,11 @@ fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() 
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generic property fixture decodes");
     let ir = result.ir();
-    assert!(ir.model.attributes.is_empty());
+    assert!(ir
+        .model
+        .attributes
+        .iter()
+        .all(|attribute| attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document));
     let record = &ir
         .native
         .namespace("iges")
@@ -109,7 +113,11 @@ fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("typed attribute table defaults and row fixture decodes");
     let ir = result.ir();
-    assert!(ir.model.attributes.is_empty());
+    assert!(ir
+        .model
+        .attributes
+        .iter()
+        .all(|attribute| attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document));
     let namespace = ir
         .native
         .namespace("iges")
@@ -288,5 +296,9 @@ fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
     })
     .expect("valid nullable attribute fixture");
     assert!(losses.is_empty());
-    assert!(ir.model.attributes.is_empty());
+    assert!(ir
+        .model
+        .attributes
+        .iter()
+        .all(|attribute| attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document));
 }

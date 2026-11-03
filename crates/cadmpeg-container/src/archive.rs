@@ -334,6 +334,13 @@ impl<'a> ArchiveSnapshot<'a> {
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         if let Some(error) = entry.local_header_error {
+            if error.starts_with("truncated ") {
+                let offset = usize::try_from(entry.header_start).unwrap_or(usize::MAX);
+                return Err(CodecError::truncated(
+                    self.root.location_at(offset),
+                    "open ZIP entry",
+                ));
+            }
             return Err(CodecError::malformed(format_args!(
                 "{}: {error}",
                 entry.name
