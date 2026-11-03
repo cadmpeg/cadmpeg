@@ -54,4 +54,7 @@ no_unexpected_give_ups! {
     catia_no_unexpected_give_ups => "catia", catia_charges_no_unexpected_give_up;
     creo_no_unexpected_give_ups => "creo", creo_charges_no_unexpected_give_up;
     usd_no_unexpected_give_ups => "usd", usd_charges_no_unexpected_give_up;
+    inventor_no_unexpected_give_ups => "inventor", inventor_charges_no_unexpected_give_up;
+    sat_no_unexpected_give_ups => "sat", sat_charges_no_unexpected_give_up;
+    nx_no_unexpected_give_ups => "nx", nx_charges_no_unexpected_give_up;
 }
