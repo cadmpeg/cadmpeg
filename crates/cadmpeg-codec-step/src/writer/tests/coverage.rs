@@ -123,3 +123,9 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
         .expect("neutral validation")
         .is_ok());
 }
+
+#[test]
+fn step_declares_no_reduced_or_capacity_fields() {
+    assert!(crate::writer::REDUCED_FIELDS.is_empty());
+    assert!(crate::writer::CAPACITY_FIELDS.is_empty());
+}
