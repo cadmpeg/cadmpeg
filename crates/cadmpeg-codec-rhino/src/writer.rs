@@ -607,12 +607,46 @@ fn prepare_write<'a, 'budget>(
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
         match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
-            Ok(payload) => surfaces.push((surface.id.as_str(), payload)),
+            Ok(payload) => {
+                surfaces.push((surface.id.as_str(), payload));
+                if surface.geometry.procedural_construction().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} procedural construction was reduced to a held solved carrier",
+                        surface.id
+                    )));
+                }
+            }
             Err(WriteError::Omit(reason)) => losses.push(
                 RhinoLossCode::WriterEntityOmitted
                     .note(format!("surface {} omitted: {reason}", surface.id)),
             ),
             Err(error) => return Err(error),
+        }
+    }
+    let referenced_procedural_curves = model
+        .curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .collect::<std::collections::BTreeSet<_>>();
+    let referenced_procedural_surfaces = model
+        .surfaces
+        .iter()
+        .filter_map(|surface| surface.geometry.procedural_construction())
+        .collect::<std::collections::BTreeSet<_>>();
+    for construction in &model.procedural_curves {
+        if !referenced_procedural_curves.contains(&construction.id) {
+            losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "procedural curve {} is omitted: no held curve uses its construction",
+                construction.id
+            )));
+        }
+    }
+    for construction in &model.procedural_surfaces {
+        if !referenced_procedural_surfaces.contains(&construction.id) {
+            losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "procedural surface {} is omitted: no held surface uses its construction",
+                construction.id
+            )));
         }
     }
     let mut meshes = Vec::new();
@@ -748,6 +782,14 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         };
+        for surface in &baked.model.surfaces {
+            if surface.geometry.procedural_construction().is_some() {
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "surface {} procedural construction was reduced to a held solved carrier",
+                    surface.id
+                )));
+            }
+        }
         let body = &baked.model.bodies[0];
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
