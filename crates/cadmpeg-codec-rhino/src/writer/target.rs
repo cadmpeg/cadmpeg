@@ -276,11 +276,13 @@ pub(crate) fn plan(
     ctx.finish_session()?;
     session.finish()?;
     Ok(ExportBody {
-        native_dispositions: super::native_dispositions(input.ir).map_err(|error| match error {
-            // The plan boundary converts control flow that no record boundary
-            // caught. #239 switches this site to `EncodeError`.
-            super::WriteError::Omit(message) => CodecError::UnsupportedContent(message),
-            super::WriteError::Fail(error) => error,
+        native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
+            match error {
+                // The plan boundary converts control flow that no record boundary
+                // caught. #239 switches this site to `EncodeError`.
+                super::WriteError::Omit(message) => CodecError::UnsupportedContent(message),
+                super::WriteError::Fail(error) => error,
+            }
         })?,
         synthesis_cause: None,
         bytes: bytes.into_vec(),

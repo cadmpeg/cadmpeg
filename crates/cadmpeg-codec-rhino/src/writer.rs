@@ -376,6 +376,9 @@ fn write_archive_prefix(
     let mut setting_losses = Vec::new();
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
     settings.extend(exported.records);
+    let table_settings = tables::document::table_settings(ir, version)?;
+    setting_losses.extend(table_settings.losses);
+    settings.extend(table_settings.records);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
     output.append(
@@ -777,6 +780,7 @@ fn prepare_write<'a, 'budget>(
 
 fn native_dispositions(
     ir: &CadIr,
+    version: RhinoArchiveVersion,
 ) -> Result<cadmpeg_ir::codec::write::NativeDispositions, WriteError> {
     use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
     let mut dispositions = NativeDispositions::for_namespace(
@@ -850,6 +854,16 @@ fn native_dispositions(
         }
     }
     let properties = tables::document::properties(ir)?;
+    for record in records_in(ir, "previews") {
+        if properties.previews_written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "previews",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
     for arena in ["revisions", "document_notes", "applications"] {
         for record in ir
             .native
@@ -903,6 +917,14 @@ fn native_dispositions(
     for arena in ["lights", "hatch_patterns"] {
         for record in records_in(ir, arena) {
             dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+        }
+    }
+    let table_settings = tables::document::table_settings(ir, version)?;
+    for arena in ["annotation_settings", "grid_defaults", "render_settings"] {
+        for record in records_in(ir, arena) {
+            if table_settings.written.contains(record.id()) {
+                dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+            }
         }
     }
     let emitted = tables::annotations::records(ir, &materials)?;
