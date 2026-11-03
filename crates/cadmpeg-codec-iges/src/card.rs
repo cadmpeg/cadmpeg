@@ -1002,6 +1002,26 @@ impl<'a> CardScan<'a> {
             })
             .map_or(0, |index| self.lines.len() - (index + 1))
     }
+
+    /// The trailing partial line and its positional card index when the
+    /// transfer ends inside the Parameter section. The fragment continues
+    /// the next positional Parameter card, whose declared owners can still
+    /// locate it even though the card never closed with a sequence field.
+    pub(crate) fn trailing_parameter_fragment(&self) -> Option<(u32, &PhysicalLine)> {
+        if !matches!(self.source_end, SourceEnd::EndsIn(OpenSection::Parameter)) {
+            return None;
+        }
+        let last = self
+            .section(Section::Parameter)
+            .map(|(sequence, _)| sequence)
+            .max()
+            .unwrap_or(0);
+        let fragment = self.lines.iter().find_map(|line| match line {
+            ScannedLine::DroppedFinal(line) => Some(line),
+            _ => None,
+        })?;
+        Some((last.checked_add(1)?, fragment))
+    }
 }
 
 #[cfg(test)]

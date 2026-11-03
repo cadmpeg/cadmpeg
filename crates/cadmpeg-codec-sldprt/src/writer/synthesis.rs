@@ -46,6 +46,13 @@ pub(super) fn plan(
         &mut projected.model.configurations,
         &mut losses,
     );
+    // Native lane and history records require names; default blank feature
+    // names to their identity as configurations do (#237).
+    normalize_feature_names(&mut projected.model.features, &mut losses);
+    // A native reference that names no record any retained namespace holds
+    // cannot be re-emitted or regenerated from. Clear such references and
+    // write the neutral content without its native link (#237).
+    null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
     let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new())?;
     if let Some(finding) = validation
         .findings
@@ -173,7 +180,8 @@ pub(super) fn plan(
             .is_none_or(|body| supported.contains(body))
     });
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
-    let mut prepared_native = design::prepare(&mut projected, &mut losses)?;
+    let mut prepared_native =
+        design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -276,10 +284,14 @@ pub(super) fn plan(
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
                 coverage.$arena = ArenaDisposition::Reported;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "model.{}: {} of {} record(s) omitted while synthesizing supported bodies",
-                    stringify!($arena), input.ir.model.$arena.len() - projected.model.$arena.len(), input.ir.model.$arena.len()
-                )));
+                push_changed_arena_loss(
+                    &mut losses,
+                    stringify!($arena),
+                    &input.ir.model.$arena,
+                    &projected.model.$arena,
+                    SldprtLossCode::WriterEntityOmitted,
+                    "while synthesizing supported bodies",
+                );
             }
         )*};
     }
@@ -290,10 +302,14 @@ pub(super) fn plan(
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
                 coverage.$arena = ArenaDisposition::Reported;
-                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                    "model.{}: {} of {} record(s) omitted while synthesizing supported design",
-                    stringify!($arena), input.ir.model.$arena.len() - projected.model.$arena.len(), input.ir.model.$arena.len()
-                )));
+                push_changed_arena_loss(
+                    &mut losses,
+                    stringify!($arena),
+                    &input.ir.model.$arena,
+                    &projected.model.$arena,
+                    SldprtLossCode::WriterDesignReduced,
+                    "while synthesizing supported design",
+                );
             }
         )*};
     }
@@ -303,6 +319,7 @@ pub(super) fn plan(
         spatial_sketches,
         spatial_sketch_entities
     );
+    push_unnamed_drop_losses(input.ir, &projected, &mut losses);
     if input.ir.model.tessellations != projected.model.tessellations {
         coverage.tessellations = ArenaDisposition::Reported;
     }
@@ -463,7 +480,257 @@ fn prepare_native(
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
     ir.native = cadmpeg_ir::native::Native::default();
     native.store(&ctx, ir.native.namespace_mut("sldprt"))?;
+    // The wipe orphaned references into the removed namespaces; write the
+    // neutral content without those links (#237).
+    null_unresolvable_native_refs(&mut ir.model, &ir.native, true, losses)?;
     Ok(())
+}
+
+/// Default blank feature names to their identity, as configurations do.
+///
+/// Native lane and history records require names. A feature without one
+/// cannot be authored; the identity stands in and the loss names it (#237).
+fn normalize_feature_names(
+    features: &mut [cadmpeg_ir::features::Feature],
+    losses: &mut Vec<LossNote>,
+) {
+    for feature in features {
+        if feature
+            .name
+            .as_deref()
+            .is_none_or(|name| name.trim().is_empty())
+        {
+            feature.name = Some(feature.id.as_str().into());
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {} uses its identity as the required native name",
+                feature.id
+            )));
+        }
+    }
+}
+
+/// Native record identities across every namespace of `native`, read through
+/// its serialized form so the codec never names another namespace.
+fn native_record_identities(
+    native: &cadmpeg_ir::native::Native,
+) -> std::collections::HashSet<String> {
+    fn collect_ids(value: &serde_json::Value, owned: &mut std::collections::HashSet<String>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(id) = fields.get("id").and_then(serde_json::Value::as_str) {
+                    owned.insert(id.to_owned());
+                }
+                for child in fields.values() {
+                    collect_ids(child, owned);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    collect_ids(item, owned);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut owned = std::collections::HashSet::new();
+    if let Ok(document) = serde_json::to_value(native) {
+        collect_ids(&document, &mut owned);
+    }
+    owned
+}
+
+/// Clear native references the write cannot resolve.
+///
+/// A neutral record whose `native_ref` names a record the write does not
+/// retain can neither be re-emitted nor regenerated from its link; the
+/// neutral content is written without it (#237). References carried inside
+/// definitions keep their refusal below. Returns without touching the model
+/// when every reference resolves.
+///
+/// Before validation every unresolvable reference is cleared: the validator
+/// would refuse each of them, so the cleared set is exactly its finding set.
+/// After the foreign-namespace wipe only references outside the retained
+/// namespaces are cleared (`foreign_only`); references into retained records
+/// dropped by lane clearing keep their existing silent paths, so retained
+/// source-layout references change nothing.
+fn null_unresolvable_native_refs(
+    model: &mut cadmpeg_ir::document::Model,
+    native: &cadmpeg_ir::native::Native,
+    foreign_only: bool,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    fn walk(
+        value: &mut serde_json::Value,
+        owned: &std::collections::HashSet<String>,
+        present: &std::collections::HashSet<String>,
+        foreign_only: bool,
+        cleared: &mut Vec<(String, String)>,
+    ) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let (Some(id), Some(serde_json::Value::String(target))) = (
+                    fields
+                        .get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned),
+                    fields.get("native_ref"),
+                ) {
+                    let namespace = target.split(':').next().unwrap_or(target.as_str());
+                    if !owned.contains(target)
+                        && (!foreign_only || !present.iter().any(|present| present == namespace))
+                    {
+                        cleared.push((id, target.clone()));
+                        fields.remove("native_ref");
+                    }
+                }
+                for child in fields.values_mut() {
+                    walk(child, owned, present, foreign_only, cleared);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    walk(item, owned, present, foreign_only, cleared);
+                }
+            }
+            _ => {}
+        }
+    }
+    let owned = native_record_identities(native);
+    let present: std::collections::HashSet<String> =
+        if let Ok(serde_json::Value::Object(spaces)) = serde_json::to_value(native) {
+            spaces.keys().cloned().collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+    let mut document =
+        serde_json::to_value(&*model).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    let mut cleared = Vec::new();
+    walk(&mut document, &owned, &present, foreign_only, &mut cleared);
+    if cleared.is_empty() {
+        return Ok(());
+    }
+    *model = serde_json::from_value(document)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    cleared.sort();
+    for (id, target) in &cleared {
+        losses.push(SldprtLossCode::WriterNativeReferenceCleared.note(format!(
+            "record {id} referenced native record {target} that the write does not retain; the dangling native reference was cleared"
+        )));
+    }
+    Ok(())
+}
+
+/// Record ids of one model arena through its serialized form.
+fn arena_ids(records: &impl serde::Serialize) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Ok(serde_json::Value::Array(rows)) = serde_json::to_value(records) {
+        for row in rows {
+            if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                ids.push(id.to_owned());
+            }
+        }
+    }
+    ids
+}
+
+/// Charge the counted-arena omission loss with the dropped record ids named.
+///
+/// A drop the target cannot represent is reported as a loss that names what
+/// it affects (#209 §5.2). Ids an earlier loss already names stay out.
+fn push_changed_arena_loss(
+    losses: &mut Vec<LossNote>,
+    arena: &str,
+    before: &impl serde::Serialize,
+    after: &impl serde::Serialize,
+    code: SldprtLossCode,
+    reason: &str,
+) {
+    let before_ids = arena_ids(before);
+    let after_ids: std::collections::HashSet<_> = arena_ids(after).into_iter().collect();
+    let dropped: Vec<&String> = before_ids
+        .iter()
+        .filter(|id| !after_ids.contains(id.as_str()))
+        .collect();
+    if dropped.is_empty() {
+        return;
+    }
+    let mut unnamed: Vec<String> = dropped
+        .iter()
+        .filter(|id| !losses.iter().any(|loss| loss.message.contains(id.as_str())))
+        .map(|id| (*id).clone())
+        .collect();
+    unnamed.sort();
+    let mut message = format!(
+        "model.{arena}: {} of {} record(s) omitted {reason}",
+        dropped.len(),
+        before_ids.len(),
+    );
+    if !unnamed.is_empty() {
+        message.push_str(": ");
+        message.push_str(&unnamed.join(", "));
+    }
+    losses.push(code.note(message));
+}
+
+/// Name dropped records of arenas without a dedicated omission loss.
+///
+/// Attributes, presentation layers, procedural carriers and cleared
+/// association arenas drop records with no other loss naming them. One loss
+/// per arena names every unnamed drop so no drop goes unnamed (#209 §5.2).
+fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<LossNote>) {
+    let before = serde_json::to_value(&input.model).unwrap_or_default();
+    let after = serde_json::to_value(&projected.model).unwrap_or_default();
+    let (Some(before), Some(after)) = (before.as_object(), after.as_object()) else {
+        return;
+    };
+    for (arena, rows) in before {
+        let Some(rows) = rows.as_array() else {
+            continue;
+        };
+        let after_ids: std::collections::HashSet<&str> = after
+            .get(arena)
+            .and_then(|rows| rows.as_array())
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut unnamed: Vec<String> = rows
+            .iter()
+            .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
+            .filter(|id| !after_ids.contains(id))
+            .filter(|id| !losses.iter().any(|loss| loss.message.contains(id)))
+            .map(str::to_owned)
+            .collect();
+        if unnamed.is_empty() {
+            continue;
+        }
+        unnamed.sort();
+        let code = if matches!(
+            arena.as_str(),
+            "features"
+                | "parameters"
+                | "configurations"
+                | "spreadsheets"
+                | "sketch_constraints"
+                | "spatial_sketch_constraints"
+        ) {
+            SldprtLossCode::WriterDesignReduced
+        } else if matches!(
+            arena.as_str(),
+            "attributes" | "presentation_layers" | "presentation_documents" | "view_presentations"
+        ) {
+            SldprtLossCode::WriterFieldsOmitted
+        } else {
+            SldprtLossCode::WriterEntityOmitted
+        };
+        losses.push(code.note(format!(
+            "model.{arena}: {} record(s) dropped as unrepresentable in SLDPRT: {}",
+            unnamed.len(),
+            unnamed.join(", ")
+        )));
+    }
 }
 
 fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
@@ -562,13 +829,17 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     );
 }
 
-fn reduce_design(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+fn reduce_design(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+    repair: bool,
+) -> Result<(), CodecError> {
     let native = ir
         .native
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
-    let prepare = |candidate: &CadIr| {
+    let prepare = |candidate: &mut CadIr, losses: &mut Vec<LossNote>| {
         let mut native = native.clone();
         let orphaned = crate::history::write::parameters::orphaned_scalar_parameters(
             candidate,
@@ -577,15 +848,16 @@ fn reduce_design(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Codec
         .map_err(|error| {
             CodecError::malformed(format_args!("SLDPRT orphaned scalar scan failed: {error}"))
         })?;
-        crate::history::write::features::synthesize_neutral_features(
-            &candidate.model,
-            &candidate.model.parameters,
-            &candidate.model.bodies,
+        design::synthesize_neutral_features_repairing(
+            candidate,
             &mut native,
             &orphaned,
-        )
+            losses,
+            repair,
+        )?;
+        Ok(())
     };
-    match prepare(ir) {
+    match prepare(&mut *ir, &mut *losses) {
         Ok(_) => return Ok(()),
         Err(CodecError::UnsupportedContent(_)) => {}
         Err(error) => return Err(error),
@@ -597,7 +869,7 @@ fn reduce_design(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Codec
     for (index, feature) in original.into_iter().enumerate() {
         let solved = ir.model.features[index].clone();
         ir.model.features[index] = feature;
-        match prepare(ir) {
+        match prepare(&mut *ir, &mut *losses) {
             Ok(_) => {}
             Err(CodecError::UnsupportedContent(reason)) => {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
