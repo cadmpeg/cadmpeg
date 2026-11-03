@@ -79,7 +79,10 @@ fn primitive_bytes(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     Ok(bytes)
 }
 
-pub(in crate::writer) fn mappings(ir: &CadIr) -> Result<TextureMappingExport, WriteError> {    let mut output = TextureMappingExport {
+pub(in crate::writer) fn mappings(
+    ir: &CadIr,
+    version: crate::RhinoArchiveVersion,
+) -> Result<TextureMappingExport, WriteError> {    let mut output = TextureMappingExport {
         records: Vec::new(),
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
@@ -87,6 +90,27 @@ pub(in crate::writer) fn mappings(ir: &CadIr) -> Result<TextureMappingExport, Wr
     for record in records(ir, "texture_mappings") {
         let fields = record.fields()?;
         let encoded = (|| {
+            let source_version = fields
+                .get("source_archive_version")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "texture mapping {} has no source archive version",
+                        record.id()
+                    ))
+                })?;
+            // Chunk length fields are four bytes below archive 50 and eight
+            // bytes at and above it (`docs/formats/rhino_3dm.md` §4); an
+            // untyped primitive cannot be reframed, so a width change omits.
+            if (source_version >= 50) != (version.value() >= 50) {
+                return Err(WriteError::Omit(format!(
+                    "texture mapping {} primitive bytes use {}-byte lengths and the archive-{} target uses {}-byte lengths",
+                    record.id(),
+                    if source_version >= 50 { 8 } else { 4 },
+                    version.value(),
+                    if version.value() >= 50 { 8 } else { 4 },
+                )));
+            }
             let minor = if fields
                 .get("texture_space")
                 .and_then(Value::as_i64)
@@ -177,6 +201,7 @@ mod tests {
             "uvw_transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
             "primitive_class_uuid": "00000000-0000-0000-0000-000000000000",
             "primitive_bytes": "deadbeefcafe",
+            "source_archive_version": 50,
             "texture_space": 0,
             "capped": true,
         })
@@ -186,7 +211,7 @@ mod tests {
     fn held_mapping_reemits_typed_fields_around_verbatim_primitive_bytes() {
         let id = "rhino:presentation:texture_mapping#test";
         let ir = mapping_record(id, held_fields());
-        let exported = mappings(&ir).expect("held mapping encodes");
+        let exported = mappings(&ir, crate::RhinoArchiveVersion::V8).expect("held mapping encodes");
         assert!(exported.losses.is_empty(), "{:?}", exported.losses);
         assert_eq!(exported.records.len(), 1);
         assert!(exported.written.contains(id));
@@ -204,12 +229,55 @@ mod tests {
     }
 
     #[test]
+    fn minor_zero_mapping_round_trips_without_space_or_cap() {
+        let id = "rhino:presentation:texture_mapping#minor0";
+        let mut fields = held_fields();
+        let object = fields.as_object_mut().expect("texture mapping fields");
+        object.insert("capped".to_owned(), serde_json::Value::Bool(false));
+        object.insert(
+            "name".to_owned(),
+            serde_json::Value::String("TestMapping - sphere".to_owned()),
+        );
+        let ir = mapping_record(id, fields);
+        let exported =
+            mappings(&ir, crate::RhinoArchiveVersion::V8).expect("minor-zero mapping encodes");
+        assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+        assert_eq!(exported.records.len(), 1);
+        assert!(exported.written.contains(id));
+    }
+
+    #[test]
     fn mapping_without_primitive_bytes_names_its_own_omission() {
         let id = "rhino:presentation:texture_mapping#unprimitived";
         let mut fields = held_fields();
         fields.as_object_mut().expect("fields object").remove("primitive_bytes");
         let ir = mapping_record(id, fields);
-        let exported = mappings(&ir).expect("omission is a loss, not a failure");
+        let exported = mappings(&ir, crate::RhinoArchiveVersion::V8)
+            .expect("omission is a loss, not a failure");
+        assert!(exported.records.is_empty());
+        assert!(!exported.written.contains(id));
+        assert_eq!(exported.losses.len(), 1);
+        assert_eq!(
+            exported.losses[0].code,
+            RhinoLossCode::WriterMaterialOmitted.note("").code
+        );
+        assert!(exported.losses[0].message.contains(id));
+    }
+
+    #[test]
+    fn width_changing_mapping_names_its_own_omission() {
+        let id = "rhino:presentation:texture_mapping#legacy";
+        let mut fields = held_fields();
+        fields
+            .as_object_mut()
+            .expect("texture mapping fields")
+            .insert(
+                "source_archive_version".to_owned(),
+                serde_json::Value::from(4),
+            );
+        let ir = mapping_record(id, fields);
+        let exported = mappings(&ir, crate::RhinoArchiveVersion::V8)
+            .expect("width change is a loss, not a failure");
         assert!(exported.records.is_empty());
         assert!(!exported.written.contains(id));
         assert_eq!(exported.losses.len(), 1);
