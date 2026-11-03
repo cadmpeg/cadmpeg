@@ -517,14 +517,9 @@ fn enumeration_value(
 }
 
 fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    // Persistence admission already reported this unreadable scalar. Keep the
-    // independently typed joint relation without inventing its missing value.
-    if property.body.is_none()
-        || matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        )
-    {
+    // A given-up value stays absent. Keep the independently typed joint
+    // relation without inventing its missing value.
+    if property.body.is_none() {
         return Ok(None);
     }
     let (expected_type, expected_tag) = match property.name.as_str() {
@@ -1123,8 +1118,7 @@ pub(crate) mod tests {
                         .report()
                         .losses
                         .iter()
-                        .any(|loss| loss.code.local_code()
-                            == "metadata.persistence-payload-unresolved"));
+                        .any(|loss| loss.code.local_code() == "record.unreadable"));
                     assert!(decoded
                         .source_fidelity()
                         .unrepresented()
@@ -1199,7 +1193,7 @@ pub(crate) mod tests {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
+            .any(|loss| loss.code.local_code() == "record.unreadable"));
         assert!(decoded
             .source_fidelity()
             .unrepresented()

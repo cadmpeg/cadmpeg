@@ -332,9 +332,6 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
     match (&left.body, &right.body) {
         (None, None) => true,
         (Some(PropertyBody::Transient), Some(PropertyBody::Transient)) => true,
-        (Some(PropertyBody::Unreadable(left)), Some(PropertyBody::Unreadable(right))) => {
-            left == right
-        }
         (
             Some(PropertyBody::Persisted {
                 values: left_values,

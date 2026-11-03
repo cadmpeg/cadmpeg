@@ -45,6 +45,7 @@ mod property_reader;
 mod source_archive;
 mod topology_transfer;
 mod writer;
+mod xml_recovery;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -790,7 +791,7 @@ impl CodecBackend for FcstdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let (mut scan, parts) = match container::attempt(ctx, root)? {
+        let (mut scan, mut parts) = match container::attempt(ctx, root)? {
             container::ScanOutcome::Readable { scan, parts } => (*scan, parts),
             container::ScanOutcome::GivenUp {
                 summary,
@@ -813,7 +814,7 @@ impl CodecBackend for FcstdCodec {
         } else {
             scan.data
                 .get("GuiDocument.xml")
-                .map(|source| gui::source::parse(ctx, *source))
+                .map(|source| gui::source::parse(ctx, &mut parts, *source))
                 .transpose()?
         };
         let mut admitted_entities = 0_u64;
@@ -893,22 +894,29 @@ impl CodecBackend for FcstdCodec {
             )?;
         }
         let mut part_losses = Vec::new();
-        container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
-        let namespace = ir.native.namespace_mut("fcstd");
 
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;
+            let document_view = *scan
+                .data
+                .get("Document.xml")
+                .ok_or_else(|| CodecError::malformed("properties have no document source"))?;
+            let stages = crate::persistence::ValueStages {
+                ctx,
+                stage: &mut parts,
+                view: document_view,
+            };
             let mut graph = persistence::parse_document_source_with_properties(
-                *scan
-                    .data
-                    .get("Document.xml")
-                    .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
+                document_view,
                 document_xml,
                 persistence::Vocabulary::from_declaration(&scan.schema_version)?,
                 scan.document_properties.as_ref(),
                 scan.object_declarations.as_ref(),
+                Some(stages),
             )?;
+            container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
+            let namespace = ir.native.namespace_mut("fcstd");
             scan.losses.extend(graph.losses);
             persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
             let property_reader = property_reader::PropertyReader::source(
@@ -1277,7 +1285,6 @@ impl CodecBackend for FcstdCodec {
             &entry_sources,
             &mut source_fidelity,
         )?);
-        fidelity::mark_unreadable(&ir, &mut source_fidelity, &scan.failed_members)?;
         // The decode wrapper stamps the source digest from its root view.
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
