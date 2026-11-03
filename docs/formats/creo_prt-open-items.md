@@ -479,7 +479,7 @@ feature definitions do not establish completeness of those native tables.
 
 **Question.** Which additional fields join a section definition to its sketch datum when no unique bounded-source owner chain or generated-datum parent remains?
 
-**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "When the sketch plane resolves to a placed plane carrier" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+**Known.** `creo_prt.md` §6 "Each complete bounded `AllFeatur` feature row stores an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "When the sketch plane resolves to a placed plane carrier" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
 
 **Need.** We must define a transfer for definitions that have no unique bounded-source chain and no unique generated-datum parent without inferring a feature owner or model-space frame.
 
@@ -953,13 +953,13 @@ carriers.
 
 **Need.** We must know the values to construct the complete material.
 
-### TP-18. `MdlStatus` prefix meanings
+### TP-18. `MdlStatus` current-state selector
 
-**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent, and which field selects the current same-ID candidate?
+**Question.** Which field selects the current same-ID candidate?
 
-**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name. Same-ID state candidates retain their byte order and exact prefixes. No candidate is projected as current without a selector.
+**Known.** `creo_prt.md` §6 "Operation names end in" states the timed display-name framing, and "Model-history states sit under" states the `mod_track_data` hierarchy. The byte before a timed display name is `tm_year`, not a stored-name prefix. Same-ID state candidates retain their byte order and exact name bytes. No candidate is projected as current without a selector.
 
-**Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
+**Need.** We must know the current-state selector to preserve the native state semantics and project one current candidate.
 
 **Conflict.** None.
 

@@ -1024,15 +1024,6 @@
         },
         "offset": 76,
         "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNORDowOlZpc2liR2VvbTowCnNyZl9hcnJheQD4AQcoBAEAAHNyZl9wcmltX3B0cihzcGxzcmYpAOACaV9wb2ludHMA+QQDDw8PD+Tk5A/k5OQvAADgAmVuZF91X3Rhbmd0cwD5BAPkD+TkD+TkD+TkD+TgAmVuZF92X3Rhbmd0cwD5BAMP5OQP5OQP5OQP5OTgAmVuZF91dl9kZXJpdgD5BAMPDw8PDw8PDw8PDw/gAnVfcGFyYW1zAPgCD+TgAnZfcGFyYW1zAPgCD+RjcnZfYXJyYXkA8/gA",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
         "untyped": [
           "model"
         ]

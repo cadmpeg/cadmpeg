@@ -21,6 +21,7 @@ mod document_projection;
 mod expanded;
 pub(crate) mod feature_history;
 mod holes;
+mod materials;
 mod native;
 mod native_records;
 mod quadratic;
