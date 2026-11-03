@@ -1092,7 +1092,6 @@ impl CompactFrameAxes {
 }
 
 fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f64, usize)> {
-    const X_NEGATIVE_Z_IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
     const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     let sign = |byte| match byte {
@@ -1124,8 +1123,15 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f6
     if body.starts_with(Y_IMAGE) {
         return Some((CompactFrameAxes::YZ, 1.0, 1.0, Y_IMAGE.len()));
     }
-    if body.starts_with(X_NEGATIVE_Z_IMAGE) {
-        return Some((CompactFrameAxes::XZ, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
+    if let [0x18, 0xe4, axis, 0x18, 0x0f, 0x18, reference, 0x18, 0xe4, ..] = body {
+        let axis_sign = sign(*axis)?;
+        let reference_sign = sign(*reference)?;
+        return (axis_sign == -reference_sign).then_some((
+            CompactFrameAxes::XZ,
+            reference_sign,
+            axis_sign,
+            9,
+        ));
     }
     body.starts_with(X_POSITIVE_Y_IMAGE).then_some((
         CompactFrameAxes::XY,

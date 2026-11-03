@@ -515,8 +515,19 @@ fn inline_non_plane_compact_images_name_the_axis_coordinate() {
             0,
             [0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ),
+        (
+            vec![0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4],
+            0,
+            [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ),
     ];
     let cache = ScalarCache::default();
+    let left_handed = [0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4];
+    assert!(crate::decode::with_service_context(|ctx| {
+        decode_inline_non_plane_local_system_prefix(ctx, &left_handed, &cache)
+    })
+    .expect("decode the inline non-plane local system prefix")
+    .all(|prefix| !matches!(prefix, InlineNonPlaneLocalSystemPrefix::Compact(_))));
     for (body, axis, expected) in cases {
         let frame = crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
