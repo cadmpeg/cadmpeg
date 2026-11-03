@@ -315,6 +315,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -343,6 +371,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000001"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "native_ref": "fcstd:native:property#0:UseHasher",
@@ -353,6 +409,24 @@
             {
               "kind": "boolean",
               "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Assembly:Color:property",
+          "name": "Color",
+          "native_ref": "fcstd:native:property#Assembly:Color",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 4294967040
             }
           ]
         },
@@ -429,6 +503,41 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Assembly:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#Assembly:Material",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Assembly:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#Assembly:Meta",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#Assembly:Origin:property",
           "name": "Origin",
           "native_ref": "fcstd:native:property#Assembly:Origin",
@@ -447,6 +556,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Assembly:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#Assembly:Uid",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#Assembly:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000002"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#Assembly:Visibility:property",
           "name": "Visibility",
           "native_ref": "fcstd:native:property#Assembly:Visibility",
@@ -461,6 +588,23 @@
             {
               "kind": "boolean",
               "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BracketOccurrence:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#BracketOccurrence:ColoredElements",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -533,6 +677,40 @@
             {
               "kind": "integer",
               "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -757,6 +935,23 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#ExternalOccurrence:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#ExternalOccurrence:ColoredElements",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#ExternalOccurrence:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#ExternalOccurrence:ElementCount",
@@ -829,6 +1024,40 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeTouched:property",
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeTouched",
@@ -879,6 +1108,28 @@
             {
               "kind": "boolean",
               "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExternalOccurrence:LinkedObject:property",
+          "name": "LinkedObject",
+          "native_ref": "fcstd:native:property#ExternalOccurrence:LinkedObject",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "external_reference",
+              "value": {
+                "document": "external_component.FCStd",
+                "object": "ExternalPrototype",
+                "subelements": []
+              }
             }
           ]
         },
@@ -977,6 +1228,23 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#NestedBracketOccurrence:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#NestedBracketOccurrence:ColoredElements",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#NestedBracketOccurrence:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:ElementCount",
@@ -1045,6 +1313,40 @@
             {
               "kind": "integer",
               "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -1215,9 +1517,9 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#OccurrenceGroup:ElementList:property",
-          "name": "ElementList",
-          "native_ref": "fcstd:native:property#OccurrenceGroup:ElementList",
+          "id": "fcstd:model:attribute#OccurrenceGroup:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#OccurrenceGroup:ColoredElements",
           "target": {
             "id": {
               "arena": "product_definitions",
@@ -1227,16 +1529,7 @@
           },
           "values": [
             {
-              "kind": "reference",
-              "value": "fcstd:native:object#NestedBracketOccurrence"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#PinArray"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#ExternalOccurrence"
+              "kind": "empty_reference"
             }
           ]
         },
@@ -1313,6 +1606,23 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PinArray:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#PinArray:ColoredElements",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PinArray:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#PinArray:ElementCount",
@@ -1327,32 +1637,6 @@
             {
               "kind": "integer",
               "value": 3
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PinArray:ElementList:property",
-          "name": "ElementList",
-          "native_ref": "fcstd:native:property#PinArray:ElementList",
-          "target": {
-            "id": {
-              "arena": "product_definitions",
-              "id": "fcstd:model:product_definition#PinArray:definition"
-            },
-            "kind": "record"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#PinArray_i0"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#PinArray_i1"
-            },
-            {
-              "kind": "reference",
-              "value": "fcstd:native:object#PinArray_i2"
             }
           ]
         },
@@ -1407,6 +1691,40 @@
             {
               "kind": "integer",
               "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#PinArray:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#PinArray:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -1613,6 +1931,40 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#PinArray_i0:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#PinArray_i0:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i0:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeTouched:property",
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray_i0:LinkCopyOnChangeTouched",
@@ -1775,6 +2127,40 @@
             {
               "kind": "integer",
               "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#PinArray_i1:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#PinArray_i1:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i1:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -1945,6 +2331,40 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#PinArray_i2:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#PinArray_i2:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray_i2:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeTouched:property",
           "name": "LinkCopyOnChangeTouched",
           "native_ref": "fcstd:native:property#PinArray_i2:LinkCopyOnChangeTouched",
@@ -2075,6 +2495,23 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#PinOccurrence:ColoredElements:property",
+          "name": "ColoredElements",
+          "native_ref": "fcstd:native:property#PinOccurrence:ColoredElements",
+          "target": {
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#PinOccurrence:ElementCount:property",
           "name": "ElementCount",
           "native_ref": "fcstd:native:property#PinOccurrence:ElementCount",
@@ -2143,6 +2580,40 @@
             {
               "kind": "integer",
               "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinOccurrence:LinkCopyOnChangeGroup:property",
+          "name": "LinkCopyOnChangeGroup",
+          "native_ref": "fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup",
+          "target": {
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinOccurrence:LinkCopyOnChangeSource:property",
+          "name": "LinkCopyOnChangeSource",
+          "native_ref": "fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource",
+          "target": {
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "empty_reference"
             }
           ]
         },
@@ -3559,7 +4030,38 @@
           "tolerance": 1e-7
         }
       ],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "definition": "stored_geometry"
+          },
+          "id": "fcstd:design:feature#BracketPrototype",
+          "name": "Bracket",
+          "native_ref": "fcstd:native:object#BracketPrototype",
+          "needs_recompute": false,
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
+          ],
+          "source_tag": "Part::Feature",
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "definition": "stored_geometry"
+          },
+          "id": "fcstd:design:feature#PinPrototype",
+          "name": "Pin",
+          "native_ref": "fcstd:native:object#PinPrototype",
+          "needs_recompute": false,
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
+          ],
+          "source_tag": "Part::Feature",
+          "suppressed": null
+        }
+      ],
       "loops": [
         {
           "boundary": {
@@ -5847,7 +6349,7 @@
           "applications": 24,
           "attachments": 21,
           "carrier_census": 2,
-          "design_census": 0,
+          "design_census": 2,
           "document": 1,
           "drawings": 0,
           "element_maps": 0,
@@ -5870,7 +6372,7 @@
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "220b1d9e4435305a8054adbf50085ddf7d94f8f51740a12c465172783c2419aa",
           "carrier_census": "147c6dc0f6c52fb287bc431cb8451c904e4a9e6834b24a996e86a6b776197264",
-          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "design_census": "aaabc2ce23cc3d07695c643c1bd1db929e3e49608a7dbed18f43fb5cba7a113e",
           "document": "d27a09450e1f85f171efe00a3e8b3cc2e08a19a28dc61be032372c38722ab377",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -6955,21 +7457,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -6985,21 +7487,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -7014,21 +7516,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -7044,21 +7546,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -7073,21 +7575,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -7103,21 +7605,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -7857,146 +8359,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Assembly:Color (App::PropertyColor) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Assembly:Material (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Assembly:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Assembly:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:ElementList (App::PropertyLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "property fcstd:native:property#BracketOccurrence:ScaleList (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
@@ -8008,116 +8370,6 @@
           "scope": "namespaced"
         },
         "message": "property fcstd:native:property#BracketOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketPrototype:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:ElementList (App::PropertyLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:LinkedObject (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {
@@ -8147,96 +8399,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "property fcstd:native:property#GroundBracket:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GroundBracket:ObjectToGround (App::PropertyLinkSub) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#GroundBracket:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:ElementList (App::PropertyLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "property fcstd:native:property#NestedBracketOccurrence:ScaleList (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
@@ -8257,87 +8419,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "property fcstd:native:property#OccurrenceGroup:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "property fcstd:native:property#OccurrenceGroup:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Origin001:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {
@@ -8367,156 +8449,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "property fcstd:native:property#PinArray_i0:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i0:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i0:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i1:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i1:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i1:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i2:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i2:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray_i2:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:ElementList (App::PropertyLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "property fcstd:native:property#PinOccurrence:ScaleList (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
@@ -8528,36 +8460,6 @@
           "scope": "namespaced"
         },
         "message": "property fcstd:native:property#PinOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinPrototype:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:JointType (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {
@@ -8598,96 +8500,6 @@
           "scope": "namespaced"
         },
         "message": "property fcstd:native:property#RevoluteJoint:Placement2 (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Reference1 (App::PropertyXLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Reference2 (App::PropertyXLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       }
     ],

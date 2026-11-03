@@ -1335,7 +1335,8 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         .unwrap();
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Radius"],
-        "3.5mm"
+        // D5 (#237): the edited radius renders the canonical literal.
+        "3.5 mm"
     );
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Edges"],
@@ -1701,12 +1702,13 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
-    assert_eq!(features[0].parameters["Distance"], "2.5mm");
+    // D5 (#237): edited distances render the canonical literal.
+    assert_eq!(features[0].parameters["Distance"], "2.5 mm");
     assert_eq!(features[0].properties["Edges"], "edge:4");
     assert_eq!(features[1].properties["Edges"], "edge:5");
     assert_eq!(features[2].properties["Edges"], "edge:6");
-    assert_eq!(features[1].parameters["Distance1"], "3.5mm");
-    assert_eq!(features[1].parameters["Distance2"], "7mm");
+    assert_eq!(features[1].parameters["Distance1"], "3.5 mm");
+    assert_eq!(features[1].parameters["Distance2"], "7 mm");
     assert_eq!(
         features[2].parameters["Angle"],
         format!("{}rad", std::f64::consts::FRAC_PI_6)

@@ -198,7 +198,8 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[1].properties["Seeds"], "7");
     assert_eq!(features[1].properties["Direction"], "0,1,0");
-    assert_eq!(features[1].parameters["Spacing"], "12mm");
+    // D5 (#237): the edited spacing renders the canonical literal.
+    assert_eq!(features[1].parameters["Spacing"], "12 mm");
     assert_eq!(features[1].parameters["Count"], "5");
     assert_eq!(features[2].properties["AxisOrigin"], "1mm,2mm,3mm");
     assert_eq!(features[2].parameters["Count"], "6");
@@ -632,7 +633,8 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
     assert_eq!(feature.kind, "CustomPattern");
     assert_eq!(feature.properties["PatternType"], "Linear");
-    assert_eq!(feature.parameters["Spacing"], "6mm");
+    // D5 (#237): the edited spacing renders the canonical literal.
+    assert_eq!(feature.parameters["Spacing"], "6 mm");
     assert_eq!(feature.parameters["Count"], "3");
 }
 

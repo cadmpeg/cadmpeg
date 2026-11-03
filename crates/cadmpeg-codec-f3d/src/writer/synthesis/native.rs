@@ -244,6 +244,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
         })
     });
+    let retained_timestamps = std::mem::take(&mut native.creation_timestamps);
     native.creation_timestamps = target
         .model
         .attributes
@@ -260,8 +261,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native
-                .creation_timestamps
+            let existing = retained_timestamps
                 .iter()
                 .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
@@ -277,6 +277,31 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             })
         })
         .collect();
+    // W1: re-emit each retained timestamp whose target resolves in the
+    // written model. A timestamp whose target does not resolve is dropped;
+    // the export wrapper charges the `export:native.records-omitted`
+    // cascade loss naming it.
+    for record in retained_timestamps {
+        let shadowed = native.creation_timestamps.iter().any(|derived| {
+            derived.target == record.target && derived.target_coedge == record.target_coedge
+        });
+        if shadowed {
+            continue;
+        }
+        let resolves = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some();
+        if resolves {
+            native.creation_timestamps.push(record);
+        }
+    }
     native.persistent_design_links.retain(|record| {
         crate::brep::link_neutral_id(
             &target.model.bodies,
@@ -373,6 +398,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
         })
     });
+    let retained_timestamps = std::mem::take(&mut native.creation_timestamps);
     native.creation_timestamps = target
         .model
         .attributes
@@ -389,8 +415,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native
-                .creation_timestamps
+            let existing = retained_timestamps
                 .iter()
                 .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
@@ -406,6 +431,31 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             })
         })
         .collect();
+    // W1: re-emit each retained timestamp whose target resolves in the
+    // written model. A timestamp whose target does not resolve is dropped;
+    // the export wrapper charges the `export:native.records-omitted`
+    // cascade loss naming it.
+    for record in retained_timestamps {
+        let shadowed = native.creation_timestamps.iter().any(|derived| {
+            derived.target == record.target && derived.target_coedge == record.target_coedge
+        });
+        if shadowed {
+            continue;
+        }
+        let resolves = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some();
+        if resolves {
+            native.creation_timestamps.push(record);
+        }
+    }
     native.persistent_design_links.retain(|record| {
         crate::brep::link_neutral_id(
             &target.model.bodies,

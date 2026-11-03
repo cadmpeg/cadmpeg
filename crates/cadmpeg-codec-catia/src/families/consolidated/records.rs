@@ -662,19 +662,48 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
     Ok(runs)
 }
 
+/// Decoded class-25 parameter map for one edge-use definition frame.
+///
+/// Reads the native `consolidated_domain_relations` the decoder holds instead
+/// of re-parsing the frame payload: a class and payload match identifies the
+/// same decode, and a miss admits no run.
+fn native_class25_data<'a>(
+    relations: &'a [crate::native::domain_relation::CatiaConsolidatedDomainRelation],
+    definition: &ConsolidatedEdgeDefinition,
+) -> Option<&'a class25::Class25ParameterMap> {
+    relations.iter().find_map(|relation| {
+        let native = relation.definition();
+        if native.class() == definition.class
+            && native.payload() == definition.frame.payload.as_slice()
+            && definition.frame.flag == crate::wire::records::ConsolidatedFrameFlag::Flag03
+        {
+            match native.data() {
+                Some(ConsolidatedEdgeDefinitionData::Domain25 { relation }) => Some(relation),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    })
+}
+
 /// Decode adjacent `18,25,06,06,5e` edge runs whose descriptor and definition
 /// both close under their typed grammars.
+/// The class-25 definitions are read from the decoded native domain relations.
 #[must_use]
 #[cfg(test)]
 fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
-    consolidated_class25_edge_runs_from_records(data, &records)
+    let relations = crate::native::domain_relation::derive(data, &records)
+        .expect("derive the consolidated domain relations");
+    consolidated_class25_edge_runs_from_records(data, &records, &relations)
         .expect("decode the consolidated class 25 edge runs")
 }
 
 pub(crate) fn consolidated_class25_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
+    relations: &[crate::native::domain_relation::CatiaConsolidatedDomainRelation],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
     let mut descriptors = BTreeMap::new();
     for value in b2_class25_descriptors_from_records(data, records) {
@@ -709,7 +738,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.as_ref()?;
             if definition.frame.flag != crate::wire::records::ConsolidatedFrameFlag::Flag03
-                || class25::parse(&definition.frame.payload).is_none()
+                || native_class25_data(relations, definition).is_none()
             {
                 return None;
             }

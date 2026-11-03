@@ -2,7 +2,7 @@
 //! Neutral ownership of properties not consumed by a typed operation.
 
 use crate::loss::FreecadLossCode;
-use crate::native::{ObjectRecord, PropertyBody, PropertyRecord};
+use crate::native::{ObjectRecord, PropertyBody, PropertyRecord, ValueRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::FeatureOperation;
@@ -24,6 +24,24 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
             .parameters
             .iter()
             .any(|parameter| parameter.native_ref.as_deref() == Some(property.id.as_str()))
+    {
+        return true;
+    }
+    // A shape payload the B-rep transfer admitted owns its property.
+    if property.type_name == "Part::PropertyPartShape"
+        && ir
+            .native
+            .namespace("fcstd")
+            .and_then(|namespace| {
+                namespace
+                    .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+                    .ok()
+            })
+            .is_some_and(|payloads| {
+                payloads
+                    .iter()
+                    .any(|payload| payload.property == property.id)
+            })
     {
         return true;
     }
@@ -194,6 +212,96 @@ pub(crate) fn target(ir: &CadIr, owner: &str) -> Option<AttributeTarget> {
     Some(AttributeTarget::Record { arena, id })
 }
 
+/// Properties that keep their typed native record with no attribute and
+/// no loss: they have no neutral home defined, and the native record
+/// retains their full content.
+pub(crate) fn stays_native(property: &PropertyRecord) -> bool {
+    match property.type_name.as_str() {
+        // Object materials are consumed into appearances only through the
+        // GUI provider; the object record itself stays native.
+        "Materials::PropertyMaterial" => true,
+        // A Python value without decoded JSON is identity-only source
+        // content; a decoded JSON value projects as an attribute instead.
+        "App::PropertyPythonObject" => !property
+            .values()
+            .iter()
+            .any(|value| value.decoded_json.is_some()),
+        // An expression engine with no rows binds nothing; its framing
+        // stays native without an attribute.
+        "App::PropertyExpressionEngine"
+            if property.values().iter().all(|value| {
+                value.tag == "ExpressionEngine"
+                    && value
+                        .attributes
+                        .get("count")
+                        .is_some_and(|count| count == "0")
+            }) =>
+        {
+            true
+        }
+        _ => false,
+    }
+}
+
+/// A property map projects its ordered key/value items; repeated keys
+/// stay separate entries in source order.
+fn map_values(values: &[ValueRecord]) -> Option<Vec<Option<AttributeValue>>> {
+    use cadmpeg_ir::attributes::AttributeMapEntry;
+    let mut entries = Vec::new();
+    for value in values {
+        if value.tag == "Map" {
+            continue;
+        }
+        if value.tag != "Item" {
+            return None;
+        }
+        let (Some(key), Some(entry_value)) =
+            (value.attributes.get("key"), value.attributes.get("value"))
+        else {
+            return None;
+        };
+        entries.push(AttributeMapEntry {
+            key: key.clone(),
+            value: entry_value.clone(),
+        });
+    }
+    Some(vec![Some(AttributeValue::Map(entries))])
+}
+
+fn json_tree(value: &serde_json::Value) -> Option<cadmpeg_ir::attributes::AttributeJson> {
+    use cadmpeg_ir::attributes::AttributeJson;
+    match value {
+        serde_json::Value::Null => Some(AttributeJson::Null),
+        serde_json::Value::Bool(value) => Some(AttributeJson::Boolean(*value)),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Some(AttributeJson::Integer(value))
+            } else if let Some(value) = value.as_u64() {
+                if value > i64::MAX as u64 {
+                    Some(AttributeJson::Unsigned(value))
+                } else {
+                    Some(AttributeJson::Integer(value as i64))
+                }
+            } else if let Some(value) = value.as_f64() {
+                cadmpeg_ir::scalar::FiniteReal::new(value).map(AttributeJson::Float)
+            } else {
+                None
+            }
+        }
+        serde_json::Value::String(value) => Some(AttributeJson::String(value.clone())),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(json_tree)
+            .collect::<Option<Vec<_>>>()
+            .map(AttributeJson::Array),
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| json_tree(value).map(|value| (key.clone(), value)))
+            .collect::<Option<std::collections::BTreeMap<_, _>>>()
+            .map(AttributeJson::Object),
+    }
+}
+
 /// A property's value order is retained. Container/count and transport fields
 /// are framing; only admitted scalar, vector, and reference values project.
 pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeValue>>> {
@@ -243,11 +351,20 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
                 .collect::<Vec<Option<AttributeValue>>>(),
         );
     }
+    if property.type_name == "App::PropertyMap" {
+        return map_values(values);
+    }
     let mut projected = Vec::new();
     for value in values {
         let attributes = &value.attributes;
-        if value.decoded_json.is_some() {
-            return None;
+        if let Some(decoded) = value.decoded_json.as_ref() {
+            // A decoded JSON-mode Python value projects as a typed JSON
+            // tree; an undecodable one stays native without an attribute.
+            let Some(tree) = json_tree(&decoded.value) else {
+                return None;
+            };
+            projected.push(AttributeValue::Json(tree));
+            continue;
         }
         // An enumeration's choices describe its native grammar; the root
         // Integer is the selected semantic value. Keep all labels in the typed
@@ -263,11 +380,20 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
         }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
-            "String" | "Unicode" => scalar.map(|value| AttributeValue::String(value.clone())),
+            "String" | "Unicode" | "Uuid" => {
+                scalar.map(|value| AttributeValue::String(value.clone()))
+            }
+            "PropertyColor" => scalar
+                .and_then(|value| value.parse::<i64>().ok())
+                .map(AttributeValue::Integer),
             "Bool" => scalar
                 .and_then(|value| crate::native::parse_bool(value))
                 .map(AttributeValue::Boolean),
             "Integer" | "Int" | "Unsigned" => scalar
+                .and_then(|value| value.parse().ok())
+                .map(AttributeValue::Integer),
+            "I" => attributes
+                .get("v")
                 .and_then(|value| value.parse().ok())
                 .map(AttributeValue::Integer),
             "Float" | "Double" | "Quantity" | "PropertyFloat" => scalar
@@ -284,7 +410,14 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
                     _ => None,
                 }
             }
-            _ if scalar.is_none() && value.text.as_deref().is_none_or(str::is_empty) => continue,
+            _ if scalar.is_none()
+                && value
+                    .text
+                    .as_deref()
+                    .is_none_or(|text| text.trim().is_empty()) =>
+            {
+                continue
+            }
             _ => return None,
         }?;
         projected.push(item);
@@ -302,6 +435,8 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
             "XLinkSub",
             "XLinkSubList",
             "Sub",
+            "ColumnInfo",
+            "RowInfo",
         ];
         if !values.is_empty()
             && values
@@ -360,6 +495,7 @@ pub(crate) fn document_property(
 ) -> Result<Option<SourceAttribute>, CodecError> {
     if matches!(property.name.as_str(), "Shape" | "Placement")
         || crate::property_policy::is_projection_metadata(property)
+        || stays_native(property)
     {
         return Ok(None);
     }
@@ -428,6 +564,12 @@ fn transfer_impl(
         if property.owner != crate::native::native_id("document", "0")
             && !objects.iter().any(|object| object.id() == &property.owner)
         {
+            continue;
+        }
+        // Properties that stay native keep their typed record with no
+        // attribute and no loss: identity-only Python payloads and object
+        // materials have no neutral home defined.
+        if stays_native(property) {
             continue;
         }
         if let Some(values) = values(property) {

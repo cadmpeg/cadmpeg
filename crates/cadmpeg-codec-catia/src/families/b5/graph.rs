@@ -33,6 +33,7 @@ use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
+use super::parameter_map::SampledParameterMapIndex;
 use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
@@ -829,9 +830,10 @@ impl B5Loop {
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    maps: &SampledParameterMapIndex,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let mut graphs = topology_runs(ctx, bytes, refusal)?
+    let mut graphs = topology_runs(ctx, bytes, maps, refusal)?
         .into_iter()
         .map(|(_, graph)| graph);
     let Some(graph) = graphs.next() else {
@@ -844,6 +846,7 @@ pub(crate) fn parse(
 fn topology_runs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    maps: &SampledParameterMapIndex,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
     let mut populations = StreamPopulations::new(bytes);
@@ -856,7 +859,7 @@ fn topology_runs(
     let mut graphs = Vec::new();
     for range in candidates {
         let population = populations.population(range.clone());
-        if let Some(graph) = parse_flat(ctx, &population, refusal)? {
+        if let Some(graph) = parse_flat(ctx, &population, maps, refusal)? {
             graphs.push((range, graph));
         }
     }
@@ -867,21 +870,23 @@ fn topology_runs(
 fn parse_flat(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    maps: &SampledParameterMapIndex,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let frames = collect_object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames, None);
-    parse_from_records(ctx, bytes, &records, &frames, true, None, refusal)
+    parse_from_records(ctx, bytes, &records, &frames, maps, true, None, refusal)
 }
 
 pub(in crate::families) fn parse_from_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
+    maps: &SampledParameterMapIndex,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let records = records_from_frames(bytes, frames, None);
-    parse_from_records(ctx, bytes, &records, frames, true, None, refusal)
+    parse_from_records(ctx, bytes, &records, frames, maps, true, None, refusal)
 }
 
 pub(in crate::families) fn parse_from_records(
@@ -889,6 +894,7 @@ pub(in crate::families) fn parse_from_records(
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
+    maps: &SampledParameterMapIndex,
     require_topology: bool,
     budget: Option<&WorkBudget>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -913,6 +919,7 @@ pub(in crate::families) fn parse_from_records(
         ctx,
         bytes,
         (records, frames),
+        maps,
         require_topology,
         budget,
         refusal,
@@ -934,6 +941,7 @@ fn parse_from_records_with_class21(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     (records, frames): (&[B5Record], &[ObjectFrame]),
+    maps: &SampledParameterMapIndex,
     require_topology: bool,
     budget: Option<&WorkBudget>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1099,6 +1107,7 @@ fn parse_from_records_with_class21(
                     record,
                     by_id,
                     &object_stream_pcurves,
+                    maps,
                     &offset_constructions,
                     &extrusion_surfaces,
                 )?
@@ -1964,13 +1973,20 @@ fn targeted_geometry_graph(
     bytes: &[u8],
 ) -> Result<Option<B5Graph>, CodecError> {
     let frames = collect_object_stream_frames(bytes);
-    targeted_geometry_graph_from_frames(ctx, bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
+    targeted_geometry_graph_from_frames(
+        ctx,
+        bytes,
+        &frames,
+        &SampledParameterMapIndex::from_object_stream(bytes),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
 }
 
 pub(in crate::families) fn targeted_geometry_graph_from_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
+    maps: &SampledParameterMapIndex,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
@@ -2000,7 +2016,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         records.push(record);
     }
     records.sort_by_key(|left| left.offset);
-    parse_from_records(ctx, bytes, &records, frames, false, None, refusal)
+    parse_from_records(ctx, bytes, &records, frames, maps, false, None, refusal)
 }
 
 fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
@@ -3906,12 +3922,19 @@ fn parse_extrusion_surface(
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
 ) -> Option<B5ExtrusionSurface> {
+    let maps = SampledParameterMapIndex::from_payloads(
+        records
+            .values()
+            .filter(|record| record.family == 0xa8 && record.class == 0x25)
+            .map(|record| (record.object_id, record.payload.as_slice())),
+    );
     crate::test_support::with_service_context(|ctx| {
         parse_extrusion_surface_with_context(
             ctx,
             record,
             records,
             object_stream_pcurves,
+            &maps,
             &[],
             &BTreeMap::new(),
         )
@@ -3924,6 +3947,7 @@ fn parse_extrusion_surface_with_context(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+    maps: &SampledParameterMapIndex,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Result<Option<B5ExtrusionSurface>, CodecError> {
@@ -3936,8 +3960,13 @@ fn parse_extrusion_surface_with_context(
             let Some(directrix_record) = records.get(&carrier.directrix_id) else {
                 return Ok(None);
             };
-            let Some(directrix) =
-                parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
+            let Some(directrix) = parse_extrusion_directrix(
+                ctx,
+                directrix_record,
+                records,
+                object_stream_pcurves,
+                maps,
+            )?
             else {
                 return Ok(None);
             };
@@ -3981,7 +4010,7 @@ fn parse_extrusion_surface_with_context(
         let Some(directrix_record) = records.get(&carrier.directrix_id) else {
             return Ok(None);
         };
-        parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
+        parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves, maps)?
     };
     let Some(mut directrix) = directrix else {
         return Ok(None);
@@ -4264,6 +4293,7 @@ fn parse_extrusion_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+    maps: &SampledParameterMapIndex,
 ) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
     if record.family == 0xb5 && record.class == 0x24 {
         return Ok(parse_surface_curve_directrix(
@@ -4273,13 +4303,15 @@ fn parse_extrusion_directrix(
         ));
     }
     if record.family == 0xb5 && record.class == 0x14 {
-        return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves);
+        return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves, maps);
     }
     if record.family != 0xa8 || record.class != 0x25 {
         return Ok(None);
     }
-    let map = super::parameter_map::parse(&record.payload);
-    let Some(map) = map else {
+    // The decoded sampled map comes from the native `sampled_parameter_maps`
+    // arena, not from a second parse of this payload: a payload match
+    // identifies the same decode, and a miss admits no directrix.
+    let Some(map) = maps.lookup(record.object_id, &record.payload) else {
         return Ok(None);
     };
     let Some(first) = parameter_map_support(map.reference, records, object_stream_pcurves) else {
@@ -4384,6 +4416,7 @@ fn parse_offset_curve_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+    maps: &SampledParameterMapIndex,
 ) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
     let parsed = (|| -> Option<_> {
         (record.family == 0xb5 && record.class == 0x14 && record.payload.first() == Some(&0x81))
@@ -4426,7 +4459,7 @@ fn parse_offset_curve_directrix(
         return Ok(None);
     };
     let Some(source) =
-        parse_extrusion_directrix(ctx, source_record, records, object_stream_pcurves)?
+        parse_extrusion_directrix(ctx, source_record, records, object_stream_pcurves, maps)?
     else {
         return Ok(None);
     };
