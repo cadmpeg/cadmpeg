@@ -2612,10 +2612,8 @@ impl<'a> F3dDecodeSession<'a> {
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
         )?;
-        let mut protein_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-            cadmpeg_ir::CodecFormat::F3d,
-            ctx,
-        );
+        let mut protein_parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
         let mut geometry_materials = materials::decode_with_body_bindings(
             ctx,
             scan,
@@ -2623,7 +2621,9 @@ impl<'a> F3dDecodeSession<'a> {
             &brep.asm.bodies,
             &mut protein_parts,
         )?;
-        report.losses.extend(std::mem::take(&mut geometry_materials.part_losses));
+        report
+            .losses
+            .extend(std::mem::take(&mut geometry_materials.part_losses));
         let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         geometry_admission::admit(
@@ -3079,8 +3079,7 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.losses.extend(decoded_materials.part_losses);
                 self.protein_part_fidelity
                     .append(decoded_materials.part_fidelity)?;
-                self.protein_part_stubs
-                    .extend(decoded_materials.part_stubs);
+                self.protein_part_stubs.extend(decoded_materials.part_stubs);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3239,6 +3238,14 @@ impl<'a> F3dDecodeSession<'a> {
             &mut prereqs.parameter_state_parts.fidelity,
             cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
         );
+        self.report
+            .losses
+            .extend(std::mem::take(&mut prereqs.bulk_record_parts.losses));
+        let bulk_record_part_fidelity = std::mem::replace(
+            &mut prereqs.bulk_record_parts.fidelity,
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+        );
+        let bulk_record_part_stubs = std::mem::take(&mut prereqs.bulk_record_parts.stubs);
         let scan = self.scan;
         let geometry = match path {
             FinalizePath::Geometry(index) => {
@@ -3371,6 +3378,7 @@ impl<'a> F3dDecodeSession<'a> {
                         native_fidelity: self.native.retained_fidelity(ctx)?,
                         annotations,
                         parameter_state_fidelity,
+                        bulk_record_part_fidelity,
                         history_part_fidelity: std::mem::replace(
                             &mut self.history_part_fidelity,
                             cadmpeg_ir::SourceFidelity::for_decode(
@@ -3387,6 +3395,7 @@ impl<'a> F3dDecodeSession<'a> {
                             ),
                         ),
                         protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
+                        bulk_record_part_stubs,
                         native_layout: Some(self.native),
                         primary_model_brep_name: None,
                         untyped: self.untyped,
@@ -3428,13 +3437,14 @@ impl<'a> F3dDecodeSession<'a> {
                 native_fidelity: self.native.retained_fidelity(ctx)?,
                 annotations,
                 parameter_state_fidelity,
+                bulk_record_part_fidelity,
                 history_part_fidelity: std::mem::replace(
-                            &mut self.history_part_fidelity,
-                            cadmpeg_ir::SourceFidelity::for_decode(
-                                self.ctx,
-                                cadmpeg_ir::Annotations::default(),
-                            ),
-                        ),
+                    &mut self.history_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(
+                        self.ctx,
+                        cadmpeg_ir::Annotations::default(),
+                    ),
+                ),
                 history_part_stubs: std::mem::take(&mut self.history_part_stubs),
                 protein_part_fidelity: std::mem::replace(
                     &mut self.protein_part_fidelity,
@@ -3444,6 +3454,7 @@ impl<'a> F3dDecodeSession<'a> {
                     ),
                 ),
                 protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
+                bulk_record_part_stubs,
                 native_layout: Some(self.native),
                 primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
@@ -3627,6 +3638,11 @@ fn decode_scanned_document<'a>(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
+                bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                bulk_record_part_stubs: Vec::new(),
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -4642,6 +4658,8 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
+    bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity,
+    bulk_record_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     protein_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4672,6 +4690,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
+    source_fidelity.append(retained.bulk_record_part_fidelity)?;
     source_fidelity.append(retained.history_part_fidelity)?;
     source_fidelity.append(retained.protein_part_fidelity)?;
     let history_stubs = retained
@@ -4699,6 +4718,19 @@ fn decode_result(
             .entry("unknowns".to_owned())
             .or_default()
             .extend(protein_stubs);
+    }
+    let bulk_record_stubs = retained
+        .bulk_record_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !bulk_record_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(bulk_record_stubs);
     }
     let entry_part_ids =
         give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
