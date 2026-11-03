@@ -199,28 +199,28 @@ component occurrence" give the scope transforms for the source and the seed.
 transform is not the identity, the two placements disagree. The decoder uses
 the scope transform.
 
-### DR-78. Symmetric Extrude distance measurement
+### DR-78. Symmetric Extrude distance measurement without a measurement word
 
-**Question.** Which field states whether the distance of a symmetric
-distance `Extrude` is the travel on each side or the whole travel?
+**Question.** Which field states whether the distance of a symmetric distance
+`Extrude` is the travel on each side or the whole travel in a layout that
+stores no measurement word?
 
-**Known.** `f3d.md` §3.1 "An Extrude scope can carry one or both of its
-distance and taper inputs" gives the fixed lanes. One symmetric `Extrude`
-without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
-plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
-and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
-travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
-`f3d.md` §3.1 "The extent form is carried by two further u32 values" states
-the dual-lane shared per-side distance and its doubled whole travel; that
-form is settled and outside this item.
+**Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
+direction" gives the measurement word of the current reference-aware layout.
+One symmetric `Extrude` without indexed parameters stores lane zero as `1.2`
+cm on a Sketch in the plane `x = 150.5` mm. Its operation history holds planes
+at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The
+prologue stores travel direction `3`, face-extend option `2`, and side extents
+`[1, 0]`.
 
 **Need.** The neutral symmetric extent states the whole travel. A reader must
-know the measurement form to convert the stored distance. The decoder keeps
-the native feature when a fixed lane carries a symmetric distance.
+know the measurement form to convert the stored distance. Without a
+measurement word, the decoder keeps the native feature when a fixed lane
+carries a symmetric distance.
 
-**Conflict.** The decoder converts an `AlongDistance` parameter of a
-single-lane symmetric `Extrude` to the whole travel without reading a
-measurement form.
+**Conflict.** Without a measurement word, the decoder converts an
+`AlongDistance` parameter of a single-lane symmetric `Extrude` to the whole
+travel.
 
 ### DR-79. Typed-reference Design record grammars
 
