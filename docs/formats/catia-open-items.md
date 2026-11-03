@@ -422,6 +422,22 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** A frozen coexistence fixture must pin the E5 route selection and its golden snapshots before the precedence rule counts as covered. The documented precedence and the single-variant witnesses leave the coexistence branch uncovered.
 
+### CN-03. Outer-directory descriptor extent placement
+
+**Question.** Do outer-directory descriptor extents lie only in `[64, P)` or also in `[P, D)`?
+
+**Known.** `catia.md` §3.1 defines the outer directory pair and the outer body `[P, D)`. `container.rs` reads descriptor extents as absolute file offsets. The decoder does not restrict descriptor extents to one side of `P`.
+
+**Need.** A specimen with outer descriptor extents inside `[P, D)` and one with extents only before `P` must establish whether the body bound constrains the directory. The answer decides whether a directory inside the body is corrupt or admitted.
+
+### CN-04. `7C` extent containment in one physical scope
+
+**Question.** Does every `7C` extent lie inside one physical scope?
+
+**Known.** `catia.md` §7.3 defines `7C08` graph, `7C0B` block, and `7C02` catalog extents by their own length fields. `object_graph.rs` skips candidates enclosed in another admitted extent. The decoder does not prove that related extents share one FINJPL segment or one record source.
+
+**Need.** A specimen with related `7C` extents in different physical scopes must establish whether cross-scope relations decode. The answer decides whether the part give-up boundary follows framing or physical scope.
+
 ## 8. Appearance
 
 ### AP-01. `SelectingFeatureForColorUuid` presentation target

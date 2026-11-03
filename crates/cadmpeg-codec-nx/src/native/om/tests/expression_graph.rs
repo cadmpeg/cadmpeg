@@ -759,11 +759,7 @@ fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
             .collect()
     );
     let mut losses = Vec::new();
-    crate::decode::report::append_design_intent_losses(
-        &mut cadmpeg_ir::ArenaClasses::default(),
-        &ir,
-        &mut losses,
-    );
+    crate::decode::report::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("2 NX expression parameter(s)"));
 }

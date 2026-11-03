@@ -7,7 +7,6 @@ use cadmpeg_ir::{ArenaClass, ArenaName};
 use serde_json::Value;
 
 const CLASS_NAMES: [&str; 2] = ["model", "design"];
-
 fn class_name(class: ArenaClass) -> &'static str {
     match class {
         ArenaClass::Model => "model",
@@ -106,6 +105,50 @@ pub fn dangling_token_findings(document: &Value) -> Vec<String> {
         if !parameters.contains(token) {
             findings.push(format!("expression token names absent parameter {token}"));
         }
+    }
+    findings
+}
+
+/// The §1.3/§9.3 unrepresented findings for one decode's source fidelity.
+///
+/// `unrepresented` must equal the union of the `untyped` classes of the
+/// retained records. A missing fidelity (a hand-built document) holds
+/// nothing to compare, so it reports nothing.
+#[must_use]
+pub fn unrepresented_findings(fidelity: &Value) -> Vec<String> {
+    if fidelity.is_null() {
+        return Vec::new();
+    }
+    let mut union = BTreeSet::new();
+    if let Some(retained) = fidelity.get("retained_records").and_then(Value::as_object) {
+        for record in retained.values() {
+            union.extend(
+                record
+                    .get("untyped")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str),
+            );
+        }
+    }
+    let declared: BTreeSet<&str> = fidelity
+        .get("unrepresented")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let mut findings = Vec::new();
+    for class in union.difference(&declared) {
+        findings.push(format!(
+            "retained records hold untyped class {class} missing from unrepresented"
+        ));
+    }
+    for class in declared.difference(&union) {
+        findings.push(format!(
+            "unrepresented names class {class} no retained record holds as untyped"
+        ));
     }
     findings
 }

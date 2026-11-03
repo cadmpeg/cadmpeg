@@ -340,14 +340,15 @@ impl Scan<'_> {
                     .any(|record| expected_record(TCODE_SETTINGS, record.typecode)),
                 _ => false,
             });
-        let mut design_part = self
-            .tables
+        let mut design_part = self.tables.iter().any(|table| {
+            // An empty table locates no parts (§1.1, §4.5): a history
+            // table with no records holds no design, so a cut that
+            // removes it agrees with the uncut scope.
+            table_base(table.typecode) == TCODE_HISTORY && !table.records.is_empty()
+        }) || self
+            .objects
             .iter()
-            .any(|table| table_base(table.typecode) == TCODE_HISTORY)
-            || self
-                .objects
-                .iter()
-                .any(|object| self.object_history_part(object));
+            .any(|object| self.object_history_part(object));
         // A located-but-given-up table still locates its band's parts (§1.1):
         // the bytes were found, so their classes stay in scope. Absent tables
         // retain no bytes and locate nothing.
@@ -479,6 +480,12 @@ pub(crate) fn give_up(
             _ => table_chunk_classes(),
         },
     };
+    // Rule 3 names the sorted ids of the dropped records. A framing failure
+    // stages nothing, so its spans name no records; a typed settings failure
+    // names exactly its typed record.
+    let mut dropped = dropped;
+    dropped.sort();
+    dropped.dedup();
     give_ups.push(GivenUpPart {
         label,
         range: start..end,
@@ -547,227 +554,16 @@ pub(crate) fn mint_unknown_id(source_order: usize) -> cadmpeg_ir::ids::UnknownId
     )
 }
 
-/// Mint dropped-record names for the records of a table chunk whose framing
-/// failed after its header: the table kind comes from the header, and record
-/// starts frame forward within the source. Returns the table family for scope
-/// derivation with the names.
-fn mint_table_span_dropped(
-    data: &[u8],
-    archive: ArchiveVersion,
-    offset: usize,
-    start_order: usize,
-) -> (Option<u32>, Vec<String>) {
-    let Some(typecode) = cadmpeg_core::decode::View::u32_le_at(data, offset) else {
-        return (None, Vec::new());
-    };
+/// Read the table family from a chunk header that framed, for the scope band
+/// of a given-up span. A framing failure stages no records, so the span
+/// names no dropped records (rule 3); the header still locates the table's
+/// band.
+fn table_header_band(data: &[u8], offset: usize) -> Option<u32> {
+    let typecode = cadmpeg_core::decode::View::u32_le_at(data, offset)?;
     if typecode & 0xFFFF_0000 != 0x1000_0000 {
-        return (None, Vec::new());
+        return None;
     }
-    let table = table_base(typecode);
-    if table != TCODE_OBJECTS {
-        return (Some(table), Vec::new());
-    }
-    let width = if archive.uses_eight_byte_values() {
-        8
-    } else {
-        4
-    };
-    let body_start = offset + 4 + width;
-    // Even when the body starts beyond the source, the first record starts
-    // at the body: name it so a truncated first record still drops by name.
-    // The body start derives from the shared prefix, so it matches the full
-    // decode's record start.
-    if body_start >= data.len() {
-        return (
-            Some(table),
-            mint_object_span_dropped(start_order, &[body_start]),
-        );
-    }
-    let starts = scan_record_starts(data, archive, body_start, data.len());
-    // Even when no record header frames, the first record starts at the
-    // table body: name it so a truncated first record still drops by name.
-    let starts = if starts.is_empty() && body_start < data.len() {
-        vec![body_start]
-    } else {
-        starts
-    };
-    (Some(table), mint_object_span_dropped(start_order, &starts))
-}
-
-/// Frame the record header at `offset` without trusting its declared extent:
-/// returns the record start and the next record start, or `None` when no
-/// header is present. A record whose declared end exceeds the source still
-/// reports its start: its bytes begin a record even when its end cannot be
-/// found.
-fn frame_record_start(
-    data: &[u8],
-    archive: ArchiveVersion,
-    offset: usize,
-) -> Option<(usize, Option<usize>)> {
-    let mut reader = crate::chunks::BoundedReader::new(data, offset, data.len()).ok()?;
-    let typecode = reader.u32().ok()?;
-    let short = typecode & TCODE_SHORT != 0;
-    let width = if archive.uses_eight_byte_values() {
-        8
-    } else {
-        4
-    };
-    let value = if width == 8 {
-        reader.i64().ok()?
-    } else if !short
-        || matches!(
-            typecode,
-            0x8000_0001 | 0x8000_0002 | 0xa000_0026 | 0x8200_0071
-        )
-    {
-        i64::from(reader.u32().ok()?)
-    } else {
-        i64::from(reader.i32().ok()?)
-    };
-    let body_start = reader.position();
-    if short || value < 0 {
-        return Some((offset, Some(body_start)));
-    }
-    let declared_end = body_start.checked_add(usize::try_from(value).ok()?)?;
-    if declared_end > data.len() {
-        return Some((offset, None));
-    }
-    Some((offset, Some(declared_end)))
-}
-
-/// Collect record starts in `[start, end)`, stopping after the first
-/// record whose end cannot be found.
-fn scan_record_starts(
-    data: &[u8],
-    archive: ArchiveVersion,
-    mut pos: usize,
-    end: usize,
-) -> Vec<usize> {
-    let mut starts = Vec::new();
-    while pos < end.min(data.len()) && starts.len() < 65_536 {
-        match frame_record_start(data, archive, pos) {
-            None => break,
-            Some((start, None)) => {
-                starts.push(start);
-                break;
-            }
-            Some((start, Some(next))) if next > pos => {
-                starts.push(start);
-                pos = next;
-            }
-            _ => break,
-        }
-    }
-    starts
-}
-
-/// Mint dropped-record names for objects whose records start at `starts`.
-/// Orders and fallback keys derive from framing alone; uuid-keyed records
-/// need attributes the truncated span may not hold, so only the stub and the
-/// order-keyed homes name those. Over-minting is safe: the comparison only
-/// permits the named records to disappear.
-fn mint_object_span_dropped(start_order: usize, starts: &[usize]) -> Vec<String> {
-    const KEYED: &[&str] = &[
-        "rhino:object:body",
-        "rhino:object:region",
-        "rhino:object:shell",
-        "rhino:object:point",
-        "rhino:object:vertex",
-        "rhino:object:curve",
-        "rhino:object:surface",
-        "rhino:object:procedural-surface",
-        "rhino:object:procedural-curve",
-        "rhino:object:tessellation",
-        "rhino:object:subd",
-        "rhino:object:edge",
-        "rhino:object:loop",
-        "rhino:object:face",
-        "rhino:object:coedge",
-        "rhino:object:pcurve",
-    ];
-    const FEATURES: &[&str] = &[
-        "rhino:hatch:feature",
-        "rhino:polyedge:feature",
-        "rhino:detail:feature",
-        "rhino:cage:feature",
-        "rhino:curve-on-surface:feature",
-    ];
-    let mut dropped = Vec::new();
-    for (index, start) in starts.iter().enumerate() {
-        let order = start_order + index;
-        dropped.push(mint_unknown_id(order).to_string());
-        let key = format!("record-{order:06}-offset-{start}");
-        for namespace in KEYED {
-            dropped.push(format!("{namespace}#{key}"));
-        }
-        for namespace in FEATURES {
-            dropped.push(format!("{namespace}#{key}"));
-        }
-        dropped.push(format!("rhino:dimension:annotation#{key}"));
-        dropped.push(format!("rhino:object:curve#{key}.detail-boundary"));
-        dropped.push(format!("rhino:object:curve#{key}.curve-on-surface-c2"));
-        dropped.push(format!("rhino:object:curve#{key}.curve-on-surface-c3"));
-        dropped.push(format!("rhino:object:curve#{key}.directrix"));
-        dropped.push(format!("rhino:object:body#{key}.caps"));
-        dropped.push(format!("rhino:object:body#{key}.cap-0"));
-        dropped.push(format!("rhino:object:body#{key}.cap-1"));
-        dropped.push(format!("rhino:object:surface#{key}.cap-0"));
-        dropped.push(format!("rhino:object:surface#{key}.cap-1"));
-        for lateral in 0..8 {
-            dropped.push(format!("rhino:object:surface#{key}.lateral-{lateral}"));
-            dropped.push(format!("rhino:object:tessellation#{key}.cache-{lateral}"));
-        }
-        // Bounded index families: compound-curve components (nested two
-        // deep), brep C3 slots, extrusion profiles, hatch loops, trims,
-        // singular edges and point-cloud points. Over-minting is safe.
-        for i in 0..16 {
-            dropped.push(format!("rhino:object:curve#{key}.c3-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.root.component-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.component-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.hatch-loop-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.profile-{i}.start"));
-            dropped.push(format!("rhino:object:curve#{key}.profile-{i}.end"));
-            dropped.push(format!("rhino:object:pcurve#{key}.trim-{i}"));
-            dropped.push(format!("rhino:object:edge#{key}.singular-{i}"));
-            for j in 0..8 {
-                dropped.push(format!("rhino:object:curve#{key}.cap-{i}.profile-{j}"));
-                dropped.push(format!("rhino:object:pcurve#{key}.cap-{i}.profile-{j}"));
-                dropped.push(format!("rhino:object:point#{key}.cap-{i}.profile-{j}"));
-                dropped.push(format!(
-                    "rhino:object:curve#{key}.root.component-{i}.component-{j}"
-                ));
-                dropped.push(format!(
-                    "rhino:object:curve#{key}.component-{i}.component-{j}"
-                ));
-                dropped.push(format!(
-                    "rhino:object:curve#{key}.profile-{i}.start.sweep-origin"
-                ));
-                dropped.push(format!(
-                    "rhino:object:curve#{key}.cap-{i}.profile-{j}.sweep-origin"
-                ));
-                dropped.push(format!("rhino:object:surface#{key}.slot-{j}"));
-            }
-            dropped.push(format!("rhino:object:point#{key}.vertex-{i}"));
-        }
-        // Bounded index families: compound-curve components, brep C3 slots,
-        // hatch loops and point-cloud points. Over-minting is safe.
-        for i in 0..16 {
-            dropped.push(format!("rhino:object:curve#{key}.c3-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.root.component-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.component-{i}"));
-            dropped.push(format!("rhino:object:curve#{key}.hatch-loop-{i}"));
-        }
-        for i in 0..128 {
-            dropped.push(format!("rhino:object:point#{key}.{i}"));
-        }
-        dropped.push(format!("rhino:model:occurrence#{order}"));
-        dropped.push(format!("rhino:product:occurrence#record-{order:06}"));
-        dropped.push(format!("rhino:model:object-view#{order}-0"));
-        dropped.push(format!("rhino:model:object-name#{order}-0"));
-        dropped.push(format!("rhino:model:display-color-binding#{order}-0"));
-        dropped.push(format!("rhino:model:display-color#object-{order}"));
-    }
-    dropped
+    Some(table_base(typecode))
 }
 
 /// Mint the unknowns-stub identity for a given-up part.
@@ -1690,8 +1486,10 @@ fn scan_with_record_limit<'a>(
         let chunk = match chunk_at(data, offset, data.len(), archive, false) {
             Ok(chunk) => chunk,
             Err(error) => {
-                let (table, dropped) =
-                    mint_table_span_dropped(data, archive, offset, all_objects.len());
+                // A framing failure stages no records, so the span names
+                // none (rule 3); the header still locates the table's band.
+                let table = table_header_band(data, offset);
+                let dropped = Vec::new();
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
@@ -1809,13 +1607,9 @@ fn scan_with_record_limit<'a>(
             saw_user = true;
         } else {
             if saw_user || rank <= last_rank {
-                let dropped = if table_base(chunk.typecode) == TCODE_OBJECTS {
-                    let starts =
-                        scan_record_starts(data, archive, chunk.body().start, chunk.body().end);
-                    mint_object_span_dropped(all_objects.len(), &starts)
-                } else {
-                    Vec::new()
-                };
+                // A framing failure stages no records, so the span names
+                // none (rule 3).
+                let dropped: Vec<String> = Vec::new();
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",
@@ -1844,15 +1638,10 @@ fn scan_with_record_limit<'a>(
                 Ok(child) => child,
                 Err(error) => {
                     // The record's end cannot be found: give up the rest of
-                    // the table and continue the walk after it (#215).
-                    let dropped = if table_base(chunk.typecode) == TCODE_OBJECTS {
-                        mint_object_span_dropped(
-                            all_objects.len(),
-                            &scan_record_starts(data, archive, child_offset, chunk.body().end),
-                        )
-                    } else {
-                        Vec::new()
-                    };
+                    // the table and continue the walk after it (#215). The
+                    // failure stages no records, so the span names none
+                    // (rule 3).
+                    let dropped: Vec<String> = Vec::new();
                     give_up(
                         &mut give_ups,
                         "rhino.table_chunk",
@@ -1870,14 +1659,9 @@ fn scan_with_record_limit<'a>(
                 let marker_value = match marker_value {
                     Ok(marker_value) => marker_value,
                     Err(error) => {
-                        let dropped = if table_base(chunk.typecode) == TCODE_OBJECTS {
-                            mint_object_span_dropped(
-                                all_objects.len(),
-                                &scan_record_starts(data, archive, child_offset, chunk.body().end),
-                            )
-                        } else {
-                            Vec::new()
-                        };
+                        // The failure stages no records, so the span names
+                        // none (rule 3).
+                        let dropped: Vec<String> = Vec::new();
                         give_up(
                             &mut give_ups,
                             "rhino.table_chunk",
@@ -1897,14 +1681,7 @@ fn scan_with_record_limit<'a>(
                         child_offset..chunk.body().end,
                         data.len(),
                         Some(table_base(chunk.typecode)),
-                        if table_base(chunk.typecode) == TCODE_OBJECTS {
-                            mint_object_span_dropped(
-                                all_objects.len(),
-                                &scan_record_starts(data, archive, child_offset, chunk.body().end),
-                            )
-                        } else {
-                            Vec::new()
-                        },
+                        Vec::new(),
                         "end-of-table marker must be short with value zero",
                     );
                     break;
@@ -1916,14 +1693,7 @@ fn scan_with_record_limit<'a>(
                         child_offset..chunk.body().end,
                         data.len(),
                         Some(table_base(chunk.typecode)),
-                        if table_base(chunk.typecode) == TCODE_OBJECTS {
-                            mint_object_span_dropped(
-                                all_objects.len(),
-                                &scan_record_starts(data, archive, child_offset, chunk.body().end),
-                            )
-                        } else {
-                            Vec::new()
-                        },
+                        Vec::new(),
                         "end-of-table marker is not the final table child",
                     );
                     break;
@@ -2068,12 +1838,9 @@ fn scan_with_record_limit<'a>(
         ) {
             Some(table) => table,
             None => {
-                let dropped = if table_base(chunk.typecode) == TCODE_OBJECTS {
-                    let starts = scan_record_starts(data, archive, chunk.body().start, data.len());
-                    mint_object_span_dropped(all_objects.len(), &starts)
-                } else {
-                    Vec::new()
-                };
+                // The failure stages no records, so the span names none
+                // (rule 3).
+                let dropped: Vec<String> = Vec::new();
                 give_up(
                     &mut give_ups,
                     "rhino.table_chunk",

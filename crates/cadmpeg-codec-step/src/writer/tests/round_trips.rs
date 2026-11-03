@@ -1046,7 +1046,6 @@ fn cube_product_and_context_boilerplate_present() {
     let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     for kw in [
         "APPLICATION_CONTEXT",
-        "APPLICATION_PROTOCOL_DEFINITION",
         "PRODUCT(",
         "PRODUCT_DEFINITION(",
         "PRODUCT_DEFINITION_SHAPE",
@@ -1057,6 +1056,10 @@ fn cube_product_and_context_boilerplate_present() {
     ] {
         assert!(s.contains(kw), "missing {kw}");
     }
+    assert!(
+        !s.contains("APPLICATION_PROTOCOL_DEFINITION"),
+        "an unreferenced definition is omitted so the re-decode charges no new opaque loss (#232 §5.4 item 1)"
+    );
     // mm document → millimetre SI length unit.
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
 }

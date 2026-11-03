@@ -521,19 +521,31 @@ impl<'a> ScopeHistoryGraph<'a> {
                 return Ok(ScopeHistoryPredecessor::None);
             };
             let [candidate] = candidates.as_slice() else {
+                let revisit = candidates.iter().any(|candidate| {
+                    candidate.id == scope.id || visited.contains(candidate.id.as_str())
+                });
+                if revisit {
+                    return Err(CodecError::Malformed(
+                        "Design scope history-state dependency is cyclic".into(),
+                    ));
+                }
                 return Ok(ScopeHistoryPredecessor::Ambiguous);
             };
             if candidate.id == scope.id {
                 if visited.is_empty() {
                     return Ok(ScopeHistoryPredecessor::None);
                 }
-                return Ok(ScopeHistoryPredecessor::Ambiguous);
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
             }
             if projected(candidate) {
                 return Ok(ScopeHistoryPredecessor::Scope(candidate));
             }
             if !visited.insert(candidate.id.as_str()) {
-                return Ok(ScopeHistoryPredecessor::Ambiguous);
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
             }
             let Some(previous_state_id) = candidate.previous_history_state_id() else {
                 return Ok(ScopeHistoryPredecessor::None);
@@ -1393,13 +1405,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
-        let ScopeHistoryPredecessor::Scope(predecessor_scope) =
-            scope_history.predecessor(scope, |candidate| {
-                let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
-                scope_ids.contains_key(&(stream, candidate.record_index))
-            })?
-        else {
-            continue;
+        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+            let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
+            scope_ids.contains_key(&(stream, candidate.record_index))
+        }) {
+            Ok(ScopeHistoryPredecessor::Scope(predecessor_scope)) => predecessor_scope,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Ok(_) | Err(_) => continue,
         };
         let stream = native_stream(&predecessor_scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {

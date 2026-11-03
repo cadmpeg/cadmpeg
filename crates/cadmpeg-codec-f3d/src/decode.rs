@@ -2974,10 +2974,6 @@ impl<'a> F3dDecodeSession<'a> {
                     "{} ACT source records have no typed semantic payload",
                     act.untyped_records
                 )));
-            self.untyped.extend([
-                cadmpeg_ir::document::ArenaClass::Model,
-                cadmpeg_ir::document::ArenaClass::Design,
-            ]);
         }
         let unresolved_links = act
             .component_links
