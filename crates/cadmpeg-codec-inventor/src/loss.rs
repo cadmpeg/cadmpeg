@@ -38,10 +38,6 @@ pub(crate) enum InventorLossCode {
     GeometryProceduralSurfaceNotTransferred,
     /// Structurally paired `RSe` segments have no record semantics.
     RseSegmentPairUntyped,
-    /// `RSe` metadata streams are malformed or outside the implemented envelope.
-    RseMetadataStreamMalformed,
-    /// `RSe` bulk streams have invalid envelope or zlib framing.
-    RseBulkStreamMalformed,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -180,6 +176,8 @@ pub(crate) enum InventorLossCode {
     SketchGraphOpen,
     /// `RSe` contains unpaired metadata or bulk streams.
     RseStreamUnpaired,
+    /// Two `RSe` streams disagree about a shared segment member.
+    RseSegmentIdentityConflict,
     /// Property values have no neutral metadata mapping.
     MetadataPropertyUnmapped,
     /// The Protein asset catalog could not be decoded.
@@ -194,12 +192,6 @@ pub(crate) enum InventorLossCode {
     MaterialDistanceUnitUntyped,
     /// `PmGraphics` face appearance overrides did not resolve.
     AppearanceFaceOverrideUnresolved,
-    /// The `UFRxDoc` external-reference table is malformed.
-    UfrxTableMalformed,
-    /// An unsupported `UFRxDoc` schema was retained on an assembly document.
-    UfrxSchemaUnsupportedAssembly,
-    /// An unsupported `UFRxDoc` schema was retained without a typed transfer.
-    UfrxSchemaUnsupported,
     /// External component references remain unresolved.
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
@@ -232,8 +224,6 @@ impl InventorLossCode {
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
-        Self::RseMetadataStreamMalformed,
-        Self::RseBulkStreamMalformed,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -301,6 +291,7 @@ impl InventorLossCode {
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
+        Self::RseSegmentIdentityConflict,
         Self::MetadataPropertyUnmapped,
         Self::ProteinCatalogUndecodable,
         Self::ProteinAppearanceAbsent,
@@ -308,9 +299,6 @@ impl InventorLossCode {
         Self::ProteinGuidAmbiguous,
         Self::MaterialDistanceUnitUntyped,
         Self::AppearanceFaceOverrideUnresolved,
-        Self::UfrxTableMalformed,
-        Self::UfrxSchemaUnsupportedAssembly,
-        Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
         Self::AssemblyVisibilityNestedNative,
@@ -334,8 +322,6 @@ impl InventorLossCode {
                 "geometry.procedural-surface-not-transferred"
             }
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
-            Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
-            Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
@@ -417,6 +403,7 @@ impl InventorLossCode {
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
+            Self::RseSegmentIdentityConflict => "rse.segment-identity-conflict",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
             Self::ProteinCatalogUndecodable => "protein.catalog-undecodable",
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
@@ -424,9 +411,6 @@ impl InventorLossCode {
             Self::ProteinGuidAmbiguous => "protein.guid-ambiguous",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::AppearanceFaceOverrideUnresolved => "appearance.face-override-unresolved",
-            Self::UfrxTableMalformed => "ufrx.table-malformed",
-            Self::UfrxSchemaUnsupportedAssembly => "ufrx.schema-unsupported-assembly",
-            Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
@@ -455,14 +439,10 @@ impl InventorLossCode {
         match self {
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::DrawingNativeOnly | Self::RseSegmentPairUntyped => LossTaxonomy::RecordNotTyped,
             Self::DrawingRecordMalformed
-            | Self::RseMetadataStreamMalformed
-            | Self::RseBulkStreamMalformed
             | Self::RseStreamUnpaired
-            | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
+            | Self::RseSegmentIdentityConflict => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
                 LossTaxonomy::NoncanonicalSourceSyntax
@@ -542,9 +522,9 @@ impl InventorLossCode {
             | Self::ProteinGuidAmbiguous
             | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::UfrxSchemaUnsupportedAssembly
-            | Self::AssemblyComponentExternal
-            | Self::AssemblyVisibilityNestedNative => LossTaxonomy::AssemblyComponentsExternal,
+            Self::AssemblyComponentExternal | Self::AssemblyVisibilityNestedNative => {
+                LossTaxonomy::AssemblyComponentsExternal
+            }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
@@ -594,8 +574,6 @@ mod tests {
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "rse.segment-pair-untyped",
-                "rse.metadata-stream-malformed",
-                "rse.bulk-stream-malformed",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
@@ -663,6 +641,7 @@ mod tests {
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
+                "rse.segment-identity-conflict",
                 "metadata.property-unmapped",
                 "protein.catalog-undecodable",
                 "protein.appearance-absent",
@@ -670,9 +649,6 @@ mod tests {
                 "protein.guid-ambiguous",
                 "material.distance-unit-untyped",
                 "appearance.face-override-unresolved",
-                "ufrx.table-malformed",
-                "ufrx.schema-unsupported-assembly",
-                "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
                 "assembly.visibility-nested-native",

@@ -422,6 +422,7 @@ fn text_tokens(
     }
 }
 
+pub mod base;
 pub mod conformance;
 pub mod properties;
 

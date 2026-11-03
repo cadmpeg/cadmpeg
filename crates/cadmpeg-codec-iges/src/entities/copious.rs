@@ -390,6 +390,32 @@ pub(super) fn project(
             continue;
         };
         if presentation_form(entry.form) {
+            if entry.form == 40 {
+                let order = u32::try_from(ir.model.semantic_annotations.len())
+                    .ok()
+                    .ok_or_else(|| {
+                        CodecError::malformed("IGES semantic annotation order overflows")
+                    })?;
+                let semantic_id = cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
+                    format!("iges:model:semantic-annotation#D{}", entry.sequence),
+                )
+                .map_err(|_| {
+                    CodecError::malformed("IGES semantic annotation identity is invalid")
+                })?;
+                ctx.charge_entities(1, "iges_copious_annotations")?;
+                ir.model.semantic_annotations.push(
+                    cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
+                        semantic_id,
+                        format!("iges:entity:directory#{}", entry.sequence),
+                        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Leader,
+                        "iges:106".to_owned(),
+                        order,
+                        format!("iges:native:copious-data#D{}", entry.sequence),
+                    ),
+                );
+                decoded.insert(entry.sequence);
+                continue;
+            }
             push_attributed_loss(
                 &mut losses,
                 entry,

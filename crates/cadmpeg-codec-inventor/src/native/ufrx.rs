@@ -93,24 +93,8 @@ pub(crate) fn representation_issue(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum UfrxRecord {
-    Absent {
-        id: String,
-    },
+    Absent { id: String },
     ParsedPrefix(Box<UfrxParsedPrefix>),
-    Unsupported {
-        id: String,
-        directory_id: u32,
-        schema: u16,
-        section_versions: Vec<u16>,
-        tail_len: u64,
-        tail_sha256: Sha256Digest,
-        detail: String,
-    },
-    Malformed {
-        id: String,
-        directory_id: u32,
-        detail: String,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -299,8 +283,6 @@ pub(crate) struct UfrxModelStateParameterRecord {
 enum UfrxRecordState {
     Absent,
     ParsedPrefix,
-    Unsupported,
-    Malformed,
 }
 
 #[derive(Deserialize)]
@@ -408,54 +390,6 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                     detail: None,
                 }
             }
-            UfrxRecord::Unsupported {
-                id,
-                directory_id,
-                schema,
-                section_versions,
-                tail_len,
-                tail_sha256,
-                detail,
-            } => Self {
-                id,
-                state: UfrxRecordState::Unsupported,
-                directory_id: Some(*directory_id),
-                schema: Some(*schema),
-                section_versions,
-                original_file_name: None,
-                caption: None,
-                representation: None,
-                model_state_count: 0,
-                levels_of_detail: &[],
-                reference_count: 0,
-                embedded_reference_count: 0,
-                occurrence_count: 0,
-                tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256),
-                detail: Some(detail),
-            },
-            UfrxRecord::Malformed {
-                id,
-                directory_id,
-                detail,
-            } => Self {
-                id,
-                state: UfrxRecordState::Malformed,
-                directory_id: Some(*directory_id),
-                schema: None,
-                section_versions: &[],
-                original_file_name: None,
-                caption: None,
-                representation: None,
-                model_state_count: 0,
-                levels_of_detail: &[],
-                reference_count: 0,
-                embedded_reference_count: 0,
-                occurrence_count: 0,
-                tail_len: 0,
-                tail_sha256: None,
-                detail: Some(detail),
-            },
         })
     }
 }
@@ -502,13 +436,6 @@ impl UfrxRecordWire {
                     || has_tail
                     || wire.detail.is_some()
             }
-            UfrxRecordState::Malformed => {
-                wire.schema.is_some()
-                    || !wire.section_versions.is_empty()
-                    || has_parsed_fields
-                    || has_tail
-            }
-            UfrxRecordState::Unsupported => has_parsed_fields,
             UfrxRecordState::ParsedPrefix => wire.detail.is_some(),
         };
         if invalid {
@@ -546,34 +473,6 @@ impl UfrxRecordWire {
                     .map_err(|detail| format!("tail_sha256: {detail}"))?,
                 })))
             }
-            UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "unsupported UFRxDoc requires directory_id".to_owned())?,
-                schema: wire
-                    .schema
-                    .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
-                section_versions: wire.section_versions,
-                tail_len: wire.tail_len,
-                tail_sha256: Sha256Digest::try_from(
-                    wire.tail_sha256
-                        .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
-                )
-                .map_err(|detail| format!("tail_sha256: {detail}"))?,
-                detail: wire
-                    .detail
-                    .ok_or_else(|| "unsupported UFRxDoc requires detail".to_owned())?,
-            }),
-            UfrxRecordState::Malformed => Ok(UfrxRecord::Malformed {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "malformed UFRxDoc requires directory_id".to_owned())?,
-                detail: wire
-                    .detail
-                    .ok_or_else(|| "malformed UFRxDoc requires detail".to_owned())?,
-            }),
         }
     }
 }
@@ -1013,14 +912,20 @@ impl UfrxRecord {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        let [wire] =
-            <[_; 1]>::try_from(namespace.arena_as_for_decode::<UfrxRecordWire>(ctx, "ufrx")?)
-                .map_err(|records: Vec<_>| {
-                    serde_json::Error::custom(format!(
-                        "Inventor native data has {} UFRxDoc state records",
-                        records.len()
-                    ))
-                })?;
+        let records = namespace.arena_as_for_decode::<UfrxRecordWire>(ctx, "ufrx")?;
+        let Some([wire]) = <[_; 1]>::try_from(records)
+            .map_err(|records: Vec<_>| {
+                serde_json::Error::custom(format!(
+                    "Inventor native data has {} UFRxDoc state records",
+                    records.len()
+                ))
+            })
+            .ok()
+        else {
+            return Ok(Self::Absent {
+                id: "inventor:ufrx:state#root".to_owned(),
+            });
+        };
         wire.into_record(
             namespace.arena_as_for_decode(ctx, "ufrx_model_states")?,
             namespace.arena_as_for_decode(ctx, "external_references")?,
@@ -1433,29 +1338,23 @@ mod tests {
             .set_arena(&crate::native::test_ctx(), "ufrx", &[absent])
             .expect("valid test fixture");
         assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
+        namespace
+            .set_arena::<serde_json::Value>(&crate::native::test_ctx(), "ufrx", &[])
+            .expect("empty test fixture");
+        assert_eq!(
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace)
+                .expect("missing state reads as absent"),
+            UfrxRecord::Absent {
+                id: "inventor:ufrx:state#root".into(),
+            }
+        );
     }
 
     #[test]
     fn nonparsed_states_reject_incompatible_fields() {
-        for record in [
-            UfrxRecord::Absent {
-                id: "inventor:ufrx:state#root".into(),
-            },
-            UfrxRecord::Malformed {
-                id: "inventor:ufrx:state#root".into(),
-                directory_id: 3,
-                detail: "truncated".into(),
-            },
-            UfrxRecord::Unsupported {
-                id: "inventor:ufrx:state#root".into(),
-                directory_id: 3,
-                schema: 1,
-                section_versions: vec![1],
-                tail_len: 0,
-                tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
-                detail: "schema".into(),
-            },
-        ] {
+        for record in [UfrxRecord::Absent {
+            id: "inventor:ufrx:state#root".into(),
+        }] {
             let mut namespace = NativeNamespace::default();
             record
                 .install(&crate::native::test_ctx(), &mut namespace)

@@ -250,6 +250,7 @@ pub(super) fn classify_members<'a>(
     }
     losses.extend(crate::dialect::dialect_losses(&layers));
     crate::report::header_losses(scan, &mut losses)?;
+    crate::report::entry_part_losses(scan, &mut losses)?;
     Ok(ArchiveSession {
         members,
         layers,

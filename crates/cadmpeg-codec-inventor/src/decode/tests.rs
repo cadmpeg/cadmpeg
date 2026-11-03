@@ -183,20 +183,6 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         container_losses[1].code.to_string(),
         "decode/record.unreadable"
     );
-    let namespace = container_only
-        .ir()
-        .native
-        .namespace("inventor")
-        .expect("Inventor native namespace exists");
-    let bulk = namespace
-        .arena_as::<crate::native::SegmentBulkRecord>("segment_bulk")
-        .expect("container-only bulk records retain their outer envelopes");
-    assert!(bulk.iter().all(|record| {
-        matches!(
-            record.records,
-            crate::native::SegmentBulkFrame::Unavailable { .. }
-        )
-    }));
     assert_eq!(
         container_only.source_fidelity().retained_records().len(),
         1,

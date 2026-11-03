@@ -79,18 +79,69 @@ pub(crate) fn build_inspection_summary(
     losses.extend(crate::dialect::dialect_losses(&layers));
     let mut summary = crate::container::summarize(scan, layers);
     header_losses(scan, &mut losses)?;
+    entry_part_losses(scan, &mut losses)?;
     summary.losses = losses;
     Ok(summary)
 }
 
-/// Preserve per-entry recovery diagnostics on all inspection and decode routes.
+/// The `record.unreadable` loss for every archive entry the container scan
+/// could not open. Decode charges the same loss with its part stub when it
+/// gives up the entry; inspection and archive sessions report the span
+/// without decoding.
+pub(crate) fn entry_part_losses(
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for part in &scan.unreadable_entries {
+        losses.push(entry_part_loss(part)?);
+    }
+    Ok(())
+}
+
+/// One `zip.entry` give-up loss: the entry span that could not be opened.
+/// Decode and inspection share this wording so their reports agree.
+pub(crate) fn entry_part_loss(
+    part: &crate::container::UnreadableEntryPart,
+) -> Result<LossNote, cadmpeg_core::CodecError> {
+    let length = part
+        .range
+        .end
+        .checked_sub(part.range.start)
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "unreadable ZIP entry {} has no bounded stored span",
+                part.name
+            ))
+        })?;
+    let stream = cadmpeg_ir::StreamName::try_from(part.name.clone()).map_err(|_| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "unreadable ZIP entry {} names no source stream",
+            part.name
+        ))
+    })?;
+    let mut provenance =
+        cadmpeg_ir::SourceProvenance::in_stream("f3d", stream, part.range.start);
+    if length != 0 {
+        provenance = provenance.with_byte_len(length)?;
+    }
+    let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+        .note(format!(
+            "part zip.entry stream={:?} offset={} length={length}: {}; dropped=[]",
+            part.name, part.range.start, part.diagnostic,
+        ))
+        .with_provenance(provenance);
+    loss.dropped = Vec::new();
+    Ok(loss)
+}
+
+/// Preserve unindexed-record and manifest recovery diagnostics on decode and
+/// inspection routes. Unreadable archive entries are given up as `zip.entry`
+/// parts with their own stub, so they are reported by [`entry_part_losses`]
+/// on inspection and archive-session routes and by the decode give-up.
 pub(crate) fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for diagnostic in &scan.entry_diagnostics {
-        losses.push(crate::loss::F3dLossCode::ArchiveEntryUnreadable.note(diagnostic.to_owned()));
-    }
     for (name, run, stored) in &scan.unindexed_record_runs {
         let retained = stored.checked_sub(run.start).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(

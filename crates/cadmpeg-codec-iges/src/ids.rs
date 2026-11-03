@@ -430,6 +430,13 @@ minter!(
     "occurrence"
 );
 minter!(
+    /// A drawing sheet or view named by its source directory entry.
+    drawing,
+    cadmpeg_ir::drawings::DrawingId,
+    "model",
+    "drawing"
+);
+minter!(
     /// A construction feature named by its source directory entry.
     feature,
     cadmpeg_ir::features::FeatureId,
