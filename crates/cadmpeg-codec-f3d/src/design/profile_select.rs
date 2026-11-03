@@ -409,6 +409,7 @@ pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::ExtrudeExtent) -
         matches!(
             side.termination,
             cadmpeg_ir::features::LinearTermination::ToFace { .. }
+                | cadmpeg_ir::features::LinearTermination::ToPlane { .. }
                 | cadmpeg_ir::features::LinearTermination::ToShape { .. }
                 | cadmpeg_ir::features::LinearTermination::ThroughNext { .. }
         )

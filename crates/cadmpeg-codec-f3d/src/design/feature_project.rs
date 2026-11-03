@@ -722,16 +722,26 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 // The joint is product structure; the feature names it only
                 // after product projection has emitted it.
                 Some(DesignFeatureFamily::Assemble) => native_scope_definition(scope, &parameters)?,
-                Some(DesignFeatureFamily::Extrude) => project_extrude(
-                    ctx,
-                    scope,
-                    &parameters,
-                    construction_groups,
-                    face_operands,
-                    placements,
-                    body_recipe_operands,
-                )?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Extrude) => {
+                    let mut definition = project_extrude(
+                        ctx,
+                        scope,
+                        &parameters,
+                        construction_groups,
+                        face_operands,
+                        placements,
+                        body_recipe_operands,
+                    )?
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?;
+                    bind_extrude_work_plane_targets(
+                        &mut definition,
+                        scope,
+                        scopes,
+                        construction_groups,
+                        entity_selection_operands,
+                    );
+                    definition
+                }
                 Some(DesignFeatureFamily::Fillet) => {
                     project_fillet_arm(ctx, inputs, scope, parameters.as_slice(), native_scope)?
                 }
@@ -2132,7 +2142,20 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 pub(crate) fn work_plane_datum_frame(
     transform: [[f64; 4]; 4],
 ) -> Option<cadmpeg_ir::features::FeatureDatumPlaneFrame> {
-    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+    let (origin, normal, u_axis) = work_plane_frame_columns(transform);
+    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
+}
+
+/// The same `WorkPlane` frame as a feature support plane.
+fn work_plane_support_frame(
+    transform: [[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+    let (origin, normal, u_axis) = work_plane_frame_columns(transform);
+    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
+}
+
+fn work_plane_frame_columns(transform: [[f64; 4]; 4]) -> (Point3, Vector3, Vector3) {
+    (
         Point3::new(
             transform[0][3] * DESIGN_LENGTH_TO_MM,
             transform[1][3] * DESIGN_LENGTH_TO_MM,
@@ -2141,6 +2164,75 @@ pub(crate) fn work_plane_datum_frame(
         Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
         Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
     )
+}
+
+/// Replace each zero-offset native start or termination face group of a
+/// projected `Extrude` that selects one `WorkPlane` with that plane.
+fn bind_extrude_work_plane_targets(
+    definition: &mut cadmpeg_ir::features::FeatureDefinition,
+    scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
+    construction_groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) {
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlaneTargetSource,
+    };
+
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
+    else {
+        return;
+    };
+    let stream = native_stream(&scope.id);
+    let work_plane_target = |native: &str| {
+        let group = unique_feature_match(construction_groups.iter().filter(|group| {
+            group.id == native
+                && group.scope_record_index == scope.record_index
+                && native_stream(&group.id) == stream
+        }))?;
+        let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
+        let [plane] = planes.as_slice() else {
+            return None;
+        };
+        let frame = work_plane_support_frame(plane.work_plane_transform()?.into())?;
+        Some((
+            frame,
+            cadmpeg_core::text::NonBlankString::new(native.to_owned())?,
+        ))
+    };
+    if let ExtrudeStart::FromFace {
+        face: FaceSelection::Native(native),
+        offset: None,
+    } = start
+    {
+        if let Some((plane, native)) = work_plane_target(native) {
+            *start = ExtrudeStart::FromPlane {
+                plane,
+                native,
+                source: Some(PlaneTargetSource::WorkPlane),
+            };
+        }
+    }
+    let sides = match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
+        ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+    };
+    for side in sides {
+        if let LinearTermination::ToFace {
+            face: FaceSelection::Native(native),
+            offset: None,
+        } = &side.termination
+        {
+            if let Some((plane, native)) = work_plane_target(native) {
+                side.termination = LinearTermination::ToPlane {
+                    plane,
+                    native,
+                    source: Some(PlaneTargetSource::WorkPlane),
+                };
+            }
+        }
+    }
 }
 
 fn project_work_plane(
