@@ -2720,12 +2720,10 @@ fn parse_constraints(
                             name.to_owned(),
                         );
                     }
-                    if let Some((native_ref, _)) = &expression {
-                        parameter_properties.insert(
-                            cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                            native_ref.to_owned(),
-                        );
-                    }
+                    // #224 ruling 2: the ExpressionEngine carrier is a link, so it
+                    // stays out of `properties`. Its typed home is the canonical
+                    // `expression` with identity-bound parameter references;
+                    // `native_ref` keeps the value-carrying property.
                     let expression: cadmpeg_ir::features::Expression = match expression {
                         Some((_, expression)) => expression.into(),
                         None => cadmpeg_ir::features::Expression::literal(&value),
@@ -6331,10 +6329,7 @@ fn direct_root<T>(
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    if matches!(
-        property.body.as_ref(),
-        None | Some(crate::native::PropertyBody::Unreadable(_))
-    ) {
+    if property.body.is_none() {
         return Ok(None);
     }
     let property_xml = ctx.property_xml(property)?;
