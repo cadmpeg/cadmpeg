@@ -21,24 +21,33 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
+/// A Canvas-claimed record whose prologue or payload fails its checks gives up
+/// its located span as one `f3d.canvas_record` part instead of decoding.
 pub(crate) fn decode_canvas_images(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
-    super::image::decode_scoped_image_records(
+    super::image::decode_scoped_image_records_with_parts(
+        ctx,
+        output,
+        "f3d.canvas_record",
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
         |bytes, stream, scope| {
-            let start = canvas_geometry_at(bytes, scope)?;
-            usize::try_from(scope.byte_offset()?)
-                .ok()
-                .filter(|end| *end > start)?;
-            Some(ids::native_design_canvas_image_id(stream, start))
+            let span = canvas_record_span(bytes, scope)?;
+            Some(ids::native_design_canvas_image_id(stream, span.geometry_at))
         },
-        |bytes, stream, scope, read| Ok(parse_canvas_image(bytes, stream, scope, read)),
+        |bytes, _stream, scope| {
+            let span = canvas_record_span(bytes, scope)?;
+            Some((span.geometry_at, span.scope_at))
+        },
+        |bytes, stream, scope, read| parse_canvas_image(bytes, stream, scope, read).map(Some),
     )
 }
 
@@ -123,53 +132,81 @@ fn canvas_geometry_reference(
     Some((geometry_reference_at, index))
 }
 
-/// The geometry record of a Canvas scope: the indexed header that carries
-/// the record index the scope prefix references. The indexed-header-shaped
-/// runs locate it.
-fn canvas_geometry_at(bytes: &[u8], scope: &DesignParameterScope) -> Option<usize> {
+/// The located records of one Canvas scope: the geometry, paired and asset
+/// records from the geometry record to the scope.
+struct CanvasRecordSpan {
+    geometry_at: usize,
+    scope_at: usize,
+    geometry_reference_at: usize,
+    geometry_record_index: u32,
+}
+
+/// Locate the geometry, paired and asset records of one Canvas scope: the
+/// indexed header carrying the record index the scope prefix references must
+/// precede the scope.
+fn canvas_record_span(bytes: &[u8], scope: &DesignParameterScope) -> Option<CanvasRecordSpan> {
     let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
-    let (_, index) = canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
-    next_indexed_record_offset_with_index(bytes, 0, index)
+    let (geometry_reference_at, geometry_record_index) =
+        canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
+    let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
+    if geometry_at >= scope_at {
+        return None;
+    }
+    Some(CanvasRecordSpan {
+        geometry_at,
+        scope_at,
+        geometry_reference_at,
+        geometry_record_index,
+    })
 }
 
 /// Parse one Canvas image. `bytes` is the stream, whose indexed-header-shaped
 /// runs locate the geometry and paired records; `read` returns the stream
 /// bytes of a range, and the grammar reads the scope prefix and the records
-/// from the geometry record to the scope through it.
+/// from the geometry record to the scope through it. Every failure names the
+/// check that rejected the Canvas-claimed span.
 fn parse_canvas_image(
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
     read: &super::image::ImageRead<'_, '_>,
-) -> Option<DesignCanvasImage> {
-    (|| {
-        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
-        let (geometry_reference_at, geometry_record_index) =
-            canvas_geometry_reference(scope_at, read)?;
-        let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
-        // The geometry, paired and asset records run from the geometry
-        // record to the scope.
-        if geometry_at >= scope_at {
-            return None;
-        }
-        let records = CanvasRecords {
-            stream,
-            scope,
-            geometry_reference_at,
-            geometry_record_index,
-            geometry_at,
-            records: read(geometry_at..scope_at)?,
-        };
-        let mut matches = DesignCanvasGeometryLayout::ALL
-            .into_iter()
-            .filter_map(|layout| parse_canvas_layout(&records, layout));
-        let image = matches.next();
-        if matches.next().is_none() {
-            image
-        } else {
-            None
-        }
-    })()
+) -> Result<DesignCanvasImage, CodecError> {
+    let malformed = |detail: &str| {
+        CodecError::malformed(format_args!(
+            "Canvas record {} in {stream} is unreadable: {detail}",
+            scope.record_index
+        ))
+    };
+    let Some(span) = canvas_record_span(bytes, scope) else {
+        return Err(malformed(
+            "its scope prefix names no geometry record before the scope",
+        ));
+    };
+    let Some(located) = read(span.geometry_at..span.scope_at) else {
+        return Err(malformed("its records exceed the stream"));
+    };
+    // The geometry, paired and asset records run from the geometry
+    // record to the scope.
+    let records = CanvasRecords {
+        stream,
+        scope,
+        geometry_reference_at: span.geometry_reference_at,
+        geometry_record_index: span.geometry_record_index,
+        geometry_at: span.geometry_at,
+        records: located,
+    };
+    let mut matches = DesignCanvasGeometryLayout::ALL
+        .into_iter()
+        .filter_map(|layout| parse_canvas_layout(&records, layout));
+    match (matches.next(), matches.next()) {
+        (Some(image), None) => Ok(image),
+        (None, _) => Err(malformed(
+            "its prologue or payload matches no canvas grammar",
+        )),
+        (Some(_), Some(_)) => Err(malformed(
+            "its prologue matches more than one canvas grammar",
+        )),
+    }
 }
 
 pub(in crate::design::decode) fn typed_canvas_reference(
@@ -547,18 +584,18 @@ mod tests {
                 let mut invalid = bytes.clone();
                 invalid[offset] = 2;
                 assert!(
-                    parse(&invalid).is_none(),
+                    parse(&invalid).is_err(),
                     "label offset {label}, mutation {offset}"
                 );
             }
             if width == 51 {
                 let mut invalid = bytes.clone();
                 invalid[plane + 13] = b'0';
-                assert!(parse(&invalid).is_none());
+                assert!(parse(&invalid).is_err());
             }
             if payload == 81 {
                 bytes[73] = 2;
-                assert!(parse(&bytes).is_none());
+                assert!(parse(&bytes).is_err());
             }
         }
     }
@@ -571,6 +608,69 @@ mod tests {
         })
         .unwrap();
         assert_eq!(image.asset_name(), "a.png");
+    }
+
+    #[test]
+    fn damaged_canvas_record_gives_up_its_span() {
+        use std::io::{Cursor, Write};
+
+        use zip::CompressionMethod;
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (bytes, scope) = fixture();
+        let mut scope = scope;
+        scope
+            .try_edit(|draft| {
+                draft.id = format!("{}:scope#30", crate::ids::native_scope(ENTRY));
+            })
+            .expect("re-streamed scope");
+        let mut damaged = bytes.clone();
+        damaged[25] = 2;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&damaged).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            let images =
+                super::decode_canvas_images(&ctx, &mut output, scan, std::slice::from_ref(&scope))
+                    .expect("damaged canvas decodes");
+            assert!(images.is_empty());
+            let (_, native, fidelity, losses) = output.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+            );
+            assert!(losses[0].message.contains("f3d.canvas_record"));
+            assert!(losses[0].message.contains("Design1/BulkStream.dat"));
+            let retained: Vec<_> = fidelity
+                .retained_records()
+                .keys()
+                .map(cadmpeg_ir::ids::UnknownId::as_str)
+                .collect();
+            assert_eq!(retained.len(), 1);
+            assert!(retained[0].starts_with("f3d:source:part#"));
+            let unknowns = native
+                .namespace("f3d")
+                .expect("f3d native namespace")
+                .arenas()
+                .get("unknowns")
+                .expect("one unknowns home");
+            assert_eq!(unknowns.len(), 1);
+            assert_eq!(
+                cadmpeg_ir::native::NativeRecord::id(&unknowns[0]),
+                retained[0]
+            );
+        });
     }
 
     #[test]
