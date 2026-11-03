@@ -792,6 +792,46 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 }
 
 #[test]
+fn legacy_parameter_owner_68_scalar_lane_stores_the_parameter_value_and_two_flags() {
+    let evaluated = crate::records::identity::Located {
+        value: 0.06,
+        offset: 700,
+    };
+    let lane = |scalar: f64, marker: u8, flags: [u8; 2]| {
+        let mut frame = legacy_parameter_owner_68_frame("385");
+        frame[24] = marker;
+        frame[25..33].copy_from_slice(&scalar.to_le_bytes());
+        frame[53..55].copy_from_slice(&flags);
+        super::parse_admitted_legacy_parameter_owner_68(&frame, evaluated, 0, true)
+            .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    };
+    let owner = lane(0.06, 0, [1, 1]).expect("scalar lane with both flags");
+    assert_eq!(owner.evaluated_value().get(), 0.06);
+    assert_eq!(owner.parameter_record_index(), 101);
+    assert_eq!(owner.companion_record_index(), 102);
+    assert_eq!(owner.scope_record_index(), 0);
+    for flags in [[0, 0], [0, 1], [1, 0]] {
+        assert!(lane(0.06, 0, flags).is_some(), "{flags:?}");
+    }
+    // The lane value is the linked parameter's value, and the lane opens with
+    // its zero marker; each flag byte is zero or one.
+    assert!(lane(0.5, 0, [1, 1]).is_none());
+    assert!(lane(0.06, 1, [1, 1]).is_none());
+    assert!(lane(0.06, 0, [2, 1]).is_none());
+    assert!(lane(0.06, 0, [1, 2]).is_none());
+    let mut shifted = legacy_parameter_owner_68_frame("385");
+    shifted[23] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&shifted, evaluated, 0, true).is_none()
+    );
+    let mut zero_run = legacy_parameter_owner_68_frame("385");
+    zero_run[52] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&zero_run, evaluated, 0, true).is_none()
+    );
+}
+
+#[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
         &legacy_parameter_owner_88_frame("284"),
