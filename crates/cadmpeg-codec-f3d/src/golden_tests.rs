@@ -1115,10 +1115,8 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             serde_json::Value::Object(fields) => {
                 if let Some(boundary) = fields.get_mut("boundary") {
                     if let Some(boundary) = boundary.as_object_mut() {
-                        let is_ring = boundary
-                            .get("kind")
-                            .and_then(|kind| kind.as_str())
-                            == Some("ring");
+                        let is_ring =
+                            boundary.get("kind").and_then(|kind| kind.as_str()) == Some("ring");
                         if is_ring {
                             if let Some(coedges) = boundary
                                 .get_mut("coedges")
