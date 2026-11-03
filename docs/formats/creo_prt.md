@@ -2971,6 +2971,15 @@ polygon edge, and every center pair is farther apart than the sum of their
 radii. These conditions establish the polygon as the outer loop and each
 circle as an inner loop.
 
+The loops of a planar face also have one order when each two-edge loop is a
+proved circle loop and each other loop maps through the placed plane chart to
+a polygon of its solved start vertices with nonzero area. Exactly one polygon
+strictly contains every other polygon and every circle disk. A polygon
+strictly contains a disk when the circle center is inside the polygon and
+farther than the radius from each polygon edge. The circle disks are pairwise
+separate. The containing polygon is the outer loop and precedes the other
+loops.
+
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths or proved planar-cap parameter paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 
 Use the following order to select a body count:
