@@ -274,9 +274,11 @@ fn decode_container<'a>(
     }
     let protein = project_protein_state(ctx, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
-        ProteinState::Package(package) => {
-            crate::protein::decode_instances_with_issue(ctx, package)?
-        }
+        ProteinState::Package(package) => crate::protein::decode_instances_with_issue(
+            ctx,
+            &mut assembly_inventory.parts,
+            package,
+        )?,
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
             (Vec::new(), None)
         }
