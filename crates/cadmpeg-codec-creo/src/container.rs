@@ -368,11 +368,14 @@ pub(crate) struct SectionExpansionLoss {
 ///
 /// A proven-cut section is given up as a part: its rows are excluded from
 /// transfer, its bytes are retained untyped, and one `record.unreadable`
-/// names it. A section whose end cannot be found (a trailing partial
-/// header) is incomplete with the rest of its stream. A count shortfall
-/// (declared rows outnumbering parsed rows) salvages its parsed rows and
-/// only charges the loss: the missing rows were never located, so there is
-/// nothing to exclude.
+/// names it. Only a section that reaches the end of the input can be cut:
+/// a mid-file section is framed completely, so a shortfall there is a
+/// whole-file gap and salvages its parsed rows with a loss. A section whose
+/// end cannot be found (a trailing partial header) is incomplete with the
+/// rest of its stream. A count shortfall (declared rows outnumbering parsed
+/// rows) salvages its parsed rows and only charges the loss when the section
+/// does not reach the end of the input: the missing rows were never located,
+/// so there is nothing to exclude.
 #[derive(Debug, Clone)]
 pub(crate) struct IncompleteSection {
     /// Byte offset of the section header: the part's address.
@@ -404,6 +407,11 @@ pub(crate) struct FramingScan<'a> {
     /// content, so their rows are excluded from transfer and one
     /// `record.unreadable` names each.
     pub(crate) incomplete_sections: Vec<IncompleteSection>,
+    /// Feature identifiers that lost parsed rows to a given-up section, by
+    /// section offset. A feature that loses rows and still falls back to
+    /// stored geometry needs the failed part, so the transfer drops it and
+    /// the part loss names it (#215 rule 2).
+    pub(crate) excluded_feature_owners: BTreeMap<usize, BTreeSet<u32>>,
     /// Local work-cap skips recorded while framing and decoding plane support
     /// frames.
     pub(crate) local_work_cap_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1545,6 +1553,7 @@ fn detect_incomplete_sections(
     sections: &[ScannedSection<'_>],
     rows: &SurfaceRowSets<'_>,
     feature_definitions: &[FeatureDefinition],
+    expressions: &[crate::curve::CurveExpressionRecord],
     expansion_losses: &[SectionExpansionLoss],
 ) -> Vec<IncompleteSection> {
     let mut incomplete = Vec::new();
@@ -1568,7 +1577,22 @@ fn detect_incomplete_sections(
         );
     }
     for section in sections {
+        let at_eof = section.section.end() == data.len();
         let Some(payload) = section_payload(data, &section.section) else {
+            // A header without payload bytes at the end of the input is a
+            // cut section: its rows were cut away with its content.
+            if at_eof {
+                mark(
+                    section.section.offset(),
+                    "creo.psb_section",
+                    true,
+                    format!(
+                        "section `{}` at offset {} has no payload bytes at end of input",
+                        section.section.name(),
+                        section.section.offset(),
+                    ),
+                );
+            }
             continue;
         };
         if lzw_give_up_magic(payload) {
@@ -1594,6 +1618,29 @@ fn detect_incomplete_sections(
                     section.section.offset(),
                 ),
             );
+        }
+        // A `MdlStatus` payload that ends mid-text at the end of the input
+        // lost its terminating state: whole payloads NUL-terminate states.
+        if section.section.name() == "MdlStatus" && at_eof {
+            let tail = match payload.iter().rposition(|&byte| byte == 0) {
+                Some(nul) => &payload[nul + 1..],
+                None => payload,
+            };
+            if !tail.is_empty()
+                && tail
+                    .iter()
+                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+            {
+                mark(
+                    section.section.offset(),
+                    "creo.psb_section",
+                    true,
+                    format!(
+                        "section `MdlStatus` at offset {} ends mid-text at end of input",
+                        section.section.offset(),
+                    ),
+                );
+            }
         }
     }
     if let Some(last) = sections.last() {
@@ -1795,6 +1842,7 @@ fn detect_incomplete_sections(
         }
     }
     for section in sections {
+        let at_eof = section.section.end() == data.len();
         let Ok(declared) = read_array_count(section.region, b"srf_array") else {
             continue;
         };
@@ -1813,11 +1861,47 @@ fn detect_incomplete_sections(
             .chain(rows.boundary_planes.iter().map(|row| row.row.offset))
             .filter(|offset| section.section.contains(*offset))
             .count();
+        // A shortfall at the end of the input lost rows to the cut, so the
+        // section is given up; mid-file the section is whole and the shortfall
+        // is a gap, so its parsed rows salvage (#215). A shortfall with no
+        // row bytes past the namespace counts is a degenerate whole section,
+        // so it salvages too. Datum sections declare surface counts but hold
+        // datum rows, so only the geometry namespaces give up.
+        let geometry_namespace = section.section.name() == "VisibGeom"
+            || section.section.name() == "NovisGeom"
+            || section.section.name().starts_with("ND:");
+        let mut row_region_start = None;
+        for label in [b"srf_array".as_slice(), b"crv_array"] {
+            let mut from = 0;
+            while let Some(at) = find(section.region, label, from) {
+                from = at + 1;
+                let mut p = at + label.len();
+                if section.region.get(p) != Some(&0) {
+                    continue;
+                }
+                p += 1;
+                for _ in 0..3 {
+                    if section.region.get(p) == Some(&crate::psb::token::ARRAY_OPEN) {
+                        if let Some((_, end)) =
+                            crate::psb::complete_compact_int(section.region, p + 1)
+                        {
+                            row_region_start = row_region_start.max(Some(end));
+                        }
+                        break;
+                    }
+                    p += 1;
+                }
+            }
+        }
+        let row_bytes_left = row_region_start
+            .and_then(|start| section.region.get(start..))
+            .map_or(0, |tail| tail.len());
+        let give_up = geometry_namespace && at_eof && row_bytes_left != 0;
         if usize::try_from(declared).is_ok_and(|bound| rows < bound) {
             mark(
                 section.section.offset(),
                 "creo.psb_section",
-                false,
+                give_up,
                 format!(
                     "section `{}` declares {declared} surface row(s) but holds {rows}",
                     section.section.name(),
@@ -1826,12 +1910,13 @@ fn detect_incomplete_sections(
         }
         // A visible-geometry section declares both namespaces, even when
         // empty: a present `srf_array` without `crv_array` lost its curve
-        // namespace to the cut.
+        // namespace to the cut. Datum sections carry no curve namespace by
+        // design, so only the geometry namespaces give up.
         if find(section.region, b"crv_array\0", 0).is_none() {
             mark(
                 section.section.offset(),
                 "creo.psb_section",
-                false,
+                give_up,
                 format!(
                     "section `{}` declares surface rows but holds no curve namespace",
                     section.section.name(),
@@ -1846,12 +1931,15 @@ fn detect_incomplete_sections(
         else {
             continue;
         };
+        // A table shortfall at the end of the input lost rows to the cut,
+        // so the section is given up; mid-file the section is whole (#215).
+        let at_eof = section.section.end() == data.len();
         if let Some(table) = &definition.dimensions {
             if usize::try_from(table.declared_count).is_ok_and(|bound| table.rows.len() < bound) {
                 mark(
                     section.section.offset(),
                     "creo.psb_section",
-                    false,
+                    at_eof,
                     format!(
                         "section `{}` dimension table declares {} row(s) but holds {}",
                         section.section.name(),
@@ -1871,7 +1959,7 @@ fn detect_incomplete_sections(
                     mark(
                         section.section.offset(),
                         "creo.psb_section",
-                        false,
+                        at_eof,
                         format!(
                             "section `{}` relation table declares {expected} row(s) but holds {}",
                             section.section.name(),
@@ -1881,6 +1969,114 @@ fn detect_incomplete_sections(
                 }
             }
         }
+        if let Some(variables) = &definition.variables {
+            if usize::try_from(variables.declared_count)
+                .is_ok_and(|bound| variables.rows.len() < bound)
+            {
+                mark(
+                    section.section.offset(),
+                    "creo.psb_section",
+                    at_eof,
+                    format!(
+                        "section `{}` solver variable table declares {} row(s) but holds {}",
+                        section.section.name(),
+                        variables.declared_count,
+                        variables.rows.len(),
+                    ),
+                );
+            }
+        }
+    }
+    // An expression program start without a complete expression record at
+    // the end of the input lost the program body to the cut (#215).
+    for section in sections {
+        if section.section.end() != data.len() {
+            continue;
+        }
+        let payload = section_payload(data, &section.section).unwrap_or(&[]);
+        let program_starts = [
+            b"entity(crv_fr_eqn)\0".as_slice(),
+            b"backup_ents(crv_fr_eqn)\0",
+        ]
+        .iter()
+        .any(|label| find(payload, label, 0).is_some());
+        if !program_starts {
+            continue;
+        }
+        let complete = expressions
+            .iter()
+            .filter(|record| section.section.contains(record.offset))
+            .count();
+        if complete == 0 {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "section `{}` at offset {} reaches end of input with an expression program start but no complete expression record",
+                    section.section.name(),
+                    section.section.offset(),
+                ),
+            );
+        }
+    }
+    // A table label with no table rows at the end of the input lost the
+    // table to the cut: the label opens a table whose bytes never arrive.
+    for section in sections {
+        if section.section.end() != data.len() {
+            continue;
+        }
+        let payload = section_payload(data, &section.section).unwrap_or(&[]);
+        if payload.ends_with(b"geoms_affected\0") {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "section `{}` at offset {} ends with an empty `geoms_affected` table at end of input",
+                    section.section.name(),
+                    section.section.offset(),
+                ),
+            );
+        }
+    }
+    // A surface parameter body that runs to the end of the input without
+    // its close lost its tail to the cut when the body is empty or its
+    // carrier is unresolved: a resolved carrier proves the body is complete.
+    // A resolved carrier with an unclosed body is a whole-file shape, so it
+    // salvages (#215).
+    for section in sections {
+        if section.section.end() != data.len() {
+            continue;
+        }
+        let open = rows
+            .parameters
+            .iter()
+            .chain(rows.nonvisible_parameters.iter())
+            .chain(rows.cross_section_parameters.iter())
+            .any(|parameter| {
+                parameter.boundary == crate::surface::SurfaceBodyBoundary::SectionEnd
+                    && (parameter.body.is_empty()
+                        || matches!(
+                            parameter.carrier,
+                            crate::surface::SurfaceParameterCarrier::Unresolved(_)
+                        ))
+                    && (section.section.contains(parameter.offset)
+                        || (section.section.offset() <= parameter.body_offset
+                            && parameter.body_offset <= section.section.end()))
+            });
+        if open {
+            mark(
+                section.section.offset(),
+                "creo.psb_section",
+                true,
+                format!(
+                    "section `{}` at offset {} leaves a surface parameter body open at end of input",
+                    section.section.name(),
+                    section.section.offset(),
+                ),
+            );
+        }
     }
     incomplete.sort_by_key(|section| section.offset);
     incomplete
@@ -1888,7 +2084,7 @@ fn detect_incomplete_sections(
 
 /// Row offsets that fall inside a given-up section: their transfer is
 /// excluded, so a cut section builds no records.
-fn incomplete_ranges(scan: &ContainerScan<'_>) -> Vec<(usize, usize)> {
+fn incomplete_ranges(scan: &ContainerScan<'_>) -> Vec<(usize, usize, usize)> {
     scan.framing
         .incomplete_sections
         .iter()
@@ -1899,7 +2095,7 @@ fn incomplete_ranges(scan: &ContainerScan<'_>) -> Vec<(usize, usize)> {
                 .iter()
                 .find(|section| section.offset() == incomplete.offset)
         })
-        .map(|section| (section.offset(), section.end()))
+        .map(|section| (section.offset(), section.offset(), section.end()))
         .collect()
 }
 
@@ -1917,8 +2113,44 @@ pub(crate) fn exclude_incomplete_sections(scan: &mut ContainerScan<'_>) {
     let excluded = |offset: usize| {
         ranges
             .iter()
-            .any(|(start, end)| *start <= offset && offset < *end)
+            .any(|(_, start, end)| *start <= offset && offset < *end)
     };
+    // Feature identifiers that lose parsed rows to a given-up section, by
+    // section offset. The transfer drops a feature that loses rows and
+    // still falls back to stored geometry, and the part loss names it
+    // (#215 rule 2). Recorded before the rows below are retained away.
+    {
+        let mut owners = BTreeMap::<usize, BTreeSet<u32>>::new();
+        let mut note = |section_offset: usize, feature_id: u32| {
+            owners.entry(section_offset).or_default().insert(feature_id);
+        };
+        for (section_offset, start, end) in &ranges {
+            let inside = |offset: usize| *start <= offset && offset < *end;
+            for row in &scan.features.rows {
+                if inside(row.offset) {
+                    note(*section_offset, row.feature_id);
+                }
+            }
+            for definition in &scan.features.definitions {
+                if inside(definition.offset) {
+                    if let Some(feature_id) = definition.identity.owner_feature_id() {
+                        note(*section_offset, feature_id);
+                    }
+                }
+            }
+            for operation in &scan.features.operations {
+                if inside(operation.offset) {
+                    note(*section_offset, operation.feature_id);
+                }
+            }
+            for state in &scan.features.operation_states {
+                if inside(state.offset) {
+                    note(*section_offset, state.feature_id);
+                }
+            }
+        }
+        scan.framing.excluded_feature_owners = owners;
+    }
     macro_rules! retain_complete {
         ($rows:expr, |$row:ident| $offset:expr) => {
             $rows.retain(|$row| !excluded($offset));
@@ -3607,6 +3839,7 @@ pub(crate) fn scan_bytes<'a>(
             cross_section_parameters: &cross_section_surface_parameters,
         },
         &feature_definitions,
+        &curve_expressions,
         &expansion_losses,
     );
     let mut retained_sections = Vec::new();
@@ -3623,6 +3856,7 @@ pub(crate) fn scan_bytes<'a>(
             expanded_sections,
             expansion_losses,
             incomplete_sections,
+            excluded_feature_owners: BTreeMap::new(),
             local_work_cap_losses,
             layout,
             census,

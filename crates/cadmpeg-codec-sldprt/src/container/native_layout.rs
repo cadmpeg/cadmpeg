@@ -257,6 +257,7 @@ fn footer_fields(
 pub(crate) fn source_envelope(
     bytes: &[u8],
     blocks: &[Block],
+    provably_cut: bool,
 ) -> Result<Option<Envelope>, CodecError> {
     if blocks.is_empty() {
         return Ok(None);
@@ -360,7 +361,7 @@ pub(crate) fn source_envelope(
             entries,
         });
     }
-    if declared && selected.is_none() {
+    if declared && selected.is_none() && !provably_cut {
         return Err(malformed());
     }
     Ok(selected)
@@ -429,8 +430,9 @@ pub(super) fn validate(
     blocks: &mut Vec<Block>,
     cells: &mut Vec<CacheCell>,
     directory: &mut Vec<DirectoryEntry>,
+    provably_cut: bool,
 ) -> Result<usize, CodecError> {
-    let tail = source_envelope(bytes, blocks)?;
+    let tail = source_envelope(bytes, blocks, provably_cut)?;
     let limit = tail.as_ref().map_or(bytes.len(), |tail| tail.start);
     cells.retain(|cell| cell.offset < limit);
     if let Some(tail) = tail {

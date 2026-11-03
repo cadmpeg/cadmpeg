@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, SourceLocation, SpaceId, View, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -316,6 +316,42 @@ impl<'a> Container<'a> {
         bytes
     }
 
+    /// Available spans of entries whose declared file span runs past the
+    /// source image: the unrestorable tail of a cut source, one part
+    /// give-up per entry (§4.5). Entries fully inside the image and
+    /// directory entries contribute nothing.
+    pub(crate) fn cut_tails(&self) -> Vec<(u64, u64)> {
+        let len = cadmpeg_core::decode::u64_from_index(self.data.len());
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let (offset, size) = entry.file_span()?;
+                let end = offset.checked_add(size)?;
+                (end > len && offset < len).then_some((offset, len))
+            })
+            .collect()
+    }
+
+    /// Absolute span of a `FOOTER` region present but unreadable, when no
+    /// entry tail is cut: the directory the full scan refused is one part
+    /// give-up (§4.5). Cut tails own the missing bytes when entries are cut;
+    /// a fully parsed or absent footer contributes nothing.
+    pub(crate) fn unparsed_footer_span(&self) -> Option<(u64, u64)> {
+        let ContainerLayout::Modern {
+            footer: None,
+            footer_offset,
+            ..
+        } = self.layout
+        else {
+            return None;
+        };
+        if footer_offset == ABSENT_FOOTER_OFFSET || !self.cut_tails().is_empty() {
+            return None;
+        }
+        let len = cadmpeg_core::decode::u64_from_index(self.data.len());
+        (footer_offset < len).then_some((footer_offset, len))
+    }
+
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
@@ -458,35 +494,16 @@ impl<'a> Container<'a> {
     pub(crate) fn om_sections(
         &self,
     ) -> Result<Vec<(EntryRef<'_>, crate::om::Section<'_>)>, CodecError> {
-        let framed_cache = if let Some(cache) = self.om_section_cache.get() {
-            cache
-        } else {
-            let cache = match &self.data {
-                SourceImage::Borrowed(view) => {
-                    let bytes = view.window();
-                    let bytes: &'a [u8] = bytes;
-                    let (sections, _) = parse_framed_section_cache(bytes, &self.entries, false)?;
-                    FramedSectionCache::Borrowed { sections }
-                }
-                SourceImage::Owned(bytes) => {
-                    let (sections, layouts) =
-                        parse_framed_section_cache(bytes, &self.entries, true)?;
-                    drop(sections);
-                    FramedSectionCache::Owned { layouts }
-                }
-            };
-            self.om_section_cache.get_or_init(|| cache)
-        };
         let mut result = Vec::new();
-        match framed_cache {
-            FramedSectionCache::Borrowed { sections } => {
+        match self.framed_section_cache()? {
+            FramedSectionCache::Borrowed { sections, .. } => {
                 for (entry_index, section) in sections {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
                     }
                 }
             }
-            FramedSectionCache::Owned { layouts } => {
+            FramedSectionCache::Owned { layouts, .. } => {
                 for (entry_index, layout) in layouts {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize()));
@@ -495,6 +512,50 @@ impl<'a> Container<'a> {
             }
         }
         Ok(result)
+    }
+
+    /// Absolute spans of fully framed section candidates whose declared end
+    /// runs past their entry payload, merged over overlaps: the
+    /// section-structure parse skips them, so each is one part give-up
+    /// (§4.5). Entries without an available payload contribute nothing;
+    /// their tails belong to the cut-tail give-up. A section parse the
+    /// extractor refuses with an error yields nothing here: the
+    /// class-level loss covers that damage, and only resource limits
+    /// propagate.
+    pub(crate) fn damaged_om_section_spans(&self) -> Result<Vec<(u64, u64)>, CodecError> {
+        match self.framed_section_cache() {
+            Ok(cache) => match cache {
+                FramedSectionCache::Borrowed { truncated, .. }
+                | FramedSectionCache::Owned { truncated, .. } => Ok(truncated.clone()),
+            },
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    /// Parse and cache the size-framed object-model sections of every entry.
+    fn framed_section_cache(&self) -> Result<&FramedSectionCache<'a>, CodecError> {
+        if let Some(cache) = self.om_section_cache.get() {
+            return Ok(cache);
+        }
+        let cache = match &self.data {
+            SourceImage::Borrowed(view) => {
+                let bytes = view.window();
+                let bytes: &'a [u8] = bytes;
+                let (sections, _, truncated) =
+                    parse_framed_section_cache(bytes, &self.entries, false)?;
+                FramedSectionCache::Borrowed {
+                    sections,
+                    truncated,
+                }
+            }
+            SourceImage::Owned(bytes) => {
+                let (_, layouts, truncated) =
+                    parse_framed_section_cache(bytes, &self.entries, true)?;
+                FramedSectionCache::Owned { layouts, truncated }
+            }
+        };
+        Ok(self.om_section_cache.get_or_init(|| cache))
     }
 
     /// Parse and cache the indexed object-model sections of every entry.
@@ -1016,6 +1077,10 @@ pub(crate) enum ContainerLayout {
         /// `FOOTER` region, absent when the HEADER directory is the complete
         /// directory.
         footer: Option<Footer>,
+        /// Declared `FOOTER` offset from the header: the whole-file anchor
+        /// the footer directory give-up falls back to when the region is
+        /// present but unreadable (§4.5).
+        footer_offset: u64,
     },
     /// Legacy Compound File Binary envelope.
     LegacyCfb {
@@ -1051,6 +1116,7 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
             offset: 0,
             fingerprint: [0; 4],
         }),
+        footer_offset: 0,
     }
 }
 
@@ -1096,9 +1162,17 @@ pub(crate) enum IndexedSectionCache<'a> {
 pub(crate) enum FramedSectionCache<'a> {
     Borrowed {
         sections: Vec<(usize, crate::om::Section<'a>)>,
+        /// Absolute spans of fully framed section candidates whose declared
+        /// end runs past their entry payload: the section-structure parse
+        /// skips them, so each is one part give-up (§4.5).
+        truncated: Vec<(u64, u64)>,
     },
     Owned {
         layouts: Vec<(usize, crate::om::cache::SectionLayout)>,
+        /// Absolute spans of fully framed section candidates whose declared
+        /// end runs past their entry payload: the section-structure parse
+        /// skips them, so each is one part give-up (§4.5).
+        truncated: Vec<(u64, u64)>,
     },
 }
 
@@ -1113,9 +1187,17 @@ fn parse_framed_section_cache<'bytes>(
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
+) -> Result<
+    (
+        FramedSections<'bytes>,
+        FramedSectionLayouts,
+        Vec<(u64, u64)>,
+    ),
+    CodecError,
+> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
+    let mut truncated = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
         let Some((offset, size)) = entry.file_span() else {
             continue;
@@ -1129,6 +1211,21 @@ fn parse_framed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
+        // A fully framed candidate whose declared end runs past this
+        // available payload is damage, not absence: the section scan skips
+        // it, so its span is one part give-up (§4.5). A cut entry has no
+        // available payload, so its tail belongs to the cut-tail give-up.
+        for (relative_start, relative_end) in crate::om::truncated_section_spans(payload) {
+            let (Some(abs_start), Some(abs_end)) = (
+                cadmpeg_core::decode::u64_from_index(offset)
+                    .checked_add(cadmpeg_core::decode::u64_from_index(relative_start)),
+                cadmpeg_core::decode::u64_from_index(offset)
+                    .checked_add(cadmpeg_core::decode::u64_from_index(relative_end)),
+            ) else {
+                continue;
+            };
+            truncated.push((abs_start, abs_end));
+        }
         let parsed = crate::om::sections(payload)?;
         if parsed.is_empty() {
             continue;
@@ -1149,7 +1246,18 @@ fn parse_framed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    Ok((sections, layouts))
+    truncated.sort();
+    let mut merged: Vec<(u64, u64)> = Vec::new();
+    for span in truncated {
+        if let Some(last) = merged.last_mut() {
+            if span.0 <= last.1 {
+                last.1 = last.1.max(span.1);
+                continue;
+            }
+        }
+        merged.push(span);
+    }
+    Ok((sections, layouts, merged))
 }
 
 type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
@@ -1276,8 +1384,40 @@ pub(crate) fn scan_bytes<'a>(
     let (entries, footer) = if footer_offset == ABSENT_FOOTER_OFFSET {
         (header_directory(&data)?, None)
     } else {
-        let (entries, footer) = header_and_footer_directories(&data, footer_offset)?;
-        (entries, Some(footer))
+        match header_and_footer_directories(&data, footer_offset) {
+            Ok((entries, footer)) => (entries, Some(footer)),
+            Err(first) => {
+                // The full directory refuses: the source is cut inside the
+                // FOOTER region, or either directory is damaged. Frame the
+                // HEADER entries that survive; each entry tail the source
+                // cannot supply is one part give-up. An independently
+                // readable footer region is salvaged, so a damaged header
+                // count alone costs nothing; otherwise the footer region
+                // itself is one part give-up (§4.5).
+                let (entries, header_end) = header_directory_cut(&data).map_err(|_| first)?;
+                if !entries
+                    .iter()
+                    .any(|entry| entry_has_available_bytes(entry, data.len()))
+                {
+                    return Err(CodecError::truncated(
+                        SourceLocation {
+                            space: SpaceId::ROOT,
+                            offset: cadmpeg_core::decode::u64_from_index(splmsstr::HEADER_MARKER),
+                        },
+                        "SPLMSSTR HEADER directory",
+                    ));
+                }
+                let mut entries = entries;
+                let footer = match salvaged_footer(&data, &entries, header_end, footer_offset) {
+                    Some((footer_entries, footer)) => {
+                        entries.extend(footer_entries);
+                        Some(footer)
+                    }
+                    None => None,
+                };
+                (entries, footer)
+            }
+        }
     };
     let mut container = Container {
         data,
@@ -1285,6 +1425,7 @@ pub(crate) fn scan_bytes<'a>(
             version,
             file_tag,
             footer,
+            footer_offset,
         },
         entries,
         fastload_table: None,
@@ -1309,6 +1450,63 @@ fn header_directory(data: &[u8]) -> Result<Vec<DirEntry>, CodecError> {
         data.len(),
     )?;
     Ok(entries)
+}
+
+/// Read the HEADER directory of a source cut before its FOOTER region:
+/// frame entries until the first one the cut source cannot complete.
+fn header_directory_cut(data: &[u8]) -> Result<(Vec<DirEntry>, usize), CodecError> {
+    directory_region_cut(data, splmsstr::HEADER_MARKER, *b"HEADER")
+}
+
+/// Salvage an independently readable FOOTER region after the full directory
+/// refuses: the region parses under its own bound exactly as the full scan
+/// requires, and no HEADER file span may reach into it. A damaged header
+/// count alone then costs nothing; a damaged or partial footer region stays
+/// one part give-up (§4.5).
+fn salvaged_footer(
+    data: &[u8],
+    header_entries: &[DirEntry],
+    header_end: usize,
+    footer_offset: u64,
+) -> Option<(Vec<DirEntry>, Footer)> {
+    let fo = usize::try_from(footer_offset).ok()?;
+    if header_end > fo {
+        return None;
+    }
+    if header_entries
+        .iter()
+        .filter_map(crate::container::DirEntry::file_span)
+        .any(|(offset, size)| {
+            offset
+                .checked_add(size)
+                .is_none_or(|end| end > footer_offset)
+        })
+    {
+        return None;
+    }
+    let footer_directory_end = data.len().checked_sub(4)?;
+    let (footer_entries, footer_end) =
+        directory_region(data, fo, *b"FOOTER", Region::Footer, footer_directory_end).ok()?;
+    let fingerprint_end = footer_end.checked_add(4)?;
+    let footer_fingerprint = data
+        .last_chunk::<4>()
+        .copied()
+        .filter(|_| fingerprint_end == data.len())?;
+    Some((
+        footer_entries,
+        Footer {
+            offset: footer_offset,
+            fingerprint: footer_fingerprint,
+        },
+    ))
+}
+
+/// Whether one directory entry has source bytes to decode: a file span that
+/// starts inside the image. An entry past the image holds no part (§4.5).
+fn entry_has_available_bytes(entry: &DirEntry, len: usize) -> bool {
+    entry
+        .file_span()
+        .is_some_and(|(offset, _)| offset < cadmpeg_core::decode::u64_from_index(len))
 }
 
 /// Read the HEADER and FOOTER directories and the terminal fingerprint of a
@@ -1542,7 +1740,8 @@ fn try_entry(
         return Ok(None);
     };
     let name = value.to_owned();
-    // Interpret the 16-byte payload as a file span when it lands within the file.
+    // Interpret the 16-byte payload as a file span when it lands within the
+    // file.
     let body = match (
         View::u64_le_at(data, payload),
         View::u64_le_at(data, payload + file_payload::SIZE),
@@ -1561,6 +1760,110 @@ fn try_entry(
                     }
                 }
                 _ => DirEntryBody::Directory,
+            }
+        }
+        _ => DirEntryBody::Directory,
+    };
+    Ok(Some((DirEntry { name, region, body }, next)))
+}
+
+/// Read one directory region from a cut source: entries frame until the
+/// first entry the remaining image cannot complete. Unlike
+/// [`directory_region`], a fully declared entry keeps its file span even
+/// when that span runs past the image, so the decode can give up that tail
+/// as one part (§4.5); reads still bound themselves to the available bytes.
+fn directory_region_cut(
+    data: &[u8],
+    marker_offset: usize,
+    marker: [u8; 6],
+) -> Result<(Vec<DirEntry>, usize), CodecError> {
+    let truncated = || {
+        CodecError::truncated(
+            SourceLocation {
+                space: SpaceId::ROOT,
+                offset: cadmpeg_core::decode::u64_from_index(marker_offset),
+            },
+            "SPLMSSTR HEADER directory",
+        )
+    };
+    let count_offset = marker_offset
+        .checked_add(marker.len())
+        .ok_or_else(truncated)?;
+    let entries_offset = count_offset.checked_add(4).ok_or_else(truncated)?;
+    if data.get(marker_offset..count_offset) != Some(marker.as_slice()) {
+        return Err(truncated());
+    }
+    let count = View::u32_le_at(data, count_offset).ok_or_else(truncated)?;
+    let mut entries = Vec::new();
+    let mut at = entries_offset;
+    for _ in 0..count {
+        match try_entry_cut(data, at, Region::Header)? {
+            Some((entry, next)) => {
+                entries.push(entry);
+                at = next;
+            }
+            None => break,
+        }
+    }
+    Ok((entries, at))
+}
+
+/// Try to read one directory entry at `o` from a cut source: `None` stops
+/// the directory at the first entry the remaining image cannot complete.
+/// A fully declared entry keeps its file span even when that span runs past
+/// the image, so the tail give-up can retain the available bytes (§4.5).
+fn try_entry_cut(
+    data: &[u8],
+    o: usize,
+    region: Region,
+) -> Result<Option<(DirEntry, usize)>, CodecError> {
+    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
+    if !(6..=128).contains(&name_len) {
+        return Ok(None);
+    }
+    let Some(name_start) = o.checked_add(dir_entry::LEN) else {
+        return Ok(None);
+    };
+    let Some(name_end) = name_start.checked_add(name_len) else {
+        return Ok(None);
+    };
+    let Some(raw) = data.get(name_start..name_end) else {
+        return Ok(None);
+    };
+    if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
+        return Ok(None);
+    }
+    let payload = name_end;
+    let Some(next) = payload.checked_add(file_payload::LEN) else {
+        return Ok(None);
+    };
+    if data.get(payload..next).is_none() {
+        return Ok(None);
+    }
+
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let name = value.to_owned();
+    let file_len = cadmpeg_core::decode::u64_from_index(data.len());
+    // A cut entry keeps its declared span when that span starts inside the
+    // image, even when it runs past it. Reads bound themselves to the
+    // available bytes; the tail give-up retains them.
+    let body = match (
+        View::u64_le_at(data, payload),
+        View::u64_le_at(data, payload + file_payload::SIZE),
+    ) {
+        (Some(off), Some(size)) => {
+            if size > 0 && off >= 8 && off < file_len {
+                DirEntryBody::File {
+                    offset: off,
+                    len: size,
+                }
+            } else {
+                DirEntryBody::Directory
             }
         }
         _ => DirEntryBody::Directory,

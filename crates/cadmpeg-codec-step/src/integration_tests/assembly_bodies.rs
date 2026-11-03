@@ -534,6 +534,12 @@ fn omitted_solid_geometry_does_not_create_an_empty_advanced_representation() {
             crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
         assert_solid_representation_membership(&exchange, 0);
         assert!(entities(&exchange, "ADVANCED_BREP_SHAPE_REPRESENTATION").is_empty());
-        assert_eq!(entities(&exchange, "SHAPE_REPRESENTATION").len(), 1);
+        // No body commits, so no binding is written: an empty shape
+        // representation would make the re-decode report a product with a
+        // shape representation and no committed topology body (#233 §5.4).
+        // The product definition shape is kept for PMI and layer resolution.
+        assert!(entities(&exchange, "SHAPE_REPRESENTATION").is_empty());
+        assert!(entities(&exchange, "SHAPE_DEFINITION_REPRESENTATION").is_empty());
+        assert_eq!(entities(&exchange, "PRODUCT_DEFINITION_SHAPE").len(), 1);
     }
 }

@@ -505,7 +505,7 @@ fn decode_exchange_mode(
     // cannot build. The ledger below names each given-up part's drops,
     // resurrects stranded vertices, and emits dead-style appearances.
     let mut damage_ledger = drops::DropLedger::new();
-    resolve_damage_drops(
+    let dropped_points = resolve_damage_drops(
         exchange,
         &mut session.ir,
         &mut session.typed_records,
@@ -606,6 +606,26 @@ fn decode_exchange_mode(
         for &id in &stranded {
             let record = &exchange.records()[&id];
             damage_ledger.add(id, opaque_record_id(id, record)?.to_string(), None);
+        }
+        // A truncated decode strands carriers the uncut decode consumes, and
+        // drops the standalone points it strands them from. Their retained
+        // source names go with them: the uncut decode holds no such rows.
+        // A merely damaged decode keeps its names: every disappeared record
+        // there must stay named on its part loss.
+        if exchange.truncated_envelope() {
+            let mut purged = stranded.clone();
+            purged.extend(dropped_points.iter().copied());
+            if !purged.is_empty() {
+                let prefixes = purged
+                    .iter()
+                    .map(|id| format!("step:data:geometry-name#{id}-"))
+                    .collect::<Vec<_>>();
+                session.ir.model.attributes.retain(|attribute| {
+                    !prefixes
+                        .iter()
+                        .any(|prefix| attribute.id.as_str().starts_with(prefix.as_str()))
+                });
+            }
         }
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
@@ -817,20 +837,33 @@ fn insert_retained_identity(identities: &mut BTreeSet<String>, identity: &str) {
 /// Resolve the rule 2 and 3 drops of one damaged decode: emit the
 /// appearances of dead styles, build the vertices the damage stranded,
 /// and ledger every stranded record the decode drops.
+///
+/// A truncated envelope additionally drops every record whose value derives
+/// from statements the cut may have removed: uncorroborated occurrences,
+/// detached meshes, incomplete dimensions and stranded points. Their ids
+/// join the part loss ledger. Returns the dropped point source instances so
+/// their retained names go with them.
 fn resolve_damage_drops(
     exchange: &Exchange,
     ir: &mut CadIr,
     typed_records: &mut ClaimSets,
     ledger: &mut drops::DropLedger,
     ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if exchange.dead_instances().is_empty() {
-        return Ok(());
+) -> Result<BTreeSet<u64>, CodecError> {
+    let truncated = exchange.truncated_envelope();
+    let damaged = !exchange.dead_instances().is_empty() || truncated;
+    if !damaged {
+        return Ok(BTreeSet::new());
     }
-    presentation::emit_dead_style_appearances(exchange, ir, ctx)?;
-    emit_stranded_vertices(exchange, ir, typed_records)?;
-    drops::ledger_stranded_drops(exchange, ir, ledger, ctx)?;
-    Ok(())
+    if !exchange.dead_instances().is_empty() {
+        presentation::emit_dead_style_appearances(exchange, ir, ctx)?;
+        emit_stranded_vertices(exchange, ir, typed_records)?;
+        drops::ledger_stranded_drops(exchange, ir, ledger, ctx)?;
+    }
+    drops::drop_uncorroborated_occurrences(exchange, ir, ledger);
+    drops::drop_detached_meshes(damaged, ir, ledger);
+    drops::drop_incomplete_dimensions(truncated, ir, ledger);
+    drops::drop_stranded_points(exchange, truncated, ir, ledger, ctx)
 }
 
 /// Build the vertices the damage stranded: live vertex points whose
