@@ -514,16 +514,6 @@
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but the complete allocation graph or its required geometry is unavailable and body/shell ownership remains unresolved; no neutral topology was transferred.",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#1 has no independently constructible neutral record.",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -570,15 +560,6 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDKIoAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUIAQAAgD8AAABAAABAQA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
         "untyped": []
       }
     },

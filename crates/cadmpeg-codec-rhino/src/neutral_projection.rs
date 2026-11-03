@@ -186,6 +186,7 @@ pub(crate) fn project(
             continue;
         };
         let targets = items(ir, source_order, &object.identity.object_id.to_string());
+        let native_ref = crate::container::mint_unknown_id(source_order).to_string();
         let candidates = layers
             .iter()
             .enumerate()
@@ -248,7 +249,7 @@ pub(crate) fn project(
                             line_width: None,
                             point_size: None,
                             properties: BTreeMap::new(),
-                            native_ref: None,
+                            native_ref: Some(native_ref.clone()),
                         });
                 }
                 if matches!(
@@ -276,7 +277,7 @@ pub(crate) fn project(
                             ir.model
                                 .appearances
                                 .push(cadmpeg_ir::appearance::Appearance {
-                                    native_ref: None,
+                                    native_ref: Some(native_ref.clone()),
                                     id: appearance.clone(),
                                     name: None,
                                     asset_guid: None,
@@ -338,10 +339,80 @@ pub(crate) fn project(
                         &cadmpeg_ir::identity_namespace!("rhino", "model", "object-name"),
                         key,
                     ),
-                    None,
+                    Some(native_ref.clone()),
                     target,
                     "name".to_owned(),
                     vec![AttributeValue::String(object.identity.name.clone())],
+                )?);
+            }
+        }
+        // Object user strings project to neutral attributes targeted at the
+        // records built from the object (#223 item 5).
+        let stub = format!("rhino:object:record#{source_order:06}");
+        let mut strings: Vec<(String, String)> = Vec::new();
+        if let Some(records) = ir
+            .native
+            .namespace("rhino")
+            .and_then(|namespace| namespace.arenas().get("object_presentation"))
+        {
+            for record in records {
+                let linked = matches!(&record.field("links"), Some(serde_json::Value::Array(links)) if links
+                    .iter()
+                    .any(|link| link.as_str() == Some(stub.as_str())));
+                if !linked {
+                    continue;
+                }
+                for arena_key in ["user_strings", "attribute_user_strings"] {
+                    if let Some(serde_json::Value::Array(items)) = record.field(arena_key) {
+                        for item in &items {
+                            if let (Some(key), Some(value)) = (
+                                item.get("key").and_then(|key| key.as_str()),
+                                item.get("value").and_then(|value| value.as_str()),
+                            ) {
+                                strings.push((key.to_owned(), value.to_owned()));
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        let record_targets: Vec<(String, String)> = targets
+            .iter()
+            .filter_map(|target| match target {
+                PresentationItem::Point { point } => Some(("points".to_owned(), point.to_string())),
+                PresentationItem::Curve { curve } => Some(("curves".to_owned(), curve.to_string())),
+                PresentationItem::Surface { surface } => {
+                    Some(("surfaces".to_owned(), surface.to_string()))
+                }
+                PresentationItem::Tessellation { tessellation } => {
+                    Some(("tessellations".to_owned(), tessellation.clone()))
+                }
+                PresentationItem::Body { body } => Some(("bodies".to_owned(), body.to_string())),
+                _ => None,
+            })
+            .collect();
+        for (target_order, (arena, id)) in record_targets.iter().enumerate() {
+            for (string_index, (key, value)) in strings.iter().enumerate() {
+                ctx.charge_entities(1, "rhino_object_user_strings")?;
+                let attribute_key =
+                    IdentityKey::try_new(format!("{source_order}-{target_order}-{string_index}"))
+                        .map_err(CodecError::malformed)?;
+                ir.model.attributes.push(SourceAttribute::new(
+                    ctx,
+                    AttributeId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "model", "user-string"),
+                        attribute_key,
+                    ),
+                    Some(native_ref.clone()),
+                    AttributeTarget::Record {
+                        arena: cadmpeg_ir::document::ArenaName::parse(arena).ok_or_else(|| {
+                            CodecError::malformed(format_args!("unknown attribute arena {arena}"))
+                        })?,
+                        id: id.clone(),
+                    },
+                    key.clone(),
+                    vec![AttributeValue::String(value.clone())],
                 )?);
             }
         }

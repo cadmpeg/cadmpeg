@@ -68,9 +68,14 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
             )
             .unwrap();
         assert_eq!(result.ir().model.curves.len(), 1, "{claim}, {normal}");
-        assert!(result.ir().native.namespace("iges").unwrap().arenas()
-            ["quarantined_parameter_records"]
-            .is_empty());
+        assert!(result
+            .ir()
+            .native
+            .namespace("iges")
+            .unwrap()
+            .arenas()
+            .get("quarantined_parameter_records")
+            .is_none());
     }
 }
 

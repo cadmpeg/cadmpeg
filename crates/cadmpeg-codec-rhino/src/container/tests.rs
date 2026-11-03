@@ -406,19 +406,29 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
 }
 
 #[test]
-fn an_undeclared_word_over_broken_framing_fails_structurally() {
-    // The attempt is self-limiting: an undeclared word buys the chunked scan,
-    // not a recovery of bytes the scan cannot frame.
-    let error = RhinoCodec
+fn header_only_other_archive_decodes_empty_with_given_up_tables() {
+    // The 32-byte start section is located, so the decode succeeds with no
+    // tables: the settings and object tables are given up as their parts
+    // (#223 item 14). The undeclared word buys the chunked scan, not a
+    // refusal.
+    let result = RhinoCodec
         .decode(&mut Cursor::new(header("100")), &DecodeOptions::default())
-        .expect_err("a header with no chunk sequence cannot be framed");
-    assert!(
-        !matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
-        ),
-        "the residual row is attempted, so its failure is structural: {error}"
-    );
+        .expect("a located start section decodes");
+    assert_eq!(result.ir().scope, cadmpeg_ir::ContentScope::container());
+    for missing in [
+        "settings table is required but absent",
+        "object table is required but absent",
+    ] {
+        assert!(
+            result.report().losses.iter().any(|loss| loss
+                .code
+                .to_string()
+                .contains("record.unreadable")
+                && loss.message.contains(missing)),
+            "{missing}: {:?}",
+            result.report().losses
+        );
+    }
 }
 
 #[test]
@@ -482,27 +492,45 @@ fn short_introductory_comment_keeps_framed_tables() {
 }
 
 #[test]
-fn missing_end_of_file_and_wrong_table_order_remain_fatal() {
+fn truncated_walk_decodes_its_prefix_and_out_of_order_table_is_given_up() {
     let archive = ArchiveVersion::V5;
     let mut missing = header("50");
     missing.extend(long_chunk(archive, 1, b"comment"));
     missing.extend(long_chunk(archive, 0x1000_0014, &[]));
-    assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
+    let result = RhinoCodec
+        .decode(&mut Cursor::new(missing), &DecodeOptions::default())
+        .expect("a walk that ends without end-of-file decodes its prefix");
+    assert!(result.report().losses.iter().any(|loss| loss
+        .code
+        .to_string()
+        .contains("record.unreadable")
+        && loss
+            .message
+            .contains("settings table is required but absent")));
+    assert!(result.report().losses.iter().any(|loss| loss
+        .code
+        .to_string()
+        .contains("record.unreadable")
+        && loss.message.contains("object table is required but absent")));
 
     let bytes = minimal_document(
         "50",
         &[
-            table(archive, 0x1000_0015, &[]),
             table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0024, &[]),
+            table(archive, 0x1000_0011, &[]),
+            table(archive, 0x1000_0013, &[]),
         ],
     );
-    assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
+    let result = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("an out-of-order table is given up, not refused");
+    assert!(result.report().losses.iter().any(|loss| loss
+        .code
+        .to_string()
+        .contains("record.unreadable")
+        && loss.message.contains("out of order")));
 }
 
 #[test]
@@ -518,24 +546,45 @@ pub(crate) fn structural_framing_errors_keep_diagnostics() {
 }
 
 #[test]
-fn requires_settings_and_object_tables() {
+fn missing_required_tables_are_given_up_as_their_part() {
     let archive = ArchiveVersion::V5;
-    for tables in [
-        vec![
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0013, &[]),
-        ],
-        vec![
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0015, &[]),
-        ],
+    for (tables, missing) in [
+        (
+            vec![
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0013, &[]),
+            ],
+            "settings table is required but absent",
+        ),
+        (
+            vec![
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+            ],
+            "object table is required but absent",
+        ),
     ] {
         let bytes = minimal_document("50", &tables);
-        assert!(matches!(
-            RhinoCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
-            Err(CodecError::Malformed(message))
-                if message.contains("settings and object tables")
-        ));
+        let result = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("a missing required table is given up, not refused");
+        let unreadable: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string().contains("record.unreadable"))
+            .collect();
+        assert_eq!(unreadable.len(), 1, "{missing}");
+        assert!(
+            unreadable[0].message.contains(missing),
+            "{missing}: {}",
+            unreadable[0].message
+        );
+        assert_eq!(
+            result.source_fidelity().retained_records().len(),
+            1,
+            "{missing}: the absent table keeps its one home"
+        );
     }
 }
 
@@ -1021,10 +1070,14 @@ fn obsolete_layerset_occupies_the_layer_group_compatibility_slot() {
             table(archive, 0x1000_0013, &[]),
         ],
     );
-    assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(invalid), &InspectOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
+    let result = RhinoCodec
+        .decode(&mut Cursor::new(invalid), &DecodeOptions::default())
+        .expect("an out-of-order compatibility table is given up, not refused");
+    assert!(result.report().losses.iter().any(|loss| loss
+        .code
+        .to_string()
+        .contains("record.unreadable")
+        && loss.message.contains("out of order")));
 }
 
 #[test]

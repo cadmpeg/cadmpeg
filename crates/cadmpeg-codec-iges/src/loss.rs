@@ -83,10 +83,6 @@ loss_codes! {
     ParameterCountOverdeclared => "parameter.count-overdeclared",
     /// A Type 422 attribute table states a count no row grid can be read from.
     AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
-    /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
-    DirectoryRecordQuarantined => "directory.record-quarantined",
-    /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
-    ParameterDataQuarantined => "parameter.data-quarantined",
     /// Card framing came from the card census because the file's own declaration did not.
     CardFramingRecovered => "card.framing-recovered",
     /// Directory display, font, or color data was not projected.
@@ -200,8 +196,6 @@ impl IgesLossCode {
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
@@ -279,8 +273,6 @@ impl IgesLossCode {
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
@@ -326,106 +318,8 @@ impl IgesLossCode {
     }
 }
 
-/// Classes with source records represented only by bytes, rather than typed records.
-///
-/// Codes absent from this table describe retained typed content, metadata, or export
-/// loss. Native retention below is checked separately from neutral projection.
-#[cfg(test)]
-const UNREPRESENTED: &[(IgesLossCode, cadmpeg_ir::ArenaClass)] = &[
-    (
-        IgesLossCode::AttributeTableCountUnstatable,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::DirectoryRecordQuarantined,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::DisplayDataNotProjected,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::EntityNotProjected,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::EntityOutsideEnvelope,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::EntityRetainedUnprojected,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::GeometryNotProjected,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::LineWeightScaleUnavailable,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::NurbsTransformNonFinite,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::OccurrenceExpansionDepthTruncated,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::OccurrenceExpansionOutputTruncated,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::OccurrencePlacementMalformed,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::ParameterDataQuarantined,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        IgesLossCode::PointerUnresolved,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-];
-
-/// Classify this codec's own loss vocabulary after native records have been stored.
-#[cfg(test)]
-pub(crate) fn unrepresented(
-    losses: &[LossNote],
-    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
-) -> cadmpeg_ir::ArenaClasses {
-    let mut classes = cadmpeg_ir::ArenaClasses::default();
-    for (code, class) in UNREPRESENTED {
-        if losses.iter().any(|loss| loss.code == code.kind()) {
-            classes.insert(*class);
-        }
-    }
-    classes
-}
-
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
-        let losses = [
-            super::IgesLossCode::SplineClaimRecovered.note("typed record retained"),
-            super::IgesLossCode::SourceDialectUnverified.note("decode diagnostic"),
-        ];
-        assert!(super::unrepresented(&losses, None).is_empty());
-    }
-
-    #[test]
-    fn source_only_losses_declare_their_classes() {
-        for (code, class) in super::UNREPRESENTED {
-            let losses = [code.note("source record is not typed")];
-            let classes = super::unrepresented(&losses, None);
-            assert!(classes.contains(class), "{code:?} must declare {class:?}");
-        }
-        assert!(super::unrepresented(&[], None).is_empty());
-    }
-
     use super::IgesLossCode;
     use std::collections::BTreeSet;
 
@@ -455,8 +349,6 @@ mod tests {
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
                 "parameter.attribute-table-count-unstatable",
-                "directory.record-quarantined",
-                "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",

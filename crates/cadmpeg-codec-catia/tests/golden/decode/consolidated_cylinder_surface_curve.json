@@ -1118,36 +1118,6 @@
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated pcurve catia:consolidated:pcurve#0 has no neutral pcurve in this projection.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated pcurve catia:consolidated:pcurve#1 has no neutral pcurve in this projection.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Consolidated edge run catia:consolidated:edge-run#0 has no neutral edge in this projection.",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -1316,15 +1286,6 @@
         },
         "offset": 0,
         "stream": "catia:MainDataStream+SurfacicReps",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAARgAAAAALIDKFoFAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhAGQAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAYLURU+yEpQAAAAAAAABDAAAAAAAAAFEAHBQgBAACAPwAAgEAAAEBABQgBAAAAQKBUcEDRXX1ApQMgiwAAAAUINBIVCQgJAAAAAAAAAAAAAAAAAADwPwkCAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8HpQMgiwAAAAUINBIVCQgJAAAAAAAAAAAAAAAAAADwPwkCAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8HsgMjTgAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/je21oPfGsD4AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/je21oPfGsD6yAwYEBYIRFYiyAwYEBYIVGYSyA14IBRkGiwaOCQUhVjVfQ0ZWMgAAAAFUAAAA5wFBAf8DAAAAAAAAAQACAUkB/wMAAAAAAAAAAAAAAAAAgD8AAAABAAIwBAT/0tLS0jAEBP/S0tLSAQEAECQE//8AAAABAgAQJAT//wAAAAEGAwUIAQAAAAAAAAAAAAAAAAUIAQAAIEEAAAAAAAAAAAUIAQAAAAAAACBBAAAAAKq7zAAaADMzAAAAAAAAAAAAAAAAAAAAAAAAAABAoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAERIjMAAgAzMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//xEiMwACADMyAACAPwAAAEAAAEBAAAAAAAAAgEAAAAAAAACAPwAAAEAAAEBAAACAQGBEVWYAEgAzNwAAAAAAAAAAAAAAAECgAAAAAUNBVElBX1Y1IENCMDAwMQAAAAAAAAAAAAAAAAAAAAB+TQBhAGkAbgBEAGEAdABhAFMAdAByAGUAYQBtAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAQAAAAfgAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMZTAHUAcgBmAGEAYwBpAGMAUgBlAHAAcwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAI4AAADGAAAAxgAAAAAAAAAAQ0JfX0VORA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
         "untyped": []
       }
     },

@@ -1039,7 +1039,7 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
 }
 
 #[test]
-fn impossible_outer_object_bound_is_blocking() {
+fn impossible_outer_object_bound_gives_up_its_table() {
     let object = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let mut bytes = archive(&[object]);
     let typecode = (0x2000_8070_u32 | 0x0000_8000).to_le_bytes();
@@ -1049,7 +1049,13 @@ fn impossible_outer_object_bound_is_blocking() {
         .expect("object record");
     bytes[record + long_wide::DECLARED_LENGTH..record + long_wide::LEN]
         .copy_from_slice(&i64::MAX.to_le_bytes());
-    RhinoCodec
+    let result = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect_err("impossible outer object bound must block archive decode");
+        .expect("a part whose end cannot be found is given up, not refused");
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss
+        .code
+        .to_string()
+        .contains("record.unreadable")
+        && loss.message.contains("rhino.table_chunk")));
 }

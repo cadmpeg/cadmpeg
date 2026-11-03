@@ -197,6 +197,78 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
 }
 
 #[test]
+fn unreadable_carrier_location_delivers_model_out_of_scope() {
+    crate::kernel::inject_failure(|| {
+        cadmpeg_core::CodecError::malformed("injected carrier location failure")
+    });
+    let source = primary_envelope_fixture_with_kernel(
+        EnvelopeDeclarations::default(),
+        &acis_sphere_kernel_stream(21_800),
+    );
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(&source),
+            &DecodeOptions::default(),
+        )
+        .expect("unreadable carrier location still decodes");
+    assert!(
+        !decoded.ir().scope.model,
+        "no model part could be located: {:#?}",
+        decoded.ir().scope
+    );
+    assert!(decoded.ir().scope.design);
+    assert_eq!(decoded.report().scope(), decoded.ir().scope);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+    assert!(
+        !decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "decode/record.unreadable"),
+        "a class-level failure gives up no part"
+    );
+}
+
+#[test]
+fn failed_carrier_part_keeps_model_in_scope() {
+    let mut kernel = acis_sphere_kernel_stream(21_800);
+    // Corrupt the SAB record stream past the carrier header the selection
+    // parses: the carrier stays located but does not decode.
+    let start = 96;
+    let end = (start + 100).min(kernel.len());
+    for byte in &mut kernel[start..end] {
+        *byte ^= 0xFF;
+    }
+    let source = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), &kernel);
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(&source),
+            &DecodeOptions::default(),
+        )
+        .expect("failed carrier part still decodes");
+    assert!(
+        decoded.ir().scope.model,
+        "the located carrier part failed, so the class stays: {:#?}",
+        decoded.ir().scope
+    );
+    assert_eq!(decoded.report().scope(), decoded.ir().scope);
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "decode/record.unreadable"
+                && loss.message.contains("inventor.kernel_bytes")),
+        "{:#?}",
+        decoded.report().losses
+    );
+}
+
+#[test]
 fn design_records_project_only_at_full_depth() {
     let source = primary_envelope_fixture_with_design(
         &acis_sphere_kernel_stream(21_800),
