@@ -45,7 +45,7 @@ fn assert_source_settings_populated(ir: &CadIr) {
             .namespace("rhino")
             .and_then(|namespace| namespace.arenas().get("document_settings"))
             .is_some_and(|records| !records.is_empty()),
-        "the test must exercise held native settings that the writer cannot reemit"
+        "the test must exercise held native settings that the writer re-emits from document state"
     );
 }
 

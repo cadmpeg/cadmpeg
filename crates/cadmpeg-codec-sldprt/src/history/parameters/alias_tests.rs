@@ -579,10 +579,7 @@ fn equation_id_binds_bare_and_qualified_spellings_in_owner_scope() {
     ]);
     sketch.dimension_properties.insert(
         "Width".into(),
-        BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("EquationId"),
-            "D1".into(),
-        )]),
+        BTreeMap::from([(cadmpeg_core::nonblank_literal!("EquationId"), "D1".into())]),
     );
     let parameters = project_parameters(
         &cadmpeg_test_support::service_decode_context(),

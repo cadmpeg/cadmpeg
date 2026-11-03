@@ -255,7 +255,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
 }
 
 #[test]
-fn inconsistent_explicit_pcurve_is_rejected_before_output() {
+fn inconsistent_explicit_pcurve_omits_its_face_with_a_named_loss() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -285,18 +285,27 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         isoparametric: None,
         parameter_range: None,
     }];
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let mut output = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error
-        .to_string()
-        .contains("disagrees with its directed planar C3 projection"));
-    assert_eq!(output, [0xaa]);
+        .expect("an inconsistent trim omits its face");
+    assert!(!output.is_empty(), "the remaining document is written");
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.entity-omitted"
+        })
+        .expect("the omission names its record");
+    assert!(
+        loss.message
+            .contains("disagrees with its directed planar C3 projection"),
+        "{loss:?}"
+    );
 }
 
 #[test]
@@ -685,7 +694,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
 }
 
 #[test]
-fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
+fn nurbs_trim_that_misses_its_edge_omits_its_face_with_a_named_loss() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.5, 0.5, 0.0),
         Point3::new(3.5, 0.5, 0.0),
@@ -704,16 +713,26 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
     )
     .unwrap();
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let mut output = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("misses directed edge curve"));
-    assert_eq!(output, [0xaa]);
+        .expect("a missing trim omits its face");
+    assert!(!output.is_empty(), "the remaining document is written");
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.entity-omitted"
+        })
+        .expect("the omission names its record");
+    assert!(
+        loss.message.contains("misses directed edge curve"),
+        "{loss:?}"
+    );
 }
 
 #[test]
@@ -802,14 +821,8 @@ fn admitted_degree_zero_nurbs_are_writer_limits() {
         .expect_err("Rhino requires positive NURBS degree");
     let surface_error = super::super::check_nurbs_surface("surface-1", &surface)
         .expect_err("Rhino requires positive NURBS degree");
-    assert!(matches!(
-        curve_error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
-    assert!(matches!(
-        surface_error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
+    assert!(matches!(curve_error, crate::writer::WriteError::Omit(_)));
+    assert!(matches!(surface_error, crate::writer::WriteError::Omit(_)));
 }
 
 #[test]

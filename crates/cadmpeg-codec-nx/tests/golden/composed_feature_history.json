@@ -4216,7 +4216,7 @@
       },
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -4277,17 +4277,6 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -4301,7 +4290,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": true,
-          "model": false
+          "model": true
         }
       }
     },
@@ -4895,7 +4884,10 @@
           },
           "offset": 1548,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -4950,18 +4942,6 @@
           "offset": 1854,
           "stream": "nx:container",
           "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAAUCAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADIBwAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAVST03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv//wH///8DCFNLRVRDSAABAAEC8AEAAPACAQAAAIDNAQQBL6R64UeuFHv//wb///8DCFNLRVRDSAABAAEC8AYAAPAEAQAAAIDNAQQBL6R64UeuFHv//wP///8DDERBVFVNX0NTWVMAEwAAAQAAAQEAAQAAAADwA/AD8APwA/AD8APwA/ADAQEAAQAAAACAzQEEAS+keuFHrhR7//8D////Aw1EQVRVTV9QTEFORQAiAAABAAECIwECBQHwAwAUAgABAAAAAP//AIDNAQQBL6R64UeuFHv//wP///8DB1BPSU5UAHIAAAEAAADxHI8A////////////AAAAAAAAAAAAAAAADQECAQAAAIkCAQEBAKVXlQEAAP8CwB///QEAAAEBAQMCAQEBAAAAAACqgM0BBAEvpHrhR64Ue///A////wMHRFJBRlQAZwAAAQAvpHrhR64UewP//////////wEDgJSCSQEC8Rt8AQLxG31oL3BiTdLxqfwDUEQAAAFGiioBo2AQAQEBBAIBAgEAAAAAAfEbfv8AAADxG3//gV6AuAEDAgECAQEBAAAAKSkMAIDNAQQBL6R64UeuFHv//wP///8DBlNLSU4APwAAAQDxAkbxAkfxAkgBCQMDBAUCAQEBAQnxAknxAkrxAkvxAkzxAk3xAk7xAk/xAlAAAwMvpHrhR64Ue/ECVvECV/ECWAEB////////////AAAAAAECgM0BBAEvpHrhR64Ue///A////wMTR2VvbWV0cnkgSW5zdGFuY2UAREUA///xAyEBAgD///////////8AAAABAoDNAQQBL6R64UeuFHv//wP///8DEVBhdHRlcm4gRmVhdHVyZQCqAQNgAQAAUFQAAAABAAAAAAEAAAAAAQEDAgEBAAD/AABgAQAA0FQAAAABAAAAAAEAAAAAAQEDn/4BAgAA/wAAXwAAAYDNAQQBL6R64UeuFHv//wP///8DCUVYVFJVREUAAQIWAQPw//EBAAEDeaoBA/D/8QEAAACAzQEEAS+keuFHrhR7//8D////AwlFWFRSVURFAA8AAAEAL6R64UeuFHsvo3S8an7524DNAQQBL6R64UeuFHv//wP///8DCUVYVFJVREUAAQECgV+AqwEDAgEBAgEBAAAAKSkFgP8AgM0BBAEvpHrhR64Ue///A////wMHQkxPQ0sAJgAAAQAA8AHwAvAD8ATwBfAG8AfwCPAJ8ArwC/AM8A3wDvAP8BDwEfASAfEBAP//////////////AAAAAIDNAQQBL6R64UeuFHv//wP///8DB0NQUk9KAAQAAAEAAAAvBPi1iONo8QAAAAECgFf/AQIFAAABAAAAAAAAAAD/AAABAf//AQEBAAABAvECyPECyYBXAAIB8QLK/wECAn2AzQEEAS+keuFHrhR7//8D////Aw1TSU1QTEUgSE9MRQAwf8AAAAAAADBDDMzMzMzN8APwBDB/wAAAAAAAMEMMzMzMzM3wA/AEBDlIb2xlX0dlbmVyYWxIb2xlX1NpbXBsZV9UaHJvdWdoX1N0YXJ0Q2hhbWZlcl9FbmRDaGFtZmVyAKqqqqqqqqqqEVVHUzo6TW9kbEZlYXR1cmWBwAUAANAFAADmBQAA8wUAAMkGAADKBgAA8gYAAMgHAAAGAAAABAEOTlggMjAyNy4zMTAyAAMIUG9pbnQ3AFBZZlgAMEyTMzMzMwdQWWZZADFMkzMzMzMHAwhQb2ludDEAUFlmWAAwTJMzMzMzB1BZZlkAMUyTMzMzMwdmMgMIUG9pbnQyAATgSA4CA4CEMEAAAAAAAAAAMMAAAAAAAABmMgMIUG9pbnQzAAgCAwEDAcBFBACAhgIAAzBAAAAAAAAAADDAAAAAAAAACwIDAQMBwEUEAICGAgADMEAAAAAAAAAAMMAAAAAAAABtAPAIAgMBAwHARQQAgIYCAAMwQAAAAAAAAAAwwAAAAAAAAAAwMTIzNDU2Nzg5YWJjZGUwMTIzNDU2Nzg5YWJjZGUwAAAwMTIzNDU2Nzg5YWJjZGUwMTIzNDU2Nzg5YWJjZGUwP0ED/wIBRFBkAwhQb2ludDEAUFlmWAAwTJMzMzMzB1BZZlkAMUyTMzMzMwdmMgMIUG9pbnQyAATgSA4CA4CEMAAAAAAAAAAAMAgAAAAAAABmMgMIUG9pbnQzAAgCAwEDAcBFBACAhgIAAzBAAAAAAAAAADDAAAAAAAAACwIDAQMBwEUEAICGAgADMAAAAAAAAAAAMAgAAAAAAABtAPAIAgMBAwHARQQAgIYCAAMwQAAAAAAAAAAwwAAAAAAAAAAwMTIzNDU2Nzg5YWJjZGUwMTIzNDU2Nzg5YWJjZGUwAEZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": [
-            "model",
-            "design"
-          ]
         }
       },
       "unrepresented": [

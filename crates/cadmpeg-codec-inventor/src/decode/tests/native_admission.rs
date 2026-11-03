@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::decode::{LimitScope, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult, Decoded};
 
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
@@ -11,7 +11,7 @@ use crate::decode::{
     admit_kernel_annotation, decode_container, form_preview_asset, project_protein_records,
     project_protein_state, project_root_product, project_ufrx_embedded_reference,
     project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
-    project_ufrx_representation, project_ufrx_state, structural_issue,
+    project_ufrx_representation, project_ufrx_state,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -21,11 +21,10 @@ use crate::external_reference::{
     UfrxModelStateParameter, UfrxOccurrence, UfrxRepresentationState, UfrxState,
 };
 use crate::kernel::ActiveCarrierState;
-use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, StructuralIssueRecord,
+    AssemblyPlacementRecordWire,
 };
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
@@ -59,10 +58,10 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     let SegmentBulkState::Framed(bulk) = &mut container.rse.segments[0].bulk else {
         panic!("fixture bulk must be framed");
     };
-    bulk.records = RecordFrameState::Unavailable("frame issue".into());
+    bulk.records = RecordFrameState::Withheld;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    rse_native_projection::project(&ctx, &container).expect("unframed records project");
+    rse_native_projection::project(&ctx, &container).expect("withheld records project");
 
     let token = container.rse.segments[0].pair.token.clone();
     container.rse.segments[0]
@@ -335,9 +334,13 @@ fn absent_ufrx_state_names_the_root() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(matches!(
-        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
-        UfrxRecord::Absent { id } if id == "inventor:ufrx:state#root"
+        project_ufrx_state(&ctx, &mut output, &UfrxState::Absent).expect("admitted state"),
+        Some(UfrxRecord::Absent { id }) if id == "inventor:ufrx:state#root"
     ));
 }
 
@@ -362,26 +365,21 @@ fn ufrx_model_state_with_a_parameter_is_admitted() {
             trailer: 0,
         }],
         suffix: source,
+        source,
     };
-    let mut issues = Vec::new();
-    assert!(project_ufrx_model_state(&setup_ctx, 0, &state, &mut issues)
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &setup_ctx,
+    );
+    assert!(project_ufrx_model_state(&setup_ctx, &mut output, 0, &state)
         .expect("admitted model state")
         .is_some());
-    assert!(issues.is_empty());
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
-fn structural_issue_keeps_scope_and_detail() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let issue = structural_issue(&ctx, "scope", "bad").expect("admitted issue");
-    assert_eq!(issue.scope, "scope");
-    assert_eq!(issue.detail, "bad");
-}
-
-#[test]
-fn ufrx_model_state_conversion_failure_becomes_an_issue() {
+fn ufrx_model_state_conversion_failure_gives_up_its_part() {
     let bytes = [0_u8; 76];
     let arena = DecodeArena::new();
     let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -393,15 +391,23 @@ fn ufrx_model_state_conversion_failure_becomes_an_issue() {
         prefix_count: 0,
         parameters: Vec::new(),
         suffix: source,
+        source,
     };
-    let mut issues = Vec::new();
-    assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
+    assert!(project_ufrx_model_state(&ctx, &mut output, 0, &state)
         .expect("project the UFRx model state")
         .is_none());
-    assert_eq!(issues.len(), 1);
+    let (_, _, _, losses) = output.into_parts();
+    crate::test_support::assert_single_part_give_up(&losses, "inventor.ufrx_record");
 }
 
-fn external_reference(path: &str) -> InventorExternalReference {
+fn external_reference<'a>(
+    path: &str,
+    source: cadmpeg_core::decode::View<'a>,
+) -> InventorExternalReference<'a> {
     InventorExternalReference {
         path: path.into(),
         library_id: 0,
@@ -415,36 +421,47 @@ fn external_reference(path: &str) -> InventorExternalReference {
         occurrence_count: 1,
         version: 0,
         flags: 0,
+        source,
     }
 }
 
 #[test]
 fn ufrx_external_reference_with_a_state_group_is_admitted() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+    let (ctx, source) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(project_ufrx_external_reference(
         &ctx,
+        &mut output,
         0,
-        &external_reference("part.ipt"),
-        &mut Vec::new()
+        &external_reference("part.ipt", source),
     )
     .expect("admitted reference")
     .is_some());
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
-fn ufrx_external_conversion_failure_becomes_an_issue() {
+fn ufrx_external_conversion_failure_gives_up_its_part() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+    let (ctx, source) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(
-        project_ufrx_external_reference(&ctx, 0, &external_reference(""), &mut issues)
+        project_ufrx_external_reference(&ctx, &mut output, 0, &external_reference("", source))
             .expect("project the UFRx external reference")
             .is_none()
     );
-    assert_eq!(issues.len(), 1);
+    let (_, _, _, losses) = output.into_parts();
+    crate::test_support::assert_single_part_give_up(&losses, "inventor.ufrx_record");
 }
 
 #[test]
@@ -467,11 +484,17 @@ fn ufrx_embedded_reference_is_admitted() {
         state_values: [0; 8],
         source,
     };
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(
-        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Vec::new())
+        project_ufrx_embedded_reference(&ctx, &mut output, 0, &reference)
             .expect("admitted embedded reference")
             .is_some()
     );
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -491,30 +514,41 @@ fn ufrx_occurrence_is_admitted() {
         component_name: None,
         source,
     };
-    assert!(
-        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Vec::new())
-            .expect("admitted occurrence")
-            .is_some()
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
     );
+    assert!(project_ufrx_occurrence(&ctx, &mut output, 0, &occurrence)
+        .expect("admitted occurrence")
+        .is_some());
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
 fn ufrx_representation_is_admitted() {
     let arena = DecodeArena::new();
+    let (ctx, source) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("build the decode context");
     let representation = UfrxRepresentationState {
         prefix: 0,
         design_views: None,
         secondary_active_lod_state: [0; 2],
         active_design_view: "Primary".into(),
         active_design_view_state: [0; 2],
+        source,
     };
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
     assert!(
-        project_ufrx_representation(&ctx, &representation, &mut Vec::new())
+        project_ufrx_representation(&ctx, &mut output, &representation)
             .expect("admitted representation")
             .is_some()
     );
+    let (_, _, _, losses) = output.into_parts();
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -560,12 +594,7 @@ fn empty_external_identity_does_not_fail_file_decode() {
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("invalid external identity must not fail file decode");
-    assert_ufrx_issue(decoded.ir(), "ufrx-external-reference-0", "document_id");
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+    assert_ufrx_give_up(&decoded);
     let namespace = decoded
         .ir()
         .native
@@ -581,7 +610,6 @@ fn empty_external_identity_does_not_fail_file_decode() {
 #[test]
 fn rejected_model_state_does_not_fail_decode() {
     let decoded = decode_ufrx(|document| document.model_states[0].name.clear());
-    assert_ufrx_issue(&decoded.ir, "ufrx-model-state-0", "name");
     let namespace = decoded
         .ir
         .native
@@ -603,7 +631,6 @@ fn rejected_representation_does_not_fail_decode() {
             .active_design_view
             .clear();
     });
-    assert_ufrx_issue(&decoded.ir, "ufrx-representation", "active_design_view");
     let namespace = decoded
         .ir
         .native
@@ -620,7 +647,6 @@ fn rejected_embedded_reference_does_not_fail_decode() {
     let decoded = decode_ufrx(|document| {
         document.embedded_references[0].source = document.unparsed_tail;
     });
-    assert_ufrx_issue(&decoded.ir, "ufrx-embedded-reference-0", "record_len");
     let namespace = decoded
         .ir
         .native
@@ -635,7 +661,6 @@ fn rejected_embedded_reference_does_not_fail_decode() {
 #[test]
 fn rejected_occurrence_does_not_fail_decode() {
     let decoded = decode_ufrx(|document| document.occurrences[0].header_padding_words = 9);
-    assert_ufrx_issue(&decoded.ir, "ufrx-occurrence-0", "header_padding_words");
     let namespace = decoded
         .ir
         .native
@@ -747,19 +772,36 @@ fn uppercase_placement_digest_becomes_an_issue() {
         .contains("suffix_sha256"));
 }
 
-fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
-    let namespace = ir.native.namespace("inventor").expect("native namespace");
-    let issues = namespace
-        .arena_as::<StructuralIssueRecord>("structural_issues")
-        .expect("structural issues");
-    let issue = issues
+fn assert_ufrx_give_up(decoded: &DecodeResult) {
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("native namespace");
+    let ufrx_issues = namespace
+        .arena_as::<serde_json::Value>("structural_issues")
+        .map(|issues| {
+            issues
+                .iter()
+                .filter(|issue| {
+                    issue
+                        .get("scope")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|scope| scope.starts_with("ufrx-"))
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    assert_eq!(
+        ufrx_issues, 0,
+        "no ufrx failure record survives a rejected record"
+    );
+    assert!(decoded
+        .report()
+        .losses
         .iter()
-        .find(|issue| issue.scope == scope)
-        .expect("rejected record has an issue");
-    assert!(issue.detail.contains(field), "{}", issue.detail);
-    assert!(super::validation_findings(ir)
-        .iter()
-        .any(|finding| finding.message.contains(scope) && finding.message.contains(field)));
+        .any(|loss| loss.code.to_string() == "decode/record.unreadable"
+            && loss.message.contains("inventor.ufrx_record")));
 }
 
 fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
@@ -785,6 +827,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             secondary_active_lod_state: [0; 2],
             active_design_view: "Primary".into(),
             active_design_view_state: [0; 2],
+            source,
         }),
         model_states: vec![UfrxModelState {
             prefix: 0,
@@ -793,6 +836,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             prefix_count: 0,
             parameters: vec![],
             suffix: source,
+            source,
         }],
         levels_of_detail: vec![],
         references: vec![InventorExternalReference {
@@ -808,6 +852,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             occurrence_count: 1,
             version: 0,
             flags: 0,
+            source,
         }],
         embedded_references: vec![InventorEmbeddedReference {
             value_0: 0,
@@ -844,7 +889,30 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         .body
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+        .any(|loss| loss.code.to_string() == "decode/record.unreadable"
+            && loss.message.contains("inventor.ufrx_record")));
+    let ufrx_issues = decoded
+        .ir
+        .native
+        .namespace("inventor")
+        .expect("native namespace")
+        .arena_as::<serde_json::Value>("structural_issues")
+        .map(|issues| {
+            issues
+                .iter()
+                .filter(|issue| {
+                    issue
+                        .get("scope")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|scope| scope.starts_with("ufrx-"))
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    assert_eq!(
+        ufrx_issues, 0,
+        "no ufrx failure record survives a rejected record"
+    );
     decoded
 }
 
@@ -942,20 +1010,24 @@ fn protein_admission_keeps_assets_and_gives_up_rejected_instances() {
 }
 
 #[test]
-fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
+fn malformed_optional_ufrx_gives_up_its_part_without_weakening_required_links() {
     let bytes = fixture_with_ufrx(b"unreadable optional table");
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("bounded optional table");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "decode/record.unreadable"
+            && loss.message.contains("inventor.ufrx_stream")));
     let ctx = crate::native::test_ctx();
     let findings = InventorCodec
         .validate_native(&ctx, decoded.ir(), None)
         .expect("validation");
-    let finding = findings
+    assert!(!findings
         .iter()
-        .find(|finding| finding.message.contains("UFRxDoc stream is malformed"))
-        .expect("table diagnostic");
-    assert_eq!(finding.severity, cadmpeg_ir::report::Severity::Warning);
+        .any(|finding| finding.message.contains("UFRxDoc stream is malformed")));
     let mut broken = decoded.ir().clone();
     broken
         .native
@@ -969,9 +1041,4 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         |finding| finding.severity == cadmpeg_ir::report::Severity::Error
             && finding.message.contains("missing arenas")
     ));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
 }

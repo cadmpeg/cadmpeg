@@ -46,6 +46,8 @@ pub(super) fn preserve_passthrough_sections(
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
+            || section.name() == "NeuPrtSld"
+            || section.name() == "NeuAsmSld"
             || Some(section.offset()) == driver_table
             || incomplete.contains(&section.offset())
             || scan
@@ -122,6 +124,13 @@ pub(super) fn preserve_passthrough_sections(
                 section_bytes,
                 section.offset(),
                 "familyinf_driver_table",
+                Exactness::Unknown,
+            )
+        } else if section.name() == "NeuPrtSld" || section.name() == "NeuAsmSld" {
+            (
+                section_bytes,
+                section.offset(),
+                "material_display_section",
                 Exactness::Unknown,
             )
         } else {
