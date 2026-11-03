@@ -202,7 +202,7 @@ fn unclassified_successful_view_identities_remain_valid() {
 }
 
 #[test]
-fn real_decode_and_inspect_error_fixtures_are_not_success_views() {
+fn real_decode_and_inspect_damaged_fixtures_are_valid_views() {
     let registry = registry_rows();
     let golden_root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../cadmpeg-codec-rhino/tests/golden");

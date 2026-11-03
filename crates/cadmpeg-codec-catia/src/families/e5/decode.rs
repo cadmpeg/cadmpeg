@@ -363,6 +363,7 @@ refusal,
             annotations,
             unknowns,
             admitted_model_entities: admission.admitted(),
+            sampled_parameter_maps: None,
         }))
     })()
     .transpose()

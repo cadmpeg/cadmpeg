@@ -64,8 +64,8 @@
       "appearances": "reported",
       "articulations": "omitted",
       "assembly_joints": "omitted",
-      "assets": "omitted",
-      "attributes": "dropped",
+      "assets": "reported",
+      "attributes": "reported",
       "bodies": "written",
       "coedges": "reported",
       "colliders": "omitted",
@@ -80,21 +80,21 @@
       "features": "dropped",
       "loops": "reported",
       "mass_properties": "omitted",
-      "occurrences": "omitted",
+      "occurrences": "reported",
       "parameters": "dropped",
       "pcurves": "reported",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
       "points": "written",
-      "presentation_documents": "omitted",
-      "presentation_layers": "omitted",
+      "presentation_documents": "reported",
+      "presentation_layers": "written",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
-      "product_definitions": "omitted",
+      "procedural_surfaces": "reported",
+      "product_definitions": "reported",
       "regions": "written",
       "rigid_bodies": "omitted",
-      "semantic_annotations": "omitted",
+      "semantic_annotations": "reported",
       "shells": "written",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
@@ -108,7 +108,7 @@
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "written",
-      "view_presentations": "omitted"
+      "view_presentations": "reported"
     },
     "coverage": "declared"
   },
@@ -139,26 +139,6 @@
     },
     {
       "code": {
-        "code": "writer.materials-omitted",
-        "kind": "appearance_reduced",
-        "namespace": "rhino",
-        "scope": "namespaced"
-      },
-      "message": "model arena appearances: 1 record(s) reduced or omitted",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "writer.materials-omitted",
-        "kind": "appearance_reduced",
-        "namespace": "rhino",
-        "scope": "namespaced"
-      },
-      "message": "model arena appearance_bindings: 1 record(s) reduced or omitted",
-      "severity": "warning"
-    },
-    {
-      "code": {
         "code": "target.source-dialect-displaced",
         "kind": "source_dialect_displaced",
         "namespace": "rhino",
@@ -166,26 +146,6 @@
         "strict_floor": "warning"
       },
       "message": "source dialect rhino:archive-80 was displaced by target dialect rhino:archive-50; the source dialect identity is not preserved",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "arena.omitted",
-        "kind": "metadata_not_transferred",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write does not represent model arena `view_presentations`: 1 record(s) omitted: rhino:model:object-view#0-0",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "arena.omitted",
-        "kind": "attributes_not_transferred",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write does not represent model arena `presentation_layers`: 1 record(s) omitted: rhino:model:layer#000000",
       "severity": "warning"
     },
     {
@@ -260,6 +220,9 @@
             "records": {
               "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003": "regenerated"
             }
+          },
+          "legacy_v1_records": {
+            "disposition": "dropped"
           },
           "lights": {
             "disposition": "dropped"

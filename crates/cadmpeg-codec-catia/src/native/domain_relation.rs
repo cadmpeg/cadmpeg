@@ -60,7 +60,13 @@ impl TryFrom<DomainRelationWire> for CatiaConsolidatedDomainRelation {
     }
 }
 
-pub(super) fn derive(
+impl CatiaConsolidatedDomainRelation {
+    pub(crate) fn definition(&self) -> &CatiaConsolidatedEdgeDefinition {
+        &self.definition
+    }
+}
+
+pub(crate) fn derive(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedDomainRelation>, CodecError> {

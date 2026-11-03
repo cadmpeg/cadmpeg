@@ -4,6 +4,7 @@
 mod act;
 mod appearances;
 mod design_edits;
+mod dispositions;
 mod face_keys;
 mod face_sidedness;
 mod sketch_edits;

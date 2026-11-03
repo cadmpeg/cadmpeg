@@ -475,19 +475,13 @@
     "losses": [
       {
         "code": {
-          "code": "record.unreadable",
-          "kind": "decode_diagnostic",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "error"
+          "code": "section.row-count-mismatch",
+          "kind": "feature_history_retained",
+          "namespace": "creo",
+          "scope": "namespaced"
         },
-        "message": "part creo.psb_section stream=None offset=79 length=42: section `VisibGeom` declares 5 surface row(s) but holds 0; dropped=[]",
-        "provenance": {
-          "byte_len": 42,
-          "format": "creo",
-          "offset": 79
-        },
-        "severity": "error"
+        "message": "section `VisibGeom` declares 5 surface row(s) but holds 0",
+        "severity": "warning"
       },
       {
         "code": {

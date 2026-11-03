@@ -510,6 +510,54 @@ fn run_expressions_lane(
     Ok(())
 }
 
+/// Give up every feature-history operation whose label frame is present but
+/// unreadable, so a damaged name cannot drop its feature silently (§4.5).
+/// Records the projection keeps from the kept fields stay; the missing
+/// feature is named by the give-up loss.
+fn give_up_corrupt_label_operations(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    scan: &Scan,
+) -> Result<(), CodecError> {
+    for (entry, section) in scan.container.om_sections()? {
+        if !section
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::FEATURE_RECORD")
+        {
+            continue;
+        }
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (start, end) in crate::om::corrupt_operation_label_spans(&section) {
+            let (Some(abs_start), Some(abs_end)) = (
+                entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(start)),
+                entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(end)),
+            ) else {
+                continue;
+            };
+            let (Ok(abs_start), Ok(abs_end)) =
+                (usize::try_from(abs_start), usize::try_from(abs_end))
+            else {
+                continue;
+            };
+            let Some(extent) = scan.container.data.view().child(abs_start, abs_end) else {
+                continue;
+            };
+            ctx.decode_part(
+                parts,
+                extent,
+                PartSpec::new("nx.feature_history_operation"),
+                |_| {
+                    Err::<(), CodecError>(CodecError::malformed(format_args!(
+                        "NX feature-history operation label frame at offset {abs_start} is present but unreadable"
+                    )))
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Run the feature-operation lane inside its part boundary.
 fn run_feature_operations_lane(
     ctx: &DecodeContext<'_>,
@@ -521,6 +569,7 @@ fn run_feature_operations_lane(
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    give_up_corrupt_label_operations(ctx, parts, scan)?;
     let Some(extent) = entry_extent(scan, EntryContent::PartPayload) else {
         #[cfg(test)]
         super::attach_failure::check(super::attach_failure::Point::FeatureOperations)?;

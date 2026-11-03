@@ -25,14 +25,24 @@ pub(crate) fn decoded(
     let mut ir = CadIr::decoded(source);
     ir.model = model;
     ir.native = native;
-    // A located document class remains held even when its part, or an
-    // enclosing archive, gave up.
-    let scope = if document_found {
-        ctx.depth().required_scope()
-    } else {
-        cadmpeg_ir::ContentScope::container()
-    };
-    ir.set_scope(scope).map_err(CodecError::malformed)?;
+    // #209 §1.1: a located document mixes both classes in one part, so its
+    // classes stay held when requested. With no located document part, no
+    // class is held. A populated neutral arena always holds its class.
+    let required = ctx.depth().required_scope();
+    let model = required.model
+        && (ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_some()
+            || document_found);
+    let design = required.design
+        && (ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
+            .is_some()
+            || document_found);
+    ir.set_scope(cadmpeg_ir::ContentScope { model, design })
+        .map_err(CodecError::malformed)?;
     losses.extend(summary.losses);
     if !archive_given_up {
         ctx.retain_bytes(

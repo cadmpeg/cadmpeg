@@ -13,6 +13,7 @@ mod ownership;
 mod previews;
 mod synthesis;
 pub(crate) mod target;
+mod write_error;
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
@@ -54,6 +55,35 @@ pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
     })
 }
 
+/// Whether the retained source image still matches its decode baseline.
+///
+/// A patch replays or rewrites the original source bytes, so lane agreement
+/// binds only while the image is the original container. A repacked or
+/// synthetic envelope (authored fixtures, cross-format synthesis) carries no
+/// trustworthy source bytes: the writer authors lane bytes from the typed
+/// records without declining on disagreement.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SourceTrust {
+    Trustworthy,
+    Authored,
+}
+
+/// The trust the retained image earns: it matches its decode baseline digest.
+pub(crate) fn trust_source_image(
+    decode_digest: &cadmpeg_ir::hash::digest::Sha256Digest,
+    image: Option<&[u8]>,
+) -> SourceTrust {
+    match image {
+        Some(bytes)
+            if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes).as_str()
+                == decode_digest.as_str() =>
+        {
+            SourceTrust::Trustworthy
+        }
+        _ => SourceTrust::Authored,
+    }
+}
+
 /// What one semantic write produced.
 pub(crate) struct SemanticOutput {
     /// The dialect classified from the final section payloads through the same
@@ -65,6 +95,9 @@ pub(crate) struct SemanticOutput {
     pub(crate) coverage: ArenaDispositions,
     pub(crate) consumed_source_layout: bool,
     pub(crate) omitted_envelope_bytes: usize,
+    /// Losses from writing the canonical side of a validation Error instead
+    /// of refusing (#217 InvalidInput rule, #237).
+    pub(crate) normalization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -76,6 +109,9 @@ pub(crate) fn write_semantic_with_records(
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
+        trust_source_image(&fidelity.decode_digest, source_image(retained_records))
+    });
     write_semantic_at(
         ir,
         annotations,
@@ -87,6 +123,7 @@ pub(crate) fn write_semantic_with_records(
         },
         None,
         None,
+        trust,
         writer,
     )
 }
@@ -99,6 +136,7 @@ pub(super) fn write_semantic_at(
     class_layouts: ClassLayouts,
     sw_version: Option<&str>,
     prepared_native: Option<SldprtNative>,
+    source_trust: SourceTrust,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
@@ -113,8 +151,45 @@ pub(super) fn write_semantic_at(
             .map(SldprtNative::load)
             .transpose()?,
     };
+    // A patch replays the original source bytes, so a lane whose typed
+    // sketch entities contradict those bytes declines the patch. Authored
+    // bytes carry no such promise: their lanes are rewritten from the typed
+    // records instead.
+    if !prepared_design && source_trust == SourceTrust::Trustworthy {
+        if let Some(native) = native.as_ref() {
+            for lane in &native.feature_input_lanes {
+                if lane.native_payload.is_empty() {
+                    continue;
+                }
+                let expected = crate::resolved_features::write_prepare::generated_native_lane(
+                    &native.feature_histories,
+                    &lane.id,
+                    lane.configuration.clone(),
+                    lane.native_payload.to_vec(),
+                )?;
+                let mut entities = lane.sketch_entities.clone();
+                entities.sort_by_key(|entity| entity.ordinal());
+                let mut expected_entities = expected.sketch_entities.clone();
+                expected_entities.sort_by_key(|entity| entity.ordinal());
+                if !crate::resolved_features::write_prepare::sketch_entities_match(
+                    &entities,
+                    &expected_entities,
+                ) {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "feature-input lane {} sketch entities do not match their native payload",
+                        lane.id
+                    )));
+                }
+            }
+        }
+    }
     let input_active_configuration = active_configuration_intent(ir);
     let mut normalized = ir.clone();
+    let mut normalization_losses = Vec::new();
+    crate::history::write::configurations::normalize_active_configuration_state(
+        &mut normalized.model.configurations,
+        &mut normalization_losses,
+    );
     normalized.model.configurations = configurations_for_write(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
@@ -354,6 +429,7 @@ pub(super) fn write_semantic_at(
             &feature_input_renames,
             class_layouts,
             &written_classes,
+            source_trust,
         )?;
         push_generated_metadata_member(
             &mut sections,
@@ -460,6 +536,7 @@ pub(super) fn write_semantic_at(
         coverage,
         consumed_source_layout,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
+        normalization_losses,
     })
 }
 
@@ -1075,6 +1152,7 @@ fn remap_written_geometry_references(
         &model.parameters,
         &model.bodies,
         native,
+        &std::collections::HashSet::new(),
     )?;
     let mut projected = ir.clone();
     projected.model = model;
@@ -1940,6 +2018,7 @@ fn resolved_feature_payload(
     renames: &[crate::history::write::features::FeatureInputRename],
     class_layouts: ClassLayouts,
     written_classes: &BTreeSet<String>,
+    source_trust: SourceTrust,
 ) -> Result<(Vec<u8>, bool), CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut consumed_source_layout = false;
@@ -1962,8 +2041,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    crate::resolved_features::write_prepare::validate_lane_against_payload(histories, lane, true)
-        .map_err(CodecError::UnsupportedContent)?;
+    crate::resolved_features::write_prepare::validate_lane_against_payload(
+        histories,
+        lane,
+        true,
+        source_trust,
+    )
+    .map_err(CodecError::UnsupportedContent)?;
     let expected_lane = crate::resolved_features::write_prepare::generated_native_lane(
         histories,
         &lane.id,
@@ -2573,7 +2657,21 @@ fn retained_history_sections(
     let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = SldprtNative::load(namespace)?;
+    let mut native = SldprtNative::load(namespace)?;
+    {
+        let mut scoped = Some(native);
+        crate::history::write::configurations::sync_neutral_configurations(
+            &baseline.ir.model.configurations,
+            &mut scoped,
+        );
+        native = scoped.unwrap_or_default();
+    }
+    // Generated histories have no source bytes and no provenance; the
+    // synchronization may invent one for an empty baseline. Only retained
+    // histories can supply replay bytes.
+    native
+        .feature_histories
+        .retain(|history| !history.id.starts_with("sldprt:generated:"));
     let annotations = &baseline.source_fidelity.annotations;
     native
         .feature_histories

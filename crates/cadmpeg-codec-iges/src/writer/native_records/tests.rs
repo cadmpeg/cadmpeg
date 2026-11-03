@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::writer::{encode_file, generated_minimum_resolution};
+use crate::writer::encode_file;
 use cadmpeg_ir::ids::Identity;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -60,10 +60,11 @@ fn directory_pattern_number_is_written_from_typed_display() {
         Some(DirectoryLineFont::Number(3))
     ));
     let bytes = encode_file(
+        &ir,
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        generated_minimum_resolution(&ir).expect("fixture minimum resolution is representable"),
+        ir.tolerances.linear.get(),
     )
     .expect("typed directory pattern encodes");
     let directory = bytes
@@ -111,10 +112,11 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         Some(DirectoryLineFont::Definition(1))
     ));
     let bytes = encode_file(
+        &ir,
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        generated_minimum_resolution(&ir).expect("fixture minimum resolution is representable"),
+        ir.tolerances.linear.get(),
     )
     .expect("current font definition encodes");
     let directory = bytes

@@ -220,6 +220,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &[stream.clone(), stream.clone()],
             &HashSet::from([10]),
             &HashSet::new(),
+            &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -241,6 +242,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &[stream, conflicting],
             &HashSet::from([10]),
             &HashSet::new(),
+            &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -362,6 +364,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
             &[stream],
             &HashSet::from([120]),
             &HashSet::new(),
+            &[],
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })

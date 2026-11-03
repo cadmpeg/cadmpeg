@@ -95,7 +95,9 @@ fn semantic_writer_applies_neutral_feature_edits() {
 
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
-        "18mm"
+        // D5 (#237): the edited value renders the canonical literal; the
+        // unedited record spelling is kept only when it denotes the value.
+        "18 mm"
     );
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
@@ -487,6 +489,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         std::slice::from_ref(&rename),
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap()
     .0;
@@ -519,6 +522,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &[],
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap_err();
 

@@ -13,6 +13,7 @@ use super::super::edges::{
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc, revolve_nurbs};
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
@@ -460,7 +461,12 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
 fn incomplete_graph_does_not_publish_a_partial_face_body() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
     let mut graph = crate::test_support::with_service_context(|ctx| {
-        super::super::super::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        super::super::super::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service decode")
     .expect("complete native identity graph");

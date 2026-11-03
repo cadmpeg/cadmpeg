@@ -624,6 +624,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     ));
     f.push(("composed_feature_history", composed_feature_history_prt()));
     f.push((
+        "damaged/corrupt_entry",
+        crate::test_support::test_prt::damaged_history_prt(),
+    ));
+    f.push((
         "segment_index_rows",
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]),
     ));
@@ -1208,4 +1212,25 @@ fn golden_mesh_only_jt_keeps_projected_neutral_content() {
 #[test]
 fn goldens_hold_no_native_back_links() {
     cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&NxCodec, &inputs());
+}
+
+/// The committed damaged fixture matches its builder byte for byte, so the
+/// §4.5 contract tests and the golden snapshots pin the same bytes.
+///
+/// `UPDATE_GOLDEN_FIXTURES=1` rewrites the frozen input from the builder.
+#[test]
+fn damaged_fixture_matches_builder() {
+    let built = crate::test_support::test_prt::damaged_history_prt();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/fixtures/damaged/corrupt_entry.prt");
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::create_dir_all(path.parent().expect("damaged fixture dir"))
+            .expect("create damaged fixture dir");
+        std::fs::write(&path, &built).expect("write damaged fixture");
+        return;
+    }
+    let committed = std::fs::read(&path).expect(
+        "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-nx damaged`",
+    );
+    assert_eq!(committed, built, "the damaged fixture matches its builder");
 }

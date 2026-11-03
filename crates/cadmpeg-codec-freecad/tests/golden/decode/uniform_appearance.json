@@ -306,9 +306,6 @@
           "id": "fcstd:appearance:edge#Box",
           "name": "Box line appearance",
           "native_ref": "fcstd:native:gui-property#Box:LineColor",
-          "properties": {
-            "line_width": 3.0
-          },
           "schema": "FCStd ViewProvider line style"
         },
         {
@@ -321,9 +318,6 @@
           "id": "fcstd:appearance:edge#Box:1",
           "name": "Box Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Box:LineColorArray",
-          "properties": {
-            "line_width": 3.0
-          },
           "schema": "FCStd LineColorArray"
         },
         {
@@ -356,9 +350,6 @@
           "id": "fcstd:appearance:vertex#Box",
           "name": "Box point appearance",
           "native_ref": "fcstd:native:gui-property#Box:PointColor",
-          "properties": {
-            "point_size": 5.0
-          },
           "schema": "FCStd ViewProvider point style"
         },
         {
@@ -371,9 +362,6 @@
           "id": "fcstd:appearance:vertex#Box:1",
           "name": "Box Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Box:PointColorArray",
-          "properties": {
-            "point_size": 5.0
-          },
           "schema": "FCStd PointColorArray"
         }
       ],
@@ -520,6 +508,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -548,6 +564,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000001"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "native_ref": "fcstd:native:property#0:UseHasher",
@@ -560,16 +604,46 @@
               "value": true
             }
           ]
+        },
+        {
+          "id": "fcstd:model:attribute#Box:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Box:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Box"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Box:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Box:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Box"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
         }
       ],
       "bodies": [
         {
-          "color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:1",
@@ -1465,7 +1539,23 @@
           "tolerance": 1e-7
         }
       ],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "definition": "stored_geometry"
+          },
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box",
+          "needs_recompute": false,
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "source_tag": "Part::Feature",
+          "suppressed": null
+        }
+      ],
       "loops": [
         {
           "boundary": {
@@ -2535,7 +2625,7 @@
           "applications": 1,
           "attachments": 1,
           "carrier_census": 1,
-          "design_census": 0,
+          "design_census": 1,
           "document": 1,
           "drawings": 0,
           "element_maps": 0,
@@ -2558,7 +2648,7 @@
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "9cfb2f206df3b7fd24f47fc52f459e2970cde231c311dbfc92643a66ea96a3dd",
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
-          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "design_census": "1961a5c15d2724ec1030af411ad60a63238714bf4591a16d796ad6763560af89",
           "document": "689be6223f2071bd468491f31da684c0167e1edc74d88f753f58f0bcb216051d",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -2694,68 +2784,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Box:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Box:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

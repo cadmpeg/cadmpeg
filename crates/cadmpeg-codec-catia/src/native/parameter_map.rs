@@ -55,7 +55,21 @@ impl TryFrom<ParameterMapWire> for CatiaSampledParameterMap {
     }
 }
 
-pub(super) fn derive(
+impl CatiaSampledParameterMap {
+    pub(crate) fn object_id(&self) -> u32 {
+        self.object_id
+    }
+
+    pub(crate) fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub(crate) fn data(&self) -> &SampledParameterMap {
+        &self.data
+    }
+}
+
+pub(crate) fn derive(
     _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     sources: &[Vec<SourceExtent>],

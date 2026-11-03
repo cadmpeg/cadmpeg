@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use crate::test_support::test_a5a8::a8_surface_stream;
 use crate::test_support::test_b5::{
     append_b5_record, b5_analytic_line_pcurve_payload, b5_closed_triangle_stream,
@@ -21,7 +22,12 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     append_b5_record(&mut bytes, 0x06, 1, &payload);
     bytes.extend_from_slice(&b5_closed_triangle_stream());
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("length-closed B5 graph");
@@ -54,7 +60,12 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     );
     append_b5_record(&mut bytes, 0x5e, 603, &[]);
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("length-closed B5 graph");
@@ -118,7 +129,12 @@ fn b5_circle_pcurve_rejects_nonfinite_derived_poles() {
     append_b5_record(&mut bytes, 0x19, 600, &payload);
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("length-closed B5 graph");
@@ -136,7 +152,12 @@ fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
     );
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("length-closed B5 graph");
@@ -157,7 +178,12 @@ fn b5_pcurve_lift_rejects_nonfinite_world_endpoints() {
     );
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("length-closed B5 graph");
@@ -253,7 +279,12 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     }
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("B5 object topology");

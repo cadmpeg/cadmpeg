@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct Catmull-Clark control cages (§19.5).
 
+use super::WriteError;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeBuffer, EncodeSession};
@@ -50,6 +51,19 @@ pub(super) fn write(
 ) -> Result<usize, CodecError> {
     let mut count = 0;
     for surface in &ir.model.subds {
+        if version.value() < 60 {
+            match write_proxy(
+                ctx, ir, version, session, output, materials, surface, losses,
+            ) {
+                Ok(()) => count += 1,
+                Err(WriteError::Omit(reason)) => losses.push(
+                    RhinoLossCode::WriterSubdOmitted
+                        .note(format!("SubD {} omitted: {reason}", surface.id)),
+                ),
+                Err(WriteError::Fail(error)) => return Err(error),
+            }
+            continue;
+        }
         if let Some(reason) = omission(surface, version) {
             losses.push(
                 RhinoLossCode::WriterSubdOmitted
@@ -96,10 +110,259 @@ pub(super) fn write(
     Ok(count)
 }
 
-fn omission(surface: &SubdSurface, version: RhinoArchiveVersion) -> Option<&'static str> {
-    if version.value() < 60 {
-        return Some("archives below 60 require a SubD mesh proxy, which is not implemented");
+/// The archive-50 control-net proxy (`docs/formats/rhino_3dm.md` §7.2.6):
+/// a top-level `ON_Mesh` carrying the cage, with a proxy userdata item
+/// holding the embedded SubD. A modern reader promotes the mesh back to
+/// the exact SubD; an archive-50 reader keeps the control net.
+fn write_proxy(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: RhinoArchiveVersion,
+    session: &EncodeSession,
+    output: &mut EncodeBuffer<'_>,
+    materials: &super::MaterialPlan,
+    surface: &SubdSurface,
+    _losses: &mut Vec<LossNote>,
+) -> Result<(), WriteError> {
+    if let Some(reason) = omission(surface, version) {
+        return Err(WriteError::Omit(reason.into()));
     }
+    let (points, triangles) = control_net(surface)?;
+    let quads = triangles
+        .iter()
+        .map(|triangle| [triangle[0], triangle[1], triangle[2], triangle[2]])
+        .collect::<Vec<_>>();
+    let vertices = points
+        .iter()
+        .map(|point| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .map(|value| {
+                    cadmpeg_core::convert::f32_from_f64(value)
+                        .and_then(cadmpeg_ir::scalar::FiniteBinary32::new)
+                        .ok_or_else(|| {
+                            WriteError::Omit("control-net point exceeds f32 range".into())
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let vertices = vertices
+        .into_iter()
+        .map(|row| [row[0], row[1], row[2]])
+        .collect::<Vec<_>>();
+    let fingerprint = crate::mesh::native_proxy_fingerprint(&quads, &vertices);
+    let mesh = cadmpeg_ir::tessellation::Tessellation::new(
+        cadmpeg_ir::tessellation::TessellationId::mint(format!(
+            "cadir:model:tessellation#rhino-proxy-{}",
+            surface
+                .id
+                .as_str()
+                .rsplit('#')
+                .next_back()
+                .unwrap_or("subd")
+        ))
+        .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?,
+        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(points, triangles, None)
+            .map_err(|error| WriteError::Omit(error.to_string()))?,
+        Vec::new(),
+    )
+    .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?;
+    let mesh_payload = super::mesh_payload(&mesh, version)?;
+    let Some(embedded) = payload(ctx, session, surface, version)? else {
+        return Err(WriteError::Omit("a face repeats a control edge".into()));
+    };
+    let item = proxy_item(&fingerprint, embedded.as_bytes(), version)?;
+    emit_proxy_object(ctx, ir, &mesh_payload, &item, surface, materials, output)?;
+    Ok(())
+}
+
+fn emit_proxy_object(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    payload: &super::MeshPayload,
+    item: &[u8],
+    surface: &SubdSurface,
+    materials: &super::MaterialPlan,
+    output: &mut EncodeBuffer<'_>,
+) -> Result<(), WriteError> {
+    let display = super::presentation::display(
+        ir,
+        &cadmpeg_ir::appearance::AppearanceTarget::Record {
+            arena: SUBDS,
+            id: surface.id.to_string(),
+        },
+        surface.source_object.as_ref(),
+    );
+    ctx.charge_entities(1, "write Rhino object record")?;
+    output.append(
+        &mesh_object_with_proxy(ir, payload, item, surface.id.as_str(), display, materials)?,
+        "retain Rhino archive bytes",
+    )?;
+    Ok(())
+}
+
+/// The cage control net as triangle soup: vertices in cage order with one
+/// fan per face. The proxy fingerprint hashes this same layout.
+fn control_net(
+    surface: &SubdSurface,
+) -> Result<(Vec<cadmpeg_ir::math::Point3>, Vec<[u32; 3]>), WriteError> {
+    use cadmpeg_core::decode::index_from_u32;
+    let points = surface
+        .cage
+        .vertices()
+        .iter()
+        .map(|vertex| vertex.point().get())
+        .collect::<Vec<_>>();
+    let mut triangles = Vec::new();
+    for face in surface.cage.faces() {
+        let mut ring = Vec::new();
+        for use_ in face.edges() {
+            let edge = &surface.cage.edges()[index_from_u32(use_.edge)];
+            let ends = edge.vertices();
+            ring.push(if use_.reversed { ends[1] } else { ends[0] });
+        }
+        if ring.len() < 3 {
+            return Err(WriteError::Omit(
+                "control-net face has fewer than three vertices".into(),
+            ));
+        }
+        for corner in &ring {
+            if usize::try_from(*corner).map_err(|_| {
+                WriteError::Fail(CodecError::malformed(
+                    "control-net vertex index exceeds address space",
+                ))
+            })? >= points.len()
+            {
+                return Err(WriteError::Omit(
+                    "control-net face names a missing vertex".into(),
+                ));
+            }
+        }
+        for window in ring.windows(2).skip(1) {
+            triangles.push([ring[0], window[0], window[1]]);
+        }
+    }
+    Ok((points, triangles))
+}
+
+/// The `ON_SubDMeshProxyUserData` item: identity transform, embedded SubD,
+/// parent counts, and parent-array hashes, per the proxy contract.
+fn proxy_item(
+    fingerprint: &crate::subd::MeshProxyFingerprint,
+    embedded: &[u8],
+    version: RhinoArchiveVersion,
+) -> Result<Vec<u8>, WriteError> {
+    use crate::subd::SUBD_MESH_PROXY_USERDATA;
+    let mut transform = Vec::new();
+    for index in 0..16 {
+        transform.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0_f64 }).to_le_bytes());
+    }
+    let mut body = Vec::new();
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.push(1);
+    body.extend_from_slice(embedded);
+    body.extend(
+        i32::try_from(fingerprint.face_count)
+            .map_err(|_| {
+                WriteError::Fail(super::native_count_limit(
+                    2_147_483_647,
+                    cadmpeg_core::decode::u64_from_index(fingerprint.face_count),
+                ))
+            })?
+            .to_le_bytes(),
+    );
+    body.extend(
+        i32::try_from(fingerprint.vertex_count)
+            .map_err(|_| {
+                WriteError::Fail(super::native_count_limit(
+                    2_147_483_647,
+                    cadmpeg_core::decode::u64_from_index(fingerprint.vertex_count),
+                ))
+            })?
+            .to_le_bytes(),
+    );
+    for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
+        let mut hash = Vec::new();
+        hash.extend(1_i32.to_le_bytes());
+        hash.extend(0_i32.to_le_bytes());
+        hash.extend_from_slice(&digest);
+        body.extend(super::crc_chunk(ANONYMOUS, &hash)?);
+    }
+    let payload = super::crc_chunk(ANONYMOUS, &body)?;
+    let mut header = Vec::new();
+    header.extend(crate::wire::Uuid::to_wire(SUBD_MESH_PROXY_USERDATA));
+    header.extend(crate::wire::Uuid::to_wire(SUBD_MESH_PROXY_USERDATA));
+    header.extend(1_i32.to_le_bytes());
+    header.extend_from_slice(&transform);
+    header.extend(PROXY_APPLICATION_UUID);
+    header.push(0);
+    header.extend(
+        i32::try_from(version.value())
+            .map_err(|_| {
+                WriteError::Fail(super::native_count_limit(2_147_483_647, version.value()))
+            })?
+            .to_le_bytes(),
+    );
+    header.extend(WRITER_VERSION.to_le_bytes());
+    let header = super::crc_chunk(crate::objects::CLASS_USERDATA_HEADER, &header)?;
+    let mut item = vec![PROXY_ITEM_VERSION];
+    item.extend(header);
+    item.extend(payload);
+    Ok(super::long_chunk(crate::objects::CLASS_USERDATA, &item)?)
+}
+
+/// The application UUID the specification assigns to proxy userdata
+/// (`ON_opennurbs6_id`, `docs/formats/rhino_3dm.md` §7.2.6).
+const PROXY_APPLICATION_UUID: [u8; 16] = [
+    0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3, 0xe4, 0xe3,
+];
+
+/// The writer stamp carried by proxy save contexts.
+const WRITER_VERSION: i32 = 202_401_010;
+
+/// The proxy item version: class-userdata 2.2.
+const PROXY_ITEM_VERSION: u8 = 0x22;
+
+/// A mesh object record carrying the SubD proxy userdata item.
+fn mesh_object_with_proxy(
+    ir: &CadIr,
+    payload: &super::MeshPayload,
+    item: &[u8],
+    identity: &str,
+    display: super::presentation::Display<'_>,
+    materials: &super::MaterialPlan,
+) -> Result<Vec<u8>, WriteError> {
+    let object_type = super::short_chunk(super::TCODE_OBJECT_RECORD_TYPE, 0x20);
+    let mut uuid_body = super::MESH_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&super::MESH_CLASS).to_le_bytes());
+    let uuid = super::long_chunk(super::TCODE_CLASS_UUID, &uuid_body)?;
+    let class_data =
+        super::crc_chunk_with_direct(super::TCODE_CLASS_DATA, &payload.body, &payload.direct)?;
+    let class_end = super::short_chunk(super::TCODE_CLASS_END, 0);
+    let class = super::long_chunk(
+        super::TCODE_CLASS_WRAPPER,
+        &[uuid, class_data, item.to_vec(), class_end].concat(),
+    )?;
+    let object_end = super::short_chunk(super::TCODE_OBJECT_RECORD_END, 0);
+    let mut body = [object_type, class].concat();
+    body.extend(super::crc_chunk(
+        super::TCODE_OBJECT_RECORD_ATTRIBUTES,
+        &super::object_attributes_payload(
+            ir,
+            identity,
+            display.name,
+            display.color,
+            display.visible,
+            materials,
+        )?,
+    )?);
+    body.extend(object_end);
+    Ok(super::zero_crc_chunk(super::TCODE_OBJECT_RECORD, &body)?)
+}
+
+fn omission(surface: &SubdSurface, version: RhinoArchiveVersion) -> Option<&'static str> {
     if !surface.cage.symmetries().is_empty()
         || surface
             .cage

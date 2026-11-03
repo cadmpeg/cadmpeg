@@ -65,14 +65,12 @@ pub(crate) fn plan(
     let (written, bytes) = match attempt {
         Ok(written) => written,
         Err(error) => {
-            let reason = match error {
-                CodecError::UnsupportedContent(reason) => reason,
-                error => error.to_string(),
-            };
             return super::synthesis::plan(
                 input,
                 resolved,
-                super::synthesis::SynthesisCause::PatchDeclined { reason },
+                super::synthesis::SynthesisCause::PatchDeclined {
+                    reason: error.reason(),
+                },
             );
         }
     };
@@ -108,7 +106,10 @@ pub(crate) fn plan(
 
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
+fn write(
+    input: EncodeInput<'_>,
+    replay_eligible: bool,
+) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
@@ -179,9 +180,11 @@ fn finish(
     if let Written::Semantic {
         coverage,
         omitted_envelope_bytes,
+        normalization_losses,
         ..
     } = written
     {
+        losses.extend(normalization_losses.iter().cloned());
         losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.

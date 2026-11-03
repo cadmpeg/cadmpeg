@@ -59,6 +59,7 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
                 bound_limit_curve_count: &mut bound_limit_curve_count,
                 refusal: &mut refusal,
                 admission: &mut admission,
+                sampled_parameter_maps: &[],
             },
         );
         matches!(
