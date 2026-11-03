@@ -161,6 +161,98 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
 }
 
 #[test]
+fn surface_binding_writes_a_314_definition() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::topology::Color;
+    let mut ir = rectangle();
+    let surface = ir.model.surfaces[0].id.clone();
+    let appearance = Appearance {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceId::mint("test:application:appearance#red")
+            .expect("identity grammar"),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Color::new(0.5, 0.0, 0.0, 1.0),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    ir.model.appearance_bindings = vec![AppearanceBinding {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceBindingId::mint("test:application:binding#red")
+            .expect("identity grammar"),
+        target: AppearanceTarget::Surface(surface),
+        appearance: appearance.id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    }];
+    ir.model.appearances = vec![appearance];
+    let generated =
+        super::super::synthesize(&ir, IgesVersion::V5_3).expect("bound surface synthesizes");
+    assert_eq!(
+        generated.counts.get("314_color_definition"),
+        Some(&1),
+        "bound custom color writes one Type 314"
+    );
+    let round_trip = round_trip(&ir);
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+}
+
+#[test]
+fn face_binding_writes_a_314_definition() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::topology::Color;
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_surface_fixtures::bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("bounded plane fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let face = ir.model.faces[0].id.clone();
+    let appearance = Appearance {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceId::mint("test:application:appearance#blue")
+            .expect("identity grammar"),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Color::new(0.0, 0.0, 0.5, 1.0),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    ir.model.appearance_bindings = vec![AppearanceBinding {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceBindingId::mint("test:application:binding#blue")
+            .expect("identity grammar"),
+        target: AppearanceTarget::Face(face),
+        appearance: appearance.id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    }];
+    ir.model.appearances = vec![appearance];
+    let generated =
+        super::super::synthesize(&ir, IgesVersion::V5_3).expect("bound face synthesizes");
+    assert_eq!(
+        generated.counts.get("314_color_definition"),
+        Some(&1),
+        "bound face color writes one Type 314"
+    );
+}
+
+#[test]
 fn support_only_surface_export_refuses_an_empty_transfer() {
     let mut ir = rectangle();
     ir.model.surfaces[0].source_object = Some(support_association());

@@ -47,20 +47,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-const ALLOWED_NATIVE_ARENAS: &[&str] = &[
-    "boundary_vertex_sewing",
-    "cards",
-    "copious_data",
-    "directions",
-    "display_attributes",
-    "entities",
-    // Type 186 sits in this writer's encodable entity-type list and
-    // `brep_entities` emits complete 186 records, void pairs included, so
-    // the typed arena never blocks a semantic write.
-    "manifold_solids",
-    "product_occurrence_expansion",
-    "transformations",
-];
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
@@ -328,40 +314,111 @@ fn body_presentation(
         }
     });
     let target = cadmpeg_ir::appearance::AppearanceTarget::Body(body.id.clone());
-    let color = ir
-        .effective_display_color(&target)
-        .map_or(BodyColor::Standard(0), |color| {
-            let rgb = (color.r(), color.g(), color.b());
-            let number = match rgb {
-                (0.0, 0.0, 0.0) => 1,
-                (1.0, 0.0, 0.0) => 2,
-                (0.0, 1.0, 0.0) => 3,
-                (0.0, 0.0, 1.0) => 4,
-                (1.0, 1.0, 0.0) => 5,
-                (1.0, 0.0, 1.0) => 6,
-                (0.0, 1.0, 1.0) => 7,
-                (1.0, 1.0, 1.0) => 8,
-                _ => 0,
-            };
-            if color.a() != 1.0 {
-                losses.push(IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
-                    "IGES body {} opacity {} has no Directory representation",
-                    body.id,
-                    color.a()
-                )));
-            }
-            if number == 0 {
-                BodyColor::Custom(color)
-            } else {
-                BodyColor::Standard(number)
-            }
-        });
+    let color = display_color(
+        ir.effective_display_color(&target),
+        &format!("body {}", body.id),
+        losses,
+    );
     BodyPresentation {
         label,
         name,
         color,
         visible: ir.effective_visibility(&target),
     }
+}
+
+/// Maps a resolved display color to its Directory form, charging opacity the
+/// target cannot state. Standard IGES colors become their Directory numbers;
+/// anything else becomes a Type 314 definition through the presentations.
+fn display_color(color: Option<Color>, owner: &str, losses: &mut Vec<LossNote>) -> BodyColor {
+    color.map_or(BodyColor::Standard(0), |color| {
+        let rgb = (color.r(), color.g(), color.b());
+        let number = match rgb {
+            (0.0, 0.0, 0.0) => 1,
+            (1.0, 0.0, 0.0) => 2,
+            (0.0, 1.0, 0.0) => 3,
+            (0.0, 0.0, 1.0) => 4,
+            (1.0, 1.0, 0.0) => 5,
+            (1.0, 0.0, 1.0) => 6,
+            (0.0, 1.0, 1.0) => 7,
+            (1.0, 1.0, 1.0) => 8,
+            _ => 0,
+        };
+        if color.a() != 1.0 {
+            losses.push(IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
+                "IGES {owner} opacity {} has no Directory representation",
+                color.a()
+            )));
+        }
+        if number == 0 {
+            BodyColor::Custom(color)
+        } else {
+            BodyColor::Standard(number)
+        }
+    })
+}
+
+/// The color a face shows from its own value or a bound appearance, without
+/// body fallback: fallback faces inherit their body's Directory color.
+fn face_display_color(
+    ir: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+    losses: &mut Vec<LossNote>,
+) -> BodyColor {
+    let bound = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            let resolved = binding
+                .target
+                .typed_record_target(&ir.model)
+                .unwrap_or_else(|| binding.target.clone());
+            matches!(
+                &resolved,
+                cadmpeg_ir::appearance::AppearanceTarget::Face(id) if *id == face.id
+            ) || matches!(
+                &resolved,
+                cadmpeg_ir::appearance::AppearanceTarget::Surface(id) if *id == face.surface
+            )
+        })
+        .find_map(|binding| {
+            ir.model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+                .and_then(|appearance| appearance.base_color)
+        });
+    display_color(face.color.or(bound), &format!("face {}", face.id), losses)
+}
+
+/// The color a free carrier shows from a bound appearance. Free carriers have
+/// no body fallback at emission; an unbound carrier keeps the default.
+fn carrier_display_color(
+    ir: &CadIr,
+    target: cadmpeg_ir::appearance::AppearanceTarget,
+    owner: &str,
+    losses: &mut Vec<LossNote>,
+) -> BodyColor {
+    let bound = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            binding
+                .target
+                .typed_record_target(&ir.model)
+                .unwrap_or_else(|| binding.target.clone())
+                == target
+        })
+        .find_map(|binding| {
+            ir.model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+                .and_then(|appearance| appearance.base_color)
+        });
+    display_color(bound, owner, losses)
 }
 
 fn append_color_definitions(
@@ -431,6 +488,101 @@ fn append_name_properties(
     Ok(())
 }
 
+/// How many appearance bindings the output states. A binding counts as
+/// written when an emitted entity carries its target record with a
+/// non-default color; tessellation, occurrence, edge and vertex targets have
+/// no Directory color and never count.
+fn appearance_binding_coverage(
+    ir: &CadIr,
+    entities: &[Entity],
+    presentations: &BTreeMap<usize, BodyPresentation>,
+) -> ArenaDisposition {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    if ir.model.appearance_bindings.is_empty() {
+        return ArenaDisposition::Written;
+    }
+    let mut expressed = 0;
+    for binding in &ir.model.appearance_bindings {
+        let target = binding
+            .target
+            .typed_record_target(&ir.model)
+            .unwrap_or_else(|| binding.target.clone());
+        let id = match &target {
+            AppearanceTarget::Body(id) => id.as_str(),
+            AppearanceTarget::Face(id) => id.as_str(),
+            AppearanceTarget::Surface(id) => id.as_str(),
+            AppearanceTarget::Curve(id) => id.as_str(),
+            AppearanceTarget::Point(id) => id.as_str(),
+            _ => continue,
+        };
+        let stated = entities.iter().enumerate().any(|(index, entity)| {
+            entity
+                .source_targets
+                .iter()
+                .any(|target| target.as_str() == id)
+                && presentations.get(&index).is_some_and(|presentation| {
+                    !matches!(presentation.color, BodyColor::Standard(0))
+                })
+        });
+        expressed += usize::from(stated);
+    }
+    if expressed == ir.model.appearance_bindings.len() {
+        ArenaDisposition::Written
+    } else if expressed == 0 {
+        ArenaDisposition::Dropped
+    } else {
+        ArenaDisposition::Reported
+    }
+}
+
+/// The Type 124 placement for a body's Directory transform, when the target
+/// stores finite rows. Sheet and free carriers keep local coordinates: the
+/// decoder bakes free placements into geometry instead of restoring them, so
+/// only the solid and trimmed-face carriers this writer places keep it.
+fn body_placement(ir: &CadIr, body_id: &str) -> Option<Placement> {
+    let body = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.as_str() == body_id)?;
+    let transform = body
+        .transform
+        .filter(|transform| *transform != cadmpeg_ir::transform::Transform::identity())?;
+    let mut rows = [[FiniteReal::ONE; 4]; 3];
+    for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
+        for (slot, value) in row.iter_mut().zip(values) {
+            *slot = FiniteReal::new(value)?;
+        }
+    }
+    Some(Placement { rows })
+}
+
+/// Bodies whose non-identity placement no emitted entity carries. A solid
+/// writes its placement on its Type 186 carrier and a trimmed face on its
+/// Type 143 or 144 carrier; anything else keeps local coordinates.
+fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossNote> {
+    let expressed = entities
+        .iter()
+        .filter(|entity| entity.transform.is_some())
+        .flat_map(|entity| entity.source_targets.iter())
+        .map(|target| target.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut losses = Vec::new();
+    for body in &ir.model.bodies {
+        if body
+            .transform
+            .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
+            && !expressed.contains(body.id.as_str())
+        {
+            losses.push(IgesLossCode::WriterBodyTransformNotApplied.note(format!(
+                "IGES body {} is written in local coordinates; its placement could not be applied",
+                body.id
+            )));
+        }
+    }
+    losses
+}
+
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
@@ -439,30 +591,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let ir = lowered.as_ref();
-    let mut prepared = std::borrow::Cow::Borrowed(ir);
-    let mut transform_losses = Vec::new();
-    if ir.model.bodies.iter().any(|body| {
-        body.transform
-            .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-    }) {
-        for body in &mut prepared.to_mut().model.bodies {
-            if body
-                .transform
-                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-            {
-                body.transform = None;
-                transform_losses.push(IgesLossCode::WriterBodyTransformNotApplied.note(format!(
-                    "IGES body {} is written in local coordinates; its placement could not be applied", body.id)));
-            }
-        }
-    }
-    let ir = prepared.as_ref();
     let mut graph = match synthesis_graph(ir, version) {
         Ok(graph) => graph,
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
         Err(error) => return Err(error),
     };
-    graph.losses.extend(transform_losses);
+    graph
+        .losses
+        .extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     let native_export = native_records::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
@@ -471,7 +607,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .regenerated
         .extend(native_export.regenerated);
     graph.losses.extend(attribute_export.losses);
-    ensure_version_support(&graph.entities, version)?;
+    ensure_version_support(&mut graph.entities, version, &mut graph.losses)?;
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
     if !graph.entities.iter().any(Entity::is_geometry) {
@@ -490,6 +626,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     } else {
         ArenaDisposition::Reported
     };
+    coverage.appearance_bindings =
+        appearance_binding_coverage(ir, &graph.entities, &graph.presentations);
     if graph
         .losses
         .iter()
@@ -603,7 +741,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     }
     let mut body_presentations = BTreeMap::new();
 
-    let entities = if has_brep_topology(ir) {
+    let mut entities = if has_brep_topology(ir) {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, ir, version)?,
@@ -646,6 +784,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                 surface,
                 version,
                 &ownership,
+                &mut body_presentations,
                 &mut losses,
             )?;
         }
@@ -691,7 +830,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                 CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
             })?)?;
             let span = edge_span(ir, edge, &geometry)?;
-            append_curve_entity(
+            let curve_index = append_curve_entity(
                 &mut entities,
                 ir,
                 CurveEntityRequest {
@@ -704,6 +843,23 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                     reference_offset: 0,
                 },
             )?;
+            let color = carrier_display_color(
+                ir,
+                cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
+                &format!("curve {}", curve_id),
+                &mut losses,
+            );
+            if !matches!(color, BodyColor::Standard(0)) {
+                body_presentations.insert(
+                    curve_index,
+                    BodyPresentation {
+                        label: None,
+                        name: None,
+                        color,
+                        visible: None,
+                    },
+                );
+            }
             mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
             consumed_points.insert(vertex_point_id(ir, &edge.start)?);
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
@@ -715,6 +871,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                 version,
                 ownership: &ownership,
                 ignored: &BTreeSet::new(),
+                presentations: &mut body_presentations,
             },
             &mut entities,
             &mut consumed_curves,
@@ -727,11 +884,18 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            append_free_point_entity(&mut entities, point, &ownership, &mut losses);
+            append_free_point_entity(
+                &mut entities,
+                ir,
+                point,
+                &ownership,
+                &mut body_presentations,
+                &mut losses,
+            );
         }
         entities
     };
-    ensure_version_support(&entities, version)?;
+    ensure_version_support(&mut entities, version, &mut losses)?;
     Ok(SynthesisGraph {
         entities,
         presentations: body_presentations,
@@ -1107,28 +1271,144 @@ impl crate::IgesVersion {
     }
 }
 
+/// Drops the entities the target version does not define, with a loss per
+/// dropped entity, instead of refusing the graph. Referrers of a dropped
+/// entity drop with it; the loss names the dropped entity and the first
+/// dropped record it lists.
 fn ensure_version_support(
-    entities: &[Entity],
+    entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if let Some(entity) = entities.iter().find(|entity| !version.admits(entity)) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "IGES {} does not define emitted entity Type {} Form {}",
-            version.name(),
-            entity.type_code,
-            entity.form
-        )));
+    let mut dropped = BTreeSet::new();
+    for (index, entity) in entities.iter().enumerate() {
+        if !version.admits(entity) {
+            dropped.insert(index);
+        }
     }
     if version == crate::IgesVersion::V4_0 {
-        for entity in entities.iter().filter(|entity| entity.type_code == 102) {
+        for (index, entity) in entities
+            .iter()
+            .enumerate()
+            .filter(|(_, entity)| entity.type_code == 102)
+        {
             if composite_entity_references(entity)?.len() < 2 {
-                return Err(CodecError::UnsupportedContent(
-                    "IGES 4.0 Type 102 requires at least two constituent entities".into(),
-                ));
+                dropped.insert(index);
             }
         }
     }
+    if dropped.is_empty() {
+        return Ok(());
+    }
+    loop {
+        let mut more = Vec::new();
+        for (index, entity) in entities.iter().enumerate() {
+            if dropped.contains(&index) {
+                continue;
+            }
+            if entity_references(entity, &dropped) {
+                more.push(index);
+            }
+        }
+        if more.is_empty() {
+            break;
+        }
+        dropped.extend(more);
+    }
+    let mut retained = Vec::new();
+    let mut remap = BTreeMap::new();
+    for (index, entity) in entities.drain(..).enumerate() {
+        if dropped.contains(&index) {
+            let listed = entity
+                .source_targets
+                .first()
+                .cloned()
+                .unwrap_or_else(|| format!("Type {} Form {}", entity.type_code, entity.form));
+            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES Type {} Form {} is not defined by {} and is omitted: {listed}",
+                entity.type_code,
+                entity.form,
+                version.name(),
+            )));
+        } else {
+            remap.insert(index, retained.len());
+            retained.push(entity);
+        }
+    }
+    *entities = retained;
+    for entity in entities.iter_mut() {
+        if let Some(structure) = &mut entity.structure {
+            *structure = *remap.get(structure).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling Structure pointer")
+            })?;
+        }
+        for link in entity
+            .property_links
+            .iter_mut()
+            .chain(entity.association_links.iter_mut())
+        {
+            *link = *remap.get(link).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling property pointer")
+            })?;
+        }
+        if let Some(DirectoryLineFont::Definition(index)) = &mut entity.line_font {
+            *index = *remap.get(index).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling line font pointer")
+            })?;
+        }
+        entity.parameter_body = map_parameter_references(&entity.parameter_body, |index| {
+            remap
+                .get(&index)
+                .copied()
+                .map(reference_marker)
+                .ok_or_else(|| {
+                    CodecError::malformed("IGES version drop leaves a dangling parameter pointer")
+                })
+        })?;
+    }
     Ok(())
+}
+
+/// Whether an entity references any dropped entity through its Directory or
+/// Parameter Data pointers.
+fn entity_references(entity: &Entity, dropped: &BTreeSet<usize>) -> bool {
+    if entity
+        .structure
+        .is_some_and(|index| dropped.contains(&index))
+    {
+        return true;
+    }
+    if entity
+        .property_links
+        .iter()
+        .chain(entity.association_links.iter())
+        .any(|index| dropped.contains(index))
+    {
+        return true;
+    }
+    if let Some(DirectoryLineFont::Definition(index)) = &entity.line_font {
+        if dropped.contains(index) {
+            return true;
+        }
+    }
+    let mut body = entity.parameter_body.as_slice();
+    while let Some(start) = body
+        .windows(3)
+        .position(|window| window[0] == b'@' && window[1] == b'R' && window[2].is_ascii_digit())
+    {
+        body = &body[start + 2..];
+        let digits = body.iter().take_while(|byte| byte.is_ascii_digit()).count();
+        if let Ok(index) = std::str::from_utf8(&body[..digits])
+            .map_err(|_| ())
+            .and_then(|text| text.parse::<usize>().map_err(|_| ()))
+        {
+            if dropped.contains(&index) {
+                return true;
+            }
+        }
+        body = &body[digits.min(body.len())..];
+    }
+    false
 }
 
 fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecError> {
@@ -1904,7 +2184,7 @@ fn validate_brep_topology<'a>(
 fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -1950,9 +2230,16 @@ fn brep_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        if let Some(index) =
-            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)?
-        {
+        if let Some(index) = append_surface_entities(
+            ctx,
+            &mut entities,
+            ir,
+            surface,
+            version,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -2034,6 +2321,7 @@ fn brep_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
+            presentations: &mut body_presentations,
         },
         &mut entities,
         &mut consumed_curve_ids,
@@ -2489,6 +2777,15 @@ fn brep_entities(
             });
             entities[index].source_targets.push(face_id.to_string());
             face_indices.insert(face_id.as_str().to_owned(), index);
+            body_presentations.insert(
+                index,
+                BodyPresentation {
+                    label: None,
+                    name: None,
+                    color: face_display_color(ir, face, losses),
+                    visible: None,
+                },
+            );
         }
 
         let mut shell_indices = BTreeMap::new();
@@ -2568,7 +2865,7 @@ fn brep_entities(
                 label: String::new(),
                 status: EntityStatus::Independent,
                 parameter_body: parameters.into_bytes(),
-                transform: None,
+                transform: body_placement(ir, body.id.as_str()),
             });
             entities[index].source_targets.push(body.id.to_string());
             body_presentations.insert(index, body_presentation(ir, body, losses));
@@ -2587,7 +2884,14 @@ fn brep_entities(
             )));
             continue;
         }
-        append_free_point_entity(&mut entities, point, &ownership, losses);
+        append_free_point_entity(
+            &mut entities,
+            ir,
+            point,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        );
     }
     Ok(entities)
 }
@@ -2873,7 +3177,7 @@ fn same_float(left: f64, right: f64) -> bool {
 fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -2891,9 +3195,16 @@ fn topology_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        if let Some(index) =
-            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)?
-        {
+        if let Some(index) = append_surface_entities(
+            ctx,
+            &mut entities,
+            ir,
+            surface,
+            version,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -3011,6 +3322,7 @@ fn topology_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
+            presentations: &mut body_presentations,
         },
         &mut entities,
         &mut consumed_curves,
@@ -3153,12 +3465,17 @@ fn topology_entities(
             label: String::new(),
             status: EntityStatus::Independent,
             parameter_body: parameters.into_bytes(),
-            transform: None,
+            transform: body_placement(ir, body.id.as_str()),
         });
         entities[index]
             .source_targets
             .extend([face.id.to_string(), body.id.to_string()]);
-        body_presentations.insert(index, body_presentation(ir, body, losses));
+        let mut presentation = body_presentation(ir, body, losses);
+        let face_color = face_display_color(ir, face, losses);
+        if !matches!(face_color, BodyColor::Standard(0)) {
+            presentation.color = face_color;
+        }
+        body_presentations.insert(index, presentation);
     }
 
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
@@ -3174,7 +3491,14 @@ fn topology_entities(
             )));
             continue;
         }
-        append_free_point_entity(&mut entities, point, &ownership, losses);
+        append_free_point_entity(
+            &mut entities,
+            ir,
+            point,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        );
     }
     Ok(entities)
 }
@@ -3254,14 +3578,9 @@ fn validate_trimmed_sheet_topology<'a>(
         if is_decoder_free_geometry_body(body) {
             continue;
         }
-        if body.kind != BodyKind::Sheet
-            || body.regions.len() != 1
-            || body
-                .transform
-                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-        {
+        if body.kind != BodyKind::Sheet || body.regions.len() != 1 {
             return Err(CodecError::UnsupportedContent(format!(
-                "IGES semantic writer only encodes identity single-face sheet body {}",
+                "IGES semantic writer only encodes single-face sheet body {}",
                 body.id
             )));
         }
@@ -5555,8 +5874,10 @@ fn report_unowned_support(losses: &mut Vec<LossNote>, id: &str) {
 
 fn append_free_point_entity(
     entities: &mut Vec<Entity>,
+    ir: &CadIr,
     point: &cadmpeg_ir::topology::Point,
     ownership: &ownership::SourceOwnership<'_>,
+    presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) {
     let status = ownership.status(point.source_object.as_ref());
@@ -5566,7 +5887,25 @@ fn append_free_point_entity(
     }
     let mut entity = point_entity_with_status(point.position(), status);
     entity.source_targets.push(point.id.to_string());
+    let index = entities.len();
     entities.push(entity);
+    let color = carrier_display_color(
+        ir,
+        cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+        &format!("point {}", point.id),
+        losses,
+    );
+    if !matches!(color, BodyColor::Standard(0)) {
+        presentations.insert(
+            index,
+            BodyPresentation {
+                label: None,
+                name: None,
+                color,
+                visible: None,
+            },
+        );
+    }
 }
 
 fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Entity {
@@ -5672,6 +6011,7 @@ fn append_surface_entities(
     surface: &Surface,
     version: crate::IgesVersion,
     ownership: &ownership::SourceOwnership<'_>,
+    presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<usize>, CodecError> {
     let Some(status) = ownership.surface_status(surface) else {
@@ -5692,7 +6032,29 @@ fn append_surface_entities(
         .checked_add(surface_offset)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
-    domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
+    let wrapped = domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
+    if wrapped.is_some() {
+        entities[surface_index].status = EntityStatus::PhysicallyDependent;
+    }
+    if !ir.model.faces.iter().any(|face| face.surface == surface.id) {
+        let color = carrier_display_color(
+            ir,
+            cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
+            &format!("surface {}", surface.id),
+            losses,
+        );
+        if !matches!(color, BodyColor::Standard(0)) {
+            presentations.insert(
+                wrapped.unwrap_or(surface_index),
+                BodyPresentation {
+                    label: None,
+                    name: None,
+                    color,
+                    visible: None,
+                },
+            );
+        }
+    }
     Ok(Some(surface_index))
 }
 
@@ -5708,20 +6070,15 @@ fn domain_bounded_wrap(
     version: crate::IgesVersion,
     surface_index: usize,
     entities: &mut Vec<Entity>,
-) -> Result<(), CodecError> {
+) -> Result<Option<usize>, CodecError> {
     if matches!(version, crate::IgesVersion::V4_0) {
-        return Ok(());
+        return Ok(None);
     }
-    if ir
-        .model
-        .faces
-        .iter()
-        .any(|face| face.surface == surface.id)
-    {
-        return Ok(());
+    if ir.model.faces.iter().any(|face| face.surface == surface.id) {
+        return Ok(None);
     }
     let Some((_domain, edges)) = wrap_isocurves(ctx, ir, surface) else {
-        return Ok(());
+        return Ok(None);
     };
     let mut edge_indices = Vec::new();
     for isocurve in edges {
@@ -5777,7 +6134,7 @@ fn domain_bounded_wrap(
         .into_bytes(),
         transform: None,
     });
-    Ok(())
+    Ok(Some(entities.len() - 1))
 }
 
 struct WrapIsocurve {
@@ -5797,15 +6154,12 @@ fn wrap_isocurves(
     let SolvedSurfaceGeometry::Nurbs(nurbs) = solved else {
         return None;
     };
-    let construction = surface
-        .geometry
-        .procedural_construction()
-        .and_then(|id| {
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .find(|row| row.id == *id)
-        });
+    let construction = surface.geometry.procedural_construction().and_then(|id| {
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .find(|row| row.id == *id)
+    });
     let legacy = construction.and_then(|row| match row.definition() {
         ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
             cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
@@ -5830,14 +6184,13 @@ fn wrap_isocurves(
             extract_rectangle(ctx, nurbs, u_range, v_range)?,
         ));
     }
-    let cropped = crate::entities::nurbs_controls::trim_surface(
-        ctx,
-        nurbs,
-        [active[0], active[1]],
-    )
-    .ok()??;
+    let cropped = crate::entities::nurbs_controls::trim_surface(ctx, nurbs, [active[0], active[1]])
+        .ok()??;
     let domain = natural_nurbs_domain(&cropped)?;
-    Some((domain, extract_rectangle(ctx, &cropped, domain[0], domain[1])?))
+    Some((
+        domain,
+        extract_rectangle(ctx, &cropped, domain[0], domain[1])?,
+    ))
 }
 
 /// The four boundary isocurves of a NURBS domain rectangle in traversal
@@ -5855,8 +6208,7 @@ fn extract_rectangle(
         (SurfaceParameterAxis::V, v_range[1]),
         (SurfaceParameterAxis::U, u_range[0]),
     ] {
-        let curve =
-            cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
         let degree = usize::try_from(curve.degree()).ok()?;
         let count = curve.control_points().len();
         let domain = [curve.knots()[degree], curve.knots()[count]];
@@ -5887,10 +6239,10 @@ fn natural_nurbs_domain(nurbs: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
         .finite_knots()
         .map(cadmpeg_ir::scalar::FiniteReal::get)
         .collect();
-    Some([[u_knots[u_degree], u_knots[u_count]], [
-        v_knots[v_degree],
-        v_knots[v_count],
-    ]])
+    Some([
+        [u_knots[u_degree], u_knots[u_count]],
+        [v_knots[v_degree], v_knots[v_count]],
+    ])
 }
 
 fn surface_entities_for_ir(
@@ -7309,12 +7661,12 @@ fn revolution_axis_curve<'ir>(
 }
 
 /// The writer state for curves that no written entity has consumed.
-#[derive(Clone, Copy)]
 struct UnownedCurves<'a, 'ir> {
     ir: &'ir CadIr,
     version: crate::IgesVersion,
     ownership: &'a ownership::SourceOwnership<'ir>,
     ignored: &'a BTreeSet<String>,
+    presentations: &'a mut BTreeMap<usize, BodyPresentation>,
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
@@ -7332,6 +7684,7 @@ fn append_unowned_curves(
         version,
         ownership,
         ignored,
+        presentations,
     } = request;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -7370,6 +7723,23 @@ fn append_unowned_curves(
                 reference_offset: 0,
             },
         )?;
+        let color = carrier_display_color(
+            ir,
+            cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
+            &format!("curve {}", curve.id),
+            losses,
+        );
+        if !matches!(color, BodyColor::Standard(0)) {
+            presentations.insert(
+                entities.len() - 1,
+                BodyPresentation {
+                    label: None,
+                    name: None,
+                    color,
+                    visible: None,
+                },
+            );
+        }
         mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
     }
     for (curve, status) in dependent {
@@ -8715,9 +9085,8 @@ fn encode_file(
         bytes.extend(card_bytes);
     }
     let parameter_count = parameter_sequence - 1;
-    let terminate = format!(
-        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}"
-    );
+    let terminate =
+        format!("S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}");
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
 }
@@ -8746,10 +9115,7 @@ fn generation_timestamp_for(
 ) -> Result<String, CodecError> {
     if let Some(held) = held {
         let truncated = held.len() == 15
-            && matches!(
-                version,
-                crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0
-            );
+            && matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0);
         if !truncated {
             return Ok(held.to_owned());
         }
@@ -8828,12 +9194,17 @@ pub(super) fn global_projected_attribute(
     }
     if !matches!(
         attribute.name.as_str(),
-        "start" | "system_id" | "receiver" | "author" | "organization" | "generation_date" | "model_date"
+        "start"
+            | "system_id"
+            | "receiver"
+            | "author"
+            | "organization"
+            | "generation_date"
+            | "model_date"
     ) {
         return false;
     }
-    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
-        attribute.values.as_slice()
+    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] = attribute.values.as_slice()
     else {
         return false;
     };
@@ -9049,23 +9420,58 @@ fn parameter_card(
     card(&payload, b'P', sequence)
 }
 
-/// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
-fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
-    let width = 72;
-    if data.len() > width {
+/// IGES states every JSON path at full precision; no written value is
+/// quantized or normalized (#232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+
+/// Stored-field capacities of the Fixed ASCII card layout (#217 §5.0).
+/// The payload row holds the 72 section-data bytes and the sequence row the
+/// seven-column decimal field (`docs/formats/iges.md` §33). Both helpers
+/// refuse with `InvalidInput` until #239 switches the encode path to
+/// `EncodeError`, when they construct `TargetCapacity` instead.
+pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "card.payload",
+        limit: 72,
+        source: "docs/formats/iges.md §33: card bytes 1 through 72 are section data",
+        helper: "card_payload",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "card.sequence",
+        limit: 9_999_999,
+        source: "docs/formats/iges.md §33: bytes 74 through 80 are the decimal sequence field",
+        helper: "card_sequence",
+    },
+];
+
+/// The section data fits the 72-byte card payload.
+fn card_payload(data: &[u8]) -> Result<(), CodecError> {
+    if u64::try_from(data.len()).is_ok_and(|length| length > CAPACITY_FIELDS[0].limit) {
         return Err(CodecError::InvalidInput(
             "IGES card payload exceeds 72 bytes".into(),
         ));
     }
-    let mut payload = vec![b' '; 80];
-    payload[..data.len()].copy_from_slice(data);
-    payload[72] = section;
-    let sequence = format!("{sequence:>7}");
-    if sequence.len() > 7 {
+    Ok(())
+}
+
+/// The card sequence fits the seven-column decimal field.
+fn card_sequence(sequence: u32) -> Result<u32, CodecError> {
+    if u64::from(sequence) > CAPACITY_FIELDS[1].limit {
         return Err(CodecError::InvalidInput(
             "IGES card sequence exceeds seven digits".into(),
         ));
     }
+    Ok(sequence)
+}
+
+/// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
+fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
+    card_payload(data)?;
+    let sequence = card_sequence(sequence)?;
+    let mut payload = vec![b' '; 80];
+    payload[..data.len()].copy_from_slice(data);
+    payload[72] = section;
+    let sequence = format!("{sequence:>7}");
     payload[73..].copy_from_slice(sequence.as_bytes());
     payload.push(b'\n');
     Ok(payload)

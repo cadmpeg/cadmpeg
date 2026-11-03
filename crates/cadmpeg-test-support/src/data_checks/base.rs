@@ -165,6 +165,13 @@ fn is_deleted(
                     && map == "source_properties"
                     && key == "mdl_stored_name_prefix")
         }
+        // #226 §8: feature `source_properties` is always empty; the Scope
+        // reader moved to the native record. Configuration `DisplayState`
+        // duplicates the native configuration map entry.
+        "sldprt" => {
+            (arena == "features" && map == "source_properties" && key == "Scope")
+                || (arena == "configurations" && map == "properties" && key == "DisplayState")
+        }
         // #230 §8: the parameter triples, `input_parameter_expression.S.O`,
         // the `parameter_use.N` construction lanes, and every entry whose
         // value is a native record id.

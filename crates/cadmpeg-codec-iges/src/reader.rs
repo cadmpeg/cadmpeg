@@ -506,6 +506,21 @@ impl<'a> PhysicalParse<'a> {
 
         global_losses.extend(conditional_losses);
         let references = graph::build(&directory);
+        // A transfer without its Terminate card gives up the absent tail:
+        // records past the last held byte are missing, so the cut charges
+        // one record.unreadable even when every held record is complete.
+        if let (Some(view), card::SourceEnd::EndsIn(open)) = (scan.source_view(), scan.source_end) {
+            let end = view.end();
+            if let Some(extent) = view.child(end, end) {
+                let section = open.section();
+                ctx.decode_part(&mut parts, extent, part(section.part()), |_| {
+                    Err::<(), CodecError>(CodecError::malformed(format_args!(
+                        "IGES transfer ends in {} with no Terminate card",
+                        section.part(),
+                    )))
+                })?;
+            }
+        }
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries)?;

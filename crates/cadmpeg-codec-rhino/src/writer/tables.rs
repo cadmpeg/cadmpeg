@@ -22,6 +22,7 @@ pub(super) mod lights;
 pub(super) mod materials;
 pub(super) mod native;
 pub(super) mod products;
+pub(super) mod texture_mappings;
 pub(super) mod unwritten;
 pub(super) mod views;
 

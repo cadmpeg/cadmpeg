@@ -110,8 +110,8 @@ A semantic writer refuses a native arena it cannot preserve, so an arena the
 writer does not regenerate is admitted by name. The IGES semantic writer admits
 `quarantined_directory_records` and `quarantined_parameter_records` as
 passthrough arenas. It regenerates neither, because a record that failed typing
-has no fields to write, and a non-empty one charges
-`iges/writer.passthrough-omitted` naming the arena and its record count.
+has no fields to write; a non-empty one appears in the export report as
+`export/native.records-omitted`, naming the arena and each record.
 Byte-exact replay is a separate path and is unaffected: it copies the retained
 source image, which holds every quarantined card.
 

@@ -1,0 +1,162 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "unknowns": [
+          {
+            "id": "step:data:coaxiality_tolerance#3"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "COAXIALITY_TOLERANCE #3 has no numeric magnitude",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 COAXIALITY_TOLERANCE instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 299 structural, 171 typed, 43 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "e891c48ee5e46bd59fa46ecef68e2d7ee6cbce5ea9821dc98b50ebb08ca7d339",
+    "retained_records": {
+      "step:data:coaxiality_tolerance#3": {
+        "bytes": {
+          "data": "IzM9Q09BWElBTElUWV9UT0xFUkFOQ0UoJ2NvYXhpYWxpdHknLCcnLCQpOw==",
+          "retention": "inline"
+        },
+        "offset": 443,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}

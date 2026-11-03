@@ -123,7 +123,7 @@
         "scope": "namespaced",
         "strict_floor": "warning"
       },
-      "message": "body rhino:object:body#record-000000-offset-177 omitted: Brep writing requires one shell with distinct explicit carriers and polygonal loops",
+      "message": "body rhino:object:body#record-000000-offset-177 omitted: Brep writing requires one shell with distinct explicit carriers and polygonal loops; 22 member record(s): rhino:object:body#record-000000-offset-177, rhino:object:coedge#record-000000-offset-177.slot-0, rhino:object:coedge#record-000000-offset-177.slot-1, rhino:object:coedge#record-000000-offset-177.slot-2, rhino:object:coedge#record-000000-offset-177.slot-3, rhino:object:curve#record-000000-offset-177.c3-0, rhino:object:edge#record-000000-offset-177.singular-0, rhino:object:edge#record-000000-offset-177.singular-2, rhino:object:edge#record-000000-offset-177.slot-0, rhino:object:face#record-000000-offset-177.slot-0, rhino:object:loop#record-000000-offset-177.slot-0, rhino:object:pcurve#record-000000-offset-177.trim-0, rhino:object:pcurve#record-000000-offset-177.trim-1, rhino:object:pcurve#record-000000-offset-177.trim-2, rhino:object:pcurve#record-000000-offset-177.trim-3, rhino:object:point#record-000000-offset-177.vertex-0, rhino:object:point#record-000000-offset-177.vertex-1, rhino:object:region#record-000000-offset-177.slot-1, rhino:object:shell#record-000000-offset-177.component-0, rhino:object:surface#record-000000-offset-177.slot-0, rhino:object:vertex#record-000000-offset-177.slot-0, rhino:object:vertex#record-000000-offset-177.slot-1",
       "severity": "error"
     },
     {

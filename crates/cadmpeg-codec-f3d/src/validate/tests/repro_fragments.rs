@@ -61,4 +61,3 @@ fn repro_fragment_native_reader_skips_refused_rows_and_keeps_admitted_records() 
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].starts_with("design_record_headers:"));
 }
-
