@@ -446,9 +446,14 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("compound");
     let mut document = RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
-    let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
+    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Inventor,
+        &ctx,
+    );
+    let features =
+        crate::feature::inventory(&ctx, &document, &mut parts).expect("feature inventory");
     let mut ir = decode(&design, &base);
-    let design = crate::design::inventory(&ctx, &document).expect("design inventory");
+    let design = crate::design::inventory(&ctx, &document, &mut parts).expect("design inventory");
     let keys = ir
         .native
         .namespace("inventor")

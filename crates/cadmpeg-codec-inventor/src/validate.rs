@@ -43,7 +43,6 @@ use crate::native::{
     StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
-use crate::record_issue::RecordIssue;
 
 pub(crate) const ARENAS: &[&str] = &[
     "active_carrier",
@@ -53,12 +52,10 @@ pub(crate) const ARENAS: &[&str] = &[
     "body_native_keys",
     "database_issues",
     "databases",
-    "design_record_issues",
     "design_view_representations",
     "design_view_visibility",
     "embedded_references",
     "external_references",
-    "feature_record_issues",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -106,7 +103,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "segment_meta_issues",
     "segment_pairs",
     "segment_registry",
-    "sketch_record_issues",
     "storage_bands",
     "structural_issues",
     "tolerant_coedge_parameters",
@@ -403,16 +399,6 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 Some(parameter.id.as_str().to_owned()),
             ));
         }
-    }
-    for issue in &data.design_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor design record: {}", issue.detail),
-            Some(format!(
-                "inventor:pmdc:record#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            )),
-        ));
     }
 }
 
@@ -1013,13 +999,6 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(constraint.id.as_str().to_owned()),
             ));
         }
-    }
-    for issue in &data.sketch_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor sketch record: {}", issue.detail),
-            Some(issue.id()),
-        ));
     }
 }
 
@@ -2580,13 +2559,6 @@ fn validate_features(
             ));
         }
     }
-    for issue in &data.feature_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor feature record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
     Ok(())
 }
 
@@ -2849,13 +2821,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             ));
         }
     }
-    for issue in &data.presentation_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -2921,19 +2886,16 @@ struct NativeData {
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     composite_member_links: Vec<crate::feature::composite::MemberLink>,
-    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
     pm_dc_parameter_tables: Vec<crate::design::scope::PmDcParameterTable>,
     pm_dc_model_roots: Vec<crate::design::scope::PmDcModelRoot>,
-    design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
-    sketch_record_issues: Vec<RecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_pattern_operands: Vec<crate::feature::pattern::NativeOperand>,
@@ -2947,7 +2909,6 @@ struct NativeData {
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
-    feature_record_issues: Vec<RecordIssue>,
     active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -3000,21 +2961,17 @@ impl NativeData {
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
-            presentation_record_issues: namespace
-                .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,
             pm_dc_parameter_tables: namespace.arena_as_for_decode(ctx, "pm_dc_parameter_tables")?,
             pm_dc_model_roots: namespace.arena_as_for_decode(ctx, "pm_dc_model_roots")?,
-            design_record_issues: namespace.arena_as_for_decode(ctx, "design_record_issues")?,
             pm_dc_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
             pm_dc_sketch_constraints: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
             pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
-            sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,
             pm_dc_features: namespace.arena_as_for_decode(ctx, "pm_dc_features")?,
             pm_dc_pattern_features: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?,
             pm_dc_pattern_operands: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_operands")?,
@@ -3036,7 +2993,6 @@ impl NativeData {
             pm_dc_kernel_entity_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_kernel_entity_links")?,
             pm_dc_work_planes: namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?,
-            feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,
         })
