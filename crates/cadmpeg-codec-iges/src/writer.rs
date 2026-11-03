@@ -9427,8 +9427,11 @@ fn parameter_card(
     card(&payload, b'P', sequence)
 }
 
+/// IGES states every JSON path at full precision; no written value is
+/// quantized or normalized (#232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+
 /// Stored-field capacities of the Fixed ASCII card layout (#217 §5.0).
-///
 /// The payload row holds the 72 section-data bytes and the sequence row the
 /// seven-column decimal field (`docs/formats/iges.md` §33). Both helpers
 /// refuse with `InvalidInput` until #239 switches the encode path to

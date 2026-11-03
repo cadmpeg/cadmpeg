@@ -14,6 +14,14 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        crate::writer::CAPACITY_FIELDS.len() == 2,
+        "IGES card layout declares payload and sequence rows"
+    );
+    debug_assert!(
+        crate::writer::REDUCED_FIELDS.is_empty(),
+        "IGES stores no reduced fields"
+    );
     match resolved.target() {
         // A successful replay retains the source dialect; synthesis selects its catalog default.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input)? {
