@@ -1086,33 +1086,31 @@ pub(crate) fn decode_parameter_owners(
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        // The owner of a text parameter stores the text in its scalar
-        // envelope, which no owner grammar reads.
-        if parameter.text_value().is_some() {
-            unparsed.push(parameter.id.clone());
-            continue;
-        }
         let evaluated = crate::records::identity::Located {
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let parsed = parse_parameter_owner(frame)
-            .or_else(|| {
-                parse_admitted_legacy_parameter_owner_68(
-                    frame,
-                    evaluated,
-                    header.byte_offset,
-                    owner_typed.contains(&at),
-                )
-            })
-            .or_else(|| {
-                parse_admitted_legacy_parameter_owner_88(
-                    frame,
-                    evaluated,
-                    header.byte_offset,
-                    owner_typed.contains(&at),
-                )
-            });
+        let parsed = if let Some(text) = parameter.text_value() {
+            parse_text_parameter_owner(frame, text, evaluated, header.byte_offset)
+        } else {
+            parse_parameter_owner(frame)
+                .or_else(|| {
+                    parse_admitted_legacy_parameter_owner_68(
+                        frame,
+                        evaluated,
+                        header.byte_offset,
+                        owner_typed.contains(&at),
+                    )
+                })
+                .or_else(|| {
+                    parse_admitted_legacy_parameter_owner_88(
+                        frame,
+                        evaluated,
+                        header.byte_offset,
+                        owner_typed.contains(&at),
+                    )
+                })
+        };
         let Some(parsed) = parsed else {
             unparsed.push(parameter.id.clone());
             continue;
@@ -1245,6 +1243,8 @@ pub(in crate::design) struct ParsedParameterOwner {
     pub(super) owned_ordinal: u32,
     variant: Option<u8>,
     pub(super) companion_record_index: u32,
+    /// Text of a text parameter's owner and the offset of its code units.
+    text_value: Option<(String, FrameRelative)>,
 }
 
 impl ParsedParameterOwner {
@@ -1254,30 +1254,70 @@ impl ParsedParameterOwner {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        crate::records::parameters::DesignParameterOwner::from_parts(
-            crate::records::parameters::DesignParameterOwnerWire {
-                id: ids::native_design_parameter_owner_id(stream, frame_start),
-                byte_offset: frame_start,
-                frame_length: self.frame_length,
-                class_tag: self.class_tag,
-                record_index: self.record_index,
-                scope_record_index: self.scope_record_index,
-                local_ordinal: self.local_ordinal,
-                evaluated_value: self.evaluated_value,
-                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-                parameter_record_index: self.parameter_record_index,
-                owned_ordinal: self.owned_ordinal,
-                variant: self.variant,
-                companion_record_index: self.companion_record_index,
-            },
-        )
+        let wire = crate::records::parameters::DesignParameterOwnerWire {
+            id: ids::native_design_parameter_owner_id(stream, frame_start),
+            byte_offset: frame_start,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+            parameter_record_index: self.parameter_record_index,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index,
+        };
+        match self.text_value {
+            Some((value, offset)) => DesignParameterOwner::from_text_parts(
+                wire,
+                crate::records::identity::RecordedValue {
+                    value,
+                    offset: offset.absolute(frame_start)?,
+                },
+            ),
+            None => DesignParameterOwner::from_parts(wire),
+        }
         .ok()
     }
 }
 
 pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
-    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain)
-        .or_else(|| parse_parameter_owner_with(frame, OwnerReferenceForm::Typed))
+    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, OwnerScalar::Numeric).or_else(
+        || parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, OwnerScalar::Numeric),
+    )
+}
+
+/// Parse the owner of a text parameter, whose scalar envelope is `00` +
+/// LP-UTF16 `text` and whose evaluated scalar is the parameter's.
+fn parse_text_parameter_owner(
+    frame: &[u8],
+    text: &str,
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Option<ParsedParameterOwner> {
+    let scalar = OwnerScalar::Text {
+        text,
+        evaluated,
+        frame_start,
+    };
+    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, scalar)
+        .or_else(|| parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, scalar))
+}
+
+/// Scalar envelope that an ordinary parameter-owner frame stores.
+#[derive(Clone, Copy)]
+enum OwnerScalar<'a> {
+    /// One of the numeric envelopes.
+    Numeric,
+    /// `00` + LP-UTF16 `text`. The text and its length select this envelope:
+    /// a two-code-unit text has the length of `00 + f64`.
+    Text {
+        text: &'a str,
+        evaluated: crate::records::identity::Located<f64>,
+        frame_start: u64,
+    },
 }
 
 /// Same-segment reference spelling inside an ordinary parameter-owner frame.
@@ -1331,6 +1371,7 @@ const _: () = {
 fn parse_parameter_owner_with(
     frame: &[u8],
     form: OwnerReferenceForm,
+    expected_scalar: OwnerScalar<'_>,
 ) -> Option<ParsedParameterOwner> {
     let width = form.width();
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
@@ -1394,22 +1435,49 @@ fn parse_parameter_owner_with(
     let parameter_record_index = form.target_at(frame, parameter_marker)?;
 
     let scalar = frame.get(scalar_start..parameter_marker)?;
-    let (evaluated_value, evaluated_value_offset) = match scalar.len() {
-        9 if scalar.first() == Some(&0) => {
-            (View::f64_le_at(frame, scalar_start + 1)?, scalar_start + 1)
+    let (evaluated_value, evaluated_value_offset, text_value) = match expected_scalar {
+        OwnerScalar::Numeric => {
+            let (value, offset) = match scalar.len() {
+                9 if scalar.first() == Some(&0) => {
+                    (View::f64_le_at(frame, scalar_start + 1)?, scalar_start + 1)
+                }
+                6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => (
+                    f64::from(View::u32_le_at(frame, scalar_start + 2)?),
+                    scalar_start + 2,
+                ),
+                5 if scalar.first() == Some(&0) && variant.is_none() => (
+                    f64::from(View::u32_le_at(frame, scalar_start + 1)?),
+                    scalar_start + 1,
+                ),
+                13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
+                    (View::f64_le_at(frame, scalar_start + 5)?, scalar_start + 5)
+                }
+                _ => return None,
+            };
+            (
+                value,
+                FrameRelative(i128::from(u64_from_index(offset))),
+                None,
+            )
         }
-        6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => (
-            f64::from(View::u32_le_at(frame, scalar_start + 2)?),
-            scalar_start + 2,
-        ),
-        5 if scalar.first() == Some(&0) && variant.is_none() => (
-            f64::from(View::u32_le_at(frame, scalar_start + 1)?),
-            scalar_start + 1,
-        ),
-        13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
-            (View::f64_le_at(frame, scalar_start + 5)?, scalar_start + 5)
+        OwnerScalar::Text {
+            text,
+            evaluated,
+            frame_start,
+        } => {
+            let (stored, end) = lp_utf16_bounded(frame, scalar_start + 1, 0..=4096)?;
+            if scalar.first() != Some(&0) || end != parameter_marker || stored != text {
+                return None;
+            }
+            (
+                evaluated.value,
+                FrameRelative::between(evaluated.offset, frame_start),
+                Some((
+                    stored,
+                    FrameRelative(i128::from(u64_from_index(scalar_start + 5))),
+                )),
+            )
         }
-        _ => return None,
     };
     let evaluated_value = FiniteReal::new(evaluated_value)?;
     let consecutive = |first: u32, second: u32, third: u32| {
@@ -1429,11 +1497,12 @@ fn parse_parameter_owner_with(
         scope_record_index,
         local_ordinal: View::u32_le_at(frame, local_ordinal_offset)?,
         evaluated_value,
-        evaluated_value_offset: FrameRelative(i128::from(u64_from_index(evaluated_value_offset))),
+        evaluated_value_offset,
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
         companion_record_index,
+        text_value,
     })
 }
 
@@ -1515,6 +1584,7 @@ fn parse_admitted_legacy_parameter_owner_68(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
+        text_value: None,
     })
 }
 
@@ -1588,6 +1658,7 @@ fn parse_admitted_legacy_parameter_owner_88(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
+        text_value: None,
     })
 }
 

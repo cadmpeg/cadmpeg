@@ -696,7 +696,7 @@ impl From<DesignParameter> for DesignParameterSerde {
 /// Indexed record that owns one Design parameter.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
-#[serde(try_from = "DesignParameterOwnerWire")]
+#[serde(try_from = "DesignParameterOwnerSerde")]
 pub(crate) struct DesignParameterOwner {
     id: String,
     byte_offset: u64,
@@ -708,6 +708,8 @@ pub(crate) struct DesignParameterOwner {
     evaluated_value_offset: u64,
     owned_ordinal: u32,
     variant: Option<u8>,
+    /// Text of a text parameter's owner, stored in place of the scalar.
+    text_value: Option<Located<String>>,
     base_index: u32,
     order: ParameterFrameOrder,
 }
@@ -732,6 +734,7 @@ impl Clone for DesignParameterOwner {
             evaluated_value_offset: self.evaluated_value_offset,
             owned_ordinal: self.owned_ordinal,
             variant: self.variant,
+            text_value: self.text_value.clone(),
             base_index: self.base_index,
             order: self.order,
         }
@@ -796,6 +799,11 @@ impl DesignParameterOwner {
                 ParameterFrameOrder::OwnerCompanionParameter => 2,
             }
     }
+    /// The text a text parameter's owner stores in place of its scalar.
+    #[cfg(test)]
+    pub(crate) fn text_value(&self) -> Option<&str> {
+        self.text_value.as_ref().map(|field| field.value.as_str())
+    }
     /// The companion record index value.
     pub(crate) fn companion_record_index(&self) -> u32 {
         self.base_index
@@ -825,6 +833,10 @@ impl Serialize for DesignParameterOwner {
             #[serde(skip_serializing_if = "Option::is_none")]
             variant: Option<u8>,
             companion_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text_value: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text_value_offset: Option<u64>,
         }
         WireRef {
             id: &self.id,
@@ -840,35 +852,109 @@ impl Serialize for DesignParameterOwner {
             owned_ordinal: self.owned_ordinal,
             variant: self.variant,
             companion_record_index: self.companion_record_index(),
+            text_value: self.text_value.as_ref().map(|field| field.value.as_str()),
+            text_value_offset: self.text_value.as_ref().map(|field| field.offset),
         }
         .serialize(serializer)
+    }
+}
+
+/// Serialized owner: the frame fields and, for a text parameter's owner, its text.
+#[derive(Deserialize)]
+struct DesignParameterOwnerSerde {
+    #[serde(flatten)]
+    wire: DesignParameterOwnerWire,
+    #[serde(default, deserialize_with = "deserialize_text_value")]
+    text_value: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_text_value_offset")]
+    text_value_offset: Option<u64>,
+}
+
+impl TryFrom<DesignParameterOwnerSerde> for DesignParameterOwner {
+    type Error = String;
+    fn try_from(serde: DesignParameterOwnerSerde) -> Result<Self, Self::Error> {
+        match RecordedValue::from_wire(serde.text_value, serde.text_value_offset, "text_value")? {
+            Some(text) => Self::from_text_parts(finite_owner_wire(serde.wire)?, text),
+            None => Self::try_from(serde.wire),
+        }
     }
 }
 
 impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
     type Error = String;
     fn try_from(wire: DesignParameterOwnerWire) -> Result<Self, Self::Error> {
-        let evaluated_value =
-            FiniteReal::new(wire.evaluated_value).ok_or("evaluated_value must be finite")?;
-        Self::from_parts(DesignParameterOwnerWire {
-            id: wire.id,
-            byte_offset: wire.byte_offset,
-            frame_length: wire.frame_length,
-            class_tag: wire.class_tag,
-            record_index: wire.record_index,
-            scope_record_index: wire.scope_record_index,
-            local_ordinal: wire.local_ordinal,
-            evaluated_value,
-            evaluated_value_offset: wire.evaluated_value_offset,
-            parameter_record_index: wire.parameter_record_index,
-            owned_ordinal: wire.owned_ordinal,
-            variant: wire.variant,
-            companion_record_index: wire.companion_record_index,
-        })
+        Self::from_parts(finite_owner_wire(wire)?)
     }
 }
 
+/// Owner wire fields with a finite evaluated value.
+fn finite_owner_wire(
+    wire: DesignParameterOwnerWire,
+) -> Result<DesignParameterOwnerWire<FiniteReal>, String> {
+    let evaluated_value =
+        FiniteReal::new(wire.evaluated_value).ok_or("evaluated_value must be finite")?;
+    Ok(DesignParameterOwnerWire {
+        id: wire.id,
+        byte_offset: wire.byte_offset,
+        frame_length: wire.frame_length,
+        class_tag: wire.class_tag,
+        record_index: wire.record_index,
+        scope_record_index: wire.scope_record_index,
+        local_ordinal: wire.local_ordinal,
+        evaluated_value,
+        evaluated_value_offset: wire.evaluated_value_offset,
+        parameter_record_index: wire.parameter_record_index,
+        owned_ordinal: wire.owned_ordinal,
+        variant: wire.variant,
+        companion_record_index: wire.companion_record_index,
+    })
+}
+
 impl DesignParameterOwner {
+    /// Validate the owner of a text parameter. Its scalar envelope is `00` +
+    /// LP-UTF16 text in place of `00 + f64`, and its evaluated scalar is the
+    /// parameter's.
+    pub(crate) fn from_text_parts(
+        wire: DesignParameterOwnerWire<FiniteReal>,
+        text: RecordedValue<String>,
+    ) -> Result<Self, String> {
+        let code_units = u64::try_from(text.value.encode_utf16().count())
+            .map_err(|_| "text_value has too many code units")?;
+        let envelope = code_units
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(5))
+            .ok_or("text_value has too many code units")?;
+        let frame_length = wire.frame_length;
+        let evaluated_value_offset = wire.evaluated_value_offset;
+        // The frame has the fields of the `00 + f64` form whose f64 starts at
+        // the text's count.
+        let numeric = Self::from_parts(DesignParameterOwnerWire {
+            frame_length: frame_length
+                .checked_add(9)
+                .and_then(|length| length.checked_sub(envelope))
+                .ok_or("frame_length is shorter than its text envelope")?,
+            evaluated_value_offset: text
+                .offset
+                .checked_sub(4)
+                .ok_or("text_value_offset must follow its code-unit count")?,
+            ..wire
+        })?;
+        if !matches!(numeric.frame_length, 103 | 104 | 303 | 304) {
+            return Err(
+                "frame_length and text_value_offset must describe a text owner frame".into(),
+            );
+        }
+        Ok(Self {
+            frame_length,
+            evaluated_value_offset,
+            text_value: Some(Located {
+                value: text.value,
+                offset: text.offset,
+            }),
+            ..numeric
+        })
+    }
+
     pub(crate) fn from_parts(wire: DesignParameterOwnerWire<FiniteReal>) -> Result<Self, String> {
         let evaluated_value = wire.evaluated_value;
         let (base_index, order) = if wire.record_index.checked_add(1)
@@ -950,6 +1036,7 @@ impl DesignParameterOwner {
             evaluated_value_offset: wire.evaluated_value_offset,
             owned_ordinal: wire.owned_ordinal,
             variant: wire.variant,
+            text_value: None,
         })
     }
 }
