@@ -109,9 +109,12 @@ pub(super) fn project(
                         if is_color_packet(bytes.as_slice()) {
                             continue;
                         }
-                        let mut raw = [0u8; 8];
-                        raw[8 - bytes.as_slice().len()..].copy_from_slice(bytes.as_slice());
-                        let Some(value) = i64::try_from(u64::from_be_bytes(raw)).ok() else {
+                        let mut padded = [0u8; 8];
+                        padded[8 - bytes.as_slice().len()..].copy_from_slice(bytes.as_slice());
+                        let Some(raw) = cadmpeg_core::decode::View::u64_be_at(&padded, 0) else {
+                            continue;
+                        };
+                        let Some(value) = i64::try_from(raw).ok() else {
                             losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} selection {selection_ordinal} inline {field_ordinal} exceeds the neutral integer range.", block.id)));
                             continue;
                         };
