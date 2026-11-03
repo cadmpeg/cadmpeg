@@ -192,8 +192,7 @@ fn complex_datum_feature_remains_a_dimension_target() {
     assert_eq!(
         dimension.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#6")
-                .expect("nonempty source identity")
+            source_id: crate::pmi_aspect::aspect_key("DATUM_FEATURE", "feature", "", "")
         }]
     );
 }
@@ -215,7 +214,16 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
 #1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#1002);
 #1004=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#11,#1002);",
     );
-    for (name, source_id) in [("composite width", "#6"), ("target width", "#7")] {
+    for (name, key) in [
+        (
+            "composite width",
+            crate::pmi_aspect::aspect_key("SHAPE_ASPECT", "composite feature", "", ""),
+        ),
+        (
+            "target width",
+            crate::pmi_aspect::aspect_key("DATUM_TARGET", "datum target", "A", ""),
+        ),
+    ] {
         let dimension = result
             .ir()
             .model
@@ -225,10 +233,7 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
             .unwrap_or_else(|| panic!("missing dimension {name}"));
         assert_eq!(
             dimension.targets,
-            vec![PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new(source_id)
-                    .expect("nonempty source identity")
-            }]
+            vec![PmiTarget::ShapeAspect { source_id: key }]
         );
     }
 }
@@ -245,10 +250,35 @@ fn datum_target_transfers_form_and_identification() {
 #99=UNRESOLVED_PRODUCT();",
     );
 
-    for (name, form, identification, source_id) in [
-        ("point target", DatumTargetForm::Point, "A", "#6"),
-        ("circle target", DatumTargetForm::Circle, "B", "#7"),
-        ("rectangle target", DatumTargetForm::Rectangle, "C", "#8"),
+    for (name, form, identification, key) in [
+        (
+            "point target",
+            DatumTargetForm::Point,
+            "A",
+            crate::pmi_aspect::aspect_key("DATUM_TARGET", "point target", "A", "point"),
+        ),
+        (
+            "circle target",
+            DatumTargetForm::Circle,
+            "B",
+            crate::pmi_aspect::aspect_key(
+                "PLACED_DATUM_TARGET_FEATURE",
+                "circle target",
+                "B",
+                "circle",
+            ),
+        ),
+        (
+            "rectangle target",
+            DatumTargetForm::Rectangle,
+            "C",
+            crate::pmi_aspect::aspect_key(
+                "PLACED_DATUM_TARGET_FEATURE",
+                "rectangle target",
+                "C",
+                "rectangle",
+            ),
+        ),
     ] {
         let target = result
             .ir()
@@ -257,13 +287,7 @@ fn datum_target_transfers_form_and_identification() {
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing datum target {name}"));
-        assert_eq!(
-            target.targets,
-            [PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new(source_id)
-                    .expect("nonempty source identity")
-            }]
-        );
+        assert_eq!(target.targets, [PmiTarget::ShapeAspect { source_id: key }]);
         assert!(matches!(
             &target.definition,
             PmiDefinition::DatumTarget {
@@ -306,8 +330,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
     assert_eq!(
         dimension.targets,
         vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#6")
-                .expect("nonempty source identity")
+            source_id: crate::pmi_aspect::aspect_key("SHAPE_ASPECT", "feature", "", "")
         }]
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -1465,8 +1488,7 @@ fn complex_datum_reads_identification_from_its_named_partial() {
     assert_eq!(
         datum.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#7")
-                .expect("nonempty source identity")
+            source_id: crate::pmi_aspect::aspect_key("DATUM", "", "A", "")
         }]
     );
 
@@ -1659,8 +1681,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         PmiDefinition::Dimension(ref relation) if matches!(relation.kind(), DimensionKind::Diameter)
     ));
     assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
-        source_id: cadmpeg_core::text::NonBlankString::new("#39")
-            .expect("nonempty source identity")
+        source_id: crate::pmi_aspect::aspect_key("SHAPE_ASPECT", "dimension feature", "", "")
     }));
     assert!(dimension.targets.contains(&PmiTarget::Face {
         face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
@@ -1707,7 +1728,8 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         &datum_target.definition,
         PmiDefinition::DatumTarget { basis, .. }
             if basis.contains(&PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("#47").expect("nonempty source identity")})
+                source_id: crate::pmi_aspect::aspect_key("SHAPE_ASPECT", "datum basis", "", "")
+            })
     ));
     let point_dimension = result
         .ir()
@@ -1840,8 +1862,7 @@ fn datum_target_writes_and_round_trips() {
     assert_eq!(
         target.targets,
         [PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#30")
-                .expect("nonempty source identity")
+            source_id: crate::pmi_aspect::aspect_key("DATUM_TARGET", "datum target", "A", "circle")
         }]
     );
     assert!(matches!(

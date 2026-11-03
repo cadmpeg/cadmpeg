@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
+use cadmpeg_ir::ids::{BodyId, DeclaredMeasureId, IdentityKey, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -134,6 +134,7 @@ pub(super) fn decode(
                         topology,
                         definitions_by_shape,
                         &aspect_items,
+                        ir,
                     )
                 })
                 .clone()
@@ -314,6 +315,7 @@ fn resolve_target(
     topology: &TopologyData,
     definitions_by_shape: &BTreeMap<u64, ProductDefinitionId>,
     aspect_items: &BTreeMap<u64, BTreeSet<u64>>,
+    ir: &CadIr,
 ) -> DeclaredTarget {
     let Some(record) = exchange.records().get(&definition) else {
         return DeclaredTarget::Unresolved {};
@@ -327,6 +329,11 @@ fn resolve_target(
         );
     }
     if record.partial("SHAPE_ASPECT").is_none() {
+        // A property on a face describes that face's bodies: validation
+        // properties name the advanced face they were measured on.
+        if let Some(body) = face_body(definition, ir) {
+            return DeclaredTarget::Bodies { bodies: vec![body] };
+        }
         return DeclaredTarget::Unresolved {};
     }
     let Some(items) = aspect_items.get(&definition) else {
@@ -352,6 +359,26 @@ fn resolve_target(
     DeclaredTarget::Bodies {
         bodies: bodies.into_iter().collect(),
     }
+}
+
+/// The body of the face `definition` names, or `None` for an orphan face.
+fn face_body(definition: u64, ir: &CadIr) -> Option<BodyId> {
+    let face = ir
+        .model
+        .faces
+        .iter()
+        .find(|face| step_id(face.id.as_str()) == Some(definition))?;
+    let shell = ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.as_str() == face.shell.as_str())?;
+    let region = ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id.as_str() == shell.region.as_str())?;
+    Some(region.body.clone())
 }
 
 /// The quantity that the validation item `record` names, before unit

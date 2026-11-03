@@ -22,6 +22,23 @@ pub(crate) fn plan(
         crate::writer::REDUCED_FIELDS.is_empty(),
         "IGES stores no reduced fields"
     );
+    // Synthesis visits every input record, so the caller's entity ceiling
+    // applies to the input record count before any building (#217 §5.0).
+    {
+        use cadmpeg_core::decode::{
+            u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
+        };
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode: DecodeMode::Salvage,
+            limits: input.limits,
+        };
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+        ctx.charge_entities(
+            u64_from_index(input.ir.model.entity_count()),
+            "write IGES records",
+        )?;
+    }
     match resolved.target() {
         // A successful replay retains the source dialect; synthesis selects its catalog default.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input)? {

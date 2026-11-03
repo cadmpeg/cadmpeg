@@ -255,6 +255,12 @@ pub(in crate::writer) fn records(
                 continue;
             }
         };
+        if annotation.text.len() != 1 {
+            losses.push(RhinoLossCode::WriterAnnotationTextJoined.note(format!(
+                "{}: multi-line text is joined into one native string",
+                annotation.id
+            )));
+        }
         if fields
             .and_then(|fields| fields.get("dimstyle_uuid"))
             .is_some_and(|value| !value.is_null())

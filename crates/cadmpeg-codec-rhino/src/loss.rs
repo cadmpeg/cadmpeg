@@ -149,6 +149,8 @@ pub(crate) enum RhinoLossCode {
     AnnotationRecordUnprojected,
     /// A neutral annotation cannot be encoded as a Rhino object.
     WriterAnnotationOmitted,
+    /// A multi-line annotation text is joined into one native string.
+    WriterAnnotationTextJoined,
     /// A framed product occurrence could not be transferred to the native graph.
     ProductOccurrenceDropped,
     /// A fully typed product record has no constructible neutral counterpart.
@@ -285,6 +287,7 @@ impl RhinoLossCode {
         Self::AnnotationRecordDropped,
         Self::AnnotationRecordUnprojected,
         Self::WriterAnnotationOmitted,
+        Self::WriterAnnotationTextJoined,
         Self::ProductOccurrenceDropped,
         Self::ProductRecordUnprojected,
         Self::AnnotationUserdataDropped,
@@ -350,6 +353,7 @@ impl RhinoLossCode {
             Self::AnnotationRecordDropped => "annotation.record-dropped",
             Self::AnnotationRecordUnprojected => "annotation.record-unprojected",
             Self::WriterAnnotationOmitted => "writer.annotation-omitted",
+            Self::WriterAnnotationTextJoined => "writer.annotation-text-joined",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::ProductRecordUnprojected => "product.record-unprojected",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
@@ -438,6 +442,7 @@ impl RhinoLossCode {
             Self::NativeRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
             Self::AnnotationRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAnnotationOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterAnnotationTextJoined => LossTaxonomy::PmiOmitted,
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -551,6 +556,7 @@ mod tests {
                 "annotation.record-dropped",
                 "annotation.record-unprojected",
                 "writer.annotation-omitted",
+                "writer.annotation-text-joined",
                 "product.occurrence-dropped",
                 "product.record-unprojected",
                 "annotation.userdata-dropped",

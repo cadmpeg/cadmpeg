@@ -440,6 +440,81 @@ impl BodyScope {
 /// Strip member references with no scoped record, charging one loss per
 /// pruned record or entry (W1 cascade, #217 §5.0). Records that need a
 /// removed record are removed; records that list one lose only that entry.
+/// Drop loops whose directed coedge ring does not close, charging one loss
+/// per loop: a traversal-broken loop has no valid Brep ring, so the writer
+/// degrades at the smallest record instead of refusing the write (§5.2).
+/// Loops with dangling references are left to `prune_pass`, which repairs
+/// their rings; only fully-resolved rings are judged here.
+pub(super) fn prune_open_loops(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+) {
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::{BTreeMap, BTreeSet};
+    let edges: BTreeMap<&str, _> = scoped
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect();
+    let coedges: BTreeMap<&str, _> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect();
+    let mut drop = Vec::new();
+    'outer: for loop_ in &scoped.model.loops {
+        let ring = loop_.coedges();
+        if ring.is_empty() {
+            continue;
+        }
+        for (index, id) in ring.iter().enumerate() {
+            let (Some(current), Some(next)) = (
+                coedges.get(id.as_str()),
+                coedges.get(ring[(index + 1) % ring.len()].as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let (Some(edge), Some(next_edge)) = (
+                edges.get(current.edge.as_str()),
+                edges.get(next.edge.as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let end = if current.sense == Sense::Forward {
+                &edge.end
+            } else {
+                &edge.start
+            };
+            let start = if next.sense == Sense::Forward {
+                &next_edge.start
+            } else {
+                &next_edge.end
+            };
+            if end != start {
+                drop.push(loop_.id.as_str().to_owned());
+                continue 'outer;
+            }
+        }
+    }
+    if drop.is_empty() {
+        return;
+    }
+    let drop: BTreeSet<_> = drop.into_iter().collect();
+    scoped.model.loops.retain(|row| {
+        let keep = !drop.contains(row.id.as_str());
+        if !keep {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                "coedge traversal does not close".into(),
+            );
+        }
+        keep
+    });
+}
+
 fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
     macro_rules! existing {
         ($arena:ident) => {
@@ -477,6 +552,7 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             scoped.model.regions.len(),
         );
         prune_pass(scoped, &mut pruned, &points, &surfaces, &curves, &pcurves);
+        prune_open_loops(scoped, &mut pruned);
         let after = (
             scoped.model.vertices.len(),
             scoped.model.edges.len(),

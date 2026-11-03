@@ -9,6 +9,7 @@ use super::{
 use cadmpeg_ir::products::{
     AssemblyGraph, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
 };
+use std::collections::BTreeSet;
 
 const DEFINITION_CLASS: [u8; 16] = [
     0xf6, 0xbf, 0xf8, 0x26, 0x18, 0x26, 0x7f, 0x41, 0xa1, 0x58, 0x15, 0x3d, 0x64, 0xa9, 0x49, 0x89,
@@ -40,6 +41,7 @@ fn children<'a>(
         };
         if graph.effective_transform(&occurrence.id).is_none()
             || !parent_instances.contains(&parent.as_str())
+            || !occurrence_written(ir, graph, occurrence)
         {
             continue;
         }
@@ -57,15 +59,53 @@ fn children<'a>(
 }
 
 pub(in crate::writer) fn is_member(ir: &CadIr, identity: &str) -> bool {
+    let referenced = referenced_definitions(ir);
     ir.model.product_definitions.iter().any(|definition| {
-        definition
-            .bodies
-            .iter()
-            .any(|body| body.as_str() == identity)
+        referenced.contains(definition.id.as_str())
+            && definition
+                .bodies
+                .iter()
+                .any(|body| body.as_str() == identity)
     }) || ir.model.occurrences.iter().any(|occurrence| {
         occurrence.id.as_str() == identity
             && matches!(occurrence.parent, OccurrenceParent::Occurrence { .. })
     })
+}
+
+/// Whether the reference writer emits an occurrence: an effective
+/// transform, a local prototype naming a held definition, and an own
+/// placement. The reference writer charges the dropped cases; this shared
+/// predicate keeps definition members consistent with the emitted
+/// references.
+fn occurrence_written(
+    ir: &CadIr,
+    graph: &AssemblyGraph<'_>,
+    occurrence: &Occurrence,
+) -> bool {
+    graph.effective_transform(&occurrence.id).is_some()
+        && matches!(&occurrence.prototype, PrototypeReference::Local { definition } if ir.model.product_definitions.iter().any(|row| row.id == *definition))
+        && occurrence
+            .effective_transform()
+            .is_ok_and(|transform| transform.is_some())
+}
+
+/// Definitions named by a writable occurrence: only these decode with
+/// placed members. Members of any other definition would suppress their
+/// object on re-decode, so the writer leaves those definitions out and
+/// their bodies decode as free geometry.
+pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> {
+    let Ok(graph) = AssemblyGraph::new(&ir.model.occurrences) else {
+        return BTreeSet::new();
+    };
+    ir.model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence_written(ir, &graph, occurrence))
+        .filter_map(|occurrence| match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition.as_str().to_owned()),
+            _ => None,
+        })
+        .collect()
 }
 
 pub(in crate::writer) fn definitions(
@@ -74,8 +114,12 @@ pub(in crate::writer) fn definitions(
     version: crate::RhinoArchiveVersion,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
+    let referenced = referenced_definitions(ir);
     let mut result = Vec::new();
     for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
+        if !referenced.contains(definition.id.as_str()) {
+            continue;
+        }
         let native = definition
             .native_ref
             .as_deref()
@@ -97,6 +141,13 @@ pub(in crate::writer) fn definitions(
                     .map(|occurrence| neutral_object_uuid(occurrence.id.as_str())),
             )
             .collect::<Vec<_>>();
+        // A definition no written reference names would suppress its
+        // members on re-decode; leave it out so they decode as free
+        // geometry. The native record keeps a dropped disposition, so
+        // the wrapper names it.
+        if !referenced.contains(definition.id.as_str()) {
+            continue;
+        }
         if version != crate::RhinoArchiveVersion::V5 {
             result.push(modern_definition(
                 definition,
