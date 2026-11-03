@@ -39,10 +39,10 @@ use chamfer::{
     consolidated_chamfers, object_chamfers, CatiaConsolidatedChamfer, CatiaObjectChamfer,
 };
 
-mod parameter_map;
+pub(crate) mod parameter_map;
 use parameter_map::CatiaSampledParameterMap;
 
-mod domain_relation;
+pub(crate) mod domain_relation;
 use domain_relation::CatiaConsolidatedDomainRelation;
 
 mod edge_node;
@@ -8385,6 +8385,7 @@ impl CatiaNative {
             &ctx,
             bytes,
             &sources,
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)
@@ -8397,6 +8398,7 @@ impl CatiaNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         bytes: &[u8],
         sources: &[Vec<crate::wire::records::SourceExtent>],
+        provided_sampled_maps: Option<Vec<CatiaSampledParameterMap>>,
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<
         (
@@ -8415,8 +8417,13 @@ impl CatiaNative {
         )?;
         let (mut native, give_ups) =
             Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)?;
-        native.sampled_parameter_maps =
-            parameter_map::derive(ctx, bytes, sources, &consolidated_records)?;
+        // The geometry route decoded these maps for its own projection; the
+        // native arena stores those same records instead of deriving them
+        // from the payload a second time.
+        native.sampled_parameter_maps = match provided_sampled_maps {
+            Some(maps) => maps,
+            None => parameter_map::derive(ctx, bytes, sources, &consolidated_records)?,
+        };
         Ok((native, give_ups))
     }
 
@@ -8891,8 +8898,12 @@ impl CatiaNative {
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
-        let consolidated_edge_nodes =
-            consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles)?;
+        let consolidated_edge_nodes = consolidated_edge_nodes(
+            bytes,
+            consolidated_records,
+            &consolidated_circles,
+            &consolidated_domain_relations,
+        )?;
         let consolidated_edge_runs = consolidated_edge_runs(
             ctx,
             bytes,

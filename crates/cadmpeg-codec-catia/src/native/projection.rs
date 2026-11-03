@@ -312,6 +312,7 @@ pub(crate) fn consolidated_edge_nodes(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
+    relations: &[crate::native::domain_relation::CatiaConsolidatedDomainRelation],
 ) -> Result<Vec<CatiaConsolidatedEdgeNode>, CodecError> {
     let mut circle_ids = HashMap::new();
     for circle in circles {
@@ -375,7 +376,7 @@ pub(crate) fn consolidated_edge_nodes(
     }
     let mut class25_descriptors = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
-        bytes, records,
+        bytes, records, relations,
     )? {
         class25_descriptors.insert(
             run.node.pos,

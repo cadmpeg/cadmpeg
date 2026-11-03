@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod closure;
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 mod decode;
 mod pcurves;
 
@@ -20,7 +21,12 @@ fn b5_derived_field_records_exactness() {
 fn b5_topology_entity_limit_refuses_before_first_model_append() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -52,7 +58,12 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
 fn b5_closed_triangle_emits_its_vertex_points() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -88,7 +99,12 @@ fn b5_closed_triangle_emits_its_vertex_points() {
 fn b5_closed_triangle_emits_its_pcurves() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -123,7 +139,12 @@ fn b5_closed_triangle_emits_its_pcurves() {
 fn b5_closed_triangle_emits_its_surfaces() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -161,7 +182,12 @@ fn b5_closed_triangle_emits_its_surfaces() {
 fn b5_triangle_edges_emit_without_exact_support_plans() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -205,7 +231,12 @@ fn b5_triangle_edges_emit_without_exact_support_plans() {
 fn b5_closed_triangle_transfers_into_an_empty_model() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -231,7 +262,12 @@ fn b5_closed_triangle_transfers_into_an_empty_model() {
 fn b5_closed_triangle_has_a_face_ownership_plan() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");
@@ -247,7 +283,12 @@ fn b5_closed_triangle_loops_orient_from_their_edge_senses() {
     use std::collections::BTreeMap;
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("closed B5 triangle graph");

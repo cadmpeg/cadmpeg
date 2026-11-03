@@ -1403,6 +1403,7 @@ fn decode_links_value_block_graph_to_its_catalog() {
             ctx,
             &bytes,
             &[],
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)
