@@ -5,11 +5,11 @@
 //! [`observe_f3z_members`]. Every member decode that runs on that thread,
 //! including a repeated decode of the same member, calls
 //! [`F3zMemberObserver::member_started`] before and
-//! [`F3zMemberObserver::member_finished`] after it. With no observer installed
-//! the cost is one thread-local read per phase or member decode.
+//! [`F3zMemberObserver::member_finished`] after it. Classification emits one duration event per member.
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use crate::container::ContainerScan;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -28,13 +28,27 @@ pub enum F3zPhase {
 
 /// Receives preparation progress and one notification pair per member decode.
 ///
-/// `path` is the archive member path. The decoder keeps no clock; an observer
-/// that needs durations measures the time between the two calls itself.
+/// `path` is the archive member path. Classification durations include each
+/// completed preparation stage. Decode durations can be measured between calls.
 pub trait F3zMemberObserver {
     /// Preparation of `phase` starts.
     fn phase_started(&self, _phase: F3zPhase) {}
     /// The preparation phase has ended with `outcome`.
     fn phase_finished(&self, _phase: F3zPhase, _outcome: Result<(), &CodecError>) {}
+
+    /// Classification of `path` ended. `elapsed` includes member expansion,
+    /// nested scanning, layer classification and optional metadata extraction.
+    /// Layer time includes merging the member layers into the archive.
+    /// Stage durations include work completed before a refusal.
+    fn member_classified(
+        &self,
+        _path: &str,
+        _elapsed: Duration,
+        _nested_scan: Duration,
+        _layers: Duration,
+        _metadata: Duration,
+    ) {
+    }
 
     /// A decode of member `path` starts.
     fn member_started(&self, path: &str);
@@ -104,3 +118,34 @@ pub(super) fn phase<T>(
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Default)]
+pub(super) struct ClassifyTiming {
+    pub(super) nested_scan: Duration,
+    pub(super) layers: Duration,
+    pub(super) metadata: Duration,
+}
+
+pub(super) fn timed<T>(duration: &mut Duration, work: impl FnOnce() -> T) -> T {
+    let start = Instant::now();
+    let result = work();
+    *duration += start.elapsed();
+    result
+}
+
+pub(super) fn classifying<T>(path: &str, work: impl FnOnce(&mut ClassifyTiming) -> T) -> T {
+    let observer = OBSERVER.with(|slot| slot.borrow().clone());
+    let start = Instant::now();
+    let mut timing = ClassifyTiming::default();
+    let result = work(&mut timing);
+    if let Some(observer) = observer {
+        observer.member_classified(
+            path,
+            start.elapsed(),
+            timing.nested_scan,
+            timing.layers,
+            timing.metadata,
+        );
+    }
+    result
+}

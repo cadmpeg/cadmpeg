@@ -183,70 +183,85 @@ pub(super) fn classify_members<'a>(
         .map(|entry| entry.name.as_str())
         .filter(|name| crate::container::is_f3d_name(name))
     {
-        let checkpoint = ctx.checkpoint();
-        let arena = DecodeArena::new();
-        let root = if scan.has_entry(member_path) {
-            scan.member_view(&arena, member_path)
-        } else {
-            Err(CodecError::malformed(format_args!(
-                "f3z document member {member_path} is not readable"
-            )))
-        };
-        let classified = root.and_then(|view| {
-            ctx.with_arena(&arena, |local| {
-                let member_scan = crate::container::scan(local, view)?;
-                Ok(
-                    crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
-                        let metadata = with_metadata
-                            .then(|| Box::new(member_metadata(&checkpoint, &arena, &member_scan)));
-                        (
-                            layers,
-                            losses,
-                            member_scan.declared_working_bytes(),
-                            metadata,
-                        )
-                    }),
-                )
-            })
-        });
-        let classified = match classified {
-            Ok(classified) => classified,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                let message = format!("{error}");
-                super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+        super::observer::classifying(member_path, |timing| {
+            let checkpoint = ctx.checkpoint();
+            let arena = DecodeArena::new();
+            let classified = {
+                let root = super::observer::timed(&mut timing.nested_scan, || {
+                    if scan.has_entry(member_path) {
+                        scan.member_view(&arena, member_path)
+                    } else {
+                        Err(CodecError::malformed(format_args!(
+                            "f3z document member {member_path} is not readable"
+                        )))
+                    }
+                });
+                root.and_then(|view| {
+                    ctx.with_arena(&arena, |local| {
+                        let member_scan = super::observer::timed(&mut timing.nested_scan, || {
+                            crate::container::scan(local, view)
+                        })?;
+                        Ok(super::observer::timed(&mut timing.layers, || {
+                            crate::dialect::classify_layers(&member_scan)
+                        })
+                        .map(|(layers, losses)| {
+                            let metadata = with_metadata.then(|| {
+                                super::observer::timed(&mut timing.metadata, || {
+                                    Box::new(member_metadata(&checkpoint, &arena, &member_scan))
+                                })
+                            });
+                            (
+                                layers,
+                                losses,
+                                member_scan.declared_working_bytes(),
+                                metadata,
+                            )
+                        }))
+                    })
+                })
+            };
+            let classified = match classified {
+                Ok(classified) => classified,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    let message = format!("{error}");
+                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
-                members.insert(
-                    member_path.to_owned(),
-                    ClassifiedMember::Unreadable(message),
-                );
-                continue;
+                    members.insert(
+                        member_path.to_owned(),
+                        ClassifiedMember::Unreadable(message),
+                    );
+                    return Ok(());
+                }
+            };
+            let (member_layers, mut member_losses, working_bytes, metadata) = classified?;
+            if let Some(metadata) = &metadata {
+                let facts = u64_from_index(metadata.references.len() + 1);
+                ctx.charge_entities(facts, "cache F3Z member metadata")?;
             }
-        };
-        let (member_layers, mut member_losses, working_bytes, metadata) = classified?;
-        if let Some(metadata) = &metadata {
-            let facts = u64_from_index(metadata.references.len() + 1);
-            ctx.charge_entities(facts, "cache F3Z member metadata")?;
-        }
-        for loss in &mut member_losses {
-            loss.message = format!("archive member {member_path}: {}", loss.message);
-        }
-        losses.append(&mut member_losses);
-        losses.extend(merge_member_layers(
-            &mut layers,
-            &member_layers,
-            member_path,
-        ));
+            super::observer::timed(&mut timing.layers, || {
+                for loss in &mut member_losses {
+                    loss.message = format!("archive member {member_path}: {}", loss.message);
+                }
+                losses.append(&mut member_losses);
+                losses.extend(merge_member_layers(
+                    &mut layers,
+                    &member_layers,
+                    member_path,
+                ));
+            });
 
-        members.insert(
-            member_path.to_owned(),
-            ClassifiedMember::Scanned {
-                checkpoint,
-                working_bytes,
-                metadata,
-            },
-        );
+            members.insert(
+                member_path.to_owned(),
+                ClassifiedMember::Scanned {
+                    checkpoint,
+                    working_bytes,
+                    metadata,
+                },
+            );
+            Ok(())
+        })?;
     }
     losses.extend(crate::dialect::dialect_losses(&layers));
     crate::report::header_losses(scan, &mut losses)?;
