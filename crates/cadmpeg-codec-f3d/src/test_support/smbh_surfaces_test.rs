@@ -4,8 +4,8 @@
 use cadmpeg_asm::asm_header;
 
 use crate::test_support::smbh_blocks_test::{
-    generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
-    generated_surface_block,
+    generated_curve_block, generated_extrusion_cache_block, generated_pcurve_block,
+    generated_rational_surface_block, generated_surface_block,
 };
 use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
 use crate::test_support::tokens_test::{
@@ -193,7 +193,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     t_pos(&mut surface, [4.0, 5.0, 6.0]);
     surface.extend_from_slice(&generated_curve_block());
     if include_cache {
-        surface.extend_from_slice(&generated_surface_block());
+        surface.extend_from_slice(&generated_extrusion_cache_block());
         t_dbl(&mut surface, 0.002);
     }
     surface.push(0x10);
