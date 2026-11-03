@@ -224,6 +224,26 @@ fn step_off_catalog_sources_write_under_inherit() {
 }
 
 #[test]
+fn iges_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Iges, &["iges"], false));
+}
+
+#[test]
+fn iges_writes_its_fixtures_with_fidelity() {
+    assert_none(&run(Format::Iges, &["iges"], true));
+}
+
+#[test]
+fn iges_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Iges, "iges"));
+}
+
+#[test]
+fn iges_edits_reach_the_output() {
+    assert_none(&edits(Format::Iges, "iges", "iges", &[false, true]));
+}
+
+#[test]
 fn cadir_edits_reach_the_output() {
     let encoder = cadmpeg_registry::build_encoder(Format::Cadir);
     let mut covered = std::collections::BTreeSet::new();
