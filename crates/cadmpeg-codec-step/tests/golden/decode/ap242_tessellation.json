@@ -6,7 +6,6 @@
         {
           "appearance": "step:presentation:appearance#70",
           "id": "step:presentation:binding#77:0-0",
-          "source_entity_id": "#77",
           "target": {
             "id": "step:tessellation:mesh#7",
             "kind": "tessellation"
