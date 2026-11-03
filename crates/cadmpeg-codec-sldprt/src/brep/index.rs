@@ -649,11 +649,13 @@ pub(super) fn index_carriers_with_nodes(
 
 /// The carriers of one stream read from its node sequence. A family that
 /// the node sequence does not supply is scanned.
+#[derive(Default)]
 pub(super) struct NodeCarriers {
     pub(super) analytic: Option<Vec<Carrier>>,
     pub(super) splines: Option<spline::nodes::NodeSplines>,
     pub(super) offsets: Option<HashMap<u32, offset::OffsetCarrier>>,
     pub(super) blends: Option<blend::BlendCarriers>,
+    pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -680,19 +682,19 @@ fn scan_carriers_with_framing(
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
-    let (node_analytic, node_splines, node_offsets, node_blends, deltas) = match framing {
-        Framing::Nodes(carriers) => {
-            lane_refusals.extend(carriers.lane_refusals);
-            (
-                carriers.analytic,
-                carriers.splines,
-                carriers.offsets,
-                carriers.blends,
-                None,
-            )
-        }
-        Framing::Scan(deltas) => (None, None, None, None, deltas),
+    let (nodes, deltas) = match framing {
+        Framing::Nodes(carriers) => (*carriers, None),
+        Framing::Scan(deltas) => (NodeCarriers::default(), deltas),
     };
+    let NodeCarriers {
+        analytic: node_analytic,
+        splines: node_splines,
+        offsets: node_offsets,
+        blends: node_blends,
+        sweeps: node_sweeps,
+        lane_refusals: node_refusals,
+    } = nodes;
+    lane_refusals.extend(node_refusals);
     match node_analytic {
         Some(analytic) => {
             for carrier in analytic {
@@ -733,7 +735,7 @@ fn scan_carriers_with_framing(
             out.insert(Carrier::Curve(carrier));
         }
     }
-    out.sweeps = sweep::scan_sweep_carriers(body);
+    out.sweeps = node_sweeps.unwrap_or_else(|| sweep::scan_sweep_carriers(body));
     let blend::BlendCarriers {
         blends,
         pairs,
