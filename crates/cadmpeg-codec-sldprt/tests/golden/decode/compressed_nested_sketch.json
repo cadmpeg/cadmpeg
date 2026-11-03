@@ -104,10 +104,7 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#247",
             "names": [],
-            "payload_evidence": {
-              "byte_len": 820,
-              "sha256": "3ffa8c09acb1c2354b5fc7692c1cd3796c09986fe1c88c7f4d4f2fcbbaa6f621"
-            },
+            "native_payload": "ffff01000d007367506f696e7448616e646c65ffff01000c0073674c696e6548616e646c65ffff01000b00736741726348616e646c650480fffeff0753006b00650074006300680031000480fffeff0d42006f00730073002d0045007800740072007500640065003100ffff01000c007367506e74506e74446973740480fffeff02440031000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000010000000200000000000000d6800000ffffffff00000000d6800200ffffffff00000000ffff1f0003ffffffffffffffff000080bf0000000000000400020001000000000080bf00000400000000000000000000000000000000f03f00000000000000000000000000000000000000000000f0bf000000000000000001000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000004000000000000000000000000000000000000000000000f0bf000000000000000002000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000084000000000000000000000000000000000000000000000f0bf000000000000000003000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000104000000000000000000000000000000000000000000000f0bf000000000000000004000000231dd571da8148a2a85898b21b89ef9900000000789c0b08666060904f4b4d2c292d4a55c8cc2b282d5148cecf2d284a2d2e4e4d5128ce4e2d49ce6060100a76f6880f0e8f37363634308e373434303060306248614001da0c4402fb0fa83406e063e082300eed99d43f330f2a2ac2c0c090826c093f580804e4c01a0419e4a0cae4198c1818183420ae126490870a2b301833303068c28415a0c2720c260c0c0c5a106101883634bb614000a21ba72cd8101cb242604721800d5c9510d85d08608b2403721a02d8c16564196c70841e2a9065b045e6e20c7359063b6cc2e8ea0138b737a3",
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -272,8 +269,8 @@
       }
     },
     "scope": {
-      "design": false,
-      "model": false
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -423,57 +420,6 @@
         },
         "message": "1 configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:223 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:315 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:407 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:499 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -484,8 +430,8 @@
     "transfer": {
       "geometry_transferred": false,
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       }
     }
   },
