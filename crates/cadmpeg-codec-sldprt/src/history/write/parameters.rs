@@ -319,11 +319,10 @@ pub(crate) fn orphaned_scalar_parameters(
     let mut disagreements = Vec::new();
     for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
         for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
-            let Some(parameter_index) = ir
-                .model
-                .parameters
-                .iter()
-                .position(|parameter| parameter.native_ref.as_deref() == Some(scalar.id.as_str()))
+            let Some(parameter_index) =
+                ir.model.parameters.iter().position(|parameter| {
+                    parameter.native_ref.as_deref() == Some(scalar.id.as_str())
+                })
             else {
                 continue;
             };

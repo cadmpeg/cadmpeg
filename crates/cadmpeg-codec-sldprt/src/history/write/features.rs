@@ -932,8 +932,14 @@ mod tests {
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(native), &std::collections::HashSet::new())
-            .expect_err("two lanes state the same object name");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(native),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -951,8 +957,14 @@ mod tests {
         assert!(native.as_ref().unwrap().feature_input_lanes.is_empty());
         model.features[0].name = Some("RenamedBoss".into());
 
-        let renames = sync_neutral_features(&model, &model.parameters, &model.bodies, &mut native, &std::collections::HashSet::new())
-            .expect("no absent feature-input lane requires a name patch");
+        let renames = sync_neutral_features(
+            &model,
+            &model.parameters,
+            &model.bodies,
+            &mut native,
+            &std::collections::HashSet::new(),
+        )
+        .expect("no absent feature-input lane requires a name patch");
         assert!(renames.is_empty());
         assert_eq!(
             native.unwrap().feature_histories[0].features[0].name,
@@ -973,8 +985,14 @@ mod tests {
         let mut native = sldprt_native(decoded.ir());
         native.feature_input_lanes[0].names.clear();
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(native), &std::collections::HashSet::new())
-            .expect_err("an existing lane with a missing name binding cannot be patched");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(native),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("an existing lane with a missing name binding cannot be patched");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -992,8 +1010,14 @@ mod tests {
         let mut model = decoded.ir().model.clone();
         model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(sldprt_native(decoded.ir())), &std::collections::HashSet::new())
-            .expect_err("a blank object name is not writable");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(sldprt_native(decoded.ir())),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"

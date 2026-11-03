@@ -36,7 +36,8 @@ pub(super) struct NeutralFeatureEncoding {
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
     pub(super) feature: &'context cadmpeg_ir::features::Feature,
     pub(super) canonical_parameters: &'context [DesignParameter],
-    pub(super) orphaned_parameters: &'context std::collections::HashSet<cadmpeg_ir::features::ParameterId>,
+    pub(super) orphaned_parameters:
+        &'context std::collections::HashSet<cadmpeg_ir::features::ParameterId>,
     pub(super) canonical_features: &'context [cadmpeg_ir::features::Feature],
     pub(super) canonical_parameter_texts:
         &'context HashMap<FeatureId, BTreeMap<NonBlankString, String>>,
