@@ -338,6 +338,26 @@ fn f3d_edits_reach_the_output() {
 }
 
 #[test]
+fn fcstd_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Fcstd, &["fcstd"], false));
+}
+
+#[test]
+fn fcstd_writes_its_fixtures_with_fidelity() {
+    assert_none(&run(Format::Fcstd, &["fcstd"], true));
+}
+
+#[test]
+fn fcstd_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Fcstd, "fcstd"));
+}
+
+#[test]
+fn fcstd_edits_reach_the_output() {
+    assert_none(&edits(Format::Fcstd, "fcstd", "fcstd", &[false, true]));
+}
+
+#[test]
 fn cadir_declares_no_reduced_fields() {
     assert!(cadmpeg_ir::codec::write::REDUCED_FIELDS.is_empty());
 }

@@ -34,7 +34,7 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{PointId};
+use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -468,9 +468,10 @@ fn encode_preserves_the_declared_source_resolution() {
         0.001
     );
     assert!(
-        report.losses.iter().all(|loss| {
-            !loss.message.contains("minimum resolution")
-        }),
+        report
+            .losses
+            .iter()
+            .all(|loss| { !loss.message.contains("minimum resolution") }),
         "the declared resolution is written as held: {:#?}",
         report.losses
     );
@@ -555,10 +556,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         assert!(ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).is_ok());
         assert!(entities.is_empty());
         assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            IgesLossCode::WriterEntityOmitted.kind()
-        );
+        assert_eq!(losses[0].code, IgesLossCode::WriterEntityOmitted.kind());
     }
 
     for unsupported in [(123, 0), (141, 0), (143, 0), (186, 0), (190, 1), (502, 1)] {
@@ -621,10 +619,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
     assert!(ensure_version_support(&mut single, IgesVersion::V4_0, &mut losses).is_ok());
     assert!(single.is_empty());
     assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        IgesLossCode::WriterEntityOmitted.kind()
-    );
+    assert_eq!(losses[0].code, IgesLossCode::WriterEntityOmitted.kind());
     let mut single = vec![single_constituent];
     let mut losses = Vec::new();
     assert!(ensure_version_support(&mut single, IgesVersion::V5_0, &mut losses).is_ok());
