@@ -1559,12 +1559,14 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 DesignAssemblyOperandFrame {
                     reference_record_index: 70,
                     reference_offset: Some(1),
+                    null_construction: false,
                     transform: transforms[0].try_into().unwrap(),
                     transform_offset: Some(2),
                 },
                 DesignAssemblyOperandFrame {
                     reference_record_index: 80,
                     reference_offset: Some(3),
+                    null_construction: false,
                     transform: transforms[1].try_into().unwrap(),
                     transform_offset: Some(4),
                 },

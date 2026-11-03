@@ -191,19 +191,18 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
             parameters: "120,1,3,0,6.283185307179586;".into(),
         },
     ]);
-    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = crate::card::scan_source(root).expect("the fixture scans into cards");
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
-    let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
-        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
-        let parameters = crate::parameter::assemble(
-            &scan,
-            &directory,
-            quarantined.iter().map(|record| record.sequence),
-            &global,
-        )?;
-        Ok::<_, CodecError>((directory, parameters))
-    })
-    .unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses");
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Iges, &ctx);
+    let parameters =
+        crate::parameter::parts::assemble(&scan, &directory, [], &global, &ctx, &mut parts)
+            .expect("the parameter section assembles");
 
     let mut knots = vec![0.0, 0.0];
     for index in 1..last {

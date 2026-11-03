@@ -147,6 +147,11 @@ fn structured_numeric_property_uses_linked_current_values_without_overwriting_so
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("numeric property source");
     let mut ir = decoded.ir().clone();
+    // Document attributes are outside this property round trip; the writer
+    // omits them with a named loss until #234 emits them.
+    ir.model
+        .attributes
+        .retain(|attribute| attribute.target != cadmpeg_ir::attributes::AttributeTarget::Document);
     let property = &ir
         .native
         .namespace("iges")
@@ -202,7 +207,11 @@ fn attribute_table_defaults_and_rows_emit_standalone_without_neutral_owners() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("attribute table source");
     let mut ir = decoded.ir().clone();
-    assert!(ir.model.attributes.is_empty());
+    assert!(ir
+        .model
+        .attributes
+        .iter()
+        .all(|attribute| attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document));
     let namespace = ir.native.namespace("iges").expect("native namespace");
     let definition = &namespace.arenas()["attribute_table_definitions"][0];
     let instance = &namespace.arenas()["attribute_table_instances"][0];
@@ -230,6 +239,11 @@ fn attribute_table_defaults_and_rows_emit_standalone_without_neutral_owners() {
             values: vec![Some(AttributeValue::String(value.into()))],
         });
     }
+    // Document attributes are outside this table round trip; the writer
+    // omits them with a named loss until #234 emits them.
+    ir.model
+        .attributes
+        .retain(|attribute| attribute.target != cadmpeg_ir::attributes::AttributeTarget::Document);
     let before = ir.clone();
     let mut entities = Vec::new();
     let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
@@ -337,9 +351,10 @@ fn removing_the_last_counterparts_keeps_one_shared_typed_property_with_all_owner
             .count(),
         2
     );
-    ir.model
-        .attributes
-        .retain(|attribute| attribute.native_ref.as_deref() != Some(native_id.as_str()));
+    ir.model.attributes.retain(|attribute| {
+        attribute.target != cadmpeg_ir::attributes::AttributeTarget::Document
+            && attribute.native_ref.as_deref() != Some(native_id.as_str())
+    });
     let mut entities = ir
         .model
         .points

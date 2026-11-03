@@ -117,8 +117,10 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    // The external-preview source has model content and no design part (§1.1).
-    assert_eq!(summary.cut, 1, "{summary:?}");
+    // The external-preview source and the six located-but-untransferred
+    // fallbacks have model content and no design part (§1.1): a class whose
+    // parts were located but failed to transfer stays in scope.
+    assert_eq!(summary.cut, 7, "{summary:?}");
 }
 
 #[test]

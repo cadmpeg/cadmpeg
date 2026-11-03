@@ -115,9 +115,9 @@
             "type_word": 16842755
           },
           {
-            "byte_len": 134,
+            "byte_len": 118,
             "byte_offset": 241,
-            "data": "46494e4a504c2020010100020000000a0043415450726576696577341243415453746f7261676550726f7065727479800100000000220c000000340101003410434154556e69636f6465537472696e67a00200000000340543415449419fa00200000000340f537570706f72742e434154506172749f43415449415f56352043423030303100",
+            "data": "46494e4a504c2020010100020000000a0043415450726576696577341243415453746f7261676550726f7065727479800100000000220c000000340101003410434154556e69636f6465537472696e67a00200000000340543415449419fa00200000000340f537570706f72742e434154506172749f",
             "family": "project-flags",
             "id": "catia:outer:finjpl#1",
             "name": "CATPreview",
@@ -631,18 +631,15 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAFnAAAAEEZJTkpQTCAgAQEAAwAAABUAQ0FUU3VtbWFyeUluZm9ybWF0aW9uTGFzdFNhdmVWZXJzaW9uADxWZXJzaW9uPjUvPFZlcnNpb24+PFJlbGVhc2U+MjcvPFJlbGVhc2U+PFNlcnZpY2VQYWNrPjIvPFNlcnZpY2VQYWNrPjxCdWlsZERhdGU+MDMtMTAtMjAxNy4yMi4wMC88QnVpbGREYXRlPjxIb3RGaXg+MC88SG90Rml4PgD/2P/AAAsIASACgAEBEQD/2gAIAQEAAD8AESL/ADP/2XN1bW1hcnktdGFpbEZJTkpQTCAgAQEAAgAAAAoAQ0FUUHJldmlldzQSQ0FUU3RvcmFnZVByb3BlcnR5gAEAAAAAIgwAAAA0AQEANBBDQVRVbmljb2RlU3RyaW5noAIAAAAANAVDQVRJQZ+gAgAAAAA0D1N1cHBvcnQuQ0FUUGFydJ9DQVRJQV9WNSBDQjAwMDEA",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

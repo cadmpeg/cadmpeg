@@ -78,7 +78,8 @@ fn files() -> Files {
 }
 
 /// The slots, files, scales, and coordinate sets of the textures of the
-/// first appearance.
+/// first appearance. An image the document holds bytes for reports the
+/// asset name the decode kept; otherwise it reports the external location.
 fn textures(
     result: &cadmpeg_ir::codec::DecodeResult,
 ) -> Vec<(String, String, f64, Option<String>)> {
@@ -94,7 +95,10 @@ fn textures(
                 .expect("the texture's asset");
             let file = match &asset.content {
                 AssetContent::External { uri } => uri.to_string(),
-                AssetContent::Embedded { .. } => "embedded".to_owned(),
+                AssetContent::Embedded { .. } => asset.name.as_ref().map_or_else(
+                    || "embedded".to_owned(),
+                    |name| name.as_str().to_owned(),
+                ),
             };
             (
                 texture.slot.clone(),
@@ -193,8 +197,8 @@ fn a_package_embeds_the_images_of_its_textures() {
         .any(|loss| loss.code == UsdLossCode::ExportTextureExternal.kind()));
 }
 
-/// A package holds the images that the model names by path when the
-/// write is given their source, and reports the paths it cannot read.
+/// A package holds the images the document holds bytes for, read through
+/// its companion source, and reports the paths it holds no bytes for.
 #[test]
 fn a_package_holds_the_images_that_its_asset_source_reads() {
     use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -205,11 +209,11 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
         .model
         .assets
         .iter()
-        .all(|asset| matches!(asset.content, AssetContent::External { .. })));
-    let write = |_assets: &Files| {
+        .all(|asset| matches!(asset.content, AssetContent::Embedded { .. })));
+    let write = |ir: &cadmpeg_ir::CadIr| {
         let plan = crate::UsdCodec
             .plan(
-                EncodeInput::new(first.ir(), None),
+                EncodeInput::new(ir, None),
                 TargetRequest::Explicit("usdz"),
             )
             .expect("plan the write");
@@ -217,7 +221,7 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
         let report = plan.write_to(&mut bytes).expect("write");
         (bytes, report)
     };
-    let (package, report) = write(&files());
+    let (package, report) = write(first.ir());
     assert!(!report
         .losses
         .iter()
@@ -242,7 +246,8 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
     held.dedup();
     assert_eq!(held, [b"orm".to_vec(), b"wood".to_vec()]);
 
-    let (_, report) = write(&Files(vec![("wood.png", b"wood")]));
+    let partial = decode_with(QUAD, &Files(vec![("wood.png", b"wood")]));
+    let (_, report) = write(partial.ir());
     let missing: Vec<&str> = report
         .losses
         .iter()
@@ -250,10 +255,7 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
         .map(|loss| loss.message.as_str())
         .collect();
     assert_eq!(missing.len(), 1, "{missing:?}");
-    assert!(
-        missing[0].contains("orm.png (orm.png: not found)"),
-        "{missing:?}"
-    );
+    assert!(missing[0].contains("orm.png"), "{missing:?}");
 }
 
 #[test]

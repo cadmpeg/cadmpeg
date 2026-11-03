@@ -14,7 +14,7 @@
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "written",
+        "attributes": "reported",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -134,6 +134,66 @@
           "scope": "namespaced"
         },
         "message": "IGES native arena rectangular_arrays is not regenerated; 1 record(s) omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:author is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:generation_date is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:organization is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:receiver is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:start is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.attribute-omitted",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES attribute iges:application:attribute#document:system_id is omitted: its current owner has no emitted entity",
         "severity": "warning"
       },
       {
@@ -296,12 +356,6 @@
             },
             "properties": {
               "disposition": "regenerated"
-            },
-            "quarantined_directory_records": {
-              "disposition": "dropped"
-            },
-            "quarantined_parameter_records": {
-              "disposition": "dropped"
             },
             "rectangular_arrays": {
               "disposition": "dropped"

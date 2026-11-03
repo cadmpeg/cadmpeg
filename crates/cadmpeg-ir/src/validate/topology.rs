@@ -522,10 +522,10 @@ pub(super) fn check_references(
                 }
                 Some(_) => {}
             },
-            AppearanceTarget::Record { arena, id } => {
-                if !ir.model.contains_record(*arena, id) {
-                    ref_error(findings, &owner, "record in named neutral arena", id);
-                }
+            AppearanceTarget::Record { arena, id }
+                if !ir.model.contains_record(*arena, id) =>
+            {
+                ref_error(findings, &owner, "record in named neutral arena", id);
             }
             _ => {}
         }

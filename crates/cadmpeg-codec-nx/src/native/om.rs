@@ -610,18 +610,6 @@ pub(super) enum ExpressionUnit {
 
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
-impl ExpressionUnit {
-    pub(super) fn property_name(&self) -> String {
-        let name = match self {
-            Self::Millimeter => "millimeter",
-            Self::Inch => "inch",
-            Self::Degree => "degree",
-            Self::Native(unit) => unit.as_str(),
-        };
-        name.to_owned()
-    }
-}
-
 pub(super) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64) -> Option<f64> {
     match unit {
         ExpressionUnit::Millimeter => Some(value),

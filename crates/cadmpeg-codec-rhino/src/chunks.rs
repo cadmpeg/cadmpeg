@@ -206,7 +206,19 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
     let start_offset = bytes[..search_end]
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
-        .ok_or(FramingError::InvalidHeader)?;
+        .ok_or_else(|| {
+            if bytes.len() < file_header::LEN {
+                // The source is shorter than one start section: it may be the
+                // cut prefix of a 3DM file, so the refusal is `Truncated`,
+                // not a format rejection (#215).
+                FramingError::Truncated {
+                    offset: bytes.len(),
+                    needed: file_header::LEN - bytes.len(),
+                }
+            } else {
+                FramingError::InvalidHeader
+            }
+        })?;
     let header_end = start_offset
         .checked_add(file_header::LEN)
         .ok_or(FramingError::Overflow {

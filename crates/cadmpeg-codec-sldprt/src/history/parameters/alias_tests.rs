@@ -565,3 +565,49 @@ fn renamed_identifiers_round_trip_the_source_token_grammar() {
         assert_eq!(token.value(), name, "{rendered}");
     }
 }
+
+#[test]
+fn equation_id_binds_bare_and_qualified_spellings_in_owner_scope() {
+    let mut sketch = feature("Sketch1", Some("1"), 0);
+    sketch.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("Width"), "10".into()),
+        (cadmpeg_core::nonblank_literal!("Double"), "D1*2".into()),
+        (
+            cadmpeg_core::nonblank_literal!("Qualified"),
+            "D1@Sketch1*2".into(),
+        ),
+    ]);
+    sketch.dimension_properties.insert(
+        "Width".into(),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("EquationId"),
+            "D1".into(),
+        )]),
+    );
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![sketch],
+        }],
+    )
+    .unwrap();
+    let by_name = parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter))
+        .collect::<HashMap<_, _>>();
+    let width = by_name["Width"].id.clone();
+    for name in ["Double", "Qualified"] {
+        assert!(
+            by_name[name]
+                .expression
+                .dependencies()
+                .any(|id| id == &width),
+            "{name} binds the EquationId spelling"
+        );
+    }
+}

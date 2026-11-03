@@ -447,7 +447,10 @@ fn design_sketch_feature_limit_refuses_before_feature_push() {
 }
 
 #[test]
-fn operation_schema_owner_declarations_do_not_establish_features() {
+fn operation_schema_owner_declarations_transfer_as_native_features() {
+    // §2.2: owner-declared classes the plane and sketch admissions do not
+    // cover project as native operations with their native reference instead
+    // of remaining unresolved.
     let cases = [
         (
             "synthetic:test:object#prism-one",
@@ -531,7 +534,7 @@ fn operation_schema_owner_declarations_do_not_establish_features() {
     };
     let mut ir = CadIr::empty();
 
-    crate::test_support::with_service_context(|ctx| {
+    let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
             &mut ir,
@@ -541,11 +544,30 @@ fn operation_schema_owner_declarations_do_not_establish_features() {
     })
     .unwrap();
 
-    assert!(ir.model.features.is_empty());
+    assert_eq!(ir.model.features.len(), cases.len());
+    for ((id, kind, _record, _entity_id), (ordinal, feature)) in
+        cases.iter().zip(ir.model.features.iter().enumerate())
+    {
+        assert_eq!(
+            feature.evaluation.definition(),
+            &FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::from(*kind),
+                parameters: BTreeMap::new(),
+            })
+        );
+        assert_eq!(feature.native_ref.as_deref(), Some(*id));
+        assert_eq!(feature.source_tag.as_deref(), Some(*kind));
+        // §2.2: dense ordinals in first-field-byte-offset order.
+        assert_eq!(feature.ordinal, ordinal as u64);
+    }
+    assert_eq!(transfer.feature_ids.len(), cases.len());
+    assert_eq!(transfer.consumed_records().count(), 0);
 }
 
 #[test]
-fn does_not_promote_an_unadmitted_helper_owner_class() {
+fn unadmitted_helper_owner_class_transfers_as_native_feature() {
+    // §2.2: an unadmitted owner-declared helper class projects as a native
+    // operation instead of remaining unresolved.
     let object = declared_object(
         "synthetic:test:object#helper-object",
         None,
@@ -587,7 +609,21 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
     })
     .unwrap();
 
-    assert!(ir.model.features.is_empty());
+    assert_eq!(ir.model.features.len(), 1);
+    let feature = &ir.model.features[0];
+    assert_eq!(
+        feature.evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::from("Unadmitted_Helper"),
+            parameters: BTreeMap::new(),
+        })
+    );
+    assert_eq!(
+        feature.native_ref.as_deref(),
+        Some("synthetic:test:object#helper-object")
+    );
+    assert_eq!(feature.source_tag.as_deref(), Some("Unadmitted_Helper"));
+    assert_eq!(transfer.feature_ids.len(), 1);
     assert_eq!(transfer.consumed_records().count(), 0);
 }
 
