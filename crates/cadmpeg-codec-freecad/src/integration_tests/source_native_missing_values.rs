@@ -58,14 +58,7 @@ fn exercise(legacy: bool) {
         .iter()
         .find(|property| property.owner == "fcstd:native:object#Pad" && property.name == "Length")
         .unwrap();
-    if legacy {
-        assert!(matches!(
-            &bad.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
-    } else {
-        assert!(bad.body.is_none());
-    }
+    assert!(bad.body.is_none());
     assert_held_operations(decoded.ir());
     let model = decoded.ir().model.clone();
     let native = decoded.ir().native.clone();
@@ -159,10 +152,7 @@ fn source_free_partial_box_keeps_its_native_dependency_and_only_omits_the_unheld
         .iter()
         .find(|property| property.owner == bad.id().as_str() && property.name == "Length")
         .unwrap();
-    assert!(matches!(
-        &length.body,
-        None | Some(crate::native::PropertyBody::Unreadable(_))
-    ));
+    assert!(length.body.is_none());
     let plan = FcstdCodec
         .plan(
             EncodeInput::new(&before, None),
