@@ -41,9 +41,17 @@
         "vertices": [],
         "view_presentations": []
       },
-      "native": {},
+      "native": {
+        "nx": {
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            }
+          ]
+        }
+      },
       "scope": {
-        "design": false,
+        "design": true,
         "model": false
       },
       "source": {
@@ -114,7 +122,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
           "severity": "error"
         }
       ],
@@ -125,22 +133,36 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
+          "design": true,
           "model": false
         }
       }
     },
     "source_fidelity": {
-      "annotations": {},
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "scope": "entity"
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 76,
+            "stream": "nx:container",
+            "tag": "preview"
+          }
+        }
+      },
       "decode_digest": "7c6f7484fd2f6da2d7f43ab50702e0368b2990b7e9f0e90a363bea6bcecf78a6",
       "retained_records": {
-        "nx:source:image#whole": {
+        "nx:container:parasolid#0": {
           "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAByAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAmAAAAAAAAAHgBY5BlMGJgYG5hYGSEI/vOmSAwa39Cku+ljyv/2BdAaADJdA86Rk9PVEVSAAAAAAAAAAA=",
+            "data": "AB0AMgAAA4QAAQEAAQEAAQEAAQE/iZmZmZmZmr9gYk3S8an8P3BiTdLxqfw=",
             "retention": "inline"
           },
-          "offset": 0,
-          "stream": "nx:source",
+          "offset": 76,
+          "stream": "nx:container",
           "untyped": [
             "model"
           ]

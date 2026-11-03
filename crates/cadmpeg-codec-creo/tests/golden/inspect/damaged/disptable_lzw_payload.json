@@ -1,0 +1,58 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "76"
+      },
+      "compression": "none",
+      "name": "VisibGeom",
+      "role": "psb-geometry",
+      "size": {
+        "form": "exact",
+        "size": 85
+      }
+    },
+    {
+      "attributes": {
+        "offset": "161"
+      },
+      "compression": "unix-compress",
+      "name": "DispDataTable",
+      "role": "opaque",
+      "stored": 219
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "creo",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "PSB container: #UGC:2 P c",
+    "layout: unknown; 2 section(s) enumerated",
+    "VisibGeom namespace census: srf_array=1, crv_array=0 (byte-backed count headers; per-instance row geometry is not decoded)",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

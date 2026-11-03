@@ -147,7 +147,7 @@
             "tokens": [
               {
                 "kind": "text",
-                "value": "1"
+                "value": "1 rad"
               }
             ]
           },
@@ -158,9 +158,7 @@
           "owner": "creo:model:sketch_feature#917",
           "properties": {
             "auxiliary_value": "0",
-            "definition_id": "917",
             "dimension_type": "10",
-            "direction_byte": "1",
             "external_id": "42",
             "source_ordinal": "0"
           },
@@ -175,7 +173,7 @@
             "tokens": [
               {
                 "kind": "text",
-                "value": "1"
+                "value": "1 rad"
               }
             ]
           },
@@ -186,9 +184,7 @@
           "owner": "creo:model:sketch_feature#917",
           "properties": {
             "auxiliary_value": "0",
-            "definition_id": "917",
             "dimension_type": "10",
-            "direction_byte": "1",
             "external_id": "42",
             "source_ordinal": "1"
           },
@@ -975,21 +971,6 @@
       }
     },
     "decode_digest": "7c795c17e8927fb2f83b7ed6bac3bdb3754956f53274c382c57fa255091b14cc",
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNGZWF0RGVmcwpmZWF0X2RlZnNfOTE3AOABZmVhdF9pZAAo4ABnc2VjMmRfcHRyAGRpbXRhYl9wdHIA+AL3gQL74uABdHlwZQAK4AF2YWx1ZQDk4AFkaXJlY3QAAeABYXV4X3ZhbHVlAA/gAWV4dF9pZAAq8/eBAuIK5AEYKuAAcmVsYXRfcHRyACMKI01kbFN0YXR1cwpFeHRydWRlIGlkIDQwACMKI0RFUERCX0RBVEEK4ABwX2RlcF9kYgDj4ABlbnRpdHkoY3J2X2ZyX2VxbikA4+ABaWQAB+AKZXhwcmVzc2lvbgD4AXJlc3VsdD1kNDIrMVtkZWddAA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "unrepresented": []
   }
 }

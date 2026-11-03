@@ -12,6 +12,7 @@ use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
 
 pub mod admissibility;
 pub mod assembly;
+pub mod base;
 pub mod bytes;
 pub mod carried;
 pub mod comparison;

@@ -238,8 +238,12 @@ scanning is the fallback when no TOC entry validates.
 The count and row width bound a TOC without an `#END_OF_TOC_HEADER` marker.
 The next ordinary TOC field after the stored length is the hexadecimal
 expanded payload length. It excludes the section header. The following
-decimal producer declaration does not select a persistence layout. Additional
-row fields and `#` padding do not change the section extent. A continuation
+decimal field is the release (producer) declaration; it does not select a
+persistence layout. The remaining row fields in order are the class and
+selector declarations and the `checksum-a` and `checksum-b` integrity
+fields: `checksum-a` is the sum of the stored payload bytes mod 65536,
+and `checksum-b` is the sum of the successive `checksum-a` values mod
+65536. `#` padding does not change the section extent. A continuation
 TOC uses the same header-relative offset base as the first TOC; its own
 position does not become a new base.
 
@@ -333,7 +337,7 @@ banner and is not a current product-release discriminator.
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
 | Legacy ASCII `Sld_GeomDepend`    | The `first_quilt_ptr` quilt-discriminator field in the persistence object tree.                                      |
 | `ActDatums`                      | Active datum-plane and datum-cylinder geometry under `act_datum_geoms → srf_array`.                                  |
-| `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
+| `DEPDB_DATA`                     | Persistence marker for DEPDB-layout parts: the 25-byte root record. Recipe, state, section, and table bodies sit in the `AllFeatur`, `MdlStatus`, and `FullMData` sections. |
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
 | `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                     |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
@@ -3894,16 +3898,31 @@ takes precedence and identifies the corresponding modeling operation. `Mirror`
 identifies a reflection operation.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
-name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
-an uppercase operation-family name is a stored-name prefix, not part of the
-family name. Multiple operation names with the same feature identifier are
+name's localization. A timed display name carries its `tm_year` byte
+immediately before the family name: the state framing is `e2 <sec> <min>
+<hour> <mday> <mon> <tm_year> <name>`, with single-byte timestamp values in
+struct-tm field order and `tm_year` counting years since 1900. The year
+byte is not part of the family name. A `V1` state repeats the `e2` opener
+between the timestamp and the name. An `f1`-led `item_name` field and a
+bare creation-style name carry no timestamp. Multiple operation names with
+the same feature identifier are
 ordered stored-state candidates. No candidate is the current state without a
 state selector. State ordinals are local to one feature identifier and increase
-in byte order from zero. Each candidate retains the prefix-inclusive name
-bytes, the `id`/`ID` spelling, and the offset of the optional prefix. Same-ID
+in byte order from zero. Each candidate retains the name bytes, the
+`id`/`ID` spelling, and the name offset. Same-ID
 candidates define a common operation only when their operation family, recipe,
 root schema class, and parent identifier agree. Agreement does not identify a
 current native candidate. A recipe-only state has no stored operation name.
+
+Model-history states sit under `mod_track_data`, which contains the counted
+`rec_arr` record array closed by `f7 05 fb e2`, which contains the named
+`mtrack_record_ptr` exemplar and the positional `e3`-led state records.
+Named model-history fields are `e0 <type-code> <name>\0 <value>` records:
+`tm_sec`, `tm_min`, `tm_hour`, `tm_mday`, `tm_mon`, and `tm_year` carry
+single-byte values, and `item_name` is an `f1` byte followed by the
+NUL-terminated name. A creation state is `f6 00 <feature-type>\0` followed
+by the bare NUL-terminated display name, with an optional `e2` opener
+between them.
 
 `MdlRefInfo` feature-reference entries encode
 `f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.
@@ -3977,7 +3996,7 @@ such section. This join assigns the canonical feature owner and preserves the
 stored `feat_defs_<id>` schema identifier. A partial, competing, or reused set
 does not assign an owner.
 
-`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an
+Each complete bounded `AllFeatur` feature row stores an
 internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature
 `F + 1` owns the unique section definition whose `gsec3d_ptr.sketch_plane`
@@ -3996,7 +4015,7 @@ contained by an `AllFeatur` row, `F` depends on that row's saved-section
 history feature; the row context does not replace the section-definition
 identifier or select the modeling operation.
 
-In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
+In `AllFeatur`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
 labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled
 `gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
@@ -4195,7 +4214,15 @@ ownership for a section row, or for a datum-plane row when the stored name is
 a class-979 coordinate-system row. Numeric equality alone does not establish
 ownership.
 
-Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
+The physical `DEPDB_DATA` section holds only the 25-byte root record
+`#DEPDB_DATA\n` followed by `e0 00 p_dep_db\0 e3 f1`. Recipe rows, feature
+states, section definitions, and generated-entity tables for DEPDB-layout
+parts sit in the other sections: recipe names in `MdlStatus` state records,
+`dtm_id_tab` and `parent_table` records and `gsec2d_ptr` section definitions
+in `AllFeatur`, and model-history states with their `mod_track_data`
+hierarchy in `MdlStatus` or `FullMData`.
+
+Each DEPDB recipe row ends with its canonical `f7` recipe binding. Its
 body begins at the section boundary or immediately after the preceding recipe
 binding. Multiple bindings in one persistence section define independent
 feature rows.
@@ -4936,7 +4963,7 @@ use canonical reference-id encoding; `f6` is a null dimension identifier.
 Exactly `count` datum identifiers belong to the owning positional feature row.
 Table-class state does not cross an `AllFeatur` stream boundary.
 
-In `DEPDB_DATA`, section-level `dtm_id_tab` and `parent_table` records belong
+In `AllFeatur`, section-level `dtm_id_tab` and `parent_table` records belong
 to the unique procedural recipe feature stored in the same section.
 
 An outer datum identifier resolves through the generated-entity table that

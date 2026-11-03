@@ -723,21 +723,6 @@
       }
     },
     "decode_digest": "594656cddc62ae5e7d4ba3132640a69f16376b4fd4afe84809c3b17a537bfbc2",
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLSBDTU5NIDAwYndpZGdldC5wcnQgCiMtRU5EX09GX1VHQ19IRUFERVIKI1VHQ19UT0MKdG9jIGVudHJ5IGxpbmUKI0VORF9PRl9UT0NfSEVBREVSCiMKI0RFUERCX0RBVEEK4ABwX2RlcF9kYgDj4ABlbnRpdHkoY3J2X2ZyX2VxbikA4+ABaWQAB+AKZXhwcmVzc2lvbgD4AW5hbWU9cmVsX21vZGVsX25hbWUoKQA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "unrepresented": []
   }
 }

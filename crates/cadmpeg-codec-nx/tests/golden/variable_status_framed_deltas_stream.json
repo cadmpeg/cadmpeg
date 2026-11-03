@@ -43,25 +43,19 @@
       },
       "native": {
         "nx": {
-          "parasolid_deltas_residual_spans": [
-            {
-              "byte_len": 106,
-              "id": "nx:s0:deltas-residual#0",
-              "inflated_offset": 0,
-              "sha256": "eff1807b71c7aa6a812c4f0a2e9ffb6cdb32a4a1fc9b30fff05b7b16f710e77c",
-              "stream_ordinal": 0
-            }
-          ],
           "unknowns": [
             {
               "id": "nx:container:parasolid#0"
+            },
+            {
+              "id": "nx:s0:deltas-residual#0"
             }
           ]
         }
       },
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       },
       "source": {
         "attributes": {
@@ -145,17 +139,6 @@
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -165,8 +148,8 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
-          "model": false
+          "design": true,
+          "model": true
         }
       }
     },
@@ -183,11 +166,6 @@
             "offset": 76,
             "stream": "nx:container",
             "tag": "deltas"
-          },
-          "nx:s0:deltas-residual#0": {
-            "offset": 0,
-            "stream": "nx:s0",
-            "tag": "DELTAS_RESIDUAL"
           }
         }
       },
@@ -200,19 +178,25 @@
           },
           "offset": 76,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
-        "nx:source:image#whole": {
+        "nx:s0:deltas-residual#0": {
           "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAC7AAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABvAAAAAAAAAHgBHcqxCoJQFIDh/1RDTdIbnLGgpbG2CCOhIrp3v5ieTRHUxXfxXfXiP378Xwecrup/t497Z14f2SvVQ2lVn3dHLVrLeyv1P2jdRKysjX/i7s/gU+fDOVxikExjdNgiwkpYCxthjwE7FpsBqMQV1EZPT1RFUgAAAAAAAAAA",
+            "data": "UFMAAAAsOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAP/5wAAAAAAAgAAQEAAgEAAwEABAEAEQBlAAAACQABAQACAQ==",
             "retention": "inline"
           },
           "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "",
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
