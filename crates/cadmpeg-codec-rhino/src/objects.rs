@@ -1693,6 +1693,70 @@ fn resolve_identity(
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrailerState {
+    Start,
+    AfterAttributes,
+    AfterUserdata,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrailerKind {
+    Attributes,
+    Userdata,
+    History,
+    LongOther,
+    ShortOther,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrailerAction {
+    KeepAttributes,
+    KeepUserdata,
+    ParseHistory,
+    KeepOpaque,
+}
+
+fn trailer_kind(typecode: u32, short: bool) -> TrailerKind {
+    match typecode {
+        OBJECT_RECORD_ATTRIBUTES => TrailerKind::Attributes,
+        OBJECT_RECORD_ATTRIBUTES_USERDATA => TrailerKind::Userdata,
+        OBJECT_RECORD_HISTORY => TrailerKind::History,
+        _ if short => TrailerKind::ShortOther,
+        _ => TrailerKind::LongOther,
+    }
+}
+
+fn trailer_route(state: TrailerState, kind: TrailerKind) -> Option<(TrailerAction, TrailerState)> {
+    use TrailerAction::{KeepAttributes, KeepOpaque, KeepUserdata, ParseHistory};
+    use TrailerKind::{Attributes, History, LongOther, ShortOther, Userdata};
+    use TrailerState::{AfterAttributes, AfterUserdata, Closed, Start};
+    match (state, kind) {
+        (Start, Attributes) => Some((KeepAttributes, AfterAttributes)),
+        (AfterAttributes, Attributes) => Some((KeepOpaque, Closed)),
+        (AfterUserdata, Attributes) => Some((KeepOpaque, Closed)),
+        (Closed, Attributes) => Some((KeepOpaque, Closed)),
+        (Start, Userdata) => Some((KeepUserdata, AfterUserdata)),
+        (AfterAttributes, Userdata) => Some((KeepUserdata, AfterUserdata)),
+        (AfterUserdata, Userdata) => Some((KeepOpaque, Closed)),
+        (Closed, Userdata) => Some((KeepOpaque, Closed)),
+        (Start, History) => Some((ParseHistory, Closed)),
+        (AfterAttributes, History) => Some((ParseHistory, Closed)),
+        (AfterUserdata, History) => Some((ParseHistory, Closed)),
+        (Closed, History) => Some((KeepOpaque, Closed)),
+        (_, LongOther) => Some((KeepOpaque, Closed)),
+        (_, ShortOther) => None,
+    }
+}
+
+fn trailer_out_of_order(chunk: &Chunk) -> FramingError {
+    FramingError::structural(
+        chunk.header_start,
+        "object trailer child is out of order or malformed",
+    )
+}
+
 /// Parses one bounded object record and returns identity plus child ranges.
 pub(crate) fn parse_object_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1766,7 +1830,7 @@ pub(crate) fn parse_object_record(
     let mut attributes_userdata_body_range = None;
     let mut history = None;
     let mut unknown_trailer = Vec::new();
-    let mut phase = 0_u8;
+    let mut state = TrailerState::Start;
     let mut object_end_seen = false;
     while offset < record.body().end {
         let item = chunk_at(bytes, offset, record.body().end, archive, false)?;
@@ -1782,18 +1846,18 @@ pub(crate) fn parse_object_record(
             object_end_seen = true;
             break;
         }
-        match item.typecode {
-            OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
+        let (action, next) = trailer_route(state, trailer_kind(item.typecode, item.short()))
+            .ok_or_else(|| trailer_out_of_order(&item))?;
+        match action {
+            TrailerAction::KeepAttributes => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
                 attributes_chunk = Some(item.clone());
-                phase = 1;
             }
-            OBJECT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
+            TrailerAction::KeepUserdata => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES_USERDATA)?;
                 attributes_userdata_body_range = Some(item.body().clone());
-                phase = 2;
             }
-            OBJECT_RECORD_HISTORY if phase <= 2 => {
+            TrailerAction::ParseHistory => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
                 let descriptor = parse_history(bytes, &item, archive)?;
                 let checksum = match (&descriptor.header_range, &descriptor.data_range) {
@@ -1815,19 +1879,13 @@ pub(crate) fn parse_object_record(
                     );
                 }
                 history = Some(descriptor);
-                phase = 3;
             }
-            _ if !item.short() => {
-                unknown_trailer.push(item.range());
-                phase = 3;
+            TrailerAction::KeepOpaque if item.short() => {
+                return Err(trailer_out_of_order(&item));
             }
-            _ => {
-                return Err(FramingError::structural(
-                    item.header_start,
-                    "object trailer child is out of order or malformed",
-                ));
-            }
+            TrailerAction::KeepOpaque => unknown_trailer.push(item.range()),
         }
+        state = next;
         offset = item.next_offset();
     }
     if !object_end_seen || offset != record.body().end {
