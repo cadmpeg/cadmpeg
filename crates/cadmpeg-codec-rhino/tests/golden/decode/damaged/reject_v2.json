@@ -1,0 +1,269 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "rhino": {
+        "annotation_settings": [],
+        "annotations": [],
+        "applications": [],
+        "construction_planes": [],
+        "dimension_styles": [],
+        "document_notes": [],
+        "document_settings": [
+          {
+            "archive_file_name": null,
+            "current_color": null,
+            "current_color_source": null,
+            "current_dimension_style_index": null,
+            "current_font_index": null,
+            "current_layer_index": null,
+            "current_material_index": null,
+            "current_material_source": null,
+            "current_wire_density": null,
+            "id": "rhino:document:settings#current",
+            "model_url": null
+          }
+        ],
+        "embedded_images": [],
+        "external_references": [],
+        "grid_defaults": [],
+        "groups": [],
+        "hatch_patterns": [],
+        "history_records": [],
+        "layers": [],
+        "lights": [],
+        "linetypes": [],
+        "materials": [],
+        "object_presentation": [],
+        "previews": [],
+        "product_definitions": [],
+        "product_occurrences": [],
+        "render_settings": [],
+        "revisions": [],
+        "setting_records": [],
+        "text_dots": [],
+        "text_styles": [],
+        "texture_mappings": [],
+        "unknowns": [
+          {
+            "id": "rhino:source:part#583d35e87a3281907041597b85eaf11e392f4ddc9b9609af364f568225538c7a"
+          },
+          {
+            "id": "rhino:source:part#999e1b7ffd7cb34b5a6d38ca3cb2e55a0fef2f1ed8b517a0214a50f30e145824"
+          },
+          {
+            "id": "rhino:source:part#ab636d335e40fe7bc55d0068c0fad11dd6d197469695f92ecd16a741b47c8dce"
+          }
+        ],
+        "views": [],
+        "windows_bitmaps": []
+      }
+    },
+    "scope": {
+      "design": false,
+      "model": false
+    },
+    "source": {
+      "attributes": {
+        "archive_version": "2",
+        "container_kind": "3dm-chunks"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "2"
+            },
+            "dialect": "rhino:archive-2"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "2"
+          },
+          "dialect": "rhino:archive-2"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "decoded 0/0 Rhino object records",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part rhino.table_chunk stream=None offset=32 length=0: range 32..36 exceeds bound 32; dropped=[]",
+        "provenance": {
+          "format": "rhino",
+          "offset": 32
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part rhino.table_chunk stream=None offset=32 length=0: settings table is required but absent; dropped=[]",
+        "provenance": {
+          "format": "rhino",
+          "offset": 32
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part rhino.table_chunk stream=None offset=32 length=0: object table is required but absent; dropped=[]",
+        "provenance": {
+          "format": "rhino",
+          "offset": 32
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: model, design",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "decoded 0/0 Rhino object records; retained metadata/digests for 0 records and complete bytes for 0; document cap 268435456 bytes, per-record cap 16777216 bytes"
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "scope": {
+        "design": false,
+        "model": false
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "6abdddda2be49d9fde8f7edd4afd09dd0b07995f1ccf9c4dc7ea839bebcef1fa",
+    "retained_records": {
+      "rhino:source:part#583d35e87a3281907041597b85eaf11e392f4ddc9b9609af364f568225538c7a": {
+        "bytes": {
+          "data": "",
+          "retention": "inline"
+        },
+        "offset": 32,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "rhino:source:part#999e1b7ffd7cb34b5a6d38ca3cb2e55a0fef2f1ed8b517a0214a50f30e145824": {
+        "bytes": {
+          "data": "",
+          "retention": "inline"
+        },
+        "offset": 32,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "rhino:source:part#ab636d335e40fe7bc55d0068c0fad11dd6d197469695f92ecd16a741b47c8dce": {
+        "bytes": {
+          "data": "",
+          "retention": "inline"
+        },
+        "offset": 32,
+        "stream": "",
+        "untyped": [
+          "model",
+          "design"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
+  }
+}

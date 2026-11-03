@@ -39,12 +39,14 @@ fn modern(objects: &[Vec<u8>], history: Option<&[Vec<u8>]>) -> Vec<u8> {
 }
 
 /// The scope a request at `depth` delivers when the decoder reaches the parts
-/// of `content`. Every container-only decode delivers `{}` (§4.1).
+/// of `content`: the reached content capped by what the request includes
+/// (§1.1). Every container-only decode delivers `{}` (§4.1), and a geometry
+/// request never delivers design.
 fn delivered(depth: DecodeDepth, content: ContentScope) -> ContentScope {
-    if depth == DecodeDepth::Container {
-        ContentScope::container()
-    } else {
-        content
+    let required = depth.required_scope();
+    ContentScope {
+        model: content.model && required.model,
+        design: content.design && required.design,
     }
 }
 
@@ -74,7 +76,7 @@ fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
 }
 
 #[test]
-fn an_empty_reached_history_table_holds_design_on_a_content_request() {
+fn an_empty_reached_history_table_holds_design_at_full_depth_only() {
     let bytes = modern(&[], Some(&[]));
     for depth in [
         DecodeDepth::Container,

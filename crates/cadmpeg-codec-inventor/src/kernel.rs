@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
@@ -59,7 +60,32 @@ pub(crate) struct ActiveCarrier<'a> {
 pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
     Selected(ActiveCarrier<'a>),
-    Unavailable(String),
+    /// No single carrier part could be located. The readable candidate
+    /// segment count is kept as a typed state without free text.
+    Unlocated {
+        brep_segments: u32,
+    },
+    /// Selection failed only because a part the carrier needs was given up.
+    /// The carrier is not selected and the record states no cause.
+    Withheld,
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Make the next carrier selection on this thread report the locating
+/// structure as unreadable: no carrier part is located.
+#[cfg(test)]
+pub(crate) fn inject_failure(failure: fn() -> CodecError) {
+    INJECTED_FAILURE.with(|slot| slot.set(Some(failure)));
+}
+
+#[cfg(test)]
+fn take_injected_failure() -> Option<fn() -> CodecError> {
+    INJECTED_FAILURE.with(std::cell::Cell::take)
 }
 
 pub(crate) struct DecodedKernelCarrier {
@@ -146,24 +172,31 @@ pub(crate) fn decode_kernel_carrier(
 }
 
 pub(crate) fn select_active_carrier<'a>(
+    ctx: &DecodeContext<'a>,
+    parts: &mut PartOutput,
     segments: &[SegmentDescriptor<'a>],
     document_kind: &DocumentKind,
-) -> ActiveCarrierState<'a> {
+) -> Result<ActiveCarrierState<'a>, CodecError> {
+    #[cfg(test)]
+    if let Some(failure) = take_injected_failure() {
+        let _ = failure();
+        return Ok(ActiveCarrierState::Unlocated { brep_segments: 0 });
+    }
     if !matches!(document_kind, DocumentKind::Part) {
-        return ActiveCarrierState::NotApplicable;
+        return Ok(ActiveCarrierState::NotApplicable);
     }
     let is_brep = |segment: &&SegmentDescriptor<'a>| matches!(segment.kind, SegmentKind::PmBRep);
     let brep_count = segments.iter().filter(is_brep).count();
+    let brep_segments = u32::try_from(brep_count)
+        .map_err(|_| CodecError::malformed("Inventor PmBRep segment count exceeds u32"))?;
     let Some(segment) = segments.iter().rfind(is_brep).filter(|_| brep_count == 1) else {
-        return ActiveCarrierState::Unavailable(format!(
-            "part document has {brep_count} PmBRep segments; expected one"
-        ));
+        return Ok(ActiveCarrierState::Unlocated { brep_segments });
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".to_owned());
+        return Ok(ActiveCarrierState::Withheld);
     };
     let Some(table) = bulk.records.table() else {
-        return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".to_owned());
+        return Ok(ActiveCarrierState::Withheld);
     };
     let is_carrier = |record: &&RseRecordFrame<'a>| record.type_id == KERNEL_RECORD_TYPE_ID;
     let carrier_count = table.records.iter().filter(is_carrier).count();
@@ -173,14 +206,10 @@ pub(crate) fn select_active_carrier<'a>(
         .rfind(is_carrier)
         .filter(|_| carrier_count == 1)
     else {
-        return ActiveCarrierState::Unavailable(format!(
-            "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
-        ));
+        return Ok(ActiveCarrierState::Unlocated { brep_segments });
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return ActiveCarrierState::Unavailable(
-            "PmBRep segment version is unavailable from the registry".to_owned(),
-        );
+        return Ok(ActiveCarrierState::Unlocated { brep_segments });
     };
     match parse_carrier(
         record.payload,
@@ -189,8 +218,15 @@ pub(crate) fn select_active_carrier<'a>(
         record.payload_offset,
         version,
     ) {
-        Ok(carrier) => ActiveCarrierState::Selected(carrier),
-        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
+        Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
+        Err(error) => {
+            let extent = record.payload;
+            let spec = crate::decode::part_spec("inventor.kernel_bytes", extent, || {
+                crate::decode::expanded_bulk_stream(segment.pair.token.as_str())
+            })?;
+            ctx.decode_part(parts, extent, spec, |_| Err::<(), CodecError>(error))?;
+            Ok(ActiveCarrierState::Withheld)
+        }
     }
 }
 
@@ -359,9 +395,18 @@ mod tests {
                 .expect("carrier fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+            &setup_ctx,
+        );
         assert!(matches!(
-            select_active_carrier(&inventory.segments, &DocumentKind::Part),
-            ActiveCarrierState::Selected(_)
+            select_active_carrier(
+                &setup_ctx,
+                &mut parts,
+                &inventory.segments,
+                &DocumentKind::Part
+            ),
+            Ok(ActiveCarrierState::Selected(_))
         ));
     }
 

@@ -148,9 +148,14 @@ fn both_streams_reject_expansion_limit_violations() {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
             let result = parse_meta_stream(&ctx, root);
-            if method == 2 && limit == 1 {
-                // Window admission rejects this stream before allocating a decoder.
-                assert!(matches!(result, Ok(SegmentMetaState::Malformed { .. })));
+            if limit == 1 {
+                // A per-expansion limit is Part-scoped (§4.5): the raw parse
+                // reports the exact pending refusal, and the owning stream
+                // part gives it up.
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(refusal)) if refusal.scope == cadmpeg_core::decode::LimitScope::Part),
+                    "metadata method={method}, limit={limit}: {result:?}"
+                );
             } else {
                 assert!(
                     matches!(result, Err(CodecError::ResourceLimit(_))),
@@ -162,8 +167,14 @@ fn both_streams_reject_expansion_limit_violations() {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
             let result = parse_bulk_stream(&ctx, root);
-            if method == 2 && limit == 1 {
-                assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+            if limit == 1 {
+                // Window admission rejects this stream before allocating a
+                // decoder; the refusal is Part-scoped like any per-expansion
+                // limit.
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(refusal)) if refusal.scope == cadmpeg_core::decode::LimitScope::Part),
+                    "bulk method={method}, limit={limit}: {result:?}"
+                );
             } else {
                 assert!(
                     matches!(result, Err(CodecError::ResourceLimit(_))),

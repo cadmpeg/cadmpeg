@@ -808,8 +808,9 @@ pub(crate) fn unrepresented(
     Ok(classes)
 }
 
-#[cfg(test)]
-fn entry_attribute(property: &crate::native::PropertyRecord, name: &str) -> bool {
+/// A value attribute that names a sidecar entry: a file payload reference,
+/// not an external document link or a File-family record name.
+pub(crate) fn entry_attribute(property: &crate::native::PropertyRecord, name: &str) -> bool {
     (matches!(name, "file" | "File") && !crate::persistence::is_xlink_type(&property.type_name))
         || (property.family == crate::native::PropertyFamily::File
             && matches!(name, "name" | "Name"))

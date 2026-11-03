@@ -631,18 +631,15 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAFnAAAAEEZJTkpQTCAgAQEAAwAAABUAQ0FUU3VtbWFyeUluZm9ybWF0aW9uTGFzdFNhdmVWZXJzaW9uADxWZXJzaW9uPjUvPFZlcnNpb24+PFJlbGVhc2U+MjcvPFJlbGVhc2U+PFNlcnZpY2VQYWNrPjIvPFNlcnZpY2VQYWNrPjxCdWlsZERhdGU+MDMtMTAtMjAxNy4yMi4wMC88QnVpbGREYXRlPjxIb3RGaXg+MC88SG90Rml4PgD/2P/AAAsIASACgAEBEQD/2gAIAQEAAD8AESL/ADP/2XN1bW1hcnktdGFpbEZJTkpQTCAgAQEAAgAAAAoAQ0FUUHJldmlldzQSQ0FUU3RvcmFnZVByb3BlcnR5gAEAAAAAIgwAAAA0AQEANBBDQVRVbmljb2RlU3RyaW5noAIAAAAANAVDQVRJQZ+gAgAAAAA0D1N1cHBvcnQuQ0FUUGFydJ9DQVRJQV9WNSBDQjAwMDEA",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }
