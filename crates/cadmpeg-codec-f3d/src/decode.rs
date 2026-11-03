@@ -2975,7 +2975,7 @@ impl<'a> F3dDecodeSession<'a> {
             bodies: bodies.as_ref(),
             root_ordinal_start: prereqs
                 .xref_table()
-                .map_or(0, |table| table.references.len()),
+                .map_or(0, crate::xref::local_root_ordinal_start),
             limits: self.ctx.policy().limits,
         };
         let local = crate::design::components::project_local_components_with_types(

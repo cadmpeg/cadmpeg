@@ -106,3 +106,31 @@ fn malformed_derived_rows_refuse_the_table() {
         );
     }
 }
+
+#[test]
+fn omitted_mixed_references_reserve_zero_local_root_ordinals() {
+    for mixed in [false, true] {
+        let mut rows = vec![row("XREF", "first.f3d"), row("XREF", "second.f3d")];
+        if mixed {
+            rows.push(row("DERIVED", "source.f3d"));
+        }
+        let mut parsed = crate::xref::parse(
+            &cadmpeg_test_support::service_decode_context(),
+            &table(rows),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::xref::local_root_ordinal_start(&parsed),
+            if mixed { 0 } else { 2 }
+        );
+        parsed.references[0].transform = Some(crate::xref::IDENTITY_ROWS.try_into().unwrap());
+        assert_eq!(
+            crate::xref::local_root_ordinal_start(&parsed),
+            if mixed { 1 } else { 2 }
+        );
+        parsed.references[1].transform = Some(crate::xref::IDENTITY_ROWS.try_into().unwrap());
+        assert_eq!(crate::xref::local_root_ordinal_start(&parsed), 2);
+        parsed.references[0].transform = None;
+        assert_eq!(crate::xref::local_root_ordinal_start(&parsed), 2);
+    }
+}

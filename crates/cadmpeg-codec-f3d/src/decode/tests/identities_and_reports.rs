@@ -155,7 +155,7 @@ fn container_only_neutral_parameter_id_matches_identity_shape() {
 
 #[test]
 fn archive_entries_do_not_hide_new_model_entities() {
-    let bytes = crate::test_support::assembly_test::f3d_with_identity_xrefs(
+    let bytes = crate::test_support::assembly_test::f3d_without_brep(
         "assembly",
         "root.f3d",
         &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],

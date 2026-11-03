@@ -36,7 +36,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
 use crate::test_support::smbh_geometry_test::{
@@ -261,14 +261,13 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
 #[test]
 fn f3z_pipeline_merges_three_levels_of_occurrences() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let inner = f3d_with_identity_xrefs(
+    let inner = f3d_without_brep(
         "assembly-design",
         "inner.f3d",
         &[("component.f3d", XREF_ROLE)],
     );
-    let middle =
-        f3d_with_identity_xrefs("assembly-design", "middle.f3d", &[("inner.f3d", XREF_ROLE)]);
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("inner.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
     let merged = decode(f3z_archive(
         "root.f3d",
         &[
@@ -292,12 +291,12 @@ fn f3z_pipeline_merges_three_levels_of_occurrences() {
 fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let middle = f3d_with_identity_xrefs(
+    let middle = f3d_without_brep(
         "assembly-design",
         "middle.f3d",
         &[("component.f3d", CHILD_ROLE)],
     );
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
     let merged = decode(f3z_archive(
         "root.f3d",
         &[
@@ -312,7 +311,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
     assert_valid(&merged);
 
     let cyclic_middle =
-        f3d_with_identity_xrefs("assembly-design", "middle.f3d", &[("root.f3d", CHILD_ROLE)]);
+        f3d_without_brep("assembly-design", "middle.f3d", &[("root.f3d", CHILD_ROLE)]);
     let cyclic = decode(f3z_archive(
         "root.f3d",
         &[
@@ -334,7 +333,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
 #[test]
 fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let root = f3d_with_identity_xrefs(
+    let root = f3d_without_brep(
         "assembly-design",
         "root.f3d",
         &[("component.f3d", XREF_ROLE)],

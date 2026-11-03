@@ -20,7 +20,6 @@ impl LocalOccurrencePaths {
         external: &[crate::records::xref::XrefReference],
         occurrences: &[Occurrence],
     ) -> Self {
-        let external_references = external;
         let unplaced_external = external
             .iter()
             .filter(|reference| !crate::xref::has_projected_placement(reference, occurrences))
@@ -92,24 +91,6 @@ impl LocalOccurrencePaths {
                 result.insert(stream, keys[start..].to_vec(), &leaf.id);
             }
             result.insert(stream, keys, &leaf.id);
-        }
-        for reference in external_references {
-            if crate::xref::has_projected_placement(reference, occurrences) {
-                continue;
-            }
-            let Some(source) = &reference.placement_source else {
-                continue;
-            };
-            let Some(guid) = &source.occurrence_guid else {
-                continue;
-            };
-            result.paths.insert(
-                (
-                    source.stream.clone(),
-                    vec![guid.as_str().to_ascii_lowercase()],
-                ),
-                None,
-            );
         }
         result
     }

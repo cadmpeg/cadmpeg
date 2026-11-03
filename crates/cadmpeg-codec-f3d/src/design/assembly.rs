@@ -2065,6 +2065,22 @@ mod tests {
             serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
         assert_eq!(restored.design_parameter_scopes, omitted_scopes);
         assert_eq!(restored.xref_references, [omitted]);
+        let kept = instances(&restored.xref_references);
+        let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &kept,
+        );
+        assert!(!kept_bindings.requires_external_binding("f3d:Design/BulkStream.dat"));
+        let kept_joint = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &kept_bindings,
+        );
+        assert_eq!(kept_joint.joints.len(), 1);
+        assert!(kept_joint.losses.is_empty());
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,

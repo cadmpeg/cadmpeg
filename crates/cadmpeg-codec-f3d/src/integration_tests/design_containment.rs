@@ -13,7 +13,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{f3d_with_identity_xrefs, XREF_ROLE};
+use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
@@ -162,8 +162,7 @@ fn an_unedited_contained_document_replays_its_source_bytes() {
 
 #[test]
 fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
-    let archive =
-        || f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = || f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let full = decode(archive());
     assert!(!f3d_native(full.ir()).xref_references.is_empty());
 

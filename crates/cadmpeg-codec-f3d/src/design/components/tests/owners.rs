@@ -42,7 +42,7 @@ fn an_identity_owner_carrier_places_external_members_when_body_projection_is_def
 }
 
 #[test]
-fn a_unique_owner_chain_composes_and_ambiguous_unreachable_or_cyclic_owners_stay_native() {
+fn a_unique_owner_chain_composes_and_unresolved_owners_keep_the_root_placement() {
     for case in ["unique", "ambiguous", "unreachable", "cycle"] {
         let (mut carriers, components) = nested_fixture();
         if case != "ambiguous" {
@@ -82,11 +82,16 @@ fn a_unique_owner_chain_composes_and_ambiguous_unreachable_or_cyclic_owners_stay
                 ]
             );
         } else {
-            assert!(projection.occurrences.is_empty(), "{case}");
+            assert_eq!(projection.occurrences.len(), 1, "{case}");
+            assert_eq!(
+                projection.occurrences[0].parent,
+                cadmpeg_ir::products::OccurrenceParent::Root {}
+            );
+            assert_eq!(projection.occurrences[0].transform.rows()[0][3], 20.0);
             assert_eq!(projection.losses.len(), 1, "{case}");
             assert_eq!(
                 projection.losses[0].code,
-                crate::loss::F3dLossCode::XrefOccurrenceUnplaced.kind()
+                crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
             );
         }
     }

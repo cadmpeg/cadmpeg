@@ -558,11 +558,18 @@ pub(crate) fn project_occurrences(
     };
     for (reference, occurrence) in table.references.iter().zip(root_occurrences(table)?) {
         if !has_decoded_placement(reference) {
-            projection.losses.push(F3dLossCode::XrefOccurrenceUnplaced.note(format!(
-                "xref {}: member {} stays native because its occurrence placement did not decode; its occurrence and member subtree are omitted",
+            // Mixed tables have no earlier placement to keep: main refused the complete table.
+            if !table.derived_references.is_empty() {
+                projection.losses.push(F3dLossCode::XrefOccurrenceUnplaced.note(format!(
+                    "xref {}: member {} stays native because its occurrence placement did not decode; its occurrence and member subtree are omitted",
+                    reference.id, reference.relative_path.as_str()
+                )));
+                continue;
+            }
+            projection.losses.push(F3dLossCode::XrefPlacementIdentityAssumed.note(format!(
+                "xref {}: member {} occurrence placement did not decode; it was placed at the identity without proof",
                 reference.id, reference.relative_path.as_str()
             )));
-            continue;
         }
         let owner = reference
             .placement_source
@@ -618,10 +625,11 @@ pub(crate) fn project_occurrences(
                     })?;
                 projection.occurrences.push(occurrence);
             } else {
-                projection.losses.push(F3dLossCode::XrefOccurrenceUnplaced.note(format!(
-                    "xref {}: member {} stays native because local owner {} in {} has no unique instantiated component; its occurrence and member subtree are omitted",
-                    reference.id, reference.relative_path.as_str(), owner.target, source.stream
+                projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
+                    "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
+                    source.carrier_record_index, source.stream, owner.target
                 )));
+                projection.occurrences.push(occurrence);
             }
             continue;
         };
@@ -672,20 +680,30 @@ pub(crate) fn project_occurrences(
     Ok(projection)
 }
 
-pub(crate) fn has_decoded_placement(reference: &XrefReference) -> bool {
+fn has_decoded_placement(reference: &XrefReference) -> bool {
     reference.placement_source.is_some()
         || reference.transform.is_some()
         || reference.current_pose.is_some()
+}
+
+pub(crate) fn local_root_ordinal_start(table: &XrefTable) -> usize {
+    if table.derived_references.is_empty() {
+        return table.references.len();
+    }
+    table
+        .references
+        .iter()
+        .rposition(has_decoded_placement)
+        .map_or(0, |ordinal| ordinal + 1)
 }
 
 pub(crate) fn has_projected_placement(
     reference: &XrefReference,
     occurrences: &[Occurrence],
 ) -> bool {
-    has_decoded_placement(reference)
-        && occurrences
-            .iter()
-            .any(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
+    occurrences
+        .iter()
+        .any(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
 }
 
 pub(crate) const IDENTITY_ROWS: [[f64; 4]; 4] = [
@@ -977,15 +995,26 @@ fn bind_occurrences(
             expanded.push(reference.clone());
             continue;
         }
+        let keep_reference_id = table.derived_references.is_empty()
+            && occurrences.len() == 1
+            && legacy_attributed_placement_details(&occurrences[0].0.frame_bytes).is_some()
+            && View::u16_le_at(
+                &occurrences[0].0.frame_bytes,
+                legacy_prefix::LEN + legacy_attributes::LEN + legacy_members::CONTROL,
+            ) == Some(legacy_identity_control::CONTROL_VALUE);
         for (
             occurrence_ordinal,
             (placement, stream, current_pose, (contained_poses, owned_poses)),
         ) in occurrences.into_iter().enumerate()
         {
-            let occurrence_id = format!(
-                "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
-                reference.ordinal
-            );
+            let occurrence_id = if keep_reference_id {
+                reference.id.clone()
+            } else {
+                format!(
+                    "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
+                    reference.ordinal
+                )
+            };
             expanded.push(XrefReference {
                 id: occurrence_id,
                 occurrence_ordinal: ordinal_at(occurrence_ordinal)?,

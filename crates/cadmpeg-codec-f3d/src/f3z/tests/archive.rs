@@ -3,7 +3,7 @@
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
 use crate::test_support::assembly_test::{
-    f3d_with_identity_xrefs, f3d_without_brep_with_xref_placement, f3z_archive,
+    f3d_without_brep, f3d_without_brep_with_xref_placement, f3z_archive,
     f3z_archive_with_design_description, XREF_ROLE,
 };
 use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
@@ -13,8 +13,8 @@ use crate::F3dLossCode;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::codec::{Codec, Confidence};
 use std::io::Cursor;
 
 fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
@@ -55,12 +55,7 @@ fn f3z_archive_merges_identity_occurrences() {
         )
         .unwrap(),
     );
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
-    let root_alone = EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(&root), &DecodeOptions::default())
-            .unwrap(),
-    );
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -127,19 +122,13 @@ fn f3z_archive_merges_identity_occurrences() {
             .annotations
             .provenance
             .len()
-            + root_alone.source_fidelity().annotations.provenance.len()
     );
     assert!(decoded
         .source_fidelity()
         .annotations
         .provenance
         .keys()
-        .all(|id| id.starts_with(&prefix)
-            || root_alone
-                .source_fidelity()
-                .annotations
-                .provenance
-                .contains_key(id)));
+        .all(|id| id.starts_with(&prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
     // synthesize. `Inherit` therefore refuses by name rather than quietly
@@ -203,7 +192,7 @@ fn f3z_archive_merges_identity_occurrences() {
 #[test]
 fn duplicate_role_references_keep_archive_occurrences_disjoint() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let root = f3d_with_identity_xrefs(
+    let root = f3d_without_brep(
         "assembly-design",
         "root.f3d",
         &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
@@ -308,7 +297,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     let component_unknowns = component_alone.ir().native_unknowns("f3d").unwrap();
     assert!(!component_unknowns.is_empty());
 
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -415,12 +404,12 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         &DecodeOptions::default(),
     )
     .unwrap();
-    let middle = f3d_with_identity_xrefs(
+    let middle = f3d_without_brep(
         "assembly-design",
         "middle.f3d",
         &[("component.f3d", CHILD_ROLE)],
     );
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -456,13 +445,13 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
-    let component = f3d_with_identity_xrefs("component-design", "component.f3d", &[]);
-    let middle = f3d_with_identity_xrefs(
+    let component = f3d_without_brep("component-design", "component.f3d", &[]);
+    let middle = f3d_without_brep(
         "assembly-design",
         "middle.f3d",
         &[("component.f3d", CHILD_ROLE)],
     );
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -697,9 +686,8 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
 #[test]
 fn f3z_archive_reports_reference_cycles_without_recursing() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
-    let middle =
-        f3d_with_identity_xrefs("assembly-design", "middle.f3d", &[("root.f3d", CHILD_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("root.f3d", CHILD_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[
@@ -723,7 +711,7 @@ fn f3z_archive_reports_reference_cycles_without_recursing() {
 #[test]
 fn f3z_prefix_detects_as_f3d() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[

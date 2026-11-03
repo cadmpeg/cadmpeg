@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{assert_valid, decode};
-use crate::test_support::assembly_test::{f3d_with_identity_xrefs, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_feature;
 
@@ -10,7 +10,7 @@ fn product_history_owner_survives_two_component_archive_merge() {
     let component = f3d_with_smbh_and_protein_with_generated_base_feature(
         &synthetic_geometry_with_history_smbh(),
     );
-    let root = f3d_with_identity_xrefs(
+    let root = f3d_without_brep(
         "owner-root",
         "root.f3d",
         &[("left.f3d", XREF_ROLE), ("right.f3d", XREF_ROLE)],
@@ -59,7 +59,7 @@ fn root_sketch_owner_follows_document_membership() {
         .all(|definition| !definition.sketches.contains(sketch)));
     assert_valid(&standalone);
 
-    let root = f3d_with_identity_xrefs("owner-root", "root.f3d", &[("member.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("owner-root", "root.f3d", &[("member.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
         &[("root.f3d", &root), ("member.f3d", &document)],

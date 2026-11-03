@@ -89,6 +89,11 @@ fn three_property_control_one_identity_requires_the_complete_registered_form() {
         .unwrap();
     let mut reference =
         crate::test_support::native_test::f3d_native(result.ir()).xref_references[0].clone();
+    assert_eq!(reference.id, "f3d:xref:reference#0");
+    assert_eq!(
+        result.ir().model.occurrences[0].native_ref.as_deref(),
+        Some(reference.id.as_str())
+    );
     assert!(super::super::placement_source_matches(&reference).unwrap());
     reference.neutron_role = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
         .to_owned()
@@ -393,13 +398,15 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::F3dLossCode::BodylessDesignCarrier.kind()));
-    assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
     assert_eq!(
         decoded
             .report()
             .losses
             .iter()
-            .filter(|loss| { loss.code == crate::loss::F3dLossCode::XrefOccurrenceUnplaced.kind() })
+            .filter(
+                |loss| loss.code == crate::loss::F3dLossCode::XrefPlacementIdentityAssumed.kind()
+            )
             .count(),
         1
     );

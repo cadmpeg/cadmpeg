@@ -997,7 +997,27 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
         expected_frame[4..7].copy_from_slice(b"256");
         assert_eq!(source.frame_bytes, expected_frame);
         assert!(super::placement_source_matches(reference).unwrap());
-        assert!(decoded.ir().model.occurrences.is_empty());
+        let occurrence = decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
+            .unwrap();
+        let expected = if transform.is_some() {
+            [
+                [0.0, -1.0, 0.0, 20.0],
+                [1.0, 0.0, 0.0, 30.0],
+                [0.0, 0.0, 1.0, 40.0],
+            ]
+        } else {
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        };
+        assert_eq!(occurrence.transform.affine_rows(), expected);
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()
@@ -1011,7 +1031,7 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
         );
         assert!(losses
             .iter()
-            .any(|loss| loss.code == F3dLossCode::XrefOccurrenceUnplaced.kind()));
+            .any(|loss| loss.code == F3dLossCode::XrefOwnerUnresolved.kind()));
     }
 }
 

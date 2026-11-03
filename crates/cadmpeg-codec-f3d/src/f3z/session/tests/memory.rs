@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn archive_session_retained_estimate_for_skipped_member_is_id_length() {
-    let root = f3d_with_identity_xrefs("part-design", "root.f3d", &[]);
+    let root = f3d_without_brep("part-design", "root.f3d", &[]);
     let bytes = f3z_archive(
         "root.f3d",
         &[("root.f3d", &root), ("sheet.f2d", b"drawing")],
@@ -26,7 +26,7 @@ fn archive_session_retained_estimate_for_skipped_member_is_id_length() {
 #[test]
 fn archive_session_member_result_outlives_source_and_releases_archive_ownership() {
     let member = {
-        let root = f3d_with_identity_xrefs("part-design", "root.f3d", &[]);
+        let root = f3d_without_brep("part-design", "root.f3d", &[]);
         let bytes = crate::test_support::archive_session::deflated_archive(
             "root.f3d",
             &[("root.f3d", &root)],
@@ -64,8 +64,8 @@ fn archive_session_member_result_outlives_source_and_releases_archive_ownership(
 
 #[test]
 fn archive_session_working_estimate_uses_largest_member_not_archive_sum() {
-    let leaf = f3d_with_identity_xrefs("part-design", "leaf.f3d", &[]);
-    let larger = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
+    let leaf = f3d_without_brep("part-design", "leaf.f3d", &[]);
+    let larger = f3d_without_brep("assembly-design", "root.f3d", &[("leaf.f3d", XREF_ROLE)]);
     let declared = |bytes: &[u8]| {
         let arena = DecodeArena::new();
         let (ctx, view) =

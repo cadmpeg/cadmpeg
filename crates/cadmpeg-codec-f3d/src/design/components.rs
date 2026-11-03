@@ -2153,15 +2153,12 @@ mod tests {
                         });
                 }
                 let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
-                let placed = !unresolved || world_carrier;
-                assert_eq!(projection.occurrences.len(), usize::from(placed));
-                if placed {
-                    assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
-                    assert_eq!(
-                        projection.occurrences[0].transform.rows()[0][3],
-                        if world_carrier { 40.0 } else { 20.0 }
-                    );
-                }
+                assert_eq!(projection.occurrences.len(), 1);
+                assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
+                assert_eq!(
+                    projection.occurrences[0].transform.rows()[0][3],
+                    if world_carrier { 40.0 } else { 20.0 }
+                );
                 assert_eq!(
                     projection.losses.len(),
                     usize::from(unresolved) + usize::from(world_carrier)
@@ -2169,11 +2166,7 @@ mod tests {
                 if unresolved {
                     assert_eq!(
                         projection.losses[0].code,
-                        if world_carrier {
-                            crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
-                        } else {
-                            crate::loss::F3dLossCode::XrefOccurrenceUnplaced.kind()
-                        }
+                        crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
                     );
                 }
             }
