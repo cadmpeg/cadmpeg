@@ -43,3 +43,5 @@ pub const OFFSET_SURF: u16 = 60;
 pub const SWEPT_SURF: u16 = 67;
 /// A spun surface, `SPUN_SURF`.
 pub const SPUN_SURF: u16 = 68;
+/// A curve given by a parameter-space B-curve on a surface, `SP_CURVE`.
+pub const SP_CURVE: u16 = 137;

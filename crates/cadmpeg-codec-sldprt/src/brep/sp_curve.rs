@@ -15,6 +15,8 @@ use cadmpeg_ir::units::FinitePoint2;
 use super::sweep::SweepKind;
 use super::LEN_TO_MM;
 use cadmpeg_parasolid::pointer::read_at as read_ref;
+use cadmpeg_parasolid::records::node_type::SP_CURVE;
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 const TAG: u8 = 0x89;
 
@@ -355,6 +357,36 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap
     out
 }
 
+/// `SP_CURVE` nodes whose `b_curve` is in `pcurves`, keyed by node index;
+/// `None` when a node lacks a field the scanner reads.
+pub(super) fn from_nodes(
+    records: &PrimaryRecords<'_>,
+    body_offset: usize,
+    pcurves: &HashMap<u32, PcurveNurbs>,
+) -> Option<HashMap<u32, SpCurve>> {
+    let mut out = HashMap::new();
+    for node in records.nodes().filter(|node| node.kind() == SP_CURVE) {
+        let surface = node.pointer("surface")?;
+        let b_curve = node.pointer("b_curve")?;
+        let tolerance = node.real("tolerance_to_original")?;
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let Some(pcurve) = pcurves
+            .get(&b_curve)
+            .filter(|_| surface > 1 && tolerance.is_finite())
+        else {
+            continue;
+        };
+        let curve = SpCurve {
+            attr: node.index(),
+            offset,
+            surface,
+            pcurve: pcurve.clone(),
+        };
+        out.insert(node.index(), curve).is_none().then_some(())?;
+    }
+    Some(out)
+}
+
 /// A support's stored parameters as the IR's (spec §7.1).
 fn surface_parameters(surface: &SolvedSurfaceGeometry, uv: Point2) -> Option<FinitePoint2> {
     let point = match surface {
@@ -657,5 +689,47 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(worst(sampled) > 1.0e-3);
+    }
+
+    #[test]
+    fn sp_curve_nodes_name_their_support_and_b_curve() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R},
+        };
+        use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+        let line = PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap();
+        let pcurves = std::collections::HashMap::from([(7, line)]);
+        let sp_curve = |surface, b_curve| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(b'+'),
+                P(surface),
+                P(b_curve),
+                P(1),
+                R(0.0),
+            ]
+        };
+        let (payload, body_offset) =
+            sequence_of(&[(137, 3, sp_curve(20, 7)), (137, 4, sp_curve(20, 8))]);
+        let records = sequence(&payload).unwrap();
+        let curves = super::from_nodes(&records, body_offset, &pcurves).unwrap();
+        assert_eq!(curves.len(), 1);
+        assert_eq!(curves[&3].surface, 20);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(curves[&3].offset, first.range().start - body_offset);
     }
 }

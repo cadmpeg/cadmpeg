@@ -656,6 +656,7 @@ pub(super) struct NodeCarriers {
     pub(super) offsets: Option<HashMap<u32, offset::OffsetCarrier>>,
     pub(super) blends: Option<blend::BlendCarriers>,
     pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
+    pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -692,6 +693,7 @@ fn scan_carriers_with_framing(
         offsets: node_offsets,
         blends: node_blends,
         sweeps: node_sweeps,
+        sp_curves: node_sp_curves,
         lane_refusals: node_refusals,
     } = nodes;
     lane_refusals.extend(node_refusals);
@@ -773,8 +775,8 @@ fn scan_carriers_with_framing(
     }
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
-        let pcurves = spline::scan_pcurve_carriers(body);
-        out.sp_curves = sp_curve::scan(body, &pcurves);
+        out.sp_curves = node_sp_curves
+            .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
         for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
