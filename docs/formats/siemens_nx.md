@@ -1391,9 +1391,9 @@ Degree, pole-count, and distinct-knot-count fields have no additional numeric ce
 
 ### 6.3 Procedural intersection curves (type 38)
 
-NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
+NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`.
 
-The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, six construction references, and the type-38 nodetype’s inflated-stream offset. First-use and subsequent instances share one type identity.
+The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, construction references, and the type-38 nodetype’s inflated-stream offset. An absent `intersection_data` reference is the null reference `1`. First-use and subsequent instances share one type identity.
 
 A type-38 edit appending the type-204 pointer has this complete declaration:
 `00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.

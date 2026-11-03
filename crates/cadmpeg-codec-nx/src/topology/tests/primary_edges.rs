@@ -235,3 +235,52 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
         2
     );
 }
+
+/// A base-schema type-38 record with five construction references.
+fn intersection(xmt: u32, supports: [u32; 2]) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Intersection.code())
+        .to_be_bytes()
+        .to_vec();
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(7u32.to_be_bytes());
+    for reference in [1, 1, 1, 1, 1] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes.push(b'+');
+    for reference in [supports[0], supports[1], 1, 1, 1] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes
+}
+
+fn point(xmt: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Point.code()).to_be_bytes().to_vec();
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(9u32.to_be_bytes());
+    for reference in [1, 1, 1, 1] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    for value in [0.0f64; 3] {
+        bytes.extend(value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn a_terminated_type_38_record_without_intersection_data_ends_at_its_fifth_reference() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, false);
+        let start = bytes.len();
+        bytes.extend(intersection(3, [20, 21]));
+        let end = bytes.len();
+        bytes.extend(point(5));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        let node = graph.get(NodeKind::Intersection, 3).expect("type-38 node");
+        assert_eq!((node.pos(), node.end), (start, end));
+        let curves = graph.composite_curves();
+        assert_eq!(curves.len(), 1);
+        assert!(curves[0].references[2..].iter().all(Option::is_none));
+        assert!(graph.get(NodeKind::Point, 5).is_some());
+    });
+}
