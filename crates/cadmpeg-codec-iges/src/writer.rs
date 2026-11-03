@@ -480,10 +480,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = minimum_resolution_for_output(ir)?;
-    if let Some(loss) = minimum_resolution_loss(ir, minimum_resolution) {
-        graph.losses.push(loss);
-    }
+    let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
@@ -526,6 +523,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         regenerated_native: attribute_export.regenerated,
         coverage,
         bytes: encode_file(
+            ir,
             &graph.entities,
             &graph.presentations,
             version,
@@ -542,10 +540,8 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     let ctx = &ctx;
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
-    validate_analytic_surface_context(ir)?;
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(arena_losses);
-    losses.extend(native_omission_losses(ir));
     for body in ir
         .model
         .bodies
@@ -900,27 +896,6 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     }
     if let Some(message) = unsupported_wire {
         return Err(CodecError::UnsupportedContent(message));
-    }
-    Ok(())
-}
-
-fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
-    let writes_brep = has_brep_topology(ir);
-    if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
-        (matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(_)
-                    | SolvedSurfaceGeometry::Cone(_)
-                    | SolvedSurfaceGeometry::Sphere(_)
-                    | SolvedSurfaceGeometry::Torus(_)
-            )
-        )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
-    }) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
-            surface.id
-        )));
     }
     Ok(())
 }
@@ -5075,84 +5050,12 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
     tolerance
 }
 
-fn generated_minimum_resolution(ir: &CadIr) -> Result<f64, CodecError> {
-    let topology_tolerance = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.tolerance)
-        .chain(
-            ir.model
-                .vertices
-                .iter()
-                .filter_map(|vertex| vertex.tolerance),
-        )
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
-        .map(effective_topology_tolerance)
-        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
-    let endpoint_scale = generated_endpoint_coordinate_scale(ir)?;
-    Ok(topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE))
-}
-
-fn minimum_resolution_for_output(ir: &CadIr) -> Result<f64, CodecError> {
-    let generated = generated_minimum_resolution(ir)?;
-    Ok(generated.max(ir.tolerances.linear.get()))
-}
-
-fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
-    ir.source.as_ref()?;
-    let declared = ir.tolerances.linear.get();
-    if emitted <= declared {
-        return None;
-    }
-    Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
-        "IGES Global minimum resolution changed from {declared:.17e} mm to {emitted:.17e} mm to cover the emitted geometry"
-    )))
-}
-
 fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
     if explicit_tolerance.is_finite() {
         explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
     } else {
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE
     }
-}
-
-fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
-    let mut scale = 1.0_f64;
-    for edge in &ir.model.edges {
-        for vertex_id in [&edge.start, &edge.end] {
-            if let Some(point) = vertex_position(ir, vertex_id) {
-                scale = scale.max(point_coordinate_scale(point));
-            }
-        }
-        let Some(curve_id) = edge.curve() else {
-            continue;
-        };
-        let Some(range) = edge.param_range() else {
-            continue;
-        };
-        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
-            continue;
-        };
-        for parameter in range {
-            if let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &curve.geometry,
-                parameter,
-            ))? {
-                scale = scale.max(point_coordinate_scale(point));
-            }
-        }
-    }
-    Ok(scale)
-}
-
-fn point_coordinate_scale(point: FinitePoint3) -> f64 {
-    [point.x, point.y, point.z]
-        .into_iter()
-        .map(f64::abs)
-        .fold(1.0, f64::max)
 }
 
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
@@ -5442,41 +5345,6 @@ fn synthesized_native_dispositions(
         }
     }
     dispositions
-}
-
-fn native_omission_losses(ir: &CadIr) -> Vec<LossNote> {
-    let Some(namespace) = ir.native.namespace("iges") else {
-        return Vec::new();
-    };
-    let represented_name_properties = represented_name_properties(ir, namespace);
-    let mut losses = Vec::new();
-    for (arena, records) in namespace.arenas() {
-        if records.is_empty() {
-            continue;
-        }
-        let message = match arena.as_str() {
-            "entities" => "IGES native entity records are regenerated from neutral content; fields without a neutral encoding are omitted".to_owned(),
-            "directions" => {
-                "IGES direction records are regenerated only for required \
-                 analytic-surface support; native direction identities and unrelated \
-                 records are omitted".to_owned()
-            }
-            "display_attributes" => {
-                "IGES display attributes are not regenerated by the bounded semantic writer".to_owned()
-            }
-            "product_occurrence_expansion" => {
-                "IGES product occurrence expansion is not regenerated by the bounded semantic writer".to_owned()
-            }
-            "attribute_table_definitions" | "attribute_table_instances" => continue,
-            arena if native_records::ARENAS.contains(&arena) => continue,
-            "product_properties" | "properties" if represented_name_properties.is_some() => continue,
-            "product_properties" | "properties" => continue,
-            arena if ALLOWED_NATIVE_ARENAS.contains(&arena) => continue,
-            _ => format!("IGES native arena {arena} is not regenerated; {} record(s) omitted", records.len()),
-        };
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
-    }
-    losses
 }
 
 #[derive(Clone, Copy)]
@@ -8293,15 +8161,18 @@ impl Entity {
 
 /// (O-capacity) Counts and directory fields must fit the Fixed ASCII widths.
 fn encode_file(
+    ir: &CadIr,
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
 ) -> Result<Vec<u8>, CodecError> {
-    let generation_timestamp = generation_timestamp(SystemTime::now(), version)?;
+    let metadata = DocumentMetadata::of(ir);
+    let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
     let global = generated_global(
         version,
+        &metadata,
         &generation_timestamp,
         FiniteReal::new(minimum_resolution).ok_or_else(|| {
             CodecError::malformed("IGES output graph has a non-finite Global minimum resolution")
@@ -8482,7 +8353,14 @@ fn encode_file(
         }
     }
     let mut bytes = Vec::new();
-    bytes.extend(card(b"Generated by cadmpeg", b'S', 1)?);
+    let start = start_cards(&metadata);
+    let start_count = u32::try_from(start.len())
+        .map_err(|_| CodecError::InvalidInput("IGES Start section overflows".into()))?;
+    for (index, chunk) in start.iter().enumerate() {
+        let sequence = u32::try_from(index + 1)
+            .map_err(|_| CodecError::InvalidInput("IGES start sequence overflows".into()))?;
+        bytes.extend(card(chunk, b'S', sequence)?);
+    }
     for (index, chunk) in global_cards.iter().enumerate() {
         let sequence = u32::try_from(index + 1)
             .map_err(|_| CodecError::InvalidInput("IGES global sequence overflows".into()))?;
@@ -8496,8 +8374,7 @@ fn encode_file(
     }
     let parameter_count = parameter_sequence - 1;
     let terminate = format!(
-        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}",
-        start_count = 1
+        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}"
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
@@ -8516,6 +8393,29 @@ fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64)
     }
 }
 
+/// Generation timestamp: the held document date when the target version
+/// accepts its lexical form, else the current time in the target form. The
+/// four-digit year form the later versions admit is not a V4.0 or V5.0 field
+/// 18 value, so a held four-digit date is truncated to its two-digit form
+/// for those targets.
+fn generation_timestamp_for(
+    version: crate::IgesVersion,
+    held: Option<&str>,
+) -> Result<String, CodecError> {
+    if let Some(held) = held {
+        let truncated = held.len() == 15
+            && matches!(
+                version,
+                crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0
+            );
+        if !truncated {
+            return Ok(held.to_owned());
+        }
+        return Ok(held[2..].to_owned());
+    }
+    generation_timestamp(SystemTime::now(), version)
+}
+
 /// Renders one IGES global Hollerith field.
 ///
 /// Each caller passes an ASCII writer constant, an empty string, or the
@@ -8525,8 +8425,111 @@ fn global_hollerith(value: &str) -> String {
     format!("{}H{value}", value.len())
 }
 
+/// Document-scoped attribute values the decoder projects from the Start
+/// section and Global metadata (#222 §7.7). The writer authors those file
+/// positions from the held values so a re-decode projects the same
+/// attributes; positions the document does not hold keep writer constants.
+struct DocumentMetadata<'a> {
+    start: Option<&'a str>,
+    system_id: Option<&'a str>,
+    receiver: Option<&'a str>,
+    author: Option<&'a str>,
+    organization: Option<&'a str>,
+    generation_date: Option<&'a str>,
+    model_date: Option<&'a str>,
+}
+
+impl<'a> DocumentMetadata<'a> {
+    fn of(ir: &'a CadIr) -> Self {
+        Self {
+            start: document_metadata(ir, "start"),
+            system_id: document_metadata(ir, "system_id"),
+            receiver: document_metadata(ir, "receiver"),
+            author: document_metadata(ir, "author"),
+            organization: document_metadata(ir, "organization"),
+            generation_date: document_metadata(ir, "generation_date"),
+            model_date: document_metadata(ir, "model_date"),
+        }
+    }
+}
+
+/// One ASCII string value a document-scoped attribute holds for `name`.
+fn document_metadata<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
+    ir.model.attributes.iter().find_map(|attribute| {
+        if !matches!(
+            attribute.target,
+            cadmpeg_ir::attributes::AttributeTarget::Document
+        ) || attribute.name != name
+        {
+            return None;
+        }
+        let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
+            attribute.values.as_slice()
+        else {
+            return None;
+        };
+        is_ascii_text(value).then_some(value.as_str())
+    })
+}
+
+/// Document attributes the Start section and Global file positions carry, so
+/// they survive a re-decode that projects those positions back.
+pub(super) fn global_projected_attribute(
+    ir: &CadIr,
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
+) -> bool {
+    if !matches!(
+        attribute.target,
+        cadmpeg_ir::attributes::AttributeTarget::Document
+    ) {
+        return false;
+    }
+    if !matches!(
+        attribute.name.as_str(),
+        "start" | "system_id" | "receiver" | "author" | "organization" | "generation_date" | "model_date"
+    ) {
+        return false;
+    }
+    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
+        attribute.values.as_slice()
+    else {
+        return false;
+    };
+    if document_metadata(ir, &attribute.name) != Some(value.as_str()) {
+        return false;
+    }
+    if attribute.name == "start" {
+        return !value.is_empty() && !value.contains('\n') && value.len() <= 72;
+    }
+    true
+}
+
+/// Start section cards: the held text split into 72-byte lines.
+fn start_cards(metadata: &DocumentMetadata<'_>) -> Vec<Vec<u8>> {
+    const WRITER_START_TEXT: &str = "Generated by cadmpeg";
+    let Some(start) = metadata.start.filter(|start| !start.is_empty()) else {
+        return vec![WRITER_START_TEXT.as_bytes().to_vec()];
+    };
+    let cards = start
+        .split('\n')
+        .flat_map(|line| {
+            line.as_bytes()
+                .chunks(72)
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>()
+        })
+        .filter(|chunk| !chunk.is_empty())
+        .collect::<Vec<_>>();
+    if cards.is_empty() {
+        vec![WRITER_START_TEXT.as_bytes().to_vec()]
+    } else {
+        cards
+    }
+}
+
 fn generated_global(
     version: crate::IgesVersion,
+    metadata: &DocumentMetadata<'_>,
     generation_timestamp: &str,
     minimum_resolution: FiniteReal,
     maximum_coordinate: FiniteReal,
@@ -8536,7 +8539,7 @@ fn generated_global(
         "1H;".to_owned(),
         global_hollerith(WRITER_SENDER_PRODUCT),
         global_hollerith(WRITER_NATIVE_FILE_NAME),
-        global_hollerith(WRITER_NATIVE_SYSTEM_ID),
+        global_hollerith(metadata.system_id.unwrap_or(WRITER_NATIVE_SYSTEM_ID)),
         global_hollerith(WRITER_PREPROCESSOR_VERSION),
         WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
         WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
@@ -8544,11 +8547,11 @@ fn generated_global(
         WRITER_DOUBLE_PRECISION_MAGNITUDE.to_string(),
         WRITER_DOUBLE_PRECISION_SIGNIFICANCE.to_string(),
         global_hollerith(match version {
-            crate::IgesVersion::V4_0 => WRITER_SENDER_PRODUCT,
+            crate::IgesVersion::V4_0 => metadata.receiver.unwrap_or(WRITER_SENDER_PRODUCT),
             crate::IgesVersion::V5_0
             | crate::IgesVersion::V5_1
             | crate::IgesVersion::V5_2
-            | crate::IgesVersion::V5_3 => "",
+            | crate::IgesVersion::V5_3 => metadata.receiver.unwrap_or(""),
         }),
         WRITER_MODEL_SPACE_SCALE.to_owned(),
         WRITER_UNITS_FLAG.to_string(),
@@ -8558,16 +8561,18 @@ fn generated_global(
         global_hollerith(generation_timestamp),
         number(minimum_resolution),
         number(maximum_coordinate),
-        global_hollerith(WRITER_AUTHOR_NAME),
-        global_hollerith(WRITER_AUTHOR_ORGANIZATION),
+        global_hollerith(metadata.author.unwrap_or(WRITER_AUTHOR_NAME)),
+        global_hollerith(metadata.organization.unwrap_or(WRITER_AUTHOR_ORGANIZATION)),
         version.global_flag().to_string(),
         WRITER_DRAFTING_STANDARD_FLAG.to_string(),
     ];
     match version {
         crate::IgesVersion::V4_0 => {}
-        crate::IgesVersion::V5_0 => fields.push(global_hollerith("")),
+        crate::IgesVersion::V5_0 => {
+            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+        }
         crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-            fields.push(global_hollerith(""));
+            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
             fields.push(global_hollerith(""));
         }
     }
