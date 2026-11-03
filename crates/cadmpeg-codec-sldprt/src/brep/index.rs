@@ -644,7 +644,7 @@ pub(super) fn index_carriers_with_nodes(
     body: &[u8],
     carriers: NodeCarriers,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(carriers))
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers)))
 }
 
 /// The carriers of one stream read from its node sequence. A family that
@@ -652,6 +652,8 @@ pub(super) fn index_carriers_with_nodes(
 pub(super) struct NodeCarriers {
     pub(super) analytic: Option<Vec<Carrier>>,
     pub(super) splines: Option<spline::nodes::NodeSplines>,
+    pub(super) offsets: Option<HashMap<u32, offset::OffsetCarrier>>,
+    pub(super) blends: Option<blend::BlendCarriers>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -660,7 +662,7 @@ enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
     Scan(Option<bool>),
     /// Carriers read from the node sequence.
-    Nodes(NodeCarriers),
+    Nodes(Box<NodeCarriers>),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -678,12 +680,18 @@ fn scan_carriers_with_framing(
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
-    let (node_analytic, node_splines, deltas) = match framing {
+    let (node_analytic, node_splines, node_offsets, node_blends, deltas) = match framing {
         Framing::Nodes(carriers) => {
             lane_refusals.extend(carriers.lane_refusals);
-            (carriers.analytic, carriers.splines, None)
+            (
+                carriers.analytic,
+                carriers.splines,
+                carriers.offsets,
+                carriers.blends,
+                None,
+            )
         }
-        Framing::Scan(deltas) => (None, None, deltas),
+        Framing::Scan(deltas) => (None, None, None, None, deltas),
     };
     match node_analytic {
         Some(analytic) => {
@@ -730,11 +738,11 @@ fn scan_carriers_with_framing(
         blends,
         pairs,
         bounds,
-    } = blend::scan(body);
+    } = node_blends.unwrap_or_else(|| blend::scan(body));
     out.blends = blends;
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
-    out.offsets = offset::scan(body);
+    out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
     for intersection in
         intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
     {

@@ -2334,6 +2334,8 @@ pub(crate) fn decode_bodies(
                         NodeCarriers {
                             analytic,
                             splines,
+                            offsets: super::offset::from_nodes(&records, header.body_offset),
+                            blends: super::blend::from_nodes(&records, header.body_offset),
                             lane_refusals,
                         },
                     ),
