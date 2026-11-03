@@ -29363,3 +29363,88 @@ type = "u16"
 source = "spec"
 anchor = "The three-property identity form also carries control word"
 value = 1
+
+[[record]]
+name = "scene_override_prefix"
+kind = "byte"
+section = "1.1.4"
+anchor = "Its fixed prefix is 181 bytes"
+size = 181
+parsed_by = "crates/cadmpeg-codec-f3d/src/scene.rs"
+
+[[record.field]]
+name = "name_count"
+offset = 0
+type = "u32"
+value = 26
+source = "spec"
+anchor = "A transform row starts with count `26`"
+
+[[record.field]]
+name = "name"
+offset = 4
+type = "bytes[52]"
+source = "spec"
+anchor = "count `26` and `OverrideTransformAttribute`"
+
+[[record.field]]
+name = "prologue"
+offset = 56
+type = "bytes[5]"
+value = [0, 0, 0, 0, 1]
+source = "spec"
+anchor = "prologue `00 00 00 00 01`"
+
+[[record.field]]
+name = "matrix"
+offset = 61
+type = "f32[16]"
+source = "spec"
+anchor = "The matrix starts at offset 61 and is column-major"
+
+[[record.field]]
+name = "path_markers"
+offset = 125
+type = "bytes[2]"
+value = [1, 1]
+source = "spec"
+anchor = "bytes `01 01`, count `25`, and `PersistentPassiveNodePath`"
+
+[[record.field]]
+name = "path_class_count"
+offset = 127
+type = "u32"
+value = 25
+source = "spec"
+anchor = "count `25`, and `PersistentPassiveNodePath`"
+
+[[record.field]]
+name = "path_class"
+offset = 131
+type = "bytes[50]"
+source = "spec"
+anchor = "count `25`, and `PersistentPassiveNodePath`"
+
+[[record]]
+name = "scene_record_index"
+kind = "byte"
+section = "1.1.4"
+anchor = "12-byte big-endian record indices"
+size = 12
+parsed_by = "crates/cadmpeg-codec-f3d/src/scene.rs"
+
+[[record.field]]
+name = "high_word"
+offset = 0
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "Its leading u32 is zero in an untagged element"
+
+[[record.field]]
+name = "index"
+offset = 4
+type = "u64"
+endianness = "big"
+source = "spec"
+anchor = "its remaining eight bytes give the index"
