@@ -349,11 +349,13 @@ pub(in super::super) fn transfer_feature_dimensions(
             Exactness::Derived,
         )?;
         let mut properties = BTreeMap::new();
-        insert_dimension_property(&mut properties, "definition_id", definition.identity.id());
+        // §8: the sketch record named by `native_ref` already holds the
+        // definition id and the per-row direction byte as typed fields, so
+        // neither is repeated here. The remaining entries are the row's slot
+        // identity: they name the dimension-table row, not source layout.
         insert_dimension_property(&mut properties, "source_ordinal", source_ordinal);
         insert_dimension_property(&mut properties, "external_id", dimension.external_id);
         insert_dimension_property(&mut properties, "dimension_type", dimension.dimension_type);
-        insert_dimension_property(&mut properties, "direction_byte", dimension.direction_byte);
         if let Some(auxiliary) = dimension.auxiliary_value {
             insert_dimension_property(&mut properties, "auxiliary_value", auxiliary);
         }
