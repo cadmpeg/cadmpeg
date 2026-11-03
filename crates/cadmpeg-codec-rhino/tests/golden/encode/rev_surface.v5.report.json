@@ -122,7 +122,7 @@
         "namespace": "rhino",
         "scope": "namespaced"
       },
-      "message": "surface rhino:object:surface#record-000000-offset-177 procedural construction was reduced to a held solved carrier",
+      "message": "surface rhino:object:surface#record-000000-offset-177 procedural construction rhino:object:procedural-surface#record-000000-offset-177 was reduced to a held solved carrier",
       "severity": "warning"
     },
     {
