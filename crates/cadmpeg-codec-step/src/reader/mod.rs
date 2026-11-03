@@ -586,6 +586,18 @@ fn decode_exchange_mode(
         // by rule 2 and named on the part loss; retaining it here would
         // add a second home beside the stubs the helper mints.
         let reached = drops::damage_reached(exchange, session.ctx)?;
+        // A severed style chain strands its orphans: the cut or damaged
+        // part took their styled-item consumers, so no stage claims them
+        // and the uncut decode consumes them into appearances. They drop
+        // with the damage by rule 2 and are named on the part loss;
+        // retaining them here would add rows the uncut decode does not
+        // hold. The set is empty for a clean decode.
+        let stranded =
+            drops::stranded_style_instances(exchange, &session.typed_records, session.ctx)?;
+        for &id in &stranded {
+            let record = &exchange.records()[&id];
+            damage_ledger.add(id, opaque_record_id(id, record)?.to_string(), None);
+        }
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
                 continue;
@@ -593,7 +605,7 @@ fn decode_exchange_mode(
             if resurrected.contains(&id) {
                 continue;
             }
-            if reached.contains(&id) {
+            if reached.contains(&id) || stranded.contains(&id) {
                 continue;
             }
             let mut unknown_id = opaque_record_id(id, record)?;
@@ -619,7 +631,7 @@ fn decode_exchange_mode(
             if resurrected.contains(&id) {
                 continue;
             }
-            if reached.contains(&id) {
+            if reached.contains(&id) || stranded.contains(&id) {
                 continue;
             }
             count_unknown_kind(&mut counts, record);

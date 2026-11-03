@@ -510,14 +510,14 @@ id = "rhino:archive-1"
 title = "Rhino 3DM archive version 1 (flat legacy records)"
 discriminants = { archive_version = "1" }
 seam = "flat-chunk grammar with its own typecode table; no table sequence, and the end-of-file chunk is optional"
-witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm"
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/damaged/reject_v1.3dm"
 
 [[dialect]]
 # `ArchiveVersion::V2`. Fixture verified: `       2`.
 id = "rhino:archive-2"
 title = "Rhino 3DM archive version 2"
 discriminants = { archive_version = "2" }
-witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v2.3dm"
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/damaged/reject_v2.3dm"
 
 [[dialect]]
 # `ArchiveVersion::V3`. Fixture verified: `       3`; the
