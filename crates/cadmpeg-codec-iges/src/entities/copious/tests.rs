@@ -531,13 +531,21 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(!witness.report().geometry_transferred());
+    assert!(witness.report().geometry_transferred());
     assert!(witness.ir().model.curves.is_empty());
-    assert!(witness
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    assert!(
+        witness.report().losses.is_empty(),
+        "{:#?}",
+        witness.report().losses
+    );
+    let annotations = &witness.ir().model.semantic_annotations;
+    assert_eq!(annotations.len(), 1);
+    assert!(matches!(
+        annotations[0].kind,
+        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Leader
+    ));
+    assert_eq!(annotations[0].runtime_type, "iges:106");
+    assert_eq!(annotations[0].native_ref, "iges:native:copious-data#D1");
     let native = witness.ir().native.namespace("iges").unwrap();
     let entities = &native.arenas()["entities"];
     assert_eq!(entities.len(), 1);
