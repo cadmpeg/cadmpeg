@@ -750,7 +750,28 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "projection.native-only",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "iges:product:rectangular-array#D3: pattern omitted_instances must contain distinct nonseed grid positions",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.native-only",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "iges:product:circular-array#D5: pattern angles must start at zero and strictly increase",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=3",
       "entity.116.form.0=1",
