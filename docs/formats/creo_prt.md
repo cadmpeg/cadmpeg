@@ -23,27 +23,29 @@ Later generations use a table of contents followed by named binary sections.
 #<SectionName>\n <payload>
 ```
 
-The header record `#- CMNM <hhh><name>` stores the native model filename. The
-three ASCII hexadecimal digits give the filename byte length. Trailing ASCII
-spaces pad the counted field. A unique nonempty `.prt` filename supplies the
-current relation model name after removing that padding and suffix.
+The header record `#- CMNM <hhh><name>` stores the model's common name. The
+three ASCII hexadecimal digits give the name byte length. Trailing ASCII
+spaces pad the counted field.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
-those bytes is not part of the name. A repeated or malformed `CMNM` record does
-not establish identity.
+those bytes is not part of the name. A common name is free text. It can be the
+model filename, such as `widget.prt`, or a descriptive title, such as
+`MOUNTING PLATE 40 MM`. A repeated or malformed `CMNM` record establishes no
+common name.
 
-Binary model-data sections can store the same identity in the named field
+Binary model-data sections store the model name in the named field
 `e0 0a model_name\0`. Its value is a NUL-terminated UTF-8 string. One leading
 `f1` framing byte may precede the string and is not part of the value. The
-single-byte `e1` value is null and does not establish identity. When no unique
-`CMNM` record establishes identity, the first nonempty, non-control-valued
-`model_name` field in section order is the root model name. A missing valid
-value leaves model identity undefined. This field already contains the relation
-model name; the `CMNM` filename form supplies it after its `.prt` suffix is
-removed.
+single-byte `e1` value is null. Outside the legacy ASCII layout, the first
+nonempty, non-control-valued `model_name` field in section order is the root
+model name. When no such field exists, a unique `CMNM` common name is the root
+model name. A missing valid value leaves model identity undefined. The relation
+model name is the root model name with a trailing `.prt` removed; a root model
+name that contains any other `.` defines no relation model name.
 
-Legacy ASCII sections can repeat `model_name` in separate scopes. A nonempty
-value other than the `NULL` placeholder in source order is the root source
-identity. Other scoped values remain separate model references. Relation
+Legacy ASCII sections can repeat `model_name` in separate scopes. In the legacy
+ASCII layout, a unique `CMNM` common name is the root model name. Without one,
+a nonempty value other than the `NULL` placeholder in source order is the root
+source identity. Other scoped values remain separate model references. Relation
 evaluation uses the stricter unique-root resolver and does not use this
 fallback when those references conflict.
 
@@ -288,21 +290,27 @@ a dotted value or an integer. The final dotted numeric token is the build
 declaration. Banner length is variable; the first TOC does not have a fixed
 file offset.
 
-These ND header forms use the same section-directory grammar. The two fields
-in the third column are the first two decimal tokens after `PART` on the
-`#UGC:2` line. They are producer declarations, separate from the banner's
-release and build tokens. The four intervening decimal tokens before the
-declarations in the last column are `800 1 1 15`.
+These ND header forms use the same section-directory grammar. The token after
+`#UGC:2` is the model kind: `PART`, `PART/SHEETMETAL`, or `ASSEMBLY`. The two
+fields in the third column are the first two decimal tokens after the model
+kind. They are producer declarations, separate from the banner's release and
+build tokens. The first declaration increases with the build within a release,
+and the second is constant within a release. The four decimal tokens in the
+fourth column follow them. The last column holds the next two declarations:
+the first is constant within a release, and the second increases with the
+build.
 
-| Release token | Build token | First two `PART` tokens | Following two decimal declarations |
-| --- | --- | --- | --- |
-| `7.0` | `7.0.12.0` | `1986 1560` | `3800 2023154` |
-| `8.0` | `8.0.12.0` | `2014 1660` | `3900 2024325` |
-| `9.0` | `9.0.12.0` | `2083 1760` | `4000 2025304` |
-| `10.0` | `10.0.11.0` | `2239 1860` | `4100 2026024` |
-| `11.0` | `11.0.9.0` | `2420 1960` | `4200 2026123` |
-| `12` | `12.4.5.0` | `2602 2120` | `4300 2026183` |
-| `13` | `13.4.2.0` | `2794 2280` | `4400 2026283` |
+| Release token | Build token | First two kind tokens | Intervening tokens | Following two decimal declarations |
+| --- | --- | --- | --- | --- |
+| `7.0` | `7.0.12.0` | `1986 1560` | `800 1 1 15` | `3800 2023154` |
+| `8.0` | `8.0.12.0` | `2014 1660` | `800 1 1 15` | `3900 2024325` |
+| `9.0` | `9.0.12.0` | `2083 1760` | `800 1 1 15` | `4000 2025304` |
+| `10.0` | `10.0.2.0` | `2149 1860` | `800 1 1 15` | `4100 2023294` |
+| `10.0` | `10.0.11.0` | `2239 1860` | `800 1 1 15` | `4100 2026024` |
+| `11.0` | `11.0.9.0` | `2420 1960` | `800 1 1 15` | `4200 2026123` |
+| `12` | `12.4.1.0` | `2562 2120` | `802 1 1 15` | `4300 2025183` |
+| `12` | `12.4.5.0` | `2602 2120` | `800 1 1 15` | `4300 2026183` |
+| `13` | `13.4.2.0` | `2794 2280` | `800 1 1 15` | `4400 2026283` |
 
 The banner and producer declarations do not replace the layout discriminators.
 An ND directory can decorate the outer model, unit-system, and
@@ -2091,6 +2099,23 @@ scalars use the signed first-coordinate lane at all three positions, including
 positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
+
+The stateful plane scalar lane, which the compact rotation origin, the
+stateful standard envelope, and the support-frame origins share, also defines
+these tiny-magnitude literals. A three-byte form `<prefix> XX YY`
+reconstructs a double from `(byte0, XX, fill...)`.
+
+| Prefix | `byte0` | Fill                  |
+| ------ | ------- | --------------------- |
+| `1a`   | `3C`    | `YY` repeated 6 times |
+| `1b`   | `3C`    | `YY 00 00 00 00 00`   |
+| `20`   | `3D`    | `YY 00 00 00 00 00`   |
+| `33`   | `BC`    | `YY` repeated 6 times |
+| `34`   | `BC`    | `YY 00 00 00 00 00`   |
+| `39`   | `BD`    | `YY 00 00 00 00 00`   |
+
+`3c <tail7>` reconstructs `be <tail7>`. `00 04 <low>` reconstructs
+`3f ef ff ff ff ff ff <low>`, as in the angular stream (§4.1.1).
 
 An angular-stream plane rotation stores nine row-major direction slots and
 three origin slots through the angular stream defined in §4.1.1. At least one
@@ -5455,8 +5480,10 @@ comes first. Positional saved arc bodies begin at the row identifier and end
 before the row-closing `e3`. These bodies preserve the exact stored fields
 independently of decoded geometry.
 The line prototype can close with `f1 e3`; positional line rows follow that
-close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
-the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies
+close. In saved-section three-scalar coordinate fields and in saved-line and
+positional saved-arc coordinate rows, `e4` and `e5` after a standalone `18`
+repeat that zero once and twice: `18 e4` fills two zero slots and `18 e5` fills
+three. In a saved-line coordinate row, `41` occupies
 eight bytes, and `74` and `75` are positive DICT prefixes. Entity references may
 also follow the sixth coordinate before the row-closing `e3`. Consecutive
 `18 18` bytes are two standalone zero scalar slots; the first `18` does not
