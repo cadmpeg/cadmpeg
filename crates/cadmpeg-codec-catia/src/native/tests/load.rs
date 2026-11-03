@@ -10,8 +10,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::test_container::{
-    external_reference_segment, outer_container_catpart, standard_catpart, summary_preview_segment,
-    surface_alias_stream,
+    external_reference_segment, outer_body_catpart, outer_container_catpart, standard_catpart,
+    summary_preview_segment, surface_alias_stream,
 };
 use crate::test_support::test_formula::{
     standard_catpart_with_configuration_incidences,
@@ -172,8 +172,9 @@ fn native_load_rejects_dangling_cross_arena_links() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut external_native =
-        crate::native::CatiaNative::decode(&external_reference_segment("Support.CATPart"));
+    let mut external_native = crate::native::CatiaNative::decode(&outer_body_catpart(
+        &external_reference_segment("Support.CATPart"),
+    ));
     external_native.external_references[0].segment = "catia:missing-segment".to_string();
     let mut external_namespace = cadmpeg_ir::NativeNamespace::default();
     external_native
@@ -1021,6 +1022,7 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
             "Support{index}.CATPart"
         )));
     }
+    let bytes = outer_body_catpart(&bytes);
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -1090,6 +1092,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     for _ in 0..12 {
         bytes.extend(summary_preview_segment());
     }
+    let bytes = outer_body_catpart(&bytes);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.preview_images.len(), 12);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();

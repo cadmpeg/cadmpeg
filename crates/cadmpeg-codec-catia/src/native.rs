@@ -1837,6 +1837,7 @@ impl CatiaValueSchemaSelection {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn name(&self) -> Option<&str> {
         match &self.kind {
             CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
@@ -8417,7 +8418,10 @@ impl CatiaNative {
             Some(outer) => container::outer_container_declarations(bytes, outer),
             None => Vec::new(),
         };
-        let parsed_finjpl = container::finjpl_segments(&container::BodyExtent::whole(bytes));
+        let parsed_finjpl = match container::outer_body_extent(bytes) {
+            Some(body) => container::finjpl_segments(&body),
+            None => Vec::new(),
+        };
         let storage_property_members = storage_property::parse(bytes, &parsed_finjpl)?;
         let parsed_alias_rows = object_graph::surface_aliases(bytes, &parsed_finjpl);
         let mut finjpl_segments = Vec::new();
