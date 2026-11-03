@@ -192,7 +192,7 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
         .records()
         .values()
         .flat_map(|record| &record.partials)
-        .find(|partial| partial.name == "GEOMETRIC_SET")
+        .find(|partial| partial.name == "SHAPE_REPRESENTATION")
         .unwrap();
     let crate::parse::Value::List(members) = &root.parameters[1] else {
         panic!("root members are a list");
@@ -270,7 +270,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                 .records()
                 .values()
                 .flat_map(|record| &record.partials)
-                .filter(|partial| partial.name == "GEOMETRIC_SET")
+                .filter(|partial| partial.name == "SHAPE_REPRESENTATION")
                 .flat_map(|partial| match &partial.parameters[1] {
                     crate::parse::Value::List(items) => items.as_slice(),
                     _ => panic!("root members are a list"),
@@ -358,7 +358,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         .records()
         .values()
         .flat_map(|record| &record.partials)
-        .find(|partial| partial.name == "GEOMETRIC_CURVE_SET")
+        .find(|partial| partial.name == "SHAPE_REPRESENTATION")
         .unwrap();
     let crate::parse::Value::List(members) = &root.parameters[1] else {
         panic!("root list");
@@ -431,7 +431,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
             .records()
             .values()
             .flat_map(|record| &record.partials)
-            .find(|partial| partial.name == "GEOMETRIC_CURVE_SET");
+            .find(|partial| partial.name == "SHAPE_REPRESENTATION");
         if missing_child {
             assert!(root.is_none());
             assert!(report

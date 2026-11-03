@@ -3994,6 +3994,9 @@
             },
             {
               "id": "nx:om-section-0:block#6"
+            },
+            {
+              "id": "nx:source:part#39aa1655434c07e5251725b416a8f7bd4cec42ba83aada3e48ce80b659f38fc7"
             }
           ]
         }
@@ -4061,6 +4064,22 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "error"
+          },
+          "message": "part nx.feature_history_operation stream=\"\" offset=603 length=130: malformed container: NX feature-history operation label frame at offset 603 is present but unreadable; dropped=[]",
+          "provenance": {
+            "byte_len": 130,
+            "format": "nx",
+            "offset": 603
+          },
+          "severity": "error"
         }
       ],
       "notes": [
@@ -4702,6 +4721,18 @@
           "offset": 1854,
           "stream": "nx:container",
           "untyped": []
+        },
+        "nx:source:part#39aa1655434c07e5251725b416a8f7bd4cec42ba83aada3e48ce80b659f38fc7": {
+          "bytes": {
+            "data": "gM0BBAEvpHrhR64Ue///A////wMHu1JBRlQAZwAAAQAvpHrhR64UewP//////////wEDgJSCSQEC8Rt8AQLxG31oL3BiTdLxqfwDUEQAAAFGiioBo2AQAQEBBAIBAgEAAAAAAfEbfv8AAADxG3//gV6AuAEDAgECAQEBAAAAKSkMAA==",
+            "retention": "inline"
+          },
+          "offset": 603,
+          "stream": "",
+          "untyped": [
+            "model",
+            "design"
+          ]
         }
       },
       "unrepresented": [
