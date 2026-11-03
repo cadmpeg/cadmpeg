@@ -661,6 +661,13 @@ integer. The `envlp`, `outline`, and `srf_flip_dat` fields retain their bounded
 body bytes exactly; their bodies end at the next named-record header or the
 prototype close. These fields are part of the prototype's contour-chain data
 and do not by themselves materialize a surface row or a face.
+A named `envlp f9 02 02` body stores the parameter-space box
+`[u0, v0, u1, v1]`, with `u0 <= u1` and `v0 <= v1`. Its four slots use the
+member-frame slot lane of §9.1, including the `e4`, `e5`, and `e6` repeats of
+the preceding slot. The lane adds the angular literals `11` positive pi, `12`
+positive pi/2, and `13` positive 2*pi. The form `<n> <K> <b...>`, with `n` in
+`00..02` and `K` one of these angular literals, is the angle with its last
+`n + 1` IEEE-754 bytes replaced by the `n + 1` bytes `b...`.
 count-prefixed compact-integer array is typed as such only when exactly the
 declared number of compact integers consumes the entire bounded field body;
 trailing bytes make the field opaque.
