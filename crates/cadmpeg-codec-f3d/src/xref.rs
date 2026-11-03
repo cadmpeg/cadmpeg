@@ -38,7 +38,7 @@ use crate::layout::legacy_attributed_external_placement_prefix as legacy_prefix;
 use crate::layout::root_instance_prefix as root_instance;
 use crate::records::{
     feature::{assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope},
-    xref::{XrefDesign, XrefLocalOwner, XrefPlacementSource, XrefReference},
+    xref::{DerivedReference, XrefDesign, XrefLocalOwner, XrefPlacementSource, XrefReference},
 };
 
 /// Top-level container entry holding the external-reference table.
@@ -60,6 +60,7 @@ pub(crate) struct XrefTable {
     pub(crate) designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
+    pub(crate) derived_references: Vec<DerivedReference>,
     /// Type-admitted placements that do not close under their generation grammar.
     pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
     pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
@@ -124,12 +125,17 @@ struct DesignJson {
 #[serde(tag = "type")]
 enum ReferenceJson {
     #[serde(rename = "XREF")]
-    Xref {
-        from: String,
-        #[serde(rename = "relativePath")]
-        relative_path: String,
-        properties: Vec<PropertyJson>,
-    },
+    Xref(ReferenceFieldsJson),
+    #[serde(rename = "DERIVED")]
+    Derived(ReferenceFieldsJson),
+}
+
+#[derive(Deserialize)]
+struct ReferenceFieldsJson {
+    from: String,
+    #[serde(rename = "relativePath")]
+    relative_path: String,
+    properties: Vec<PropertyJson>,
 }
 
 #[derive(Deserialize)]
@@ -147,9 +153,9 @@ enum StringProperty {
     String { value: String },
 }
 
-impl ReferenceJson {
+impl ReferenceFieldsJson {
     fn into_record(self, ordinal: usize) -> Result<XrefReference, CodecError> {
-        let Self::Xref {
+        let Self {
             from,
             relative_path,
             properties,
@@ -370,18 +376,33 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         ReferencesJson::List(references) if !references.is_empty() => references,
         ReferencesJson::List(_) => {
             return Err(redirections_error(
-                "references must be {} when the document has no outgoing XREF",
+                "references must be {} when the document has no outgoing references",
             ));
         }
         ReferencesJson::Leaf {} => Vec::new(),
     };
     let mut admitted_references = Vec::new();
+    let mut derived_references = Vec::new();
     for (ordinal, reference) in references.into_iter().enumerate() {
-        admitted_references.push(reference.into_record(ordinal)?);
+        match reference {
+            ReferenceJson::Xref(fields) => admitted_references.push(fields.into_record(ordinal)?),
+            ReferenceJson::Derived(fields) => {
+                let reference = fields.into_record(ordinal)?;
+                derived_references.push(DerivedReference {
+                    id: format!("f3d:derived:reference#{ordinal}"),
+                    ordinal: reference.ordinal,
+                    from: reference.from,
+                    relative_path: reference.relative_path,
+                    neutron_role: reference.neutron_role,
+                    neutron_data: reference.neutron_data,
+                });
+            }
+        }
     }
     Ok(XrefTable {
         designs,
         references: admitted_references,
+        derived_references,
         ..Default::default()
     })
 }

@@ -154,6 +154,17 @@ pub(crate) struct XrefDesign {
     pub(crate) version_urn: String,
 }
 
+/// A DERIVED dependency in the container reference table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DerivedReference {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) from: RequiredXrefText,
+    pub(crate) relative_path: RequiredXrefText,
+    pub(crate) neutron_role: RequiredXrefText,
+    pub(crate) neutron_data: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct XrefLocalOwner {
     pub(crate) target: u64,
@@ -351,5 +362,21 @@ mod tests {
                 .unwrap(),
             whitespace
         );
+    }
+
+    #[test]
+    fn derived_reference_native_shape_round_trip() {
+        let wire = serde_json::json!({
+            "id": "f3d:derived:reference#0", "ordinal": 0,
+            "from": "root.f3d", "relative_path": "source.f3d",
+            "neutron_role": "role", "neutron_data": "data"
+        });
+        let restored: super::DerivedReference = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+        for field in ["from", "relative_path", "neutron_role"] {
+            let mut invalid = wire.clone();
+            invalid[field] = serde_json::json!("");
+            assert!(serde_json::from_value::<super::DerivedReference>(invalid).is_err());
+        }
     }
 }

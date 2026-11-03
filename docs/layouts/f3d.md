@@ -8479,3 +8479,4 @@ Unstated regions:
 | ---- | ---- | ------ |
 | Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and variable-position `Manifest.dat` fields. The fixed lineage suffix has its own record. |
 | Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; the empty table object contains zero tables, columns, rows, and cells. |
+| XREF and DERIVED container reference rows | §1.4 | JSON member names delimit variable-length fields in RedirectionsStream.dat and DesignDescription.json. |

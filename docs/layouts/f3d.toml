@@ -29003,3 +29003,9 @@ offset = 85
 type = "bytes[2]"
 source = "spec"
 anchor = "The null-construction identity variants span 77 bytes"
+
+[[not_applicable]]
+area = "XREF and DERIVED container reference rows"
+reason = "JSON member names delimit variable-length fields in RedirectionsStream.dat and DesignDescription.json."
+section = "1.4"
+anchor = "XREF and DERIVED rows can share an array."

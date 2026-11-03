@@ -617,7 +617,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "Reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 
@@ -845,7 +845,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
 
-**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
+**Need.** A complete binding from each derived scope to its DERIVED dependency, source body, and frame. A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
 
 **Conflict.** None.
 
@@ -1232,3 +1232,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
+
+### DR-248. Closing reference and owner of unadmitted legacy placements
+
+**Question.** How does the closing reference of an unadmitted legacy occurrence-placement carrier identify its owner, and how does that owner place the carrier's matrix in the document frame?
+
+**Known.** The 403-byte identity and 531-byte matrix envelopes in §1.4 close with a fixed target value `4`. One local archive has eight XREF rows with unadmitted placement carriers and five resolved member placements at the identity fallback. One checked carrier has a nonidentity rigid matrix in the legacy matrix-tail position and a non-null local closing reference whose target differs from `4`. The complete source frames remain retained, and `xref.placement-undecoded` identifies the carrier refusals.
+
+**Need.** Independent public placements that vary the closing target and owner transform separately. The closing reference must bind to a component owner, and the complete carrier and current-pose grammars must close before the source world pose can be established.
+
+**Conflict.** None.
+
+**Note.** DERIVED-row admission preserves adjacent XREF rows. It leaves the existing placement-generation gates in force. Source-pose equivalence requires a closed owner and current-pose binding.

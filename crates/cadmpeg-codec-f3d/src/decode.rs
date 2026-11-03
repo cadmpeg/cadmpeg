@@ -3070,6 +3070,7 @@ impl<'a> F3dDecodeSession<'a> {
                     );
                 }
                 if let Ok(Some(table)) = prereqs.store(&mut self.native) {
+                    self.native.derived_references = table.derived_references;
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
@@ -3162,6 +3163,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
+                        self.native.derived_references = table.derived_references;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }

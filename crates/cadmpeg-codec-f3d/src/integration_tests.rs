@@ -19,6 +19,7 @@ mod placement_history;
 mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
+mod reference_rows;
 mod sketch_regions;
 mod work_planes;
 
