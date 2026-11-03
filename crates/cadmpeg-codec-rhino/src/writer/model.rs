@@ -59,11 +59,7 @@ fn resolve_composite_leaf<'a>(
         if !segment.same_sense {
             break;
         }
-        let Some(child) = model
-            .curves
-            .iter()
-            .find(|child| child.id == segment.curve)
-        else {
+        let Some(child) = model.curves.iter().find(|child| child.id == segment.curve) else {
             break;
         };
         skipped.push(current.id.as_str());
@@ -81,11 +77,12 @@ fn map_line(
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<cadmpeg_ir::geometry::analytic::LineCurve, WriteError> {
     use cadmpeg_ir::geometry::analytic::LineCurve;
-    let origin = transform
-        .apply_point(line.origin().get())
-        .ok_or_else(|| {
-            WriteError::Omit(format!("edge {} placed line has no finite origin", edge.id.as_str()))
-        })?;
+    let origin = transform.apply_point(line.origin().get()).ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed line has no finite origin",
+            edge.id.as_str()
+        ))
+    })?;
     let direction = cadmpeg_ir::units::UnitVector3::new(
         transform
             .apply_vector(*line.direction().as_raw())
@@ -684,12 +681,7 @@ impl<'a> WritableModel<'a> {
                             carrier.id.as_str()
                         )));
                     };
-                    derive_composite_range(
-                        edge,
-                        &line,
-                        vertices[start].point,
-                        vertices[end].point,
-                    )?
+                    derive_composite_range(edge, &line, vertices[start].point, vertices[end].point)?
                 }
             };
             if !skipped.is_empty() {
@@ -731,8 +723,7 @@ impl<'a> WritableModel<'a> {
                     )
                 }
                 SolvedCurveGeometry::Nurbs(_) => {
-                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved()
-                    else {
+                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
                         return Err(WriteError::Omit(format!(
                             "edge curve {} is not a line or NURBS curve",
                             carrier.id.as_str()

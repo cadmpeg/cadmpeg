@@ -25,12 +25,9 @@ pub(in crate::writer) struct TextureMappingExport {
 }
 
 fn u32_field(fields: &Map<String, Value>, name: &str) -> Result<u32, WriteError> {
-    u32::try_from(
-        fields
-            .get(name)
-            .and_then(Value::as_i64)
-            .ok_or_else(|| WriteError::Omit(format!("Rhino texture mapping {name} needs an integer")))?,
-    )
+    u32::try_from(fields.get(name).and_then(Value::as_i64).ok_or_else(|| {
+        WriteError::Omit(format!("Rhino texture mapping {name} needs an integer"))
+    })?)
     .map_err(|_| WriteError::Omit(format!("Rhino texture mapping {name} exceeds u32")))
 }
 
@@ -49,9 +46,12 @@ fn transform(fields: &Map<String, Value>, name: &str) -> Result<[f64; 16], Write
                 WriteError::Omit(format!("Rhino texture mapping {name} needs four columns"))
             })?;
         for (cell, value) in cells.iter().zip(target.iter_mut()) {
-            *value = cell.as_f64().filter(|value| value.is_finite()).ok_or_else(|| {
-                WriteError::Omit(format!("Rhino texture mapping {name} needs finite numbers"))
-            })?;
+            *value = cell
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| {
+                    WriteError::Omit(format!("Rhino texture mapping {name} needs finite numbers"))
+                })?;
         }
     }
     Ok(out)
@@ -82,7 +82,8 @@ fn primitive_bytes(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
 pub(in crate::writer) fn mappings(
     ir: &CadIr,
     version: crate::RhinoArchiveVersion,
-) -> Result<TextureMappingExport, WriteError> {    let mut output = TextureMappingExport {
+) -> Result<TextureMappingExport, WriteError> {
+    let mut output = TextureMappingExport {
         records: Vec::new(),
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
@@ -115,7 +116,10 @@ pub(in crate::writer) fn mappings(
                 .get("texture_space")
                 .and_then(Value::as_i64)
                 .is_some_and(|space| space != 0)
-                || fields.get("capped").and_then(Value::as_bool).unwrap_or(false)
+                || fields
+                    .get("capped")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
             {
                 1
             } else {
@@ -140,7 +144,10 @@ pub(in crate::writer) fn mappings(
             if minor >= 1 {
                 body.extend(u32_field(&fields, "texture_space")?.to_le_bytes());
                 body.push(u8::from(
-                    fields.get("capped").and_then(Value::as_bool).unwrap_or(false),
+                    fields
+                        .get("capped")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 ));
             }
             let anonymous = anonymous(1, minor, &body).map_err(WriteError::Fail)?;
@@ -161,8 +168,7 @@ pub(in crate::writer) fn mappings(
                 output.written.insert(record.id().to_owned());
             }
             Err(WriteError::Omit(reason)) => output.losses.push(
-                RhinoLossCode::WriterMaterialOmitted
-                    .note(format!("{}: {reason}", record.id())),
+                RhinoLossCode::WriterMaterialOmitted.note(format!("{}: {reason}", record.id())),
             ),
             Err(error) => return Err(error),
         }
@@ -218,12 +224,19 @@ mod tests {
         let record = &exported.records[0];
         let primitive = [0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe];
         assert!(
-            record.windows(primitive.len()).any(|window| window == primitive),
+            record
+                .windows(primitive.len())
+                .any(|window| window == primitive),
             "the retained primitive chunk is embedded verbatim"
         );
-        let name = "test mapping".encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect::<Vec<_>>();
+        let name = "test mapping"
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<_>>();
         assert!(
-            record.windows(name.len()).any(|window| window == name.as_slice()),
+            record
+                .windows(name.len())
+                .any(|window| window == name.as_slice()),
             "the mapping name is emitted as UTF-16"
         );
     }
@@ -250,7 +263,10 @@ mod tests {
     fn mapping_without_primitive_bytes_names_its_own_omission() {
         let id = "rhino:presentation:texture_mapping#unprimitived";
         let mut fields = held_fields();
-        fields.as_object_mut().expect("fields object").remove("primitive_bytes");
+        fields
+            .as_object_mut()
+            .expect("fields object")
+            .remove("primitive_bytes");
         let ir = mapping_record(id, fields);
         let exported = mappings(&ir, crate::RhinoArchiveVersion::V8)
             .expect("omission is a loss, not a failure");

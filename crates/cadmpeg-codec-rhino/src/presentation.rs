@@ -4078,7 +4078,11 @@ fn parse_texture_mapping(
                         && value.item_uuid == MAPPING_CRC_CACHE
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
-        (Some(format!("{}", value.class_uuid)), cache_requires_opaque, Some(NativeBytes::new(data[object.range()].to_vec())))
+        (
+            Some(format!("{}", value.class_uuid)),
+            cache_requires_opaque,
+            Some(NativeBytes::new(data[object.range()].to_vec())),
+        )
     };
     reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };

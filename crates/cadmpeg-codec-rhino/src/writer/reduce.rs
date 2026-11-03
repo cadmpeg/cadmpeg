@@ -333,12 +333,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
     // leaf stay retained.
     let mut frontier: Vec<_> = curve_ids.iter().copied().collect();
     while let Some(id) = frontier.pop() {
-        let Some(curve) = ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id.as_str() == id)
-        else {
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id.as_str() == id) else {
             continue;
         };
         if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
@@ -504,31 +499,16 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
     ids.insert(face.surface.as_str().to_owned());
     for loop_id in face.loops.iter() {
         ids.insert(loop_id.as_str().to_owned());
-        let Some(loop_) = ir
-            .model
-            .loops
-            .iter()
-            .find(|row| row.id == *loop_id)
-        else {
+        let Some(loop_) = ir.model.loops.iter().find(|row| row.id == *loop_id) else {
             continue;
         };
         for coedge_id in loop_.coedges() {
             ids.insert(coedge_id.as_str().to_owned());
-            let Some(coedge) = ir
-                .model
-                .coedges
-                .iter()
-                .find(|row| row.id == *coedge_id)
-            else {
+            let Some(coedge) = ir.model.coedges.iter().find(|row| row.id == *coedge_id) else {
                 continue;
             };
             ids.insert(coedge.edge.as_str().to_owned());
-            if let Some(edge) = ir
-                .model
-                .edges
-                .iter()
-                .find(|row| row.id == coedge.edge)
-            {
+            if let Some(edge) = ir.model.edges.iter().find(|row| row.id == coedge.edge) {
                 if let Some(curve) = edge.curve() {
                     ids.insert(curve.as_str().to_owned());
                 }
@@ -575,14 +555,12 @@ pub(super) fn sheet(
             Err(WriteError::Omit(reason)) => {
                 selected.remove(face.id.as_str());
                 let members = face_closure(&candidate, face.id.as_str());
-                losses.push(
-                    RhinoLossCode::WriterEntityOmitted.note(format!(
-                        "sheet face {} omitted: {reason}; {} member record(s): {}",
-                        face.id,
-                        members.len(),
-                        members.into_iter().collect::<Vec<_>>().join(", ")
-                    )),
-                );
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "sheet face {} omitted: {reason}; {} member record(s): {}",
+                    face.id,
+                    members.len(),
+                    members.into_iter().collect::<Vec<_>>().join(", ")
+                )));
             }
             Err(error) => return Err(error),
         }
