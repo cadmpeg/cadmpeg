@@ -429,37 +429,6 @@ fn zero_entity_fixed_logical_length(tag: [u8; 2]) -> Option<usize> {
     }
 }
 
-fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
-    let end = record.checked_add(292)?;
-    if end > data.len() || data.get(record.checked_add(12)?) != Some(&0x10) {
-        return None;
-    }
-    let knots = [67usize, 75, 83, 91, 99].map(|offset| f64_le(data, record.checked_add(offset)?));
-    let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth)] = knots else {
-        return None;
-    };
-    let knots = [first, second, third, fourth, fifth];
-    if !knots.windows(2).all(|pair| pair[0] < pair[1]) {
-        return None;
-    }
-    for (index, multiplicity) in [4u32, 2, 2, 2, 4].into_iter().enumerate() {
-        if tagged_u32(
-            data,
-            record.checked_add(107usize.checked_add(index.checked_mul(5)?)?)?,
-        )? != multiplicity
-        {
-            return None;
-        }
-    }
-    for index in 0usize..10 {
-        let pole = record.checked_add(132usize.checked_add(index.checked_mul(16)?)?)?;
-        if f64_le(data, pole).is_none() || f64_le(data, pole.checked_add(8)?).is_none() {
-            return None;
-        }
-    }
-    Some(end)
-}
-
 fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usize> {
     if tagged_u32(data, record.checked_add(7)?)? != 1 {
         return None;
@@ -502,8 +471,20 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
         let Some(nominal_end) = nominal_end else {
             break;
         };
-        let end = if tag == [0x21, 0x18] {
-            zero_entity_2118_logical_end(data, position).unwrap_or(nominal_end)
+        let end = if tag == [0x21, 0x18]
+            && position
+                .checked_add(12)
+                .is_some_and(|at| data.get(at) == Some(&0x10))
+        {
+            // The tag and its discriminator fix the 292-byte logical extent.
+            // Content damage drops the record in the transfer, never the walk,
+            // so that damage gives up one record.
+            let Some(end) = position.checked_add(292) else {
+                break;
+            };
+            end
+        } else if tag == [0x21, 0x18] {
+            nominal_end
         } else if tag == [0x61, 0x42] {
             let Some(end) = zero_entity_face_roster_logical_end(data, position) else {
                 break;

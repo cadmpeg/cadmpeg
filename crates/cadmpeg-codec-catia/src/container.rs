@@ -580,6 +580,22 @@ fn outer_body_range(data: &[u8]) -> Option<BodyExtent<'_>> {
     BodyExtent::from_directory_pair(data, directory_offset, directory_length)
 }
 
+/// The outer-body extent that bounds outer FINJPL segments.
+///
+/// The declared directory pair bounds the body as `[P, D)`. When both outer
+/// header words are zero, the outer body is `[16, EOF)`. Damage elsewhere in
+/// the image cannot plant a segment: the search never runs over the whole
+/// image. Returns `None` when the image states no outer body at all.
+pub(crate) fn outer_body_extent(data: &[u8]) -> Option<BodyExtent<'_>> {
+    outer_body_range(data).or_else(|| {
+        (data.starts_with(OUTER_MAGIC)
+            && View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET) == Some(0)
+            && View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH) == Some(0))
+        .then(|| BodyExtent::tail_from(data, outer_hdr::FILL_FF))
+        .flatten()
+    })
+}
+
 /// Return the outer-preamble byte range before the first bounded FINJPL segment.
 ///
 /// The trailing stream directory and every FINJPL segment are outside this
@@ -1764,6 +1780,21 @@ pub(crate) fn scan_bytes<'a>(
         .ok_or_else(|| CodecError::malformed("truncated outer directory offset"))?;
     let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH)
         .ok_or_else(|| CodecError::malformed("truncated outer directory length"))?;
+    // A declared directory running past the end of the image is a cut source,
+    // not a corrupt one: the outer directory closes every valid file. The
+    // zero pair instead selects the `[16, EOF)` body and is not a cut.
+    if (outer_dir_offset, outer_dir_length) != (0, 0) {
+        let declared_end = u64::from(outer_dir_offset).checked_add(u64::from(outer_dir_length));
+        if declared_end.is_some_and(|end| end > u64_from_index(data.len())) {
+            return Err(CodecError::truncated(
+                cadmpeg_core::decode::SourceLocation {
+                    space: cadmpeg_core::decode::SpaceId::ROOT,
+                    offset: u64_from_index(data.len()),
+                },
+                "outer stream directory",
+            ));
+        }
+    }
 
     let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
