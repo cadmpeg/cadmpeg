@@ -48,6 +48,17 @@ pub(crate) fn build_prt_raw(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<
     out
 }
 
+/// Build a whole multi-section input: the probed sections plus a trailing
+/// inert section, so no probed section reaches the end of the input. A
+/// probed section that reaches the end of the input with an open row extent
+/// is given up as a possibly cut part (#215); the trailing section keeps
+/// whole-input transfer tests on the salvage path.
+pub(crate) fn build_whole_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut sections = sections.to_vec();
+    sections.push(("Zz", Vec::new()));
+    build_prt(version, &sections)
+}
+
 /// A `VisibGeom` payload with byte-backed `srf_array`/`crv_array` count headers.
 pub(crate) fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
     let mut p = Vec::new();

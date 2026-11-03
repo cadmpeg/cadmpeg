@@ -167,6 +167,91 @@ fn rhino_cross_closure_carries_other_formats() {
     assert_none(&findings);
 }
 
+/// W-closure-cross (§5.2, #232) for the STEP writer.
+///
+/// The carried set is observed from the head build decoding STEP's own
+/// goldens; scan and table variants are not attributed yet (only
+/// `scan_step.json` is checked in). STEP stores nothing in reduced form, so
+/// there are no reduced probes.
+///
+/// A debug build runs the §9.4 fixed sample: the first fixture of each format
+/// in path order. `cargo test --release --test contract` runs all.
+struct StepObserved {
+    carried: cadmpeg_test_support::carried::Carried,
+    fixed_paths: std::collections::BTreeSet<String>,
+    known_losses: std::collections::BTreeSet<String>,
+}
+
+fn step_observe() -> StepObserved {
+    let encoder = cadmpeg_registry::build_encoder(Format::Step);
+    let source = codec("step");
+    let mut documents = Vec::new();
+    let mut known_losses = std::collections::BTreeSet::new();
+    for path in sampled("step") {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        known_losses.extend(loss_codes(&first));
+        documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
+    }
+    let fixed_paths = single_value_paths(&documents);
+    let carried = observe_carried(&documents);
+    StepObserved {
+        carried,
+        fixed_paths,
+        known_losses,
+    }
+}
+
+fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
+    let encoder = cadmpeg_registry::build_encoder(Format::Step);
+    let source = codec(format);
+    let step = codec("step");
+    let mut findings = Vec::new();
+    for path in sampled(format) {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let result = decode(step, encoder.as_ref(), written)?;
+            Ok(Redecoded {
+                members: Vec::new(),
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: loss_codes(&result),
+            })
+        };
+        findings.extend(
+            cross_findings(
+                &first,
+                encoder.as_ref(),
+                &redecode,
+                &CrossConfig {
+                    carried: &observed.carried,
+                    fixed_paths: &observed.fixed_paths,
+                    known_losses: &observed.known_losses,
+                    reduced: &[],
+                    members: &[],
+                },
+            )
+            .into_iter()
+            .map(|finding| format!("{}: {finding}", path.display())),
+        );
+    }
+    findings
+}
+
+#[test]
+fn step_cross_closure_carries_other_formats() {
+    let observed = step_observe();
+    let mut findings = Vec::new();
+    for format in ["iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo"] {
+        findings.extend(run_step_other_format(format, &observed));
+    }
+    assert_none(&findings);
+}
+
 /// Observation inputs for the SolidWorks cross comparison, from SolidWorks'
 /// own goldens (#237, §5.2).
 ///

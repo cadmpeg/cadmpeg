@@ -6,6 +6,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::visibgeom_payload;
 use std::collections::BTreeSet;
@@ -974,7 +975,7 @@ fn decode_reports_missing_declared_constraint_table_rows() {
           \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\xe0\x01skamp_id\0\x05\
           \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
     );
-    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let data = build_whole_prt("c", &[("FeatDefs", payload)]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

@@ -30,6 +30,21 @@ pub(crate) fn plan(
         crate::writer::REDUCED_FIELDS.is_empty(),
         "STEP stores no reduced fields"
     );
+    // Synthesis visits every input record, so the caller's entity ceiling
+    // applies to the input record count before any building (#217 §5.0).
+    {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode: cadmpeg_core::decode::DecodeMode::Salvage,
+            limits: input.limits,
+        };
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+            "write STEP records",
+        )?;
+    }
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
