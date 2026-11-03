@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod sequence;
 pub(crate) mod wide;
 
 /// A minimal Parasolid stream payload: `PS\0\0`, description, padding, a
