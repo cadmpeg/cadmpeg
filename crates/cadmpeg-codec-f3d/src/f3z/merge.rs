@@ -521,14 +521,7 @@ fn rebind_joint_descent(
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
 
-    if !ir.model.assembly_joints.iter().any(|joint| {
-        joint.connectors().any(|connector| {
-            matches!(
-                connector.operand.container,
-                OperandContainer::Occurrence { .. }
-            ) && !connector.operand.subelements.is_empty()
-        })
-    }) {
+    if ir.model.assembly_joints.is_empty() {
         return Ok(());
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
@@ -562,8 +555,85 @@ fn rebind_joint_descent(
             parent = outer;
         }
     }
+    let external = namespace
+        .arena_iter_as_for_decode::<XrefReference>(ctx, "xref_references")
+        .filter_map(|reference| match reference {
+            Ok(reference) => reference
+                .placement_source
+                .and_then(|source| source.occurrence_guid.map(|guid| Ok((reference.id, guid)))),
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+    let mut complete_children = children.clone();
+    for occurrence in &ir.model.occurrences {
+        let Some(key) = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|id| external.get(id))
+        else {
+            continue;
+        };
+        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+            continue;
+        };
+        let mut parent = parent;
+        for _ in 0..=member_roots.len() {
+            complete_children
+                .entry((parent.clone(), key.as_str().to_ascii_lowercase()))
+                .and_modify(|selected| *selected = None)
+                .or_insert(Some(&occurrence.id));
+            let Some(outer) = member_roots.get(parent) else {
+                break;
+            };
+            parent = outer;
+        }
+    }
+    let types = namespace
+        .arena_iter_as_for_decode::<crate::records::entity_header::SegmentType>(ctx, "design_types")
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut types_by_stream = std::collections::HashMap::new();
+    let mut complete_scopes = std::collections::BTreeSet::new();
+    for scope in namespace
+        .arena_iter_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
+            ctx,
+            "design_parameter_scopes",
+        )
+    {
+        let scope = scope?;
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+            continue;
+        };
+        let stream_types = types_by_stream.entry(stream.to_owned()).or_insert_with(|| {
+            stream
+                .strip_prefix("f3d:")
+                .and_then(crate::ids::decode_identity_key_component)
+                .map(|entry| crate::design::decode::meta::stream_types_by_entity(&types, &entry))
+                .unwrap_or_default()
+        });
+        if crate::design::decode::scopes::assembly_v3::joint_binds_after_merge(&scope, stream_types)
+        {
+            complete_scopes.insert(scope.id);
+        }
+    }
+    let instances = ir
+        .model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut refused = std::collections::BTreeSet::new();
     for joint in &mut ir.model.assembly_joints {
         let joint_id = joint.id.clone();
+        if joint
+            .native_ref
+            .as_ref()
+            .is_some_and(|id| complete_scopes.contains(id))
+        {
+            if !retain_complete_joint(joint, &complete_children, &instances, losses) {
+                refused.insert(joint_id.clone());
+            }
+            continue;
+        }
         for connector in joint.connectors_mut() {
             let operand = &mut connector.operand;
             // An operand that already names a nested document path is not
@@ -606,7 +676,95 @@ fn rebind_joint_descent(
             }
         }
     }
+    ir.model
+        .assembly_joints
+        .retain(|joint| !refused.contains(&joint.id));
+    bind_retained_joint_features(
+        &mut ir.model.features,
+        &ir.model.assembly_joints,
+        &complete_scopes,
+    );
     Ok(())
+}
+
+/// Bind the features of joints that survived complete descent. A refused joint
+/// has no row, so its feature keeps its native definition and parameters.
+fn bind_retained_joint_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    joints: &[cadmpeg_ir::products::AssemblyJoint],
+    complete_scopes: &std::collections::BTreeSet<String>,
+) {
+    let retained = joints
+        .iter()
+        .filter(|joint| {
+            joint
+                .native_ref
+                .as_ref()
+                .is_some_and(|scope| complete_scopes.contains(scope.as_str()))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::design::assembly::bind_assembly_joint_features(features, &retained);
+}
+
+type JointChildren<'a> = std::collections::BTreeMap<
+    (cadmpeg_ir::ids::OccurrenceId, String),
+    Option<&'a cadmpeg_ir::ids::OccurrenceId>,
+>;
+
+fn retain_complete_joint(
+    joint: &mut cadmpeg_ir::products::AssemblyJoint,
+    children: &JointChildren<'_>,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> bool {
+    if complete_joint_descent(joint, children, instances) {
+        return true;
+    }
+    losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
+        "joint {}: the complete occurrence path has no unique merged insertion instance; the joint stays native", joint.id
+    )));
+    false
+}
+
+fn complete_joint_descent(
+    joint: &mut cadmpeg_ir::products::AssemblyJoint,
+    children: &JointChildren<'_>,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+) -> bool {
+    use cadmpeg_ir::products::OperandContainer;
+    for connector in joint.connectors_mut() {
+        let operand = &mut connector.operand;
+        let OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } = &operand.container
+        else {
+            if !matches!(operand.container, OperandContainer::Root {})
+                || !operand.subelements.is_empty()
+            {
+                return false;
+            }
+            continue;
+        };
+        if !instances.contains(occurrence) || !occurrence_path.is_empty() {
+            return false;
+        }
+        let mut selected = occurrence;
+        for key in &operand.subelements {
+            let Some(Some(child)) = children.get(&(selected.clone(), key.to_ascii_lowercase()))
+            else {
+                return false;
+            };
+            selected = child;
+        }
+        operand.container = OperandContainer::Occurrence {
+            occurrence: selected.clone(),
+            occurrence_path: Vec::new(),
+        };
+        operand.subelements.clear();
+    }
+    true
 }
 
 /// Contained poses of one instance agree to a tenth of a micrometre in

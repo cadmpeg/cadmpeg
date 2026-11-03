@@ -296,16 +296,6 @@ measurement form.
 
 **Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
 
-### DR-91. Opposed joint frame mate
-
-**Question.** For a joint whose frame-sense byte is `1` (opposed), how do the two operand frames' in-plane axes relate, and how does the alignment angle apply?
-
-**Known.** In every observed opposed joint the two frames' z axes are antiparallel (`z₁ = −z₀`). For an aligned joint, the first operand's model frame is the second's turned by the alignment angle about its z axis. No observed opposed joint has a nonzero alignment angle or offset, so the in-plane axis that flips and the sign of the angle are not fixed by any sample.
-
-**Need.** An opposed joint with a nonzero angle and asymmetric operands, whose stored placement shows the result, would fix which in-plane axis reverses (x or y) and whether the angle turns about `z₀` or `z₁`.
-
-**Conflict.** Assuming a 180° turn about either in-plane axis, or applying the angle with the aligned sign, states a relation no sample shows.
-
 ### DR-92. Current revision of a component definition
 
 **Question.** When a component definition is stored as revisions, each binding its own context UUID, which revision is current?
@@ -607,7 +597,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which native relation binds a joint to an inserted-design occurrence that stores the identity and has no component-path carrier that states its pose, and in which frame does that joint define the solved pose?
 
-**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved. In one public assembly archive, eight root occurrences have carriers of a nested design, three of them store the identity placement, and the decoder places all eight from the carriers and removes them from the count. The root `As-built` scopes with a root operand path name none of those eight occurrence identities. A fourth identity occurrence has no carrier; the occurrences inside it keep one world pose in its insertion scope and in every captured position.
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved. In one public assembly archive, eight root occurrences have carriers of a nested design, three of them store the identity placement, and the decoder places all eight from the carriers and removes them from the count. The root `As-built` scopes with a root operand path name none of those eight occurrence identities. A fourth identity occurrence has no carrier; the occurrences inside it keep one world pose in its insertion scope and in every captured position. A root display scene can store the solved pose of such an occurrence: for one fixed joint whose first operand path names an inserted identity occurrence and a child inside it, the scene's world matrices of all 31 child occurrences equal the pose that the Assemble connector equation gives, with the operand frame in the child's space. The negated angle gives no match.
 
 **Need.** An inserted design whose occurrence stores the identity, has no component-path carrier, and is placed by a joint, with the solved pose known, must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
 
@@ -1205,3 +1195,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The byte sequence permits several scalar partitions.
 
 **Note.** The reader preserves the complete manifest in the native archive payload.
+
+### DR-249. Saved assembly state and joint activation
+
+**Question.** Which saved assembly state selects the occurrence poses for an Assemble joint relation, and what activation state do the two scope-tail booleans encode?
+
+**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. The neutral constructor supplies `suppressed = false` independently of these bytes.
+
+**Need.** A byte-level saved-state selector with links from joints to occurrence-pose carriers. Public states that change each tail boolean independently and establish the joint's activation state across independent designs.
+
+**Conflict.** The full-path audit retains consumer-pose residuals on V1.8 records 12428, 12811, 11527, 2578, and 2333. Their distances are 17.8801954, 42.9906967, 40.0011250, 373.6835274, and 373.6835274 mm. V1.8 record 146871 has a 6.50691939 mm current-carrier residual and a consumer residual below 0.0001 mm. RailCore v1 records 3068 and 3232 have residuals of 40 mm and 18.35 mm. The earlier admitted control at V1.8 record 985 has a current-carrier residual of 0.0405289814 mm.
+
+**Note.** Scope-level closure counts describe selected carrier pairs. Emitted-joint closure uses the actual neutral occurrence containers and complete insertion paths. Nonzero tail states retain native alignment with a partial report. Admission uses byte grammar and binding evidence independently of pose closure. Robot record 4614 has a 1472.38643012 mm current-carrier residual because its inserted occurrence stores the identity; DR-116 covers it. DR-113 and DR-116 cover their separate placement questions.
+
+### DR-250. Motion of a joint record shared by several Assemble scopes
+
+**Question.** When several version-3 `Assemble` scopes reference one joint record, which scope does its motion record bind, and do the other scopes take the same freedoms, limits, and rest state?
+
+**Known.** An adjacent joint record has an index one less than its scope's, and its motion binds that scope. Seventeen V1.8 scopes reference an earlier joint record. V1.8 stores no freedom entry in any Design stream, so no shared joint shows a motion.
+
+**Need.** A public design whose shared joint record has a motion record with freedom entries, with the moving scope identified.
+
+**Conflict.** None.
+
+**Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.

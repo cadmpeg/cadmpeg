@@ -42,15 +42,23 @@ pub(super) fn exact_assembly_operand_paths(
             .ok()?
             .checked_add(11)?;
         let rigid = crate::design::assembly::RigidGroupLayout::for_scope(scope);
-        let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
-            .operand_path_locator_offsets()?;
+        let v3 = super::assembly_v3::parse(bytes, scope, stream_types);
+        let locator_offsets = v3
+            .as_ref()
+            .map(|grammar| grammar.locator_offsets)
+            .or_else(|| {
+                crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
+                    .operand_path_locator_offsets()
+            })?;
         let count_at = scope_at.checked_add(rigid.map_or(
             locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?,
             |layout| layout.count_at,
         ))?;
         let expected = rigid.map_or(2, |layout| layout.members);
-        let typed_references =
-            rigid.is_some_and(|layout| layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN);
+        let typed_references = v3
+            .as_ref()
+            .is_some_and(|grammar| grammar.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN)
+            || rigid.is_some_and(|layout| layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN);
         if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected {
             return None;
         }
@@ -202,7 +210,8 @@ fn exact_assembly_operand_path_envelope(
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-        let variable_reference = !crate::design::assembly::rigid_as_built_scope(scope)
+        let variable_reference = !super::assembly_v3::registered(scope, stream_types)
+            && !crate::design::assembly::rigid_as_built_scope(scope)
             && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
@@ -215,7 +224,9 @@ fn exact_assembly_operand_path_envelope(
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
-        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
+        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope)
+            || super::assembly_v3::registered(scope, stream_types)
+        {
             Some(RigidGroupLocatorLayout::admit(
                 registered_locator.copied(),
                 locator_end.checked_sub(locator_at)?,
@@ -464,6 +475,15 @@ fn exact_assembly_operand_path_envelope(
             path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
+            if super::assembly_v3::registered(scope, stream_types)
+                && !stream_types
+                    .get(&u64::from(record_index))
+                    .is_some_and(|(guid, version)| {
+                        guid.eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID) && *version == 4
+                    })
+            {
+                return Ok(None);
+            }
             let type_guid = stream_types
                 .get(&u64::from(record_index))
                 .map(|(guid, _)| *guid)

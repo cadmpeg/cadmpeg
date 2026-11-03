@@ -28392,3 +28392,33 @@ type = "bytes[10]"
 source = "spec"
 anchor = "The `lineage_suffix` is the fixed byte sequence"
 value = [72, 0, 65, 0, 65, 0, 72, 0, 65, 0]
+
+[[record]]
+name = "assembly_version_three_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "version-three prefix"
+size = 21
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs"
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven-byte indexed header, nine zero bytes, and an expansion byte"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "eleven-byte indexed header, nine zero bytes, and an expansion byte"
+value = [0,0,0,0,0,0,0,0,0]
+
+[[record.field]]
+name = "expanded"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "an expansion byte `E`"
