@@ -503,6 +503,14 @@ pub(crate) struct RigidGroupLocatorLayout {
 
 impl RigidGroupLocatorLayout {
     pub(crate) fn admit(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        Self::admit_form(registered, length, false)
+    }
+
+    pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        Self::admit_form(registered, length, true)
+    }
+
+    fn admit_form(registered: Option<(&str, u32)>, length: usize, assemble: bool) -> Option<Self> {
         use crate::layout::assembly_compact_rigid_group_identity_locator as compact_identity;
         use crate::layout::assembly_compact_rigid_group_locator as compact;
         use crate::layout::assembly_null_typed_rigid_group_identity_locator as null_identity;
@@ -511,6 +519,7 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_ordinary_rigid_group_identity_locator as ordinary_identity;
         use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
         use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
+        use crate::layout::assembly_wide_null_matrix_locator as wide_null;
         use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
         use crate::layout::assembly_wide_operand_path_locator as wide;
         use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
@@ -608,6 +617,16 @@ impl RigidGroupLocatorLayout {
                 null_identity::DISCRIMINATOR,
                 null_identity::ZERO_TAIL,
             ),
+            (5, wide_null::LEN) if assemble => (
+                false,
+                None,
+                wide_null::IDENTITY_FLAG,
+                Some(wide_null::TRANSFORM),
+                wide_null::SCOPE_BACKLINK,
+                wide_null::WRAPPER_REFERENCE,
+                wide_null::DISCRIMINATOR,
+                wide_null::ZERO_TAIL,
+            ),
             (5, wide_identity::LEN) => (
                 false,
                 Some(wide::NONZERO_RECORD_REFERENCE),
@@ -635,8 +654,11 @@ impl RigidGroupLocatorLayout {
             typed,
             wide: version == 5,
             null_construction: construction_reference.is_none(),
-            construction_reference: construction_reference
-                .unwrap_or(ordinary::NONZERO_RECORD_REFERENCE),
+            construction_reference: construction_reference.unwrap_or(if version == 5 {
+                wide::NONZERO_RECORD_REFERENCE
+            } else {
+                ordinary::NONZERO_RECORD_REFERENCE
+            }),
             identity_flag,
             transform,
             scope_backlink,
@@ -1566,6 +1588,19 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn null_wide_locator_admission_is_specific_to_assemble() {
+        let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
+        let registered = Some((guid, 5));
+        assert!(super::RigidGroupLocatorLayout::admit(registered, 215).is_none());
+        let layout = super::RigidGroupLocatorLayout::admit_assemble(registered, 215).unwrap();
+        assert_eq!(layout.offsets(), (215, 187, 198, 209, 213));
+        assert_eq!(layout.transform, Some(58));
+        assert!(layout.null_construction);
+        assert!(super::RigidGroupLocatorLayout::admit_assemble(registered, 214).is_none());
+        assert!(super::RigidGroupLocatorLayout::admit_assemble(Some((guid, 4)), 215).is_none());
+    }
+
     #[test]
     fn rigid_group_tail_requires_unique_exact_closure() {
         use super::OrdinaryRigidGroupTail;

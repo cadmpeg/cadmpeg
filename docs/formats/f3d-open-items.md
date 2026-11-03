@@ -1219,3 +1219,16 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.
+
+
+### DR-246. Additional version-five Assemble owners and extended spans
+
+**Question.** Which version-five fields encode additional parameter owners and the form with 22 extra bytes?
+
+**Known.** The four-owner version-five grammar has explicit angle, Z, X, and Y references, two zero bytes after the angle reference, and six zero bytes after the owner run. Version-four scopes store a counted limit-owner run after their four alignment references.
+
+**Need.** Public version-five controlled files with five and six owners, and a controlled pair whose scopes differ by 22 bytes. Vary one joint limit or owner-producing setting at a time. Identify each added reference target, its scalar lane, the run count, and complete paired-header closure.
+
+**Conflict.** None.
+
+**Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.

@@ -5401,8 +5401,8 @@ pub(crate) mod root_instance_prefix {
 pub(crate) mod assembly_wide_operand_path_locator {
     /// Offset of `zero_run_28` (`bytes[28]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_28: usize = 11;
-    /// Offset of `constant_three` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const CONSTANT_THREE: usize = 39;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PREFIX_WORD: usize = 39;
     /// Offset of `zero_run_13` (`bytes[13]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_13: usize = 43;
     /// Offset of `nonzero_record_reference` (`bytes[11]`). Spec §Assembly operands.
@@ -7943,4 +7943,70 @@ pub(crate) mod assembly_version_three_prefix {
     /// Stated value of `zero_run` (`bytes[9]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `assembly_version_five_scope` record.
+///
+/// Spec §Assembly operands. Record length 945 B.
+///
+/// ```text
+/// Expanded prologue, two explicit matrices, and sixteen plain reference-table entries.
+/// ```
+pub(crate) mod assembly_version_five_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 945;
+    /// Stated value of `zero_run_26` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_26_VALUE: [u8; 11] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `first_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_REFERENCE: usize = 37;
+    /// Stated value of `first_frame_zeros` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FIRST_FRAME_ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `first_matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_MATRIX: usize = 55;
+    /// Offset of `second_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_REFERENCE: usize = 259;
+    /// Offset of `second_matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_MATRIX: usize = 277;
+    /// Stated value of `angle_zeros` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ANGLE_ZEROS_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Stated value of `tail_separator` (`bytes[1]`). Spec §Assembly operands.
+    pub(crate) const TAIL_SEPARATOR_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `assembly_wide_null_matrix_locator` record.
+///
+/// Spec §Assembly operands. Record length 215 B.
+pub(crate) mod assembly_wide_null_matrix_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 57;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 58;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 187;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 198;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 209;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 213;
+}
+
+/// Byte offsets for the `assembly_locator_prefix_two` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_locator_prefix_two {
+    /// Stated value of `word` (`u32`). Spec §Assembly operands.
+    pub(crate) const WORD_VALUE: u32 = 0x0000_0002;
+}
+
+/// Byte offsets for the `assembly_locator_prefix_three` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_locator_prefix_three {
+    /// Stated value of `word` (`u32`). Spec §Assembly operands.
+    pub(crate) const WORD_VALUE: u32 = 0x0000_0003;
 }

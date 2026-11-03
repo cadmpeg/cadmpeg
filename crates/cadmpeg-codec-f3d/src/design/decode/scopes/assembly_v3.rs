@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Version-three Assemble field grammar.
+//! Assemble field grammar for registered scope versions.
 
 use super::assembly_operand_paths::{exact_assembly_operand_paths, StreamTypes};
 use super::shared_frames::{exact_indexed_header_at, rigid_transform_at};
 use crate::bytes::{local_reference_target, lp_ascii_filtered_view};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
+use crate::layout::assembly_version_five_scope as five;
 use crate::layout::assembly_version_three_prefix as prefix;
 use crate::records::feature::assembly::{
     DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
@@ -18,14 +19,97 @@ use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 
 pub(crate) const TYPE_GUID: &str = "8DFDD543-F823-43AA-BDAF-C638E023F0A0";
-/// Type GUID of the joint record a version-3 scope references.
+/// Type GUID of the referenced joint record.
 const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
 
 pub(crate) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {
     scope.kind() == DesignFeatureKind::Assemble
         && types
             .get(&u64::from(scope.record_index))
-            .is_some_and(|(guid, version)| *version == 3 && guid.eq_ignore_ascii_case(TYPE_GUID))
+            .is_some_and(|(guid, version)| {
+                matches!(version, 3 | 5) && guid.eq_ignore_ascii_case(TYPE_GUID)
+            })
+}
+
+pub(crate) fn relation_only(
+    scope: &DesignParameterScope,
+    alignment: &DesignAssemblyAlignment,
+    types: &StreamTypes<'_>,
+) -> bool {
+    let legacy_five = scope.frame_length() == u64_from_index(five::LEN)
+        && alignment.operand_frames().is_some_and(|frames| {
+            frames
+                .iter()
+                .zip([
+                    (five::FIRST_REFERENCE, five::FIRST_MATRIX),
+                    (five::SECOND_REFERENCE, five::SECOND_MATRIX),
+                ])
+                .all(|(frame, (reference, matrix))| {
+                    frame.reference_offset.checked_sub(scope.byte_offset())
+                        == Some(u64_from_index(reference + 1))
+                        && frame.transform_offset.checked_sub(scope.byte_offset())
+                            == Some(u64_from_index(matrix))
+                })
+        });
+    registered(scope, types)
+        && (types
+            .get(&u64::from(scope.record_index))
+            .is_some_and(|(_, version)| *version == 3)
+            || !legacy_five)
+}
+
+#[derive(Clone, Copy)]
+struct VersionLayout {
+    joint_versions: &'static [u32],
+    prologue_zeros: usize,
+    frame_zeros: usize,
+    frame_guid: bool,
+    angle_zeros: usize,
+    tail_reference: bool,
+    tail_zeros: usize,
+}
+
+impl VersionLayout {
+    fn for_scope(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> Option<Self> {
+        if !registered(scope, types) {
+            return None;
+        }
+        Some(match types.get(&u64::from(scope.record_index))?.1 {
+            3 => Self {
+                joint_versions: &[3, 4],
+                prologue_zeros: 0,
+                frame_zeros: 0,
+                frame_guid: false,
+                angle_zeros: 0,
+                tail_reference: false,
+                tail_zeros: 0,
+            },
+            5 => Self {
+                joint_versions: &[6],
+                prologue_zeros: five::ZERO_RUN_26_VALUE.len() - 2,
+                frame_zeros: five::FIRST_FRAME_ZEROS_VALUE.len(),
+                frame_guid: true,
+                angle_zeros: five::ANGLE_ZEROS_VALUE.len(),
+                tail_reference: true,
+                tail_zeros: five::TAIL_SEPARATOR_VALUE.len(),
+            },
+            _ => return None,
+        })
+    }
+
+    fn extra_span(self, stride: usize) -> usize {
+        self.prologue_zeros
+            + 2 * (self.frame_zeros + usize::from(self.frame_guid) * 76)
+            + self.angle_zeros
+            + usize::from(self.tail_reference) * stride
+            + self.tail_zeros
+    }
+}
+
+fn version_five(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {
+    types
+        .get(&u64::from(scope.record_index))
+        .is_some_and(|(_, version)| *version == 5)
 }
 
 /// Whether a scope's joint binds its feature only after archive merge, which
@@ -34,10 +118,9 @@ pub(crate) fn joint_binds_after_merge(
     scope: &DesignParameterScope,
     types: &StreamTypes<'_>,
 ) -> bool {
-    scope
-        .assembly_alignment()
-        .is_some_and(|alignment| alignment.frame_sense.is_some())
-        && registered(scope, types)
+    scope.assembly_alignment().is_some_and(|alignment| {
+        alignment.frame_sense.is_some() && relation_only(scope, alignment, types)
+    })
 }
 
 pub(crate) struct ScopeGrammar {
@@ -55,6 +138,7 @@ struct Fields<'a, 't> {
     bytes: &'a [u8],
     types: &'t StreamTypes<'t>,
     stride: usize,
+    layout: VersionLayout,
 }
 
 impl Fields<'_, '_> {
@@ -88,9 +172,21 @@ impl Fields<'_, '_> {
         Some(target)
     }
 
+    fn guid(&mut self) -> Option<()> {
+        let (guid, after) =
+            super::super::text::fixed_relaxed_guid_text(self.bytes, self.view.position())
+                .ok()??;
+        if guid.as_str().len() != 36 {
+            return None;
+        }
+        self.view.seek(after)?;
+        Some(())
+    }
+
     fn frame(&mut self) -> Option<DesignAssemblyOperandFrame> {
         let reference_offset = u64_from_index(self.view.position().checked_add(1)?);
         let reference_record_index = self.reference()?;
+        self.zero(self.layout.frame_zeros)?;
         let flag_at = self.view.position();
         let identity = self.view.u8()?;
         let (transform, at) = match identity {
@@ -108,6 +204,9 @@ impl Fields<'_, '_> {
             ),
             _ => return None,
         };
+        if self.layout.frame_guid {
+            self.guid()?;
+        }
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset,
@@ -122,9 +221,7 @@ pub(crate) fn parse(
     scope: &DesignParameterScope,
     types: &StreamTypes<'_>,
 ) -> Option<ScopeGrammar> {
-    if !registered(scope, types) {
-        return None;
-    }
+    let layout = VersionLayout::for_scope(scope, types)?;
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let end = usize::try_from(scope.paired_byte_offset()).ok()?;
     if exact_indexed_header_at(bytes, start, scope.record_index)? != scope.class_tag.as_str()
@@ -157,21 +254,31 @@ pub(crate) fn parse(
     if view.take(2)? != [0; 2] {
         return None;
     }
+    view.take(layout.prologue_zeros)?
+        .iter()
+        .all(|byte| *byte == 0)
+        .then_some(())?;
     let stride = if View::u32_le_at(bytes, view.position().checked_add(9)?) == Some(36) {
         crate::bytes::TYPED_LOCAL_REFERENCE_LEN
     } else {
         11
     };
+    if layout.frame_guid && stride != 11 {
+        return None;
+    }
     let mut fields = Fields {
         view,
         bytes,
         types,
         stride,
+        layout,
     };
     let frames = [fields.frame()?, fields.frame()?];
     fields.zero(4)?;
+    let angle = fields.reference()?;
+    fields.zero(layout.angle_zeros)?;
     let owners = [
-        fields.reference()?,
+        angle,
         fields.reference()?,
         fields.reference()?,
         fields.reference()?,
@@ -186,16 +293,11 @@ pub(crate) fn parse(
     fields.reference()?;
     let joint = fields.reference()?;
     if !types.get(&u64::from(joint)).is_some_and(|(guid, version)| {
-        guid.eq_ignore_ascii_case(JOINT_TYPE_GUID) && matches!(version, 3 | 4)
+        guid.eq_ignore_ascii_case(JOINT_TYPE_GUID) && layout.joint_versions.contains(version)
     }) {
         return None;
     }
-    let (guid, after) =
-        super::super::text::fixed_relaxed_guid_text(bytes, fields.view.position()).ok()??;
-    if guid.as_str().len() != 36 {
-        return None;
-    }
-    fields.view.seek(after)?;
+    fields.guid()?;
     fields.zero(3)?;
     if u64_from_index(fields.view.position()) != scope.reference_count_offset() {
         return None;
@@ -228,10 +330,13 @@ pub(crate) fn parse(
     }
     fields.zero(15)?;
     fields.reference()?;
+    if layout.tail_reference {
+        fields.reference()?;
+    }
     let tail = fields.view;
     let mut separators = 0;
     let mut tail_state = [0; 2];
-    for separator in 0..=1 {
+    for separator in 0..=usize::from(!layout.tail_reference) {
         fields.view = tail;
         let candidate = (|| {
             fields.zero(separator)?;
@@ -246,19 +351,22 @@ pub(crate) fn parse(
             if state.iter().any(|value| *value > 1) {
                 return None;
             }
+            fields.zero(layout.tail_zeros)?;
             fields.reference()?;
             fields.zero(2)?;
             let matrices = frames
                 .iter()
                 .filter(|frame| {
-                    frame.transform_offset == frame.reference_offset + u64_from_index(stride)
+                    frame.transform_offset
+                        == frame.reference_offset + u64_from_index(stride + layout.frame_zeros)
                 })
                 .count();
             let span = 190_usize
                 .checked_add((usize::try_from(count).ok()?.checked_add(12)?).checked_mul(stride)?)?
                 .checked_add(128 * matrices)?
                 .checked_add(4 * usize::from(expanded))?
-                .checked_add(separator)?;
+                .checked_add(separator)?
+                .checked_add(layout.extra_span(stride))?;
             (fields.view.position() == end && span == end.checked_sub(start)?).then_some(state)
         })();
         if let Some(state) = candidate {
@@ -288,6 +396,21 @@ pub(super) fn alignment(
         return Ok(None);
     };
     let stream = native_stream(&scope.id);
+    if grammar.stride == 11
+        && types
+            .get(&u64::from(scope.record_index))
+            .is_some_and(|(_, version)| *version == 5)
+        && owners
+            .iter()
+            .filter(|owner| {
+                native_stream(owner.id()) == stream
+                    && owner.scope_record_index() == scope.record_index
+            })
+            .count()
+            != 4
+    {
+        return Ok(None);
+    }
     let mut lanes = Vec::new();
     for index in [
         grammar.owners[0],
@@ -312,7 +435,7 @@ pub(super) fn alignment(
     let form = match paths {
         Some(paths)
             if grammar.joint.checked_add(1) == Some(scope.record_index)
-                && grammar.tail_state == [0, 0] =>
+                && (grammar.tail_state == [0, 0] || version_five(scope, types)) =>
         {
             DesignAssemblyAlignmentForm::qualified(
                 grammar.frames,
@@ -354,13 +477,14 @@ pub(crate) fn alignment_layout(
     }
     let frames = alignment.operand_frames()?;
     let start = scope.byte_offset();
+    let layout = VersionLayout::for_scope(scope, types)?;
     let first = frames[0]
         .reference_offset
         .checked_sub(start)?
         .checked_sub(1)?;
-    let expanded = if first == u64_from_index(prefix::LEN + 3) {
+    let expanded = if first == u64_from_index(prefix::LEN + 3 + layout.prologue_zeros) {
         0
-    } else if first == u64_from_index(prefix::LEN + 7) {
+    } else if first == u64_from_index(prefix::LEN + 7 + layout.prologue_zeros) {
         1
     } else {
         return None;
@@ -375,13 +499,16 @@ pub(crate) fn alignment_layout(
                 && last_table.checked_sub(first_table)
                     == table_span.checked_mul(u64_from_index(*stride))
         })?;
+    if layout.frame_guid && stride != 11 {
+        return None;
+    }
     let mut at = usize::try_from(first).ok()?;
     let mut matrices = 0;
     for frame in frames {
         if frame.reference_offset != start.checked_add(u64_from_index(at + 1))? {
             return None;
         }
-        at = at.checked_add(stride)?;
+        at = at.checked_add(stride)?.checked_add(layout.frame_zeros)?;
         if frame.transform_offset == start.checked_add(u64_from_index(at))? {
             at = at.checked_add(1)?;
             let identity: crate::records::sketch_placement::SketchPlacementMatrix =
@@ -397,12 +524,15 @@ pub(crate) fn alignment_layout(
         } else {
             return None;
         }
+        if layout.frame_guid {
+            at = at.checked_add(76)?;
+        }
         if !types.contains_key(&u64::from(frame.reference_record_index)) {
             return None;
         }
     }
     let first_locator = at
-        .checked_add(14)?
+        .checked_add(14 + layout.angle_zeros)?
         .checked_add(4_usize.checked_mul(stride)?)?;
     let reference_count = first_locator
         .checked_add(3_usize.checked_mul(stride)?)?
@@ -419,8 +549,11 @@ pub(crate) fn alignment_layout(
                 .checked_mul(stride)?,
         )?
         .checked_add(128 * matrices)?
-        .checked_add(4 * expanded)?;
-    if ![span, span.checked_add(1)?].contains(&usize::try_from(scope.frame_length()).ok()?) {
+        .checked_add(4 * expanded)?
+        .checked_add(layout.extra_span(stride))?;
+    if !(span..=span.checked_add(usize::from(!layout.tail_reference))?)
+        .contains(&usize::try_from(scope.frame_length()).ok()?)
+    {
         return None;
     }
     Some(([first_locator, first_locator.checked_add(stride)?], stride))
@@ -432,6 +565,20 @@ pub(crate) fn valid_alignment(
     types: &StreamTypes<'_>,
     owners: &[DesignParameterOwner],
 ) -> bool {
+    if types
+        .get(&u64::from(scope.record_index))
+        .is_some_and(|(_, version)| *version == 5)
+        && owners
+            .iter()
+            .filter(|owner| {
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+            })
+            .count()
+            != 4
+    {
+        return false;
+    }
     let Some((locators, _)) = alignment_layout(scope, alignment, types) else {
         return false;
     };
@@ -470,7 +617,7 @@ pub(crate) fn valid_alignment(
                 .checked_sub(link.locator_byte_offset)
                 .and_then(|length| usize::try_from(length).ok())
                 .and_then(|length| {
-                    crate::design::assembly::RigidGroupLocatorLayout::admit(
+                    crate::design::assembly::RigidGroupLocatorLayout::admit_assemble(
                         types.get(&u64::from(link.locator_record_index)).copied(),
                         length,
                     )
