@@ -208,5 +208,6 @@ mod damaged_one_home {
         step_damaged_one_home => "step", step_damaged_parts_have_one_home;
         freecad_damaged_one_home => "fcstd", freecad_damaged_parts_have_one_home;
         rhino_damaged_one_home => "rhino", rhino_damaged_parts_have_one_home;
+        inventor_damaged_one_home => "inventor", inventor_damaged_parts_have_one_home;
     }
 }
