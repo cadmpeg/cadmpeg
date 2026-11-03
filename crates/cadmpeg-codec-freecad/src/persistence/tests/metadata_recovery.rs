@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent metadata admission and bounded property indexing.
 
-use crate::native::PropertyBody;
 use std::fmt::Write as _;
 
 #[test]
@@ -68,40 +67,49 @@ fn malformed_unused_links_remain_explicitly_source_only() {
         let document = format!(
             r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="Unused" type="App::PropertyLink">{payload}</Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#
         );
-        let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        let error = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
             super::parse(document.as_bytes(), "4", ctx)
         })
-        .expect("source-only link");
-        assert!(matches!(
-            graph.properties[0].body,
-            Some(PropertyBody::Unreadable(_))
-        ));
-        assert!(graph.properties[0].links().is_empty());
-        assert!(graph.properties[0].values().is_empty());
+        .expect_err("malformed link value stays strict without a value part");
         assert!(
-            document[graph.property_sources[&graph.properties[0].id].record_range()]
-                .contains(payload)
+            error.to_string().contains("value cannot be read"),
+            "{error:?}"
         );
-        assert!(graph.losses.iter().any(|loss| loss.code
-            == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
-                .note(String::new())
-                .code));
-        let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
-        let property: crate::native::PropertyRecord =
-            serde_json::from_value(wire).expect("deserialize source-only property");
         let decoded = cadmpeg_ir::Codec::decode(
             &crate::FcstdCodec,
             &mut std::io::Cursor::new(crate::test_support::test_archive::archive(&document)),
             &cadmpeg_ir::DecodeOptions::default(),
         )
-        .expect("source-only property with its fidelity");
-        assert!(!decoded
-            .source_fidelity()
-            .retained_record(&property.id)
-            .expect("source-only property record")
-            .untyped()
-            .is_empty());
-        assert_eq!(property, graph.properties[0]);
+        .expect("malformed link value is given up as a part");
+        let properties = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("namespace")
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .expect("typed properties");
+        assert!(properties[0].body.is_none());
+        assert!(properties[0].links().is_empty());
+        assert!(properties[0].values().is_empty());
+        let wire = serde_json::to_value(&properties[0]).expect("serialize");
+        let _property: crate::native::PropertyRecord =
+            serde_json::from_value(wire).expect("deserialize source-only property");
+        let given_up = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+        assert!(
+            !given_up.is_empty(),
+            "given-up property value part is retained"
+        );
+        assert!(given_up
+            .iter()
+            .any(|(_, record)| !record.untyped().is_empty()));
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.namespace() == "decode"
+                && loss.code.local_code() == "record.unreadable"
+                && loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss.message.contains("part freecad.property_value")));
     }
 }
 

@@ -138,15 +138,15 @@ fn unreadable_design_property_has_an_unrepresented_design_payload() {
     let decoded = decode(&document, DecodeDepth::Geometry);
     let namespace = decoded.ir().native.namespace("fcstd").unwrap();
     let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
-    assert!(matches!(
-        properties[0].body,
-        Some(crate::native::PropertyBody::Unreadable(_))
-    ));
+    assert!(properties[0].body.is_none());
     assert!(decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
+        .any(|loss| loss.code.namespace() == "decode"
+            && loss.code.local_code() == "record.unreadable"
+            && loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("part freecad.property_value")));
     assert_eq!(
         decoded.into_parts().2.unrepresented(),
         ArenaClasses::from([ArenaClass::Design])
@@ -159,10 +159,9 @@ fn container_projection_does_not_treat_source_bytes_as_typed_records() {
     assert_eq!(decoded.ir().scope, ContentScope::container());
     assert!(decoded.report().container_only());
     assert!(decoded.ir().model.features.is_empty());
-    assert_eq!(
-        decoded.into_parts().2.unrepresented(),
-        ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
-    );
+    // #209 §1.3: one SOURCE_IMAGE holds the source bytes with no loss-driven
+    // class marking, so a container-only decode leaves no class unrepresented.
+    assert!(decoded.into_parts().2.unrepresented().is_empty());
 }
 
 #[test]
@@ -200,8 +199,53 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
         }
         assert!(geometry.ir().model.parameters.is_empty());
         assert!(geometry.ir().model.spreadsheets.is_empty());
-        assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
-        assert_eq!(geometry.report().losses, full.report().losses);
+        // #213 with #209 §1.1: at Geometry depth no design-class record is
+        // held, so an attribute whose Record target names a design-class
+        // record has no target and is not held at Geometry. Compare the
+        // attributes that target records held at both depths.
+        let geometry_model = serde_json::to_value(&geometry.ir().model).unwrap();
+        let mut held = std::collections::BTreeSet::new();
+        let mut stack = vec![&geometry_model];
+        while let Some(value) = stack.pop() {
+            match value {
+                serde_json::Value::Array(rows) => {
+                    for row in rows {
+                        if let Some(id) = row.get("id").and_then(|id| id.as_str()) {
+                            held.insert(id);
+                        }
+                        stack.push(row);
+                    }
+                }
+                serde_json::Value::Object(fields) => {
+                    stack.extend(fields.values());
+                }
+                _ => {}
+            }
+        }
+        let expected: Vec<_> = full
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| match &attribute.target {
+                cadmpeg_ir::attributes::AttributeTarget::Record { id, .. } => {
+                    held.contains(id.as_str())
+                }
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        assert_eq!(geometry.ir().model.attributes, expected);
+        // #209 §1.1 with #224 ruling 3: each depth reports its own missing
+        // classes. The fragment holds no model part, so Geometry charges a
+        // model not-delivered loss while Full delivers design and charges none.
+        assert_eq!(geometry.report().losses.len(), 1);
+        assert_eq!(
+            geometry.report().losses[0].code.local_code(),
+            "depth.not-delivered"
+        );
+        assert!(geometry.report().losses[0].message.contains("model"));
+        assert!(full.report().losses.is_empty());
         assert!(full
             .ir()
             .model
@@ -224,13 +268,19 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
                 .iter()
                 .find(|property| property.name == "cells")
                 .unwrap();
-            let exact_xml =
-                crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &sheet.id);
+            assert_eq!(sheet.type_name, "Spreadsheet::PropertySheet");
+        }
+        // #215 rule 1: healthy property bytes keep no per-property retained
+        // record; only given-up parts do. The cells content is proven
+        // through its neutral projection instead of exact retained XML.
+        let expected = usize::from(cells.contains("<Cell "));
+        let sheets = &full.ir().model.spreadsheets;
+        assert_eq!(sheets.len(), 1);
+        assert_eq!(sheets[0].cells().len(), expected);
+        if expected == 1 {
             assert_eq!(
-                std::str::from_utf8(&exact_xml).unwrap(),
-                format!(
-                    r#"<Property name="cells" type="Spreadsheet::PropertySheet">{cells}</Property>"#
-                )
+                sheets[0].cells()[0].address,
+                cadmpeg_ir::spreadsheets::CellAddress::parse("A1").unwrap()
             );
         }
     }

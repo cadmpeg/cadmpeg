@@ -216,10 +216,7 @@ pub(super) fn write(
             match xml::native_named(property, &names)? {
                 Some(property_xml) => object.set(&property.name, property_xml),
                 None => {
-                    if matches!(
-                        property.body.as_ref(),
-                        None | Some(crate::native::PropertyBody::Unreadable(_))
-                    ) {
+                    if property.body.is_none() {
                         losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                             "property {} ({}) on object {} is omitted because its value is not held",
                             property.id, property.name, property.owner,
