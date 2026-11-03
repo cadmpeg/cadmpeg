@@ -902,22 +902,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::CircularPattern) => {
-                    project_circular_pattern_scalars(
-                        scope,
-                        construction_groups,
-                        face_operands,
-                        &parameters,
-                        entity_selection_operands,
-                        scopes,
-                    )
-                    .unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
-                        })
+                Some(DesignFeatureFamily::CircularPattern) => project_circular_pattern_scalars(
+                    scope,
+                    construction_groups,
+                    face_operands,
+                    &parameters,
+                    entity_selection_operands,
+                    scopes,
+                )
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: scope.kind_name().into(),
+                        parameters: BTreeMap::new(),
                     })
-                }
+                }),
                 Some(DesignFeatureFamily::RectangularPattern) => {
                     project_rectangular_pattern_scalars(
                         scope,
@@ -6721,8 +6719,16 @@ fn project_circular_pattern_scalars(
             ))
         }),
     }?;
-    let count = dimension_bindings::owner(parameters, construction.count_record_index, construction.count.get());
-    let angle = dimension_bindings::owner(parameters, construction.angle_record_index, construction.angle);
+    let count = dimension_bindings::owner(
+        parameters,
+        construction.count_record_index,
+        construction.count.get(),
+    );
+    let angle = dimension_bindings::owner(
+        parameters,
+        construction.angle_record_index,
+        construction.angle,
+    );
     let pattern = PatternKind::new(PatternTransform::Circular {
         axis_origin: origin,
         axis_dir: direction,
