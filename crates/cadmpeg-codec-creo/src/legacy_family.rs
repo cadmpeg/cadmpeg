@@ -604,6 +604,7 @@ pub(crate) fn fixture_offset(id: &str) -> usize {
         _ => panic!("unknown fixture object"),
     }
 }
+#[cfg(test)]
 pub(crate) fn object(
     _id: &str,
     name: &str,
@@ -627,6 +628,7 @@ pub(crate) fn object(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
     legacy::ValueRecord {
         name: name.to_string(),
@@ -639,6 +641,7 @@ pub(crate) fn integer(parent: &str, name: &str, value: i32, offset: usize) -> le
     }
 }
 
+#[cfg(test)]
 pub(crate) fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
     legacy::ValueRecord {
         name: name.to_string(),
@@ -653,6 +656,7 @@ pub(crate) fn real(parent: &str, name: &str, value: f64, offset: usize) -> legac
     }
 }
 
+#[cfg(test)]
 pub(crate) fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
     legacy::ValueRecord {
         name: name.to_string(),
@@ -669,6 +673,7 @@ pub(crate) fn string(parent: &str, name: &str, value: &str, offset: usize) -> le
     }
 }
 
+#[cfg(test)]
 pub(crate) fn complete_table() -> Persistence {
     let solid = "solid";
     let root = "root";
@@ -758,6 +763,7 @@ pub(crate) fn complete_table() -> Persistence {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::{
         complete_table, fixture_offset, integer, object, parse, string, FamilyTableValuePayload,
