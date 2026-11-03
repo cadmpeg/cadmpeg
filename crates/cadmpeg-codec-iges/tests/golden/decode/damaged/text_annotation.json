@@ -105,7 +105,20 @@
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D1",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D1",
+          "object": "iges:entity:directory#1",
+          "order": 0,
+          "runtime_type": "iges:212",
+          "text": [
+            "ALPHA",
+            "BET"
+          ]
+        }
+      ],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
