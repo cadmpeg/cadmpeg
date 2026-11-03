@@ -680,7 +680,14 @@ impl Graph {
                 _ => return None,
             };
             at += 1;
-            let references: [u32; 6] = read_sequence_at::<6>(&node.bytes, &mut at)?;
+            let [surface0, surface1, chart, start, end] =
+                read_sequence_at::<5>(&node.bytes, &mut at)?;
+            let intersection_data = if at < node.bytes.len() {
+                pointer::read_at(&node.bytes, &mut at)?
+            } else {
+                1
+            };
+            let references = [surface0, surface1, chart, start, end, intersection_data];
             let chart_with_optional_terms =
                 references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
             let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
@@ -995,25 +1002,26 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        for pos in stream
-            .len()
-            .checked_sub(3)
-            .into_iter()
-            .flat_map(|last| 0..last)
-        {
-            if stream[pos] != 0 {
-                continue;
+        let mut admit = |pos: usize, node_end: Option<usize>| {
+            if stream.get(pos) != Some(&0) {
+                return;
             }
-            let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
-                continue;
+            let Some(Ok(kind)) = stream.get(pos + 1).map(|&code| NodeKind::try_from(code)) else {
+                return;
             };
             if frames.is_some() && kind == NodeKind::Edge {
-                continue;
+                return;
             }
             for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
                 .into_iter()
                 .flatten()
             {
+                // A node of a terminated sequence spans its framed bytes,
+                // whatever length the fixed layout of its kind states.
+                let candidate = NodeCandidate {
+                    end: node_end.unwrap_or(candidate.end),
+                    ..candidate
+                };
                 if frames.is_some_and(|frames| frames.exclude(&candidate)) {
                     continue;
                 }
@@ -1021,6 +1029,23 @@ impl Graph {
                     ownership_candidates.push(candidate);
                 } else {
                     candidates.push(candidate);
+                }
+            }
+        };
+        match frames.and_then(PrimaryFrames::terminated_records) {
+            Some(records) => {
+                for record in records {
+                    admit(record.start, Some(record.end));
+                }
+            }
+            None => {
+                for pos in stream
+                    .len()
+                    .checked_sub(3)
+                    .into_iter()
+                    .flat_map(|last| 0..last)
+                {
+                    admit(pos, None);
                 }
             }
         }
