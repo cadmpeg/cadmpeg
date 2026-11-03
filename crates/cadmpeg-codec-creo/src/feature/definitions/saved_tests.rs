@@ -254,6 +254,20 @@ fn saved_line_repeats_the_preceding_slot() {
 }
 
 #[test]
+fn saved_line_skips_the_gen_info_value_before_its_coordinates() {
+    let payload = b"\xe0\0entity(line)\0\x80\x02\xe2\x08\x18\xe5\x2f\x59\0\x18\xe4\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(line.entity_id, 2);
+    assert_eq!(
+        line.endpoints,
+        [[Some(0.0); 3], [Some(100.0), Some(0.0), Some(0.0)]]
+    );
+}
+
+#[test]
 fn saved_line_replay_continues_after_point_prototype() {
     let scalar_triple = b"\x2f\x20\0\x2f\x20\0\x2f\x20\0";
     let mut payload = b"\xe0\0entity(line)\0\x05\xe2".to_vec();

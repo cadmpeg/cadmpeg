@@ -5666,6 +5666,10 @@ fn saved_radius_scalar(
     saved_section_scalar(payload, offset, end, cache)
 }
 
+/// The `gen_info` value a replayed `save_entity_ptr(line)` row stores before
+/// its coordinates.
+const SAVED_LINE_GEN_INFO: u8 = 0x08;
+
 fn saved_line_block(
     payload: &[u8],
     mut cursor: usize,
@@ -5791,7 +5795,9 @@ fn saved_line_block(
                 cursor += 6;
                 continue;
             }
-            if payload.get(cursor) == Some(&0xe2) {
+            if payload.get(cursor) == Some(&0xe2)
+                || (filled == 0 && payload.get(cursor) == Some(&SAVED_LINE_GEN_INFO))
+            {
                 cursor += 1;
                 continue;
             }

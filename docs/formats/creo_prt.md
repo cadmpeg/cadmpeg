@@ -5468,7 +5468,9 @@ Each populated entry begins with `f7 <entry_class>` and stores two incident
 authoritative solved trim topology. Its named table remains present when no
 entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
-and coordinate fields. A saved line retains its identity, references,
+and coordinate fields. A replayed `save_entity_ptr(line)` row stores its
+`gen_info` value `08` before the first coordinate; that byte occupies no
+coordinate slot. A saved line retains its identity, references,
 attributes, and ordered coordinate prefix when a structural boundary occurs
 before all six endpoint-coordinate slots.
 The saved line body begins at the row's first reference, attribute, or entity
