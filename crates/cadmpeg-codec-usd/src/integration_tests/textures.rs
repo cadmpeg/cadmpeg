@@ -206,10 +206,10 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
         .assets
         .iter()
         .all(|asset| matches!(asset.content, AssetContent::External { .. })));
-    let write = |_assets: &Files| {
+    let write = |assets: &Files| {
         let plan = crate::UsdCodec
             .plan(
-                EncodeInput::new(first.ir(), None),
+                EncodeInput::new(first.ir(), None).with_assets(assets),
                 TargetRequest::Explicit("usdz"),
             )
             .expect("plan the write");
