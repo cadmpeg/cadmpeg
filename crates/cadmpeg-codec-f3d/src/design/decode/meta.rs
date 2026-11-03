@@ -909,6 +909,10 @@ fn parse_feature_timeline_record(
 pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
+    #[cfg(test)]
+    if let Some(failure) = crate::decode::design_intent::take_injected_failure() {
+        return Err(failure());
+    }
     let mut out = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Metastream)

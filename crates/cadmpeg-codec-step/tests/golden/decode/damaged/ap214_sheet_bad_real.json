@@ -176,16 +176,7 @@
         }
       ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "step:data:vertex#6",
-          "point": "step:data:point#3"
-        },
-        {
-          "id": "step:data:vertex#8",
-          "point": "step:data:point#5"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -318,9 +309,11 @@
           "step:data:curve#54",
           "step:data:edge#21",
           "step:data:point#4",
-          "step:data:point#51"
+          "step:data:point#51",
+          "step:data:vertex#6",
+          "step:data:vertex#8"
         ],
-        "message": "part step.simple_entity_instance stream=\"\" offset=413 length=35: malformed container: unexpected byte at byte 443 at byte 443; dropped=[step:data:curve#54, step:data:edge#21, step:data:point#4, step:data:point#51]",
+        "message": "part step.simple_entity_instance stream=\"\" offset=413 length=35: malformed container: unexpected byte at byte 443 at byte 443; dropped=[step:data:curve#54, step:data:edge#21, step:data:point#4, step:data:point#51, step:data:vertex#6, step:data:vertex#8]",
         "provenance": {
           "byte_len": 35,
           "format": "step",
@@ -630,7 +623,7 @@
       }
     ],
     "notes": [
-      "byte accounting: 290 structural, 908 typed, 1217 named opaque, 0 unclassified"
+      "byte accounting: 290 structural, 862 typed, 1263 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,

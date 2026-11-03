@@ -53,6 +53,8 @@ use crate::records::topology::{
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+use cadmpeg_ir::StreamName;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
@@ -166,12 +168,16 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// historical topology.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
+    stream_view: cadmpeg_core::decode::View<'_>,
     stream: &str,
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
     binding_work: &cadmpeg_core::decode::WorkBudget,
+    output: &mut PartOutput,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
+    use cadmpeg_core::CodecError;
+
+    let bytes = stream_view.window();
     let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
@@ -191,15 +197,32 @@ pub(crate) fn decode(
         ) else {
             return Ok(None);
         };
-        let records = decode_history_records(
-            ctx,
-            bytes,
-            body_end,
-            framing.delta_offsets.get(ordinal + 1).copied(),
-            stream,
-            &state_record_id,
-            width,
-        )?;
+        let next_delta = framing.delta_offsets.get(ordinal + 1).copied();
+        let records = match record_run_range(bytes, body_end, next_delta, width) {
+            None => Vec::new(),
+            Some((start, limit)) => {
+                let extent = stream_view.child(start, limit).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "ASM history record run exceeds its stream"
+                    ))
+                })?;
+                let stream_name =
+                    StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?;
+                let spec = PartSpec::new("f3d.history_record").in_stream(stream_name);
+                ctx.decode_part(output, extent, spec, |_stage| {
+                    decode_history_records(
+                        ctx,
+                        bytes,
+                        body_end,
+                        next_delta,
+                        stream,
+                        &state_record_id,
+                        width,
+                    )
+                })?
+                .unwrap_or_default()
+            }
+        };
         states.push(header.into_state(
             state_record_id,
             &framing.history_id,
@@ -9135,6 +9158,25 @@ fn decode_bulletin_boards(
     Some((boards, end))
 }
 
+/// Byte range of one state's history-record run. The run starts after the
+/// bulletin boards and ends at the next delta state.
+fn record_run_range(
+    bytes: &[u8],
+    state_end: usize,
+    next_delta: Option<usize>,
+    width: RefWidth,
+) -> Option<(usize, usize)> {
+    let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
+    if bytes.get(start) == Some(&0x04)
+        && int_at(bytes, start + 1, width) == Some(0)
+        && bytes.get(start + 1 + width.bytes()) == Some(&0x11)
+    {
+        start += 2 + width.bytes();
+    }
+    let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
+    (start < limit).then_some((start, limit))
+}
+
 fn decode_history_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -9144,17 +9186,9 @@ fn decode_history_records(
     state_id: &str,
     width: RefWidth,
 ) -> Result<Vec<AsmHistoryRecord>, cadmpeg_core::CodecError> {
-    let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
-    if bytes.get(start) == Some(&0x04)
-        && int_at(bytes, start + 1, width) == Some(0)
-        && bytes.get(start + 1 + width.bytes()) == Some(&0x11)
-    {
-        start += 2 + width.bytes();
-    }
-    let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
-    if start >= limit {
+    let Some((start, limit)) = record_run_range(bytes, state_end, next_delta, width) else {
         return Ok(Vec::new());
-    }
+    };
     match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width, None) {
         Ok(records) => {
             let mut decoded = Vec::new();
@@ -9201,26 +9235,9 @@ fn decode_history_records(
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
             Err(error.into_codec_error())
         }
-        Err(error) => {
-            let raw_bytes = bytes[start..limit].to_vec();
-            let mut decoded = Vec::new();
-            let id = crate::ids::native_scoped_id(
-                stream,
-                "asm-history-record",
-                format_args!("{start:010}"),
-            );
-            let parent = state_id.to_owned();
-            let error = format!("{error}");
-            decoded.push(AsmHistoryRecord {
-                id,
-                parent,
-                revision_id: None,
-                byte_offset: Some(u64_from_index(start)),
-                framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error },
-                raw_bytes: raw_bytes.into(),
-            });
-            Ok(decoded)
-        }
+        Err(error) => Err(cadmpeg_core::CodecError::malformed(format_args!(
+            "ASM history record run starting at byte {start} failed to frame: {error}"
+        ))),
     }
 }
 

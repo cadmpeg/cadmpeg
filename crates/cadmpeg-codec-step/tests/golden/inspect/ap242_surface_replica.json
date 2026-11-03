@@ -12,8 +12,8 @@
     },
     {
       "attributes": {
-        "entity_count": "10",
-        "unknown_entities": "CARTESIAN_TRANSFORMATION_OPERATOR_3D:1,EXAMPLE_RECORD:1,SURFACE_REPLICA:1"
+        "entity_count": "11",
+        "unknown_entities": ""
       },
       "compression": "none",
       "name": "DATA[0]",
@@ -48,56 +48,6 @@
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"
-    },
-    {
-      "code": {
-        "code": "decode.warning",
-        "kind": "decode_diagnostic",
-        "namespace": "step",
-        "scope": "namespaced"
-      },
-      "message": "CARTESIAN_TRANSFORMATION_OPERATOR_3D #8 has invalid axes, origin, or scale",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "decode.warning",
-        "kind": "decode_diagnostic",
-        "namespace": "step",
-        "scope": "namespaced"
-      },
-      "message": "SURFACE_REPLICA #9 has invalid or unresolved parent/operator",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "decode.opaque-record-preserved",
-        "kind": "record_not_typed",
-        "namespace": "step",
-        "scope": "namespaced"
-      },
-      "message": "preserved 1 CARTESIAN_TRANSFORMATION_OPERATOR_3D instance(s) as named opaque STEP records",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "decode.opaque-record-preserved",
-        "kind": "record_not_typed",
-        "namespace": "step",
-        "scope": "namespaced"
-      },
-      "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "decode.opaque-record-preserved",
-        "kind": "record_not_typed",
-        "namespace": "step",
-        "scope": "namespaced"
-      },
-      "message": "preserved 1 SURFACE_REPLICA instance(s) as named opaque STEP records",
-      "severity": "warning"
     }
   ],
   "notes": [
