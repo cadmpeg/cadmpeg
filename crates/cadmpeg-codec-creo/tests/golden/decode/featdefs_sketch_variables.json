@@ -103,7 +103,7 @@
                 "point_id": 7,
                 "state": "resolved",
                 "u": 1.0,
-                "v": 3.0
+                "v": -3.0
               }
             ],
             "segments": [],
@@ -148,9 +148,9 @@
                 "key": 7,
                 "known": 1,
                 "offset": 131,
-                "resolved_value": 3.0,
+                "resolved_value": -3.0,
                 "uvar_id": 4,
-                "value": 3.0,
+                "value": -3.0,
                 "value_body": "4608000000000000",
                 "variable_type": 2
               }

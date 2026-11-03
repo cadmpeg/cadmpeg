@@ -460,13 +460,13 @@ The `var_arr` coordinate lane also defines the sign pairs
 bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
 `a7..ac→BF D3..D8`, `ae→BF DA`, `b3→BF E0`, `bd→BF EA`, `c3→BF F0`,
 `c6..ce→BF F3..FB`,
-`d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`, and
-`da→C0 08`. Prefix `d5` instead
+`d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`,
+`da→C0 08`, and `de→C0 10`. Prefix `d5` instead
 uses the lane-specific negative sub-unit form and reconstructs
 `BF <tail6> 00`. The positive sub-unit form `4f <tail6>` reconstructs
 `3F <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
 reconstructs `40 <tail7>`; the same form is positive in the saved-section
-coordinate lane. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
+coordinate lane. Its sign counterpart `46 <tail7>` reconstructs `C0 <tail7>`. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
 `41 <tail7>` forms reconstruct `3F <tail7>`. The unresolved `00 XX YY` and
 `34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
 occupies four.

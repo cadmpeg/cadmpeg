@@ -250,11 +250,43 @@ fn scan_stops_feature_local_outlines_at_named_records() {
 }
 
 #[test]
+fn var_arr_coordinates_read_46_and_de_as_negative_forms() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x04\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+    payload.extend_from_slice(&[1, 8, 0x2d, 0x2c, 0x80, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[2, 8, 0x46, 0x2c, 0x80, 0, 0, 0, 0, 0, 0x0f, 1, 0, 5, 0xe2]);
+    payload.extend_from_slice(&[1, 9, 0xde, 0x80, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
+
+    let variables = scan.features.definitions[0]
+        .variables
+        .as_ref()
+        .expect("var_arr");
+    let values = variables
+        .rows
+        .iter()
+        .map(|row| row.value)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        values,
+        [
+            crate::feature::definitions::ScalarLane::Value(1.0),
+            crate::feature::definitions::ScalarLane::Value(14.25),
+            crate::feature::definitions::ScalarLane::Value(-14.25),
+            crate::feature::definitions::ScalarLane::Value(f64::from_be_bytes([
+                0xc0, 0x10, 0x80, 0, 0, 0, 0, 0,
+            ])),
+        ]
+    );
+}
+
+#[test]
 fn scan_decodes_featdefs_var_arr_section_points() {
     let mut payload =
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
-    payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[2, 7, 0x2d, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     payload.extend_from_slice(&[1, 8, 0xe4, 0x0f, 1, 0, 5, 0xe2]);
     let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -278,7 +310,7 @@ fn scan_decodes_featdefs_var_arr_section_points() {
         variables.rows[1].value,
         crate::feature::definitions::ScalarLane::Value(3.0)
     );
-    assert_eq!(variables.rows[1].value_body, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(variables.rows[1].value_body, [0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     assert_eq!(variables.rows[1].guess_body, [0x0f]);
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
@@ -788,7 +820,7 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
         match value {
             0.0 => payload.push(0x0f),
             1.0 => payload.push(0xe4),
-            2.0 => payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]),
+            2.0 => payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0]),
             _ => unreachable!("generated fixture uses defined scalar constants"),
         }
         payload.extend_from_slice(&[0x0f, 1, 0, key, 0xe2]);
