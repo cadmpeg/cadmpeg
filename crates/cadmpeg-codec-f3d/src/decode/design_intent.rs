@@ -1031,10 +1031,40 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         products.occurrences,
     );
-    crate::design::assembly::bind_assembly_joint_features(
-        &mut model.features,
-        products.assembly_joints,
-    );
+    let mut types_by_stream = std::collections::HashMap::new();
+    let bound_at_merge = design
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| {
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
+            let types = types_by_stream.entry(stream).or_insert_with(|| {
+                stream
+                    .strip_prefix("f3d:")
+                    .and_then(crate::ids::decode_identity_key_component)
+                    .map(|entry| {
+                        crate::design::decode::meta::stream_types_by_entity(
+                            &prereqs.design_types,
+                            &entry,
+                        )
+                    })
+                    .unwrap_or_default()
+            });
+            crate::design::decode::scopes::assembly_v3::joint_binds_after_merge(scope, types)
+        })
+        .map(|scope| scope.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let bound_now = products
+        .assembly_joints
+        .iter()
+        .filter(|joint| {
+            !joint
+                .native_ref
+                .as_deref()
+                .is_some_and(|scope| bound_at_merge.contains(scope))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::design::assembly::bind_assembly_joint_features(&mut model.features, &bound_now);
     crate::history::retain_selected_edge_geometry(
         inputs.ctx,
         &model.features,

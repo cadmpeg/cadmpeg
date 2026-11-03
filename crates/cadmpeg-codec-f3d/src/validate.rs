@@ -2532,6 +2532,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         };
         let assembly_alignment_link = match scope.assembly_alignment() {
             None => true,
+            Some(alignment)
+                if design::decode::scopes::assembly_v3::registered(scope, stream_types)
+                    && alignment.frame_sense.is_some() =>
+            {
+                design::decode::scopes::assembly_v3::valid_alignment(
+                    scope,
+                    alignment,
+                    stream_types,
+                    &native.design_parameter_owners,
+                )
+            }
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle(), alignment.offset()[2]]

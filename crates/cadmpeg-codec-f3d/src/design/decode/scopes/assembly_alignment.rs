@@ -123,6 +123,21 @@ pub(super) fn exact_assembly_alignment_with_types(
     parameter_owners: &[DesignParameterOwner],
     stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
+    let existing =
+        legacy_assembly_alignment(bytes, records, scope, parameter_owners, stream_types)?;
+    if existing.is_some() {
+        return Ok(existing);
+    }
+    super::assembly_v3::alignment(bytes, records, scope, parameter_owners, stream_types)
+}
+
+fn legacy_assembly_alignment(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
+    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
+) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
     use assembly::DesignAssemblyAlignmentForm;
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
         return Ok(None);

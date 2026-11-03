@@ -2978,7 +2978,10 @@ impl<'a> F3dDecodeSession<'a> {
                 .map_or(0, |table| table.references.len()),
             limits: self.ctx.policy().limits,
         };
-        let local = crate::design::components::project_local_components(&local_sources)?;
+        let local = crate::design::components::project_local_components_with_types(
+            &local_sources,
+            &prereqs.design_types,
+        )?;
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;

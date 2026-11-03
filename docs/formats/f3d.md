@@ -1901,6 +1901,49 @@ placement lanes; ordinals 4 through 7 are angle, X, Y, and Z alignment lanes.
 The class pair is part of the admission key because the same frame lengths
 occur in other scope families.
 
+The version-3 `Assemble` scope has type GUID
+`8DFDD543-F823-43AA-BDAF-C638E023F0A0`. Its version-three prefix contains the
+eleven-byte indexed header, nine zero bytes, and an expansion byte `E`.
+`E = 0` selects the compact prologue; `E = 1` adds four zero bytes. A facing
+byte and two zero bytes follow. Each of two connectors contains a nonnull
+local construction reference, an identity byte, and a row-major rigid 4×4
+matrix when the identity byte is `0`. Identity byte `1` supplies the identity
+matrix. All nonnull references in the scope have width `W`: eleven bytes for
+plain local references or 51 bytes for typed local references. A typed
+reference's inline GUID equals its target's registered type GUID.
+
+Four zero bytes precede four nonnull alignment-owner references in angle,
+Z-offset, X-offset, Y-offset order. Six zero bytes, u32 locator count `2`, two
+nonnull locator references, and a nonnull joint reference follow. The joint
+reference selects a version-3 or version-4 record of type GUID
+`7F5A0426-1D2A-4DC4-9F06-58631F69D2F5`, including a joint shared by several
+scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
+precede the counted scope-reference table. The table contains `R` nonnull
+references. The four alignment-owner targets occur in this table. The current history word, length-prefixed UTF-16 `Assemble`, and
+feature ordinal follow the table. The tail contains fifteen zero bytes, a
+nonnull reference, an optional zero separator of length `S` (`0` or `1`), the
+previous history word, a u32 word, a finite f64, an independent u32 word, a
+nonnull reference, two boolean bytes, a nonnull reference, and two zero
+bytes. The paired indexed header closes the scope with the same record
+identity. The span from primary to paired header is
+`190 + (R + 12) * W + 128 * M + 4 * E + S`, where `M` is the number of
+explicit connector matrices. Owner references select alignment lanes
+independently of owner ordinals and owner count. Locator type GUID
+`2E3AC990-483D-4A55-8662-C064B976A957` and its registered version select the
+locator envelope. Its counted wrapper joins consecutive version-4 occurrence
+paths of type GUID `96CBEA21-17E0-4BCB-BA77-04EA87B47934`. The ordered
+occurrence GUIDs traverse child occurrences within the selected insertion,
+including child occurrences that insert another document. The scope
+connector belongs to the innermost occurrence in that path.
+
+The scope matrices are operand-local connector frames. Let `C0` and `C1` be
+these frames after composition with their operand poses. The mate equation
+is `C0 = C1 * T(X, Y, Z) * Rz(angle) * F`. Angle is in radians; offsets and
+matrix translations are in centimetres. Facing byte `0` selects identity
+`F`; byte `1` selects a half-turn about the local X axis. The product order is
+translation, rotation, facing. This equation defines the joint
+relation. Occurrence transforms retain their stored placement.
+
 The 945-byte `Assemble` scope uses the wide operand-frame form. It stores
 `u8 1` at offset 20, four zero bytes, the frame-sense byte at offset 25, and zero
 bytes at offsets 26 through 36. Its operand references are at offsets 37 and
@@ -1926,7 +1969,7 @@ operand-path locators are wide operand-path locators; their marked references
 are at offsets 534 and 545 in the 806- and 861-byte scopes and at offsets 556
 and 567 in the 850-byte scope, after the count 2.
 
-A frame-sense byte of `1` mates the two operand frames with their z axes opposed (`z₁ = −z₀`); `0` mates them aligned (`z₁ = z₀`). With sense `0`, the first operand's model frame is the second operand's model frame turned by the alignment angle about its z axis. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
+A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
 
 A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
@@ -2056,9 +2099,7 @@ exactly six owners: one group of `OffsetX`,
 `OffsetY`, `OffsetZ`, and `AngleZ` placement lanes followed by `alignAngle`
 and `alignOffset`. The 772-byte form has exactly ten owners: two such
 placement groups followed by `alignAngle` and `alignOffset`. The final scalar
-of each axial form is an alignment offset and maps to local Z. Apart from the
-class-383/258 and variable-span forms described above, no other frame-length,
-owner-count, and class-pair combination carries an assembly alignment. Joint forms store two
+of each axial form is an alignment offset and maps to local Z. Joint forms store two
 operand frames. The 627-, 637-, and 692-byte
 forms store marked operand construction references at offsets 28 and 168 and
 row-major rigid 4×4 operand-local-to-model transforms at offsets 40 and 180.
@@ -2261,7 +2302,7 @@ The direct-path subform of the class-283/264 and class-347/260 generations uses 
 
 The class-307 JointOrigin scope is 366 bytes and has a paired class-264 header. It is a pathless operand qualifier for the current document root. Marked references occur at +21 and +33. One 36-code-unit identity GUID starts at +44. A three-byte separator starts at +120. A u32 reference count 12 at +123 introduces twelve marked references starting at +127. Four FF bytes follow the reference table. The 11-code-unit `JointOrigin` kind starts at +263, and the feature ordinal is at +289. An operand frame that references this scope uses the scope's solved transform and projects an operand with no occurrence or external-document qualifier. A variable-reference `Assemble` can pair this qualifier with a class-363 occurrence-path qualifier; operand-frame order fixes operand order.
 
-An assembly joint has a joint record and, when the joint has relative motion, a motion record. In the generation with `Assemble` scopes, the joint record's index is one less than its scope's, and the scope references it; the motion record stores a marked same-segment reference to the joint record at offset 24. In the earlier generation, which has no `Assemble` scope, the motion record's index is one more than its joint record's, and the motion record references the joint record. A motion record stores one freedom entry for each degree of freedom: byte `1`, f64 `0`, f64 π, a u32 word, and the u32 freedom code. The word is `3` or `1`, and an entry whose word is `1` stores an f64 after its code. A word-`1` entry can store f64 `0` in place of π; a motion record whose entries store π stores no such entry. A joint whose motion record has no freedom entry is rigid. Freedom code `1` is a rotation about the joint's local y axis, code `2` a rotation about its local z axis, and code `8` a translation along its local z axis. Eleven bytes after its marked self-reference, the joint record stores two limit flag bytes, each `0` or `1`. Twenty-three bytes after the self-reference it stores the finite f64 maximum followed by the finite f64 minimum. A rotation's limits are in radians and a translation's are in centimetres. A joint without limits stores flags `0 0` and zero values. Thirteen bytes after the self-reference, after the two limit flags, the joint record stores the rest flag byte, `0` or `1`. Thirty-nine bytes after the self-reference, after the minimum, the joint record stores the finite f64 rest value in the same unit. The rest value can be nonzero while the rest flag is `0`.
+An assembly joint has a joint record and, when the joint has relative motion, a motion record. An adjacent-joint `Assemble` scope references the joint record whose index is one less than its scope's; the motion record stores a marked same-segment reference to the joint record at offset 24. In the earlier generation, which has no `Assemble` scope, the motion record's index is one more than its joint record's, and the motion record references the joint record. A motion record stores one freedom entry for each degree of freedom: byte `1`, f64 `0`, f64 π, a u32 word, and the u32 freedom code. The word is `3` or `1`, and an entry whose word is `1` stores an f64 after its code. A word-`1` entry can store f64 `0` in place of π; a motion record whose entries store π stores no such entry. A joint whose motion record has no freedom entry is rigid. Freedom code `1` is a rotation about the joint's local y axis, code `2` a rotation about its local z axis, and code `8` a translation along its local z axis. Eleven bytes after its marked self-reference, the joint record stores two limit flag bytes, each `0` or `1`. Twenty-three bytes after the self-reference it stores the finite f64 maximum followed by the finite f64 minimum. A rotation's limits are in radians and a translation's are in centimetres. A joint without limits stores flags `0 0` and zero values. Thirteen bytes after the self-reference, after the two limit flags, the joint record stores the rest flag byte, `0` or `1`. Thirty-nine bytes after the self-reference, after the minimum, the joint record stores the finite f64 rest value in the same unit. The rest value can be nonzero while the rest flag is `0`.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid
