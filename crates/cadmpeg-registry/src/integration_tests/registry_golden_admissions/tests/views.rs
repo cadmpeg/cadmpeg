@@ -206,16 +206,16 @@ fn real_decode_and_inspect_error_fixtures_are_not_success_views() {
     let registry = registry_rows();
     let golden_root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../cadmpeg-codec-rhino/tests/golden");
-    for relative in [
-        "decode/reject_v1.json",
-        "decode/reject_v2.json",
-        "inspect/reject_v2.json",
+    for (relative, layer_sets) in [
+        ("decode/damaged/reject_v1.json", 2),
+        ("decode/damaged/reject_v2.json", 2),
+        ("inspect/damaged/reject_v2.json", 1),
     ] {
         let path = golden_root.join(relative);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
         let value: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
-        assert_eq!(validate(&value, &registry), Ok(0), "{}", path.display());
+        assert_eq!(validate(&value, &registry), Ok(layer_sets), "{}", path.display());
     }
 }

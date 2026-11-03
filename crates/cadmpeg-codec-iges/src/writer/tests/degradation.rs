@@ -195,3 +195,19 @@ fn unsupported_uv_images_preserve_the_model_space_boundary() {
     assert_eq!(output.ir().model.edges.len(), ir.model.edges.len());
     assert!(output.ir().model.pcurves.is_empty());
 }
+
+#[test]
+fn native_arena_declarations_cover_the_decoded_input() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("explicit tetrahedron fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("tetrahedron plans an export");
+    cadmpeg_test_support::contract::assert_declarations_cover_input(
+        "iges",
+        decoded.ir(),
+        plan.report(),
+    );
+}

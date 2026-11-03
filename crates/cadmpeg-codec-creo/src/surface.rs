@@ -6534,6 +6534,66 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
     separator_close
 }
 
+/// Whether the payload ends mid-row: its last plane row opened an envelope
+/// chunk, and content bytes after one of its envelope closes reach the
+/// payload end with no compound close.
+///
+/// A cut section ends this way; a complete row closes every trailing chunk,
+/// ends at an empty trailer, or ends at bare `0x0f` padding. Rows and
+/// parameter records are payload-relative, as the row and parameter parsers
+/// return them. A row with no envelope close keeps the parser's silent
+/// behavior: without a close the absence is corruption, not a proven cut.
+pub(crate) fn trailing_plane_chunk_truncated(
+    payload: &[u8],
+    rows: &[SurfaceRow],
+    parameters: &[SurfaceParameterRecord],
+) -> bool {
+    let Some(row) = rows
+        .iter()
+        .filter(|row| row.kind == SurfaceKind::Plane)
+        .max_by_key(|row| row.offset)
+    else {
+        return false;
+    };
+    let Some(body_start) = positional_body_start(payload, row) else {
+        return false;
+    };
+    let scanner_close = first_compound_close(payload, body_start, payload.len());
+    let parameter_close = unique_surface_parameter(parameters, row.id)
+        .filter(|parameter| {
+            parameter.offset == row.offset
+                && parameter.boundary == SurfaceBodyBoundary::CompoundClose
+        })
+        .map(|parameter| parameter.body_offset + parameter.body.len());
+    let mut closes = [scanner_close, parameter_close]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    closes.sort_unstable();
+    closes.dedup();
+    if closes.is_empty() {
+        return false;
+    }
+    // Every envelope chunk the parser would close-search must close within
+    // the payload: a chunk with content but no compound close was cut. Later
+    // closes inside an earlier chunk do not excuse it.
+    for last in closes {
+        let Some(trailing) = last
+            .checked_add(1)
+            .and_then(|chunk_start| payload.get(chunk_start..))
+        else {
+            continue;
+        };
+        if trailing.is_empty() || trailing.iter().all(|byte| *byte == 0x0f) {
+            continue;
+        }
+        if !trailing.contains(&psb::token::COMPOUND_CLOSE) {
+            return true;
+        }
+    }
+    false
+}
+
 fn plane_local_system_compound_close(
     ctx: &DecodeContext<'_>,
     payload: &[u8],

@@ -324,7 +324,7 @@ pub(crate) fn transfer_design_features(
 
     transfer.assign_feature_parents(ir, native)?;
     transfer.assign_feature_dependencies(ir, native);
-    densify_feature_ordinals(ir, native);
+    densify_feature_ordinals(ir, native)?;
     Ok(transfer)
 }
 
@@ -334,7 +334,10 @@ pub(crate) fn transfer_design_features(
 /// ordinal; renumbering 0 … n−1 in that order runs after parents and
 /// dependencies are assigned, whose ordinal comparisons the byte-offset order
 /// already satisfies.
-fn densify_feature_ordinals(ir: &mut CadIr, native: &CatiaNative) {
+fn densify_feature_ordinals(
+    ir: &mut CadIr,
+    native: &CatiaNative,
+) -> Result<(), cadmpeg_core::CodecError> {
     let offsets = native
         .design_objects
         .iter()
@@ -351,16 +354,19 @@ fn densify_feature_ordinals(ir: &mut CadIr, native: &CatiaNative) {
         order.push((offset, feature.id.clone()));
     }
     order.sort();
-    let dense = order
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, (_, id))| (id, u64::try_from(ordinal).unwrap_or(u64::MAX)))
-        .collect::<std::collections::HashMap<_, _>>();
+    let mut dense = std::collections::HashMap::new();
+    for (ordinal, (_, id)) in order.into_iter().enumerate() {
+        let ordinal = u64::try_from(ordinal).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("CATIA feature ordinal exceeds u64")
+        })?;
+        dense.insert(id, ordinal);
+    }
     for feature in &mut ir.model.features {
         if let Some(ordinal) = dense.get(&feature.id).copied() {
             feature.ordinal = ordinal;
         }
     }
+    Ok(())
 }
 
 /// One design object whose owner-declared class has no typed neutral

@@ -104,10 +104,7 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#247",
             "names": [],
-            "payload_evidence": {
-              "byte_len": 735,
-              "sha256": "d572173c881d8f42e2472109739a61ad6d8e824f2184315177edfcffff8961f5"
-            },
+            "native_payload": "ffff01000d007367506f696e7448616e646c65ffff01000c0073674c696e6548616e646c65ffff01000b00736741726348616e646c650480fffeff0753006b00650074006300680031000480fffeff0d42006f00730073002d0045007800740072007500640065003100ffff01000c007367506e74506e74446973740480fffeff02440031000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000010000000200000000000000d6800000ffffffff00000000d6800200ffffffff00000000ffff1f0003ffffffffffffffff000080bf0200000000000400020001000000000080bf00000400000000000000000000000000000000f03f00000000000000000000000000000000000000000000f0bf00000000000000000100000050530000001d6665617475726520696e7075742063697263756c617220736b657463680000125343485f53575f33333130335f31313030300032006400000000000000000000000000002b000000000000000000000000000000000000000000000000000000000000000000000000000000003ff00000000000003ff000000000000000000000000000000000000000000000001f004600000000000000000000000000002b000000000000000000000000000000000000000000000000000000000000000000000000000000003ff00000000000003ff0000000000000000000000000000000000000000000003ff0000000000000000e000a000000000000c2bc928f996e0000000000000014000000642b00000000000000000000000f0014000000000000001e000a00000011001e000000140000001e003200000028000000002b00100028000000000000c2bc928f996e000000000000000000460000000000120032000000000000000000000000003cc2bc928f996e0000001d003c0000000000000000000000003ff000000000000000000000000000000000000000000000",
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -235,8 +232,8 @@
       }
     },
     "scope": {
-      "design": false,
-      "model": false
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -386,27 +383,6 @@
         },
         "message": "1 configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "sketch.native-geometry",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:223 has no neutral geometry or constraint projection; its typed native marker is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -417,8 +393,8 @@
     "transfer": {
       "geometry_transferred": false,
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       }
     }
   },
