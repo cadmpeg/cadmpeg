@@ -34,11 +34,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-220. Hole carrier placement forms
 
-**Question.** Which placement does a Hole carrier state when its `refType` is not `13` or `19`?
+**Question.** Which placement does a Hole carrier state when its `refType` is not `13`, `14`, or `19`?
 
-**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the two admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement. A Hole placed by a point on a construction plane has carrier `refType` `14`, a zero carrier position, and one point-data record with `refType` `12`.
+**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement.
 
-**Need.** Independent selections that vary the construction plane and the point of carrier `refType` `14`, and a file with a Hole carrier of any further `refType`.
+**Need.** A file with a Hole carrier of any further `refType`.
 
 **Conflict.** None.
 
