@@ -2012,6 +2012,14 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             cap_ruling_ids.insert(pcurve.curve_id);
         }
     }
+    let count_framed_rows = scan
+        .curves
+        .parameters
+        .iter()
+        .filter(|record| record.count_framed)
+        .map(|record| record.curve_id)
+        .collect::<BTreeSet<_>>();
+    let mut count_framed_curves = 0_usize;
     let mut transferred = BTreeSet::new();
     for (curve_id, candidates) in candidates {
         if evaluable_path_counts.get(&curve_id).copied() != Some(candidates.len()) {
@@ -2095,6 +2103,15 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             },
         )?;
         transferred.insert(id);
+        count_framed_curves += usize::from(count_framed_rows.contains(&curve_id));
+    }
+    if count_framed_curves > 0 {
+        losses.push(
+            crate::loss::CreoLossCode::CountFramedCurveCarrierUnverified.note(format!(
+                "Transferred {count_framed_curves} model curve(s) from rows that only a sample \
+                 count frames; each takes its placement from its incident surface charts alone"
+            )),
+        );
     }
     transferred.extend(crate::decode::sweep::surfaces::transfer_hole_generators(
         ctx,
@@ -2847,6 +2864,48 @@ mod tests {
             };
             assert_eq!(line.origin().get(), Point3::new(7.0, 3.0, 4.0));
         });
+    }
+
+    #[test]
+    fn count_framed_curve_transfer_reports_its_unverified_placement() {
+        for (count_framed, expected) in [(true, 1), (false, 0)] {
+            let (mut scan, mut ir) = cap_ruling_case();
+            scan.curves
+                .parameters
+                .push(crate::curve::CurveParameterRecord {
+                    curve_id: 9,
+                    type_byte: 0,
+                    body: Vec::new(),
+                    scalar_tokens: Vec::new(),
+                    references: Vec::new(),
+                    opaque_spans: Vec::new(),
+                    reference_geometry: [0, 0],
+                    offset: 20,
+                    body_offset: 20,
+                    suffix_offset: 20,
+                    count_framed,
+                });
+            let mut losses = Vec::new();
+            crate::decode::with_service_context(|ctx| {
+                transfer_analytic_pcurve_carriers(
+                    ctx,
+                    &scan,
+                    &mut ir,
+                    &mut cadmpeg_ir::AnnotationBuilder::new(),
+                    &mut losses,
+                    &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+                )
+                .expect("ruling")
+            });
+            assert_eq!(ir.model.curves.len(), 1);
+            let reported = losses
+                .iter()
+                .filter(|loss| {
+                    loss.code == crate::loss::CreoLossCode::CountFramedCurveCarrierUnverified.kind()
+                })
+                .count();
+            assert_eq!(reported, expected);
+        }
     }
 
     #[test]
@@ -3707,6 +3766,7 @@ mod tests {
             offset: 100,
             body_offset: 100,
             suffix_offset: 122,
+            count_framed: false,
         };
         let mut scan = crate::test_support::empty_container_scan();
         scan.curves.parameters.push(record);

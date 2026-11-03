@@ -1004,6 +1004,10 @@ source sample. A failed candidate emits
 native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
 
+A model curve from a row that only a complete sample count frames takes its
+placement from its incident surface charts alone. Its transfer emits
+`creo/geometry.count-framed-curve-carrier-unverified`.
+
 ## Angular sweep carriers
 
 Angular paths supply model-space constraints after both incident charts have

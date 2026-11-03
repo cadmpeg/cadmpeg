@@ -546,6 +546,8 @@ pub(crate) struct CurveParameterRecord {
     pub(crate) body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
     pub(crate) suffix_offset: usize,
+    /// Only a complete `fc <count>` body selects this row's suffix boundary.
+    pub(crate) count_framed: bool,
 }
 
 #[cfg(test)]
@@ -7579,6 +7581,7 @@ pub(crate) fn parameter_records_with_face_ids(
             offset: framed.start,
             body_offset: framed.start + body_start,
             suffix_offset: framed.start + suffix_start,
+            count_framed: framed.counted_body,
         });
     }
     for frame in two_chart_scalar_frames(payload, face_ids, &cache, &mut Vec::new()) {

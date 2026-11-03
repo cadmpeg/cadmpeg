@@ -2756,6 +2756,7 @@ mod curve_projection_tests {
             offset: 11,
             body_offset: 12,
             suffix_offset: 15,
+            count_framed: false,
         });
         scan.curves
             .tabulated_cylinder_replays

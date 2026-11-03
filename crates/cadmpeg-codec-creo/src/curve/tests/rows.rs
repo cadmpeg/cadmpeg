@@ -119,6 +119,7 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
         offset: usize::try_from(curve_id).expect("fixture index fits usize"),
         body_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
         suffix_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
+        count_framed: false,
     }
 }
 

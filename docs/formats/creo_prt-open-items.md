@@ -274,6 +274,8 @@ placements and sample frames depend on these operands.
 
 **Conflict.** A `4f`, `50`, or `57` second coordinate in a body of three or more samples uses the signed first-coordinate lane. Reading it with the two-sample forms places more vertices on independent carriers in one pocket family and displaces vertices in another.
 
+**Note.** A row that only a complete count frames places its curve through its incident surface charts and carries no second placement witness. The curve lies on those charts and repeats any carrier placement error. `creo/geometry.count-framed-curve-carrier-unverified` reports the curves. Owner schema class, row type, and carrier kinds do not separate correct curves from displaced curves.
+
 ### GS-34. Short axial selector envelopes
 
 **Question.** Which field grammar reads a cylinder selector envelope that begins `18 4f <tail6>`?
@@ -281,6 +283,8 @@ placements and sample frames depend on these operands.
 **Known.** The second selector is one ordinary selector byte or a three-byte `00 XX YY` image. The axial values use the two-sample second-coordinate forms `4f`, `50`, and `57`. The six outline coordinates are two XYZ corners, and a bare `18` is zero in each corner coordinate.
 
 **Need.** Establish the Y coordinate lane, including the `41` form, and the join from the complete corners, axial bounds, local system and radius to one signed axis and origin. The decoded carriers must retain every vertex that adjacent carriers already establish.
+
+**Conflict.** A plane chart beside a short axial cylinder can map a shared vertex off the cylinder ruling. The row between them then lacks a line that contains both endpoints, and its curve stays unsolved. Reading the envelope selects the ruling and removes other vertices that adjacent carriers establish.
 
 ### GS-15. Other bare curve-matrix declarations
 

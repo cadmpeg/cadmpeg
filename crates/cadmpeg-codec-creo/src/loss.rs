@@ -117,6 +117,8 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    /// Model curves transferred from rows that only their sample count frames.
+    CountFramedCurveCarrierUnverified,
     HoleCircleIntervalUnresolved,
     HoleGeneratorUnresolved,
     SweepEnvelopeReplayUnresolved,
@@ -320,6 +322,9 @@ impl CreoLossCode {
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::CountFramedCurveCarrierUnverified => {
+                "geometry.count-framed-curve-carrier-unverified"
+            }
             Self::HoleCircleIntervalUnresolved => "geometry.hole-circle-interval-unresolved",
             Self::HoleGeneratorUnresolved => "geometry.hole-generator-unresolved",
             Self::SampledPcurveEvaluationUnresolved => {
@@ -472,6 +477,7 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
@@ -575,6 +581,7 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
@@ -719,6 +726,7 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.count-framed-curve-carrier-unverified",
                 "geometry.hole-circle-interval-unresolved",
                 "geometry.hole-generator-unresolved",
                 "geometry.sweep-envelope-replay-unresolved",
