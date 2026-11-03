@@ -18,7 +18,7 @@ use crate::container::ContainerScan;
 use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::carriers::placed_carriers;
-use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
+use crate::decode::analytic::equations::{CarrierEquation, CylinderEquation, PlaneEquation};
 use crate::decode::analytic::pcurves::{
     canonicalized_pcurve_endpoints, pcurve_edge_endpoint_evidence, ModelSurfaceIndex,
 };
@@ -110,16 +110,7 @@ fn coplanar_face_edge_line(
     (!model_points_agree(start, end)).then_some(())?;
     mapped_paths
         .iter()
-        .any(|path| {
-            let [Some(first_point), Some(second_point)] = path.map(finite_model_point) else {
-                return false;
-            };
-            let forward =
-                model_points_agree(first_point, start) && model_points_agree(second_point, end);
-            let reverse =
-                model_points_agree(first_point, end) && model_points_agree(second_point, start);
-            forward != reverse
-        })
+        .any(|path| path_maps_onto_once(*path, start, end))
         .then_some(())?;
     let direction = crate::vecmath::normalize(std::array::from_fn(|axis| {
         points[1][axis] - points[0][axis]
@@ -130,6 +121,212 @@ fn coplanar_face_edge_line(
     )
     .ok()
     .map(|line| CurveGeometry::Solved(SolvedCurveGeometry::Line(line)))
+}
+
+/// Squared length of the axis cross product below which two cylinder axes
+/// are parallel.
+const EPS_SHARED_CYLINDER_AXIS_CROSS_SQUARED: f64 = 1.0e-18;
+/// Radius, axis-line, and generator deviation relative to the model scale
+/// below which two cylinder carriers and an edge agree.
+const EPS_SHARED_CYLINDER_AGREEMENT: f64 = 1.0e-9;
+/// Chart-parameter difference, relative to the larger parameter, below which a
+/// cylinder chart path has one `u` value.
+const EPS_GENERATOR_PATH_PARAMETER: f64 = 1.0e-9;
+
+/// Whether two placed cylinder equations describe one cylinder.
+fn one_cylinder([first, second]: [CylinderEquation; 2]) -> bool {
+    let (Some(first_axis), Some(second_axis)) = (
+        crate::vecmath::normalize(first.axis),
+        crate::vecmath::normalize(second.axis),
+    ) else {
+        return false;
+    };
+    let axis_cross = crate::vecmath::cross(first_axis, second_axis);
+    if crate::vecmath::dot(axis_cross, axis_cross) > EPS_SHARED_CYLINDER_AXIS_CROSS_SQUARED {
+        return false;
+    }
+    let scale = first
+        .origin
+        .into_iter()
+        .chain(second.origin)
+        .chain([first.radius, second.radius])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    (first.radius - second.radius).abs() <= EPS_SHARED_CYLINDER_AGREEMENT * scale
+        && axis_line_distance(first.origin, first_axis, second.origin)
+            <= EPS_SHARED_CYLINDER_AGREEMENT * scale
+}
+
+/// Distance from `point` to the line through `origin` along unit `axis`.
+fn axis_line_distance(origin: [f64; 3], axis: [f64; 3], point: [f64; 3]) -> f64 {
+    let offset: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
+    let along = crate::vecmath::dot(offset, axis);
+    let radial: [f64; 3] = std::array::from_fn(|index| offset[index] - along * axis[index]);
+    crate::vecmath::dot(radial, radial).sqrt()
+}
+
+/// The generator line through an edge's two solved endpoints when both
+/// incident faces lie on one cylinder, the endpoints lie on one generator, and
+/// a constant-`u` face path maps onto the endpoints in exactly one order.
+fn shared_cylinder_generator_line(
+    faces: [CylinderEquation; 2],
+    points: [[f64; 3]; 2],
+    generator_paths: &[[[f64; 3]; 2]],
+) -> Option<CurveGeometry> {
+    one_cylinder(faces).then_some(())?;
+    let [cylinder, _] = faces;
+    let axis = crate::vecmath::normalize(cylinder.axis)?;
+    let [Some(start), Some(end)] = points.map(finite_model_point) else {
+        return None;
+    };
+    (!model_points_agree(start, end)).then_some(())?;
+    let scale = points
+        .into_iter()
+        .flatten()
+        .chain(cylinder.origin)
+        .chain([cylinder.radius])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    points
+        .iter()
+        .all(|point| {
+            (axis_line_distance(cylinder.origin, axis, *point) - cylinder.radius).abs()
+                <= EPS_SHARED_CYLINDER_AGREEMENT * scale
+        })
+        .then_some(())?;
+    let displacement: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
+    let off_axis = crate::vecmath::cross(displacement, axis);
+    (crate::vecmath::dot(off_axis, off_axis).sqrt() <= EPS_SHARED_CYLINDER_AGREEMENT * scale)
+        .then_some(())?;
+    generator_paths
+        .iter()
+        .any(|path| path_maps_onto_once(*path, start, end))
+        .then_some(())?;
+    let direction = crate::vecmath::normalize(displacement)?;
+    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+        cadmpeg_ir::math::Point3::from(points[0]),
+        cadmpeg_ir::math::Vector3::from(direction),
+    )
+    .ok()
+    .map(|line| CurveGeometry::Solved(SolvedCurveGeometry::Line(line)))
+}
+
+/// Whether a mapped face path yields `start` and `end` in exactly one order.
+fn path_maps_onto_once(
+    path: [[f64; 3]; 2],
+    start: cadmpeg_ir::features::FinitePoint3,
+    end: cadmpeg_ir::features::FinitePoint3,
+) -> bool {
+    let [Some(first_point), Some(second_point)] = path.map(finite_model_point) else {
+        return false;
+    };
+    let forward = model_points_agree(first_point, start) && model_points_agree(second_point, end);
+    let reverse = model_points_agree(first_point, end) && model_points_agree(second_point, start);
+    forward != reverse
+}
+
+/// The first and last chart point of each constant-`u` path of `row` in a
+/// placed cylindrical face chart, mapped to model space.
+fn mapped_cylinder_generator_paths(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    model_surfaces: &ModelSurfaceIndex<'_>,
+    source_carriers: &SourceUnitCarriers,
+    row: &crate::curve::CurveTopologyRow,
+) -> Result<Vec<[[f64; 3]; 2]>, CodecError> {
+    let mut chart_paths = Vec::<(u32, Vec<[f64; 2]>)>::new();
+    for (curve_id, faces, face_0_endpoints, face_1_endpoints) in scan
+        .curves
+        .pcurves
+        .iter()
+        .map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        })
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        }))
+    {
+        if curve_id != row.id {
+            continue;
+        }
+        let endpoint_sets =
+            canonicalized_pcurve_endpoints(scan, faces, face_0_endpoints, face_1_endpoints);
+        for (face, endpoints) in faces.into_iter().zip(endpoint_sets) {
+            if let Some(face) = face {
+                chart_paths.push((face.get(), endpoints.to_vec()));
+            }
+        }
+    }
+    for pcurve in scan
+        .curves
+        .two_chart_pcurves
+        .iter()
+        .filter(|pcurve| pcurve.curve_id == row.id)
+    {
+        for (side, face) in pcurve.faces.into_iter().enumerate() {
+            chart_paths.push((
+                face,
+                pcurve.samples.iter().map(|sample| sample[side]).collect(),
+            ));
+        }
+    }
+    let mut paths = Vec::new();
+    for (face, samples) in chart_paths {
+        if !row.faces.contains(&std::num::NonZeroU32::new(face)) {
+            continue;
+        }
+        let (Some(first), Some(last)) = (samples.first(), samples.last()) else {
+            continue;
+        };
+        if samples.len() < 2
+            || !samples.iter().all(|sample| {
+                (sample[0] - first[0]).abs()
+                    <= EPS_GENERATOR_PATH_PARAMETER * sample[0].abs().max(first[0].abs()).max(1.0)
+            })
+        {
+            continue;
+        }
+        let Some(surface) = model_surfaces.unique(face) else {
+            continue;
+        };
+        let geometry = source_carriers.surface_geometry(surface);
+        if !matches!(
+            geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+        ) {
+            continue;
+        }
+        let mut mapped = [[0.0; 3]; 2];
+        let mut complete = true;
+        for (slot, uv) in mapped.iter_mut().zip([*first, *last]) {
+            match cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, geometry, uv[0], uv[1]),
+            )?)? {
+                Some(point) => *slot = [point.x, point.y, point.z],
+                None => complete = false,
+            }
+        }
+        if complete {
+            paths.push(mapped);
+        }
+    }
+    Ok(paths)
+}
+
+/// The single carrier that both faces of an edge lie on.
+enum SharedCarrier {
+    Plane([PlaneEquation; 2]),
+    Cylinder([CylinderEquation; 2]),
 }
 
 /// Whether two placed plane equations describe one plane.
@@ -243,7 +440,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
-    let mut coplanar_lines = std::collections::BTreeMap::new();
+    let mut shared_carrier_lines = std::collections::BTreeMap::new();
     {
         let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
         for row in
@@ -252,15 +449,22 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             let [Some(first_face), Some(second_face)] = row.faces else {
                 continue;
             };
-            let (Some(CarrierEquation::Plane(first)), Some(CarrierEquation::Plane(second))) = (
+            let pair = (
                 carriers.get(&first_face.get()).copied(),
                 carriers.get(&second_face.get()).copied(),
-            ) else {
-                continue;
+            );
+            let shared = match pair {
+                (Some(CarrierEquation::Plane(first)), Some(CarrierEquation::Plane(second)))
+                    if one_plane([first, second]) =>
+                {
+                    SharedCarrier::Plane([first, second])
+                }
+                (
+                    Some(CarrierEquation::Cylinder(first)),
+                    Some(CarrierEquation::Cylinder(second)),
+                ) if one_cylinder([first, second]) => SharedCarrier::Cylinder([first, second]),
+                _ => continue,
             };
-            if !one_plane([first, second]) {
-                continue;
-            }
             let Some(points) = edge_vertices.get(&row.id).and_then(|vertices| {
                 Some([
                     *solved_vertices.get(&vertices[0].get())?,
@@ -269,9 +473,27 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             }) else {
                 continue;
             };
-            let paths = mapped_planar_face_paths(ctx, scan, &model_surfaces, source_carriers, row)?;
-            if let Some(line) = coplanar_face_edge_line([first, second], points, &paths) {
-                coplanar_lines.insert(row.id, line);
+            let line = match shared {
+                SharedCarrier::Plane(faces) => {
+                    let paths =
+                        mapped_planar_face_paths(ctx, scan, &model_surfaces, source_carriers, row)?;
+                    coplanar_face_edge_line(faces, points, &paths)
+                        .map(|line| (line, "coplanar_face_pcurve_line"))
+                }
+                SharedCarrier::Cylinder(faces) => {
+                    let paths = mapped_cylinder_generator_paths(
+                        ctx,
+                        scan,
+                        &model_surfaces,
+                        source_carriers,
+                        row,
+                    )?;
+                    shared_cylinder_generator_line(faces, points, &paths)
+                        .map(|line| (line, "shared_cylinder_generator_line"))
+                }
+            };
+            if let Some(line) = line {
+                shared_carrier_lines.insert(row.id, line);
             }
         }
     }
@@ -314,11 +536,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 select_fc14_axis_coordinate_candidate(candidates, held)
             }
         })
-        .or_else(|| {
-            coplanar_lines
-                .remove(&row.id)
-                .map(|line| (line, "coplanar_face_pcurve_line"))
-        });
+        .or_else(|| shared_carrier_lines.remove(&row.id));
         let Some((geometry, tag)) = resolved else {
             continue;
         };
@@ -658,6 +876,114 @@ mod tests {
         assert!(super::coplanar_face_edge_line(offset, points, &[points]).is_none());
         let crossing = [faces[0], plane([1.0, 0.0, 0.0], [1.0, 0.0, 0.0])];
         assert!(super::coplanar_face_edge_line(crossing, points, &[points]).is_none());
+    }
+
+    #[test]
+    fn shared_cylinder_generator_line_needs_one_generator_and_a_path_onto_it() {
+        use crate::decode::analytic::equations::CylinderEquation;
+
+        let cylinder = |origin, radius| CylinderEquation {
+            origin,
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius,
+        };
+        let faces = [
+            cylinder([0.0, 0.0, 0.0], 2.0),
+            cylinder([0.0, 0.0, 5.0], 2.0),
+        ];
+        let points = [[2.0, 0.0, 0.0], [2.0, 0.0, 6.0]];
+        for path in [points, [points[1], points[0]]] {
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line))) =
+                super::shared_cylinder_generator_line(faces, points, &[path])
+            else {
+                panic!("generator through the solved endpoints");
+            };
+            let origin = line.origin().get();
+            let direction = *line.direction().as_raw();
+            assert_eq!([origin.x, origin.y, origin.z], points[0]);
+            assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
+        }
+        assert!(super::shared_cylinder_generator_line(faces, points, &[]).is_none());
+        let skew = [[2.0, 0.0, 0.0], [0.0, 2.0, 6.0]];
+        assert!(super::shared_cylinder_generator_line(faces, skew, &[skew]).is_none());
+        let outside = [[2.5, 0.0, 0.0], [2.5, 0.0, 6.0]];
+        assert!(super::shared_cylinder_generator_line(faces, outside, &[outside]).is_none());
+        for other in [
+            cylinder([0.0, 0.0, 0.0], 3.0),
+            cylinder([1.0, 0.0, 0.0], 2.0),
+        ] {
+            assert!(
+                super::shared_cylinder_generator_line([faces[0], other], points, &[points])
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn cylinder_generator_paths_keep_constant_u_chart_paths() {
+        const EPS_GENERATOR_PATH_TEST: f64 = 1e-12;
+
+        let tau = std::f64::consts::TAU;
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.curves.two_chart_pcurves = vec![
+            curve::TwoChartPcurveSamples {
+                curve_id: 10,
+                faces: [1, 2],
+                samples: vec![[[0.0, 0.0], [tau, 0.0]], [[0.0, 6.0], [tau, 6.0]]],
+                offset: 0,
+            },
+            curve::TwoChartPcurveSamples {
+                curve_id: 10,
+                faces: [1, 2],
+                samples: vec![[[0.0, 0.0], [tau, 0.0]], [[1.0, 6.0], [tau, 6.0]]],
+                offset: 1,
+            },
+        ];
+        let row = curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 1,
+            feature_id: 0,
+            directions: [0x01, 0xf6],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            next_edges: [10, 10],
+            offset: 0,
+        };
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([1, 2].map(|id| {
+            Surface {
+                id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        2.0,
+                    )
+                    .expect("valid CylinderSurface fixture"),
+                )),
+                source_object: None,
+            }
+        }));
+        let paths = crate::decode::with_service_context(|ctx| {
+            super::mapped_cylinder_generator_paths(
+                ctx,
+                &scan,
+                &crate::decode::analytic::pcurves::ModelSurfaceIndex::new(&ir.model.surfaces),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &row,
+            )
+        })
+        .expect("bounded chart evaluation");
+        assert_eq!(paths.len(), 3);
+        for path in paths {
+            for (point, height) in path.into_iter().zip([0.0, 6.0]) {
+                for (actual, expected) in point.into_iter().zip([2.0, 0.0, height]) {
+                    assert!((actual - expected).abs() <= EPS_GENERATOR_PATH_TEST);
+                }
+            }
+        }
     }
 
     #[test]
