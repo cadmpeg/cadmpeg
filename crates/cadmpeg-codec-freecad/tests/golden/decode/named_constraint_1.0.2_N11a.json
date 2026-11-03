@@ -3663,30 +3663,6 @@
           "expression": {
             "tokens": [
               {
-                "kind": "parameter",
-                "value": "fcstd:design:parameter#Dimensions:cell:B1"
-              }
-            ]
-          },
-          "id": "fcstd:design:parameter#Sketch:constraint:10",
-          "name": "Constraint10",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "expression_native_ref": "fcstd:native:property#Sketch:ExpressionEngine",
-            "source_name": "width"
-          },
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
-        },
-        {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
                 "kind": "text",
                 "value": "20 mm"
               }
@@ -4265,7 +4241,7 @@
             "kind": "distance",
             "parameter": {
               "kind": "parameter",
-              "value": "fcstd:design:parameter#Sketch:constraint:10"
+              "value": "fcstd:design:parameter#Dimensions:cell:B1"
             }
           },
           "id": "fcstd:design:sketch-constraint#Sketch:10",
