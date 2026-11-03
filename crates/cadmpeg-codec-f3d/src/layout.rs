@@ -5723,12 +5723,14 @@ pub(crate) mod canvas_scope_typed_tail {
     pub(crate) const ZERO_TAIL: usize = 194;
 }
 
-/// Byte offsets for the `thread_bound_hole_tail` record.
+/// Byte offsets for the `reciprocal_hole_tail` record.
 ///
-/// Spec §3.1. Record length 109 B.
-pub(crate) mod thread_bound_hole_tail {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 109;
+/// Spec §3.1. Record length 27 B.
+///
+/// ```text
+/// Offsets are relative to the end of the LP-UTF16 Hole kind. The record covers the prefix through the self reference; the later fields move with the member count and the optional further reference.
+/// ```
+pub(crate) mod reciprocal_hole_tail {
     /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FEATURE_ORDINAL: usize = 0;
     /// Offset of `zero_prefix` (`bytes[8]`). Spec §3.1.
@@ -5737,32 +5739,6 @@ pub(crate) mod thread_bound_hole_tail {
     pub(crate) const MEMBER_COUNT: usize = 12;
     /// Offset of `self_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SELF_REFERENCE: usize = 16;
-    /// Offset of `thread_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const THREAD_REFERENCE: usize = 27;
-    /// Offset of `zero_before_companion` (`bytes[3]`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_COMPANION: usize = 38;
-    /// Offset of `first_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const FIRST_COMPANION: usize = 41;
-    /// Offset of `zero_before_history` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_HISTORY: usize = 52;
-    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 53;
-    /// Offset of `epoch` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const EPOCH: usize = 57;
-    /// Offset of `duration` (`f64`, little-endian). Spec §3.1.
-    pub(crate) const DURATION: usize = 61;
-    /// Offset of `repeated_epoch` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REPEATED_EPOCH: usize = 69;
-    /// Offset of `second_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const SECOND_COMPANION: usize = 73;
-    /// Offset of `zero_before_third` (`bytes[2]`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_THIRD: usize = 84;
-    /// Offset of `third_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const THIRD_COMPANION: usize = 86;
-    /// Offset of `closing_self_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const CLOSING_SELF_REFERENCE: usize = 97;
-    /// Offset of `zero_tail` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_TAIL: usize = 108;
 }
 
 /// Byte offsets for the `assembly_compact_wide_scope` record.
