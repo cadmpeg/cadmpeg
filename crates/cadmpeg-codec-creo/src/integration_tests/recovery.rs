@@ -64,4 +64,3 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
         assert_eq!(scan.framing.census.srf_array_count, None);
     }
 }
-

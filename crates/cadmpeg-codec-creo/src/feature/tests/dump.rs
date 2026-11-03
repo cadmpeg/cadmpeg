@@ -466,7 +466,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
     assert_ne!(parameter.id, repeated.id);
-    assert_eq!(parameter.expression, "1".into());
+    assert_eq!(parameter.expression, "1 rad".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(

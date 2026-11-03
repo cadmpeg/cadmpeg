@@ -5,7 +5,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, FeatureSourceContent, ParameterId, ParameterValue,
+        DesignParameter, DimensionDisplay, Expression, FeatureSourceContent, ParameterId,
+        ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -30,13 +31,6 @@ fn insert_dimension_property(
     let key = key.to_owned();
     let value = format!("{value}");
     properties.insert(key, value);
-}
-
-fn dimension_expression(value: Option<f64>) -> Result<String, cadmpeg_core::CodecError> {
-    value
-        .map(|value| Ok(format!("{value}")))
-        .transpose()
-        .map(std::option::Option::unwrap_or_default)
 }
 
 pub(in crate::decode) fn dimension_measurement_value(
@@ -372,7 +366,6 @@ pub(in super::super) fn transfer_feature_dimensions(
                 insert_dimension_property(&mut properties, "value_encoding", encoding);
             }
         }
-        let expression = dimension_expression(dimension_measurement_value(dimension))?;
         let value =
             dimension_measurement_value(dimension).and_then(|value| match dimension.unit() {
                 crate::feature::definitions::DimensionUnit::Radians => {
@@ -385,6 +378,13 @@ pub(in super::super) fn transfer_feature_dimensions(
                     cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real)
                 }
             });
+        // The expression renders the cached value in canonical literal
+        // form: a bare angle number now reads as degrees (#209 D5), so the
+        // stored radian value needs its `rad` suffix to stay equal.
+        let expression = value
+            .as_ref()
+            .map(ParameterValue::literal_expression)
+            .unwrap_or_else(|| Expression::text(String::new()));
         ctx.charge_entities(1, "admit Creo model parameters")?;
         source_carriers.admit_parameter(
             ir,
@@ -394,7 +394,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 owner: Some(owner_id.clone()),
                 ordinal,
                 name,
-                expression: expression.into(),
+                expression,
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 driving: true,
