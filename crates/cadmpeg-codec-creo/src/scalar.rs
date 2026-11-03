@@ -1115,9 +1115,9 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f6
         }
         if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
             let reference_sign = sign(body[0])?;
-            sign(body[3])?;
+            let axis_sign = sign(body[3])?;
             sign(body[5])?;
-            return Some((CompactFrameAxes::YX, reference_sign, 1.0, 7));
+            return Some((CompactFrameAxes::YX, reference_sign, axis_sign, 7));
         }
     }
 

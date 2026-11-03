@@ -777,7 +777,7 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
         .positional_cone_frame()
         .expect("compact Y-axis cone carrier");
     assert_eq!(frame.frame().origin(), [0.0, -8.0, 0.0]);
-    assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
 }
@@ -1170,5 +1170,29 @@ fn quarter_turn_and_bend_floating_rotations_use_the_complete_rotation_frame() {
         let refused = decode(&floating_rotation_cylinder_body(lower, 7.0));
         assert!(refused.carrier.is_none());
         assert!(refused.rotation_cylinder);
+    }
+}
+
+#[test]
+fn compact_y_image_stores_the_axis_sign_in_its_second_token() {
+    for (image, axis, reference) in [
+        ([0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18], 1.0, 1.0),
+        ([0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18], -1.0, -1.0),
+        ([0x10, 0x18, 0xe6, 0x0f, 0x18, 0x0f, 0x18], 1.0, -1.0),
+    ] {
+        let mut local_system = image.to_vec();
+        local_system.extend_from_slice(&[0x18, 0x2f, 0x10, 0x00, 0x18]);
+        let record = parameter_records(&local_system_suffix_row(
+            0x25,
+            &local_system,
+            &[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18],
+        ))
+        .remove(0);
+        let frame = record
+            .positional_cone_frame()
+            .expect("compact Y-axis cone carrier");
+        assert_eq!(frame.frame().origin(), [0.0, 4.0, 0.0]);
+        assert_eq!(frame.frame().axis(), [0.0, axis, 0.0]);
+        assert_eq!(frame.frame().ref_direction(), [reference, 0.0, 0.0]);
     }
 }
