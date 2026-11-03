@@ -39,6 +39,17 @@ fn cascade_validation_errors(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::report::check::Check;
+    // Errors the writer carries as stated need no drop: acknowledging the
+    // exact finding keeps the cascade from re-finding it on the next pass,
+    // while a later finding on the same record still blocks.
+    let mut acknowledged = std::collections::BTreeSet::new();
+    let acked = |finding: &&cadmpeg_ir::report::check::Finding,
+                 acknowledged: &std::collections::BTreeSet<(String, String)>| {
+        acknowledged.contains(&(
+            finding.entity.clone().unwrap_or_default(),
+            finding.message.clone(),
+        ))
+    };
     for _ in 0..1024 {
         let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
         let errors: Vec<_> = validation
@@ -46,14 +57,18 @@ fn cascade_validation_errors(
             .iter()
             .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
             .collect();
-        if errors.is_empty() {
+        let pending: Vec<_> = errors
+            .iter()
+            .filter(|finding| !acked(finding, &acknowledged))
+            .collect();
+        if pending.is_empty() {
             return Ok(());
         }
         // Cascade the first resolvable holder: a record that needs a record
         // the document does not hold, a repeated identity, or a wire edge
         // that lost its shell membership drops with its loss instead of
         // refusing the write. Anything else keeps its refusal below.
-        let cascaded = errors.iter().find(|finding| {
+        let cascaded = pending.iter().find(|finding| {
             let entity = finding.entity.clone().unwrap_or_default();
             if entity.is_empty() {
                 return false;
@@ -67,7 +82,17 @@ fn cascade_validation_errors(
             )
         });
         let Some(finding) = cascaded else {
-            let first = errors[0];
+            let carried = pending
+                .iter()
+                .find(|finding| super::write_through_validation_error(finding, projected));
+            if let Some(finding) = carried {
+                acknowledged.insert((
+                    finding.entity.clone().unwrap_or_default(),
+                    finding.message.clone(),
+                ));
+                continue;
+            }
+            let first = pending[0];
             return Err(CodecError::Malformed(first.message.clone()));
         };
         let entity = finding.entity.clone().unwrap_or_default();
