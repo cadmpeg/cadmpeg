@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Node types of the topology, point, and B-spline nodes.
+//! Node types of the topology, point, B-spline, and procedural surface nodes.
 
 /// A body, `BODY`.
 pub const BODY: u16 = 12;
@@ -33,3 +33,13 @@ pub const KNOT_SET: u16 = 128;
 pub const B_CURVE: u16 = 134;
 /// The NURBS definition of a B-spline curve, `NURBS_CURVE`.
 pub const NURBS_CURVE: u16 = 136;
+/// A rolling-ball blend surface, `BLEND_SURF`.
+pub const BLEND_SURF: u16 = 56;
+/// One boundary of a blend surface, `BLEND_BOUND`.
+pub const BLEND_BOUND: u16 = 59;
+/// An offset surface, `OFFSET_SURF`.
+pub const OFFSET_SURF: u16 = 60;
+/// A swept surface, `SWEPT_SURF`.
+pub const SWEPT_SURF: u16 = 67;
+/// A spun surface, `SPUN_SURF`.
+pub const SPUN_SURF: u16 = 68;
