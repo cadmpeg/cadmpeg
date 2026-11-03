@@ -50,11 +50,10 @@ pub(super) fn project(
             .map_err(CodecError::Malformed)?,
         );
     }
-    let active = ufrx
-        .representation()
-        .map(|representation| representation.active_design_view.as_str());
     for state in ufrx.model_states().iter().filter(|_| ir.scope.design) {
-        let is_active = active == Some(state.name.as_str());
+        // The representation names the active design view, not the active
+        // model state, so no state is marked active.
+        let is_active = false;
         let mut overrides = std::collections::BTreeMap::new();
         for parameter in &state.parameters {
             let matches = ir
@@ -95,56 +94,6 @@ pub(super) fn project(
             feature_states: std::collections::BTreeMap::new(),
             native_ref: Some(state.id.clone()),
         });
-    }
-    let projected_design = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|record| record.native_ref.as_deref())
-        .chain(
-            ir.model
-                .features
-                .iter()
-                .filter_map(|record| record.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .sketches
-                .iter()
-                .filter_map(|record| record.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .sketch_entities
-                .iter()
-                .filter_map(|record| record.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .sketch_constraints
-                .iter()
-                .filter_map(|record| record.native_ref.as_deref()),
-        )
-        .collect::<std::collections::BTreeSet<_>>();
-    if let Some(namespace) = ir.native.namespace("inventor").filter(|_| ir.scope.design) {
-        for arena in [
-            "pm_dc_parameters",
-            "pm_dc_features",
-            "pm_dc_pattern_features",
-            "pm_dc_sketches",
-            "pm_dc_sketch_entities",
-            "pm_dc_sketch_constraints",
-        ] {
-            if let Some(records) = namespace.arenas().get(arena) {
-                for record in records {
-                    if !projected_design.contains(record.id()) {
-                        losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
-                            "Typed design record {} ({arena}) has no constructible neutral projection; its source-specific semantic fields remain held.", record.id()
-                        )));
-                    }
-                }
-            }
-        }
     }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
