@@ -5939,7 +5939,7 @@ fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Ent
         label: String::new(),
         status,
         subscript: 0,
-        parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
+        parameter_body: format!("{},{},{},0;", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     }
 }
