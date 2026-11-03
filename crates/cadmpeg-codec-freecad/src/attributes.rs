@@ -224,10 +224,9 @@ fn map_values(values: &[ValueRecord]) -> Option<Vec<Option<AttributeValue>>> {
         if value.tag != "Item" {
             return None;
         }
-        let (Some(key), Some(entry_value)) = (
-            value.attributes.get("key"),
-            value.attributes.get("value"),
-        ) else {
+        let (Some(key), Some(entry_value)) =
+            (value.attributes.get("key"), value.attributes.get("value"))
+        else {
             return None;
         };
         entries.push(AttributeMapEntry {
@@ -381,7 +380,10 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
                 }
             }
             _ if scalar.is_none()
-                && value.text.as_deref().is_none_or(|text| text.trim().is_empty()) =>
+                && value
+                    .text
+                    .as_deref()
+                    .is_none_or(|text| text.trim().is_empty()) =>
             {
                 continue
             }
