@@ -4579,7 +4579,8 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
-    let entry_part_ids = give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
+    let entry_part_ids =
+        give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let source = crate::report::classify_document(
@@ -4688,8 +4689,18 @@ fn give_up_unreadable_entries(
     let mut staged = Vec::new();
     for part in &scan.unreadable_entries {
         let (start, end) = (
-            usize::try_from(part.range.start).unwrap_or(usize::MAX),
-            usize::try_from(part.range.end).unwrap_or(usize::MAX),
+            usize::try_from(part.range.start).map_err(|_| {
+                CodecError::malformed(format_args!(
+                    "unreadable ZIP entry {} offset exceeds address space",
+                    part.name
+                ))
+            })?,
+            usize::try_from(part.range.end).map_err(|_| {
+                CodecError::malformed(format_args!(
+                    "unreadable ZIP entry {} end exceeds address space",
+                    part.name
+                ))
+            })?,
         );
         let bytes = scan.source_image.get(start..end).ok_or_else(|| {
             CodecError::malformed(format_args!(

@@ -60,7 +60,7 @@ pub(super) fn check_snapshots(update: bool, root: &Path, failures: &mut Vec<Stri
             (
                 "patch",
                 super::ByteComparison::Exact,
-                super::patch_outcome(&input),
+                super::patch_outcome(&name, &input),
             ),
         ] {
             let kept = produced.get_mut(branch).expect("encode branch");
@@ -116,8 +116,8 @@ fn damaged_outputs_are_deterministic() {
             "fixture `{name}`: nondeterministic generate"
         );
         assert_eq!(
-            super::patch_outcome(&bytes),
-            super::patch_outcome(&bytes),
+            super::patch_outcome(&name, &bytes),
+            super::patch_outcome(&name, &bytes),
             "fixture `{name}`: nondeterministic patch"
         );
     }

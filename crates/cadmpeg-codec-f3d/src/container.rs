@@ -252,7 +252,8 @@ pub(crate) struct UnreadableEntryPart {
 /// platform expander produced, so both live for the decode's duration.
 pub(crate) struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
-    pub(crate) source_image: &'a [u8],    /// Enumerated entries with classification.
+    pub(crate) source_image: &'a [u8],
+    /// Enumerated entries with classification.
     pub(crate) entries: Vec<ContainerEntry>,
     /// Directory lengths retained for archive-session member listing.
     pub(crate) archive_member_sizes: Vec<u64>,
