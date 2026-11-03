@@ -490,6 +490,145 @@ pub(super) fn project(
             );
             continue;
         }
+        let planar = cadmpeg_ir::features::PlanarProfileRef::Native(format!(
+            "iges:entity:directory#{profile}"
+        ));
+        let name = std::str::from_utf8(&entry.label)
+            .ok()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
+        let operation = if entry.entity_type == 162 {
+            let Some(axis_origin) = origin else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid revolution axis origin is invalid"),
+                );
+                continue;
+            };
+            let Some(axis_origin) =
+                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    axis_origin.x * factor,
+                    axis_origin.y * factor,
+                    axis_origin.z * factor,
+                ))
+                .filter(|_| axis_origin.is_finite())
+            else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid revolution axis origin is invalid"),
+                );
+                continue;
+            };
+            let Some(axis_direction) = direction
+                .filter(|direction| direction.is_finite())
+                .and_then(cadmpeg_ir::units::UnitVector3::new)
+            else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid revolution axis direction is invalid"),
+                );
+                continue;
+            };
+            let Some(angle) = cadmpeg_ir::scalar::FiniteReal::new(amount * std::f64::consts::TAU)
+                .and_then(cadmpeg_ir::scalar::PositiveAngle::from_assigned_real)
+            else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid revolution angle is invalid"),
+                );
+                continue;
+            };
+            cadmpeg_ir::features::FeatureOperation::Revolve {
+                construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+                    profile: planar,
+                    axis: cadmpeg_ir::features::RevolutionAxis {
+                        origin: axis_origin,
+                        direction: cadmpeg_ir::features::FeatureDirection3::from(axis_direction),
+                        reference: None,
+                    },
+                    extent: cadmpeg_ir::features::RevolveExtent::OneSided {
+                        termination: cadmpeg_ir::features::AngularTermination::Angle {
+                            angle: cadmpeg_ir::features::Dimension::Literal(angle),
+                        },
+                    },
+                    solid: Some(if entry.form == 1 { closed } else { false }),
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+            }
+        } else {
+            let Some(sweep) = direction
+                .filter(|direction| direction.is_finite())
+                .and_then(cadmpeg_ir::units::UnitVector3::new)
+            else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid extrusion direction is invalid"),
+                );
+                continue;
+            };
+            let Some(length) = cadmpeg_ir::scalar::FiniteReal::new(amount * factor)
+                .and_then(cadmpeg_ir::scalar::NonZeroLength::from_assigned_real)
+            else {
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("solid extrusion length is invalid"),
+                );
+                continue;
+            };
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(planar),
+                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::from(sweep),
+                    source: None,
+                },
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Blind {
+                            length: cadmpeg_ir::features::Dimension::Literal(length),
+                        },
+                        draft: None,
+                    },
+                },
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }
+        };
+        ctx.charge_entities(1, "iges_sweep_features")?;
+        ir.model.features.push(cadmpeg_ir::features::Feature {
+            product_definition: None,
+            id: crate::ids::feature(&crate::ids::Stem::directory(entry.sequence)),
+            ordinal,
+            name,
+            suppressed: None,
+            needs_recompute: false,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Operation(operation),
+            ),
+            native_ref: Some(format!("iges:solid:procedural#D{}", entry.sequence)),
+        });
+        ordinal = ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("IGES sweep feature ordinal overflows"))?;
         decoded.insert(entry.sequence);
     }
 
@@ -615,6 +754,44 @@ pub(super) fn project(
             );
             continue;
         }
+        let Some(operation) = boolean_combine_operation(records.get(sequence).copied(), &entries)
+        else {
+            losses.push(
+                crate::loss::IgesLossCode::NeutralProjectionUnavailable
+                    .note(format!(
+                        "iges:entity:directory#{sequence}: Boolean tree has no single operation kind",
+                    ))
+                    .with_provenance(entry.loss_provenance()),
+            );
+            decoded.insert(*sequence);
+            continue;
+        };
+        let name = std::str::from_utf8(&entry.label)
+            .ok()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
+        ctx.charge_entities(1, "iges_boolean_features")?;
+        ir.model.features.push(cadmpeg_ir::features::Feature {
+            product_definition: None,
+            id: crate::ids::feature(&crate::ids::Stem::directory(*sequence)),
+            ordinal,
+            name,
+            suppressed: None,
+            needs_recompute: false,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Operation(operation),
+            ),
+            native_ref: Some(format!("iges:solid:boolean-tree#D{sequence}")),
+        });
+        ordinal = ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("IGES Boolean feature ordinal overflows"))?;
         decoded.insert(*sequence);
     }
 
@@ -674,6 +851,75 @@ pub(super) fn project(
     }
 
     Ok(ProjectionOutcome { decoded, losses })
+}
+
+fn boolean_operand_native_id(entity_type: i64, sequence: u32) -> Option<String> {
+    match entity_type {
+        150 | 152 | 154 | 156 | 158 | 160 | 168 => {
+            Some(format!("iges:solid:primitive#D{sequence}"))
+        }
+        162 | 164 => Some(format!("iges:solid:procedural#D{sequence}")),
+        180 => Some(format!("iges:solid:boolean-tree#D{sequence}")),
+        182 => Some(format!("iges:solid:selected-component#D{sequence}")),
+        184 => Some(format!("iges:product:solid-assembly#D{sequence}")),
+        186 => Some(format!("iges:solid:manifold-brep#D{sequence}")),
+        430 => Some(format!("iges:product:solid-instance#D{sequence}")),
+        _ => None,
+    }
+}
+
+fn boolean_combine_operation(
+    record: Option<&ParameterRecord>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<cadmpeg_ir::features::FeatureOperation> {
+    let record = record?;
+    let count = record.count(1).filter(|count| *count > 2)?;
+    let mut leaves = Vec::new();
+    let mut kinds = Vec::new();
+    for index in 0..count {
+        let value = record.integer(2 + index)?;
+        if value < 0 {
+            let sequence = u32::try_from(value.checked_neg()?).ok()?;
+            let entry = entries.get(&sequence)?;
+            leaves.push(boolean_operand_native_id(entry.entity_type, sequence)?);
+        } else if matches!(value, 1..=3) {
+            kinds.push(value);
+        } else {
+            return None;
+        }
+    }
+    let [first, rest @ ..] = leaves.as_slice() else {
+        return None;
+    };
+    if rest.is_empty() || kinds.is_empty() {
+        return None;
+    }
+    let kind = if kinds.iter().all(|kind| *kind == 1) {
+        cadmpeg_ir::features::BooleanKind::Join
+    } else if kinds.iter().all(|kind| *kind == 2) {
+        cadmpeg_ir::features::BooleanKind::Cut
+    } else if kinds.iter().all(|kind| *kind == 3) {
+        cadmpeg_ir::features::BooleanKind::Intersect
+    } else {
+        return None;
+    };
+    let tools = if rest.len() == 1 {
+        cadmpeg_ir::features::BodySelection::Native(rest[0].clone())
+    } else {
+        cadmpeg_ir::features::BodySelection::NativeSet(
+            cadmpeg_ir::features::NativeSelections::try_from(rest.to_vec()).ok()?,
+        )
+    };
+    let operands = cadmpeg_ir::features::CombineOperands::new(
+        cadmpeg_ir::features::BodySelection::Native(first.clone()),
+        tools,
+    )
+    .ok()?;
+    Some(cadmpeg_ir::features::FeatureOperation::Combine {
+        operands,
+        op: kind,
+        keep_tools: false,
+    })
 }
 
 #[cfg(test)]

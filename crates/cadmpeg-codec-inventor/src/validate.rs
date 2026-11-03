@@ -31,7 +31,7 @@ use crate::sketch::{
     PmDcSketchEntityKind, PmDcTransform, PointTail,
 };
 
-use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
+use crate::native::protein::{ProteinAssetRecord, ProteinRecord};
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxRecord};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseRecord,
@@ -92,7 +92,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "protein",
     "protein_assets",
     "protein_entries",
-    "protein_rejections",
     "revisions",
     "rse_records",
     "segment_bulk",
@@ -210,7 +209,6 @@ pub(crate) fn validate_native(
         "Protein asset id",
     );
     validate_protein_assets(&data, &mut findings);
-    validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ctx, ir, &data, &mut findings)?;
@@ -2855,7 +2853,6 @@ struct NativeData {
     properties: Vec<PropertyRecord>,
     protein: ProteinRecord,
     protein_assets: Vec<ProteinAssetRecord>,
-    protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
@@ -2924,7 +2921,6 @@ impl NativeData {
             properties: namespace.arena_as_for_decode(ctx, "properties")?,
             protein: ProteinRecord::read(ctx, namespace)?,
             protein_assets: namespace.arena_as_for_decode(ctx, "protein_assets")?,
-            protein_rejections: namespace.arena_as_for_decode(ctx, "protein_rejections")?,
             ufrx: UfrxRecord::read(ctx, namespace)?,
             assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
             assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
@@ -3280,17 +3276,6 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
         data.protein.entries().iter().map(|record| record.ordinal),
         "Protein entry ordinal",
     );
-    let record = &data.protein;
-    if let ProteinRecord::Malformed { id, detail, .. } = record {
-        findings.push(Finding {
-            severity: Severity::Warning,
-            ..finding(
-                Check::NativeLinks,
-                format!("Inventor Protein stream is malformed: {detail}"),
-                Some(id.clone()),
-            )
-        });
-    }
 }
 
 fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -3319,57 +3304,12 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
     }
 }
 
-fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
-    unique(
-        findings,
-        data.protein_rejections
-            .iter()
-            .map(|record| record.id.as_str()),
-        "Protein rejection id",
-    );
-    unique(
-        findings,
-        data.protein_rejections
-            .iter()
-            .map(|record| (record.entry_name.as_str(), record.ordinal)),
-        "Protein rejected-record position",
-    );
-    let entry_names = data
-        .protein
-        .entries()
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .collect::<HashSet<_>>();
-    let accepted_positions = data
-        .protein_assets
-        .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal()))
-        .collect::<HashSet<_>>();
-    for rejection in &data.protein_rejections {
-        if !entry_names.contains(rejection.entry_name.as_str())
-            || accepted_positions.contains(&(rejection.entry_name.as_str(), rejection.ordinal))
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor Protein rejection position overlaps an asset or does not resolve to a package entry and detail"
-                    .into(),
-                Some(rejection.id.clone()),
-            ));
-        }
-    }
-}
-
 fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Finding>) {
     let mut positions = BTreeMap::<&str, HashSet<u64>>::new();
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()
         .map(|record| (record.entry_name.as_str(), record.ordinal()))
-        .chain(
-            data.protein_rejections
-                .iter()
-                .map(|record| (record.entry_name.as_str(), record.ordinal)),
-        )
     {
         positions.entry(entry_name).or_default().insert(ordinal);
     }

@@ -3,6 +3,9 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
+
+use crate::loss::RhinoLossCode;
 
 pub(super) struct BodyScope {
     pub(super) ir: CadIr,
@@ -12,11 +15,12 @@ pub(super) struct BodyScope {
     pub(super) pcurves: std::collections::BTreeSet<String>,
 }
 
-pub(super) fn collect(ir: &CadIr) -> Result<Vec<BodyScope>, CodecError> {
+pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), CodecError> {
     use std::collections::BTreeSet;
 
     let model = &ir.model;
     let mut scopes = Vec::new();
+    let mut losses = Vec::new();
 
     for body in &model.bodies {
         let regions = body
@@ -201,14 +205,441 @@ pub(super) fn collect(ir: &CadIr) -> Result<Vec<BodyScope>, CodecError> {
             .filter(|entity| pcurves.contains(entity.id.as_str()))
             .cloned()
             .collect();
+        prune_dangling_topology(&mut scoped, &mut losses);
         super::reduce::validate(&scoped)?;
-        scopes.push(BodyScope {
+        let scope = BodyScope::pruned(scoped);
+        scopes.push(scope);
+    }
+    Ok((scopes, losses))
+}
+
+impl BodyScope {
+    /// Recompute the closure sets from the pruned scope records, so dangling
+    /// identities pruned from the records cannot linger in the sets.
+    fn pruned(scoped: CadIr) -> Self {
+        use std::collections::BTreeSet;
+        let model = &scoped.model;
+        let coedges = model
+            .coedges
+            .iter()
+            .map(|row| row.id.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let loops = model
+            .loops
+            .iter()
+            .map(|row| row.id.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let points = model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let surfaces = model
+            .faces
+            .iter()
+            .map(|face| face.surface.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let mut curves = model
+            .edges
+            .iter()
+            .filter_map(|edge| edge.curve().map(|id| id.as_str().to_owned()))
+            .collect::<BTreeSet<_>>();
+        curves.extend(
+            model
+                .coedges
+                .iter()
+                .filter(|row| coedges.contains(row.id.as_str()))
+                .filter_map(|row| {
+                    row.use_curve
+                        .as_ref()
+                        .map(|use_| use_.curve.as_str().to_owned())
+                }),
+        );
+        let mut pcurves = model
+            .coedges
+            .iter()
+            .filter(|row| coedges.contains(row.id.as_str()))
+            .flat_map(|row| row.pcurves.iter())
+            .map(|use_| use_.pcurve.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        pcurves.extend(
+            model
+                .loops
+                .iter()
+                .filter(|row| loops.contains(row.id.as_str()))
+                .flat_map(cadmpeg_ir::topology::Loop::vertex_pcurves)
+                .map(|use_| use_.pcurve.as_str().to_owned()),
+        );
+        BodyScope {
             ir: scoped,
             points,
             surfaces,
             curves,
             pcurves,
-        });
+        }
     }
-    Ok(scopes)
+}
+
+/// Strip member references with no scoped record, charging one loss per
+/// pruned record or entry (W1 cascade, #217 §5.0). Records that need a
+/// removed record are removed; records that list one lose only that entry.
+fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
+    macro_rules! existing {
+        ($arena:ident) => {
+            scoped
+                .model
+                .$arena
+                .iter()
+                .map(|row| row.id.as_str().to_owned())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+    }
+
+    let mut pruned = |arena: &str, id: &str, reason: String| {
+        losses.push(
+            RhinoLossCode::WriterEntityOmitted
+                .note(format!("topology {arena} {id} omitted: {reason}")),
+        );
+    };
+    let points = existing!(points);
+    let surfaces = existing!(surfaces);
+    let curves = existing!(curves);
+    let pcurves = existing!(pcurves);
+
+    // Repeat until no record drops: coedges reference their owning loops
+    // while loops reference their coedges, so one bottom-up pass cannot
+    // settle both directions. Each pass drops at least one record or stops.
+    loop {
+        let before = (
+            scoped.model.vertices.len(),
+            scoped.model.edges.len(),
+            scoped.model.coedges.len(),
+            scoped.model.loops.len(),
+            scoped.model.faces.len(),
+            scoped.model.shells.len(),
+            scoped.model.regions.len(),
+        );
+        prune_pass(scoped, &mut pruned, &points, &surfaces, &curves, &pcurves);
+        let after = (
+            scoped.model.vertices.len(),
+            scoped.model.edges.len(),
+            scoped.model.coedges.len(),
+            scoped.model.loops.len(),
+            scoped.model.faces.len(),
+            scoped.model.shells.len(),
+            scoped.model.regions.len(),
+        );
+        if before == after {
+            break;
+        }
+    }
+}
+
+fn prune_pass(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+    points: &std::collections::BTreeSet<String>,
+    surfaces: &std::collections::BTreeSet<String>,
+    curves: &std::collections::BTreeSet<String>,
+    pcurves: &std::collections::BTreeSet<String>,
+) {
+    use cadmpeg_ir::topology::{FaceLoops, LoopBoundary};
+
+    macro_rules! existing {
+        ($arena:ident) => {
+            scoped
+                .model
+                .$arena
+                .iter()
+                .map(|row| row.id.as_str().to_owned())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+    }
+
+    scoped.model.vertices.retain(|vertex| {
+        let keep = points.contains(vertex.point.as_str());
+        if !keep {
+            pruned(
+                "vertex",
+                vertex.id.as_str(),
+                format!("point {} is missing", vertex.point),
+            );
+        }
+        keep
+    });
+    let vertices = existing!(vertices);
+    scoped.model.edges.retain(|edge| {
+        let missing = (!vertices.contains(edge.start.as_str()))
+            .then(|| format!("vertex {} is missing", edge.start))
+            .or_else(|| {
+                (!vertices.contains(edge.end.as_str()))
+                    .then(|| format!("vertex {} is missing", edge.end))
+            })
+            .or_else(|| {
+                edge.curve()
+                    .filter(|id| !curves.contains(id.as_str()))
+                    .map(|id| format!("curve {id} is missing"))
+            });
+        if let Some(missing) = missing {
+            pruned("edge", edge.id.as_str(), missing);
+            return false;
+        }
+        true
+    });
+    let edges = existing!(edges);
+    let loops = existing!(loops);
+    let coedges = existing!(coedges);
+    for coedge in &mut scoped.model.coedges {
+        coedge.pcurves.retain(|use_| {
+            let keep = pcurves.contains(use_.pcurve.as_str());
+            if !keep {
+                pruned(
+                    "coedge",
+                    coedge.id.as_str(),
+                    format!("pcurve {} is missing", use_.pcurve),
+                );
+            }
+            keep
+        });
+        if coedge
+            .use_curve
+            .as_ref()
+            .is_some_and(|use_| !curves.contains(use_.curve.as_str()))
+        {
+            pruned(
+                "coedge",
+                coedge.id.as_str(),
+                format!(
+                    "curve {} is missing",
+                    coedge.use_curve.as_ref().expect("checked use").curve
+                ),
+            );
+            coedge.use_curve = None;
+        }
+    }
+    scoped.model.coedges.retain(|coedge| {
+        let missing = (!edges.contains(coedge.edge.as_str()))
+            .then(|| format!("edge {} is missing", coedge.edge))
+            .or_else(|| {
+                (!loops.contains(coedge.owner_loop.as_str()))
+                    .then(|| format!("loop {} is missing", coedge.owner_loop))
+            })
+            .or_else(|| {
+                (!coedges.contains(coedge.radial_next.as_str()))
+                    .then(|| format!("coedge {} is missing", coedge.radial_next))
+            });
+        if let Some(missing) = missing {
+            pruned("coedge", coedge.id.as_str(), missing);
+            return false;
+        }
+        true
+    });
+    let coedges = existing!(coedges);
+    let faces = existing!(faces);
+    scoped.model.loops.retain_mut(|row| {
+        if !faces.contains(row.face.as_str()) {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                format!("face {} is missing", row.face),
+            );
+            return false;
+        }
+        match &mut row.boundary {
+            LoopBoundary::Vertex {
+                vertex,
+                pcurves: uses,
+            } => {
+                if !vertices.contains(vertex.as_str()) {
+                    pruned(
+                        "loop",
+                        row.id.as_str(),
+                        format!("vertex {vertex} is missing"),
+                    );
+                    return false;
+                }
+                uses.retain(|use_| {
+                    let keep = pcurves.contains(use_.pcurve.as_str());
+                    if !keep {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("pcurve {} is missing", use_.pcurve),
+                        );
+                    }
+                    keep
+                });
+                true
+            }
+            LoopBoundary::Ring(_) => {
+                let kept = row
+                    .coedges()
+                    .iter()
+                    .filter(|id| coedges.contains(id.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for id in row.coedges() {
+                    if !coedges.contains(id.as_str()) {
+                        pruned("loop", row.id.as_str(), format!("coedge {id} is missing"));
+                    }
+                }
+                let mut kept_uses = Vec::new();
+                for use_ in row.anchored_vertex_uses() {
+                    if !kept.iter().any(|id| id == &use_.after) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("vertex use after coedge {} is missing", use_.after),
+                        );
+                        continue;
+                    }
+                    if !vertices.contains(use_.vertex.as_str()) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("vertex {} is missing", use_.vertex),
+                        );
+                        continue;
+                    }
+                    let mut use_ = use_.clone();
+                    use_.pcurves.retain(|p| {
+                        let keep = pcurves.contains(p.pcurve.as_str());
+                        if !keep {
+                            pruned(
+                                "loop",
+                                row.id.as_str(),
+                                format!("pcurve {} is missing", p.pcurve),
+                            );
+                        }
+                        keep
+                    });
+                    kept_uses.push(use_);
+                }
+                if row.replace_ring(kept, kept_uses).is_err() {
+                    pruned("loop", row.id.as_str(), "no coedge ring remains".to_owned());
+                    return false;
+                }
+                true
+            }
+        }
+    });
+    let loops = existing!(loops);
+    scoped.model.faces.retain_mut(|row| {
+        if !surfaces.contains(row.surface.as_str()) {
+            pruned(
+                "face",
+                row.id.as_str(),
+                format!("surface {} is missing", row.surface),
+            );
+            return false;
+        }
+        let kept = row
+            .loops
+            .to_vec()
+            .into_iter()
+            .filter(|id| loops.contains(id.as_str()));
+        let kept = kept.collect::<Vec<_>>();
+        for id in row.loops.iter() {
+            if !loops.contains(id.as_str()) {
+                pruned("face", row.id.as_str(), format!("loop {id} is missing"));
+            }
+        }
+        if kept.is_empty() {
+            pruned("face", row.id.as_str(), "no loops remain".to_owned());
+            return false;
+        }
+        row.loops = match &row.loops {
+            FaceLoops::Unspecified { .. } => FaceLoops::unspecified(kept),
+            FaceLoops::Classified { outer, .. } if kept.contains(outer) => {
+                let mut inner = kept;
+                inner.retain(|id| id != outer);
+                FaceLoops::classified(outer.clone(), inner)
+            }
+            FaceLoops::Classified { .. } => FaceLoops::unspecified(kept),
+        };
+        true
+    });
+    scoped.model.shells.retain_mut(|row| {
+        let faces = row
+            .faces()
+            .iter()
+            .filter(|id| existing!(faces).contains(id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let wires = row
+            .wire_edges()
+            .iter()
+            .filter(|id| existing!(edges).contains(id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let free = row
+            .free_vertices()
+            .iter()
+            .filter(|id| existing!(vertices).contains(id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        for id in row.faces() {
+            if !existing!(faces).contains(id.as_str()) {
+                pruned("shell", row.id.as_str(), format!("face {id} is missing"));
+            }
+        }
+        for id in row.wire_edges() {
+            if !existing!(edges).contains(id.as_str()) {
+                pruned(
+                    "shell",
+                    row.id.as_str(),
+                    format!("wire edge {id} is missing"),
+                );
+            }
+        }
+        for id in row.free_vertices() {
+            if !existing!(vertices).contains(id.as_str()) {
+                pruned(
+                    "shell",
+                    row.id.as_str(),
+                    format!("free vertex {id} is missing"),
+                );
+            }
+        }
+        let rebuilt = cadmpeg_ir::topology::Shell::new(
+            row.id.clone(),
+            row.region.clone(),
+            faces,
+            wires,
+            free,
+        );
+        match rebuilt {
+            Ok(shell) => {
+                *row = shell;
+                true
+            }
+            Err(_) => {
+                pruned("shell", row.id.as_str(), "no members remain".to_owned());
+                false
+            }
+        }
+    });
+    let shells = existing!(shells);
+    scoped.model.regions.retain_mut(|row| {
+        for id in row.shells.clone() {
+            if !shells.contains(id.as_str()) {
+                pruned("region", row.id.as_str(), format!("shell {id} is missing"));
+            }
+        }
+        row.shells.retain(|id| shells.contains(id.as_str()));
+        if row.shells.is_empty() {
+            pruned("region", row.id.as_str(), "no shells remain".to_owned());
+            return false;
+        }
+        true
+    });
+    let regions = existing!(regions);
+    for body in &mut scoped.model.bodies {
+        for id in body.regions.clone() {
+            if !regions.contains(id.as_str()) {
+                pruned("body", body.id.as_str(), format!("region {id} is missing"));
+            }
+        }
+        body.regions.retain(|id| regions.contains(id.as_str()));
+    }
 }

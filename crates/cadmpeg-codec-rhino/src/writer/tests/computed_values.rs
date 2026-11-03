@@ -2,13 +2,13 @@
 //! Values the writer computes from admitted geometry are admitted before
 //! they are written: a 3DM archive states no non-finite number.
 
-use cadmpeg_core::CodecError;
+use crate::writer::WriteError;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// The writer refuses `written` with a `NotImplemented` error that names
 /// `field`, where it wrote an infinity.
-fn assert_refused(written: Result<Vec<u8>, CodecError>, field: &str) {
-    let Err(CodecError::UnsupportedContent(message)) = written else {
+fn assert_refused(written: Result<Vec<u8>, WriteError>, field: &str) {
+    let Err(WriteError::Omit(message)) = written else {
         panic!("{field}: {written:?}");
     };
     assert!(message.contains(field), "{message}");
