@@ -64,7 +64,6 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
-    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -72,7 +71,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
