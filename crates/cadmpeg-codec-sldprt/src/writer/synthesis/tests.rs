@@ -559,3 +559,95 @@ fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
         .any(|attribute| attribute.name == "source_linear_unit_code"
             && attribute.values == [Some(AttributeValue::Integer(0))]));
 }
+
+#[test]
+fn single_segment_composite_edges_point_at_their_leaf_carrier() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::topology::EdgeCarrier;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let leaf = ir.model.curves[0].clone();
+    let edge_curve = ir.model.edges[0].curve().expect("cube edge has a carrier").clone();
+    assert_eq!(edge_curve, leaf.id);
+    let segment = |curve: CurveId| CompositeCurveSegment {
+        curve,
+        same_sense: true,
+        transition: CompositeCurveTransition::Continuous,
+    };
+    let mut inner = leaf.clone();
+    inner.id = CurveId::mint("sldprt:brep:curve#composite-inner").expect("composite id mints");
+    inner.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: CompositeCurveSegments::try_from(vec![segment(leaf.id.clone())])
+            .expect("one segment admitted"),
+        self_intersect: Some(false),
+    });
+    let mut outer = leaf.clone();
+    outer.id = CurveId::mint("sldprt:brep:curve#composite-outer").expect("composite id mints");
+    outer.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: CompositeCurveSegments::try_from(vec![segment(inner.id.clone())])
+            .expect("one segment admitted"),
+        self_intersect: Some(false),
+    });
+    ir.model.curves.push(inner);
+    ir.model.curves.push(outer);
+    let outer_id = CurveId::mint("sldprt:brep:curve#composite-outer").expect("composite id mints");
+    ir.model.edges[0].map_curve(|_| outer_id);
+    assert!(matches!(ir.model.edges[0].carrier, EdgeCarrier::Curve(_)));
+
+    let mut losses = Vec::new();
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses);
+    assert_eq!(ir.model.edges[0].curve(), Some(&leaf.id));
+    assert!(ir.model.curves.iter().all(|curve| !matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    )));
+    assert_eq!(losses.len(), 2);
+    assert!(losses.iter().all(|loss| loss.code.local_code() == "writer.entity-omitted"));
+    assert!(losses.iter().any(|loss| loss.message.contains("sldprt:brep:curve#composite-inner")));
+    assert!(losses.iter().any(|loss| loss.message.contains("sldprt:brep:curve#composite-outer")));
+}
+
+#[test]
+fn multi_segment_composites_keep_their_refusal() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::topology::EdgeCarrier;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let leaf = ir.model.curves[0].clone();
+    let segment = |curve: CurveId| CompositeCurveSegment {
+        curve,
+        same_sense: true,
+        transition: CompositeCurveTransition::Continuous,
+    };
+    let mut multi = leaf.clone();
+    multi.id = CurveId::mint("sldprt:brep:curve#composite-multi").expect("composite id mints");
+    multi.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: CompositeCurveSegments::try_from(vec![
+            segment(leaf.id.clone()),
+            segment(leaf.id.clone()),
+        ])
+        .expect("two segments admitted"),
+        self_intersect: Some(false),
+    });
+    ir.model.curves.push(multi);
+    let multi_id = CurveId::mint("sldprt:brep:curve#composite-multi").expect("composite id mints");
+    ir.model.edges[0].map_curve(|_| multi_id);
+    assert!(matches!(ir.model.edges[0].carrier, EdgeCarrier::Curve(_)));
+
+    let mut losses = Vec::new();
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses);
+    assert!(ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    )));
+    assert!(losses.is_empty());
+}
+

@@ -44,6 +44,58 @@ pub(crate) fn normalize_active_configuration_state(
         }
         configuration.parameter_values.clear();
     }
+    // D13: the base is the active configuration. A document with no active
+    // configuration or several still writes its base state instead of
+    // refusing: the first configuration acts, with its differences cleared
+    // above when it was already active.
+    let active = configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+        .count();
+    if !configurations.is_empty() && active != 1 {
+        let mut first = true;
+        for configuration in configurations.iter_mut() {
+            if configuration.active && !first {
+                configuration.active = false;
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {}: only one configuration stays active; deactivated",
+                    configuration.id
+                )));
+            }
+            if configuration.active {
+                first = false;
+            }
+        }
+        if active == 0 {
+            configurations[0].active = true;
+            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                "configuration {}: no configuration was active; the base configuration acts",
+                configurations[0].id
+            )));
+            // The newly acting base carries no differences (D13).
+            for feature in configurations[0].feature_states.keys() {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} feature {feature}: the acting base configuration carries no structural override",
+                    configurations[0].id
+                )));
+            }
+            configurations[0].feature_states.clear();
+            for parameter in configurations[0].parameter_overrides.keys() {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} parameter {parameter}: the acting base configuration carries no expression override",
+                    configurations[0].id
+                )));
+            }
+            configurations[0].parameter_overrides.clear();
+            for parameter in configurations[0].parameter_values.keys() {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} parameter {parameter}: the acting base configuration carries no cached value",
+                    configurations[0].id
+                )));
+            }
+            configurations[0].parameter_values.clear();
+        }
+    }
 }
 
 /// Render canonical configuration differences without a source baseline.

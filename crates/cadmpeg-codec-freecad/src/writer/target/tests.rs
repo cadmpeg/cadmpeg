@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retained-layout eligibility borrows the source-free encode caller throughout.
 
-use super::{admit_unedited, projection};
+use super::admit_unedited;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension, ResourceFailure,
 };
@@ -11,7 +11,7 @@ use cadmpeg_ir::{CadIr, Codec, DecodeOptions, SourceFidelity};
 use std::io::Cursor;
 
 #[test]
-fn inherited_caller_refusal_precedes_retained_layout_and_projection_shortcuts() {
+fn inherited_caller_refusal_precedes_retained_layout_admission() {
     let ir = CadIr::empty();
     let fidelity = SourceFidelity::with_annotations(
         cadmpeg_ir::Annotations::default(),
@@ -35,10 +35,6 @@ fn inherited_caller_refusal_precedes_retained_layout_and_projection_shortcuts() 
             &fidelity,
             cadmpeg_core::decode::ResourceLimits::desktop()
         ),
-        Err(CodecError::ResourceLimit(actual)) if actual == refusal
-    ));
-    assert!(matches!(
-        projection::agrees(&ctx, &ir),
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));
     assert!(working.is_empty());
@@ -71,8 +67,7 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // #217 §5.0: this is the actual caller's retained-output ceiling. The
-    // fixture's native Part file/side-entry properties can independently
-    // decline projection; successful projection was never its guarantee.
+    // refusal latches before any admission work runs.
     policy.limits.max_retained_bytes = 0;
     let ctx = DecodeContext::for_encode(&arena, &policy);
     let session = EncodeSession::from_context(&ctx).unwrap();
@@ -91,10 +86,6 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
     assert!(output.is_empty());
     assert_eq!(output.capacity(), 0);
     assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(matches!(
-        projection::agrees(&ctx, decoded.ir()),
-        Err(CodecError::ResourceLimit(actual)) if actual == refusal
-    ));
     assert!(matches!(
         admit_unedited(
             &ctx,

@@ -1281,6 +1281,31 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
+fn encodable_curve(geometry: &cadmpeg_ir::geometry::CurveGeometry) -> bool {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    if matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+    ) {
+        return true;
+    }
+    curve_values(geometry, 1.0).is_ok()
+}
+
+fn encodable_surface(geometry: &cadmpeg_ir::geometry::SurfaceGeometry) -> bool {
+    use cadmpeg_ir::geometry::{SurfaceGeometry, SolvedSurfaceGeometry};
+    let SurfaceGeometry::Solved(solved) = geometry else {
+        return false;
+    };
+    if matches!(solved, SolvedSurfaceGeometry::Nurbs(_)) {
+        return true;
+    }
+    let Some(reference) = geometry.solved().map(surface_reference) else {
+        return false;
+    };
+    surface_values(geometry, reference, 1.0).is_ok()
+}
+
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
@@ -1364,36 +1389,40 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
+    // Ownerless carriers stay representable without topology: an unreferenced
+    // support point, plane or curve still reappears when the target encodes
+    // it (§5.2). A carrier without source provenance is unreachable alone, so
+    // only referenced carriers and provenanced encodable ones stay. The
+    // boundary topology above and the pcurve uses below trim unconditionally.
     let points = subset
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
-    subset
-        .model
-        .points
-        .retain(|point| points.contains(&point.id));
+    subset.model.points.retain(|point| {
+        points.contains(&point.id) || point.source_object.is_some()
+    });
     let surfaces = subset
         .model
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
-    subset
-        .model
-        .surfaces
-        .retain(|surface| surfaces.contains(&surface.id));
+    subset.model.surfaces.retain(|surface| {
+        surfaces.contains(&surface.id)
+            || (surface.source_object.is_some() && encodable_surface(&surface.geometry))
+    });
     let curves = subset
         .model
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
-    subset
-        .model
-        .curves
-        .retain(|curve| curves.contains(&curve.id));
+    subset.model.curves.retain(|curve| {
+        curves.contains(&curve.id)
+            || (curve.source_object.is_some() && encodable_curve(&curve.geometry))
+    });
     let pcurves = subset
         .model
         .coedges
