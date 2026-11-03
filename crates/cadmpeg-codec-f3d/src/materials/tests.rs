@@ -1119,19 +1119,38 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
 mod generated_appearance;
 
 #[test]
-fn decode_rejects_invalid_instance_property_page_framing() {
+fn decode_gives_up_invalid_instance_property_page_framing() {
     let mut properties = generated_instance_properties_for("11111111-2222-3333-4444-555555555555");
     properties[STREAM_HEADER_LEN + 4] ^= 1;
     let f3d = f3d_with_smbh_and_instance_properties(&synthetic_geometry_smbh(), &[properties]);
 
-    let error = F3dCodec
+    let decoded = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
-        .expect_err("invalid Protein page framing must reject material decode");
-
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("invalid Protein page framing gives up only its part");
+    assert!(decoded
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .all(|appearance| appearance.schema.is_none()));
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("f3d.protein_record"));
+    assert!(decoded
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .any(|id| id.as_str().starts_with("f3d:source:part#")));
 }
 
 #[test]
