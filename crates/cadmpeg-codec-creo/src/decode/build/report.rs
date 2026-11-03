@@ -70,7 +70,6 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
 
 /// Build the decode body from the entry point's one dialect classification.
 pub(in super::super) fn build_report(
-    untyped: &mut cadmpeg_ir::ArenaClasses,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
@@ -97,8 +96,6 @@ pub(in super::super) fn build_report(
     let mut losses = Vec::new();
     for message in &scan.framing.expansion_losses {
         push_report_loss(&mut losses, CreoLossCode::CompressedSectionUnexpanded, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
-            untyped.insert(cadmpeg_ir::ArenaClass::Model);
             &message.message
         });
     }
@@ -168,12 +165,12 @@ pub(in super::super) fn build_report(
         }
     }
 
-    push_legacy_value_losses(untyped, &mut losses, &coverage);
+    push_legacy_value_losses(&mut losses, &coverage);
 
-    push_brep_transfer_note(untyped, &mut losses, brep_diagnostics, geom_sections);
+    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
 
     push_carrier_transfer_notes(&mut losses, scan, &coverage, container_only);
-    push_structural_layer_notes(untyped, &mut losses, scan);
+    push_structural_layer_notes(&mut losses, scan);
     let mut solve_work_caps = Vec::new();
     for bound in scan
         .curves
@@ -186,7 +183,7 @@ pub(in super::super) fn build_report(
             solve_work_caps.push(bound);
         }
     }
-    push_coverage_drop_losses(untyped, &mut losses, &coverage, &solve_work_caps)?;
+    push_coverage_drop_losses(&mut losses, &coverage, &solve_work_caps)?;
     let mut text_work_caps = std::collections::BTreeMap::<&str, usize>::new();
     for (bound, count) in scan
         .curves
@@ -198,7 +195,6 @@ pub(in super::super) fn build_report(
     }
     for (bound, count) in text_work_caps {
         push_report_loss(&mut losses, CreoLossCode::CurveExpressionTextCapped, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{count} curve-equation relation condition(s) or assignment(s) have no value: \
                  their string text exceeded {bound}."

@@ -24,11 +24,14 @@ use cadmpeg_ir::unknown::UnknownRecord;
 /// naming the section, its declared end, and the buffer length. The declared
 /// extent is the record, so a shortened region would retain bytes the source
 /// never stated.
+/// Retained sections with the neutral classes their bytes can hold (§1.3):
+/// geometry and thumbnail sections hold model bytes, while a section kept
+/// only because its compressed payload would not expand names both classes.
 pub(super) fn preserve_passthrough_sections(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
-) -> Result<Vec<UnknownRecord>, CodecError> {
+) -> Result<Vec<(UnknownRecord, cadmpeg_ir::ArenaClasses)>, CodecError> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
@@ -130,11 +133,22 @@ pub(super) fn preserve_passthrough_sections(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain Creo passthrough section",
         )?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            cadmpeg_core::decode::u64_from_index(offset),
-            bytes.to_vec(),
-            Vec::new(),
+        let classes = if expansion_failed {
+            cadmpeg_ir::ArenaClasses::from([
+                cadmpeg_ir::ArenaClass::Model,
+                cadmpeg_ir::ArenaClass::Design,
+            ])
+        } else {
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+        };
+        unknowns.push((
+            UnknownRecord::retained(
+                id,
+                cadmpeg_core::decode::u64_from_index(offset),
+                bytes.to_vec(),
+                Vec::new(),
+            ),
+            classes,
         ));
     }
     Ok(unknowns)
@@ -331,6 +345,6 @@ mod tests {
         })
         .expect("preserve the passthrough sections");
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
+        assert_eq!(records[0].0.id().as_str(), "creo:VisibGeom:section#0");
     }
 }

@@ -28,7 +28,6 @@ impl std::fmt::Display for CountBreakdown<'_> {
 }
 
 pub(super) fn push_coverage_drop_losses(
-    untyped: &mut cadmpeg_ir::ArenaClasses,
     losses: &mut Vec<LossNote>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
     solve_work_caps: &[&str],
@@ -51,7 +50,6 @@ pub(super) fn push_coverage_drop_losses(
         });
         let unresolved_families = CountBreakdown(&family_counts);
         push_report_loss(losses, CreoLossCode::VisibGeomSurfaceUntransferred, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Model);
             format_args!(
                 "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
              transferred as carriers and remain structural namespace records \
@@ -63,7 +61,6 @@ pub(super) fn push_coverage_drop_losses(
         coverage_count(coverage, "untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
         push_report_loss(losses, CreoLossCode::VisibGeomCurveUntransferred, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Model);
             format_args!(
                 "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
              transferred as carriers and remain structural namespace records."
@@ -95,7 +92,6 @@ pub(super) fn push_coverage_drop_losses(
     let missing_segment_rows = coverage_count(coverage, "missing_feature_segment_row_count");
     if missing_segment_rows != 0 {
         push_report_loss(losses, CreoLossCode::SectionSegmentMissing, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{missing_segment_rows} declared section segment row(s) did not decode and remain \
              unavailable to the defining sketch."
@@ -105,7 +101,6 @@ pub(super) fn push_coverage_drop_losses(
     let missing_relation_rows = coverage_count(coverage, "missing_feature_relation_row_count");
     if missing_relation_rows != 0 {
         push_report_loss(losses, CreoLossCode::SectionRelationMissing, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{missing_relation_rows} declared section relation row(s) did not decode; the \
              affected complete-table solver identities remain unavailable."
@@ -116,7 +111,6 @@ pub(super) fn push_coverage_drop_losses(
         coverage_count(coverage, "malformed_feature_relation_table_count");
     if malformed_relation_tables != 0 {
         push_report_loss(losses, CreoLossCode::SectionRelationTableMalformed, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{malformed_relation_tables} section relation table(s) use the invalid zero \
              allocation count."
@@ -126,7 +120,6 @@ pub(super) fn push_coverage_drop_losses(
     let missing_skamp_rows = coverage_count(coverage, "missing_feature_skamp_row_count");
     if missing_skamp_rows != 0 {
         push_report_loss(losses, CreoLossCode::SectionIncidenceMissing, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
              affected complete-table solver identities remain unavailable."
@@ -136,7 +129,6 @@ pub(super) fn push_coverage_drop_losses(
     let missing_triple_rows = coverage_count(coverage, "missing_feature_relation_triple_row_count");
     if missing_triple_rows != 0 {
         push_report_loss(losses, CreoLossCode::SectionRelationJoinMissing, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{missing_triple_rows} declared section relation-incidence join row(s) did not \
              decode; the affected complete-table solver identities remain unavailable."
@@ -367,7 +359,6 @@ pub(super) fn push_coverage_drop_losses(
         coverage_count(coverage, "missing_feature_solver_variable_count");
     if missing_solver_variables != 0 {
         push_report_loss(losses, CreoLossCode::SectionSolverVariableMissing, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{missing_solver_variables} declared section solver variable row(s) did not \
              decode; stored and equation-derived coordinates are withheld for the incomplete \
@@ -398,7 +389,6 @@ pub(super) fn push_coverage_drop_losses(
     .ok_or_else(|| CodecError::malformed("transferred driver count exceeds decoded count"))?;
     if unresolved_configuration_driver_tables != 0 {
         push_report_loss(losses, CreoLossCode::ConfigurationDriverUnresolved, {
-            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_configuration_driver_tables} referenced configuration driver \
              table(s) retain unresolved traversal and row semantics."
@@ -488,7 +478,6 @@ mod tests {
             );
             assert!(matches!(
                 push_coverage_drop_losses(
-                    &mut cadmpeg_ir::ArenaClasses::default(),
                     &mut Vec::new(),
                     &coverage,
                     &[]
@@ -508,7 +497,6 @@ mod tests {
             );
             assert!(matches!(
                 push_coverage_drop_losses(
-                    &mut cadmpeg_ir::ArenaClasses::default(),
                     &mut Vec::new(),
                     &coverage,
                     &[]
@@ -535,7 +523,6 @@ mod tests {
         let losses = {
             let mut losses = Vec::new();
             push_coverage_drop_losses(
-                &mut cadmpeg_ir::ArenaClasses::default(),
                 &mut losses,
                 &two_untransferred_planes(),
                 &[],
@@ -583,7 +570,6 @@ mod tests {
         }
         let mut losses = Vec::new();
         push_coverage_drop_losses(
-            &mut cadmpeg_ir::ArenaClasses::default(),
             &mut losses,
             &coverage,
             &[],
