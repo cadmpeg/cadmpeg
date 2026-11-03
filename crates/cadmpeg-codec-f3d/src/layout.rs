@@ -3729,6 +3729,10 @@ pub(crate) mod current_extrude_operation_fields {
 /// Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2.
 /// ```
 pub(crate) mod current_extrude_non_target_extent_pair {
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 4;
+    /// Offset of `target_option` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TARGET_OPTION: usize = 9;
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SECOND_SIDE_EXTENT: usize = 13;
 }

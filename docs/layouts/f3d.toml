@@ -11935,7 +11935,7 @@ name = "current_extrude_non_target_extent_pair"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A first-side value other than `2` is followed by nine zero bytes and the second-side value at first-side offset `+13`"
+anchor = "A first-side value other than `2` is followed by five zero bytes, the u32 target option at first-side offset `+9`, and the second-side value at first-side offset `+13`"
 size = 17
 note = "Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2."
 
@@ -11947,11 +11947,18 @@ source = "spec"
 anchor = "A first-side value other than `2`"
 
 [[record.field]]
-name = "zero_run_9"
+name = "zero_run_5"
 offset = 4
-type = "bytes[9]"
+type = "bytes[5]"
 source = "spec"
-anchor = "is followed by nine zero bytes"
+anchor = "is followed by five zero bytes"
+
+[[record.field]]
+name = "target_option"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "the u32 target option at first-side offset `+9`"
 
 [[record.field]]
 name = "second_side_extent"
