@@ -396,9 +396,7 @@ fn one_damaged_history_record_gives_up_only_its_part() {
         })
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0]
-        .message
-        .contains("f3d.history_record"));
+    assert!(unreadable[0].message.contains("f3d.history_record"));
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -408,9 +406,7 @@ fn one_damaged_history_record_gives_up_only_its_part() {
 
 #[test]
 fn one_damaged_protein_asset_gives_up_only_its_part() {
-    let result = decode(f3d_with_damaged_protein_asset(
-        &synthetic_geometry_smbh(),
-    ));
+    let result = decode(f3d_with_damaged_protein_asset(&synthetic_geometry_smbh()));
     assert!(!result.ir().model.appearances.is_empty());
     let unreadable = result
         .report()
@@ -457,5 +453,39 @@ fn one_damaged_primary_index_gives_up_only_its_stream() {
         .losses
         .iter()
         .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    let unreadable = damaged
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("f3d.bulk_record"));
+    assert!(unreadable[0].message.contains("Design1/BulkStream.dat"));
+    let stub_ids = damaged
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .filter(|id| id.as_str().starts_with("f3d:source:part#"))
+        .collect::<Vec<_>>();
+    assert_eq!(stub_ids.len(), 1);
+    let unknowns = damaged
+        .ir()
+        .native
+        .namespace("f3d")
+        .expect("f3d native namespace")
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        cadmpeg_ir::native::NativeRecord::id(&unknowns[0]),
+        stub_ids[0].as_str()
+    );
     assert_valid(&damaged);
 }
