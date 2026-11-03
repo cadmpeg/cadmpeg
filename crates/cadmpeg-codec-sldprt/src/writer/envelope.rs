@@ -50,8 +50,8 @@ pub(super) fn build(
     source_scan: Option<&ContainerScan<'_>>,
 ) -> Result<Regenerated, CodecError> {
     let scan = source_scan.ok_or_else(unsupported)?;
-    let envelope =
-        native_layout::source_envelope(scan.source_image, &scan.blocks)?.ok_or_else(unsupported)?;
+    let envelope = native_layout::source_envelope(scan.source_image, &scan.blocks, false)?
+        .ok_or_else(unsupported)?;
     if sections.len() != time_dates.len() {
         return Err(unsupported());
     }
@@ -246,10 +246,10 @@ mod tests {
                 &output[written.cache_cells[0].physical_range.clone().unwrap()],
                 exact_cell
             );
-            let before = native_layout::source_envelope(&source, &original.blocks)
+            let before = native_layout::source_envelope(&source, &original.blocks, false)
                 .unwrap()
                 .unwrap();
-            let after = native_layout::source_envelope(&output, &written.blocks)
+            let after = native_layout::source_envelope(&output, &written.blocks, false)
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -325,7 +325,7 @@ mod tests {
                 .starts_with("247 native envelope auxiliary bytes"));
             let written = crate::test_support::container::scan(&regenerated.bytes);
             assert_eq!(
-                native_layout::source_envelope(&regenerated.bytes, &written.blocks)
+                native_layout::source_envelope(&regenerated.bytes, &written.blocks, false)
                     .unwrap()
                     .unwrap()
                     .padding_bytes,
@@ -400,7 +400,7 @@ mod tests {
                 assert_eq!(parsed.blocks.len(), sections.len());
                 assert_eq!(parsed.directory.len(), sections.len());
                 assert!(
-                    native_layout::source_envelope(&omitted.bytes, &parsed.blocks)
+                    native_layout::source_envelope(&omitted.bytes, &parsed.blocks, false)
                         .unwrap()
                         .is_some()
                 );

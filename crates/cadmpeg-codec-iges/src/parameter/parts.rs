@@ -224,8 +224,19 @@ fn parse_owned(
     let mut card_boundaries = Vec::new();
     for card in &cards {
         let start = absolute(source, card.offset)?;
+        // A transfer cut inside the final card holds fewer than a full
+        // card's bytes. Read what the source holds; a record cut short of
+        // its delimiter fails in its own part instead (#215 rule 1).
+        let source_end = source
+            .start()
+            .checked_add(source.window().len())
+            .ok_or_else(|| CodecError::malformed("IGES Parameter source end overflows"))?;
+        let end = start
+            .checked_add(64)
+            .ok_or_else(|| CodecError::malformed("IGES Parameter payload end overflows"))?;
         let payload = source
-            .child(start, start + 64)
+            .child(start, end.min(source_end))
+            .filter(|view| !view.window().is_empty())
             .ok_or_else(|| CodecError::malformed("IGES Parameter payload exceeds its source"))?;
         append_parameter_item(ctx, &mut inputs, payload)?;
         let end = inputs

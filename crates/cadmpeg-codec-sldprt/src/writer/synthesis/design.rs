@@ -18,6 +18,7 @@ use crate::native::SldprtNative;
 pub(super) fn prepare(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    repair: bool,
 ) -> Result<Option<SldprtNative>, CodecError> {
     if !ir.scope.design {
         return Ok(ir
@@ -27,7 +28,7 @@ pub(super) fn prepare(
             .transpose()?);
     }
     ensure_owners(ir)?;
-    super::reduce_design(ir, losses)?;
+    super::reduce_design(ir, losses, repair)?;
     let mut native = ir
         .native
         .namespace("sldprt")
@@ -40,22 +41,10 @@ pub(super) fn prepare(
                     "SLDPRT orphaned scalar scan failed: {error}"
                 ))
             })?;
-    crate::history::write::features::synthesize_neutral_features(
-        &ir.model,
-        &ir.model.parameters,
-        &ir.model.bodies,
-        &mut native,
-        &orphaned,
-    )?;
+    synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
     sketches(ir, native.as_ref(), losses)?;
     // A dropped sketch retains its feature and solved output, with an explicit loss.
-    crate::history::write::features::synthesize_neutral_features(
-        &ir.model,
-        &ir.model.parameters,
-        &ir.model.bodies,
-        &mut native,
-        &orphaned,
-    )?;
+    synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir
@@ -144,6 +133,85 @@ pub(super) fn prepare(
         crate::resolved_features::write_feature_parameters::synthesize(ir, native)?;
     }
     Ok(native)
+}
+
+/// Author native history records, repairing stale dependency edges from the
+/// canonical operation projection instead of refusing (#237).
+///
+/// A retained native projection is authoritative for the edges its operation
+/// carries (review E). When the first attempt reports an edge mismatch and
+/// `repair` holds, the wrapper recomputes the mismatched edges from the
+/// just-built native projection, charges one loss per repaired feature, and
+/// rebuilds once. Any other failure, an unrepairable mismatch, a repeated
+/// mismatch, or `repair` refused propagates unchanged.
+///
+/// `repair` holds only for source-less synthesis: with a retained source
+/// image the mismatch names an edit the patch path declined, and the refusal
+/// stands so the caller decides (the reviewed refusal pin). Without one there
+/// is no retained truth to decline against, so the canonical side is written
+/// with its loss.
+pub(super) fn synthesize_neutral_features_repairing(
+    ir: &mut CadIr,
+    native: &mut Option<SldprtNative>,
+    orphaned: &std::collections::HashSet<cadmpeg_ir::features::ParameterId>,
+    losses: &mut Vec<LossNote>,
+    repair: bool,
+) -> Result<
+    (
+        Vec<crate::history::write::features::FeatureInputRename>,
+        std::collections::BTreeSet<String>,
+    ),
+    CodecError,
+> {
+    match crate::history::write::features::synthesize_neutral_features(
+        &ir.model,
+        &ir.model.parameters,
+        &ir.model.bodies,
+        native,
+        orphaned,
+    ) {
+        Err(error) if repair => {
+            let Some(built) = native.as_ref() else {
+                return Err(error);
+            };
+            let record_ids =
+                crate::history::write::features::feature_record_ids(&ir.model.features);
+            let projected = crate::history::write::project_features_with_native_inputs(
+                built,
+                &ir.model.sketches,
+            )?;
+            let mismatches = crate::history::write::features::dependency_mismatches(
+                &ir.model.features,
+                &record_ids,
+                &projected,
+            )?;
+            let mut repaired = false;
+            for (index, _, canonical) in &mismatches {
+                let Some(canonical) = canonical else {
+                    continue;
+                };
+                let feature = &mut ir.model.features[*index];
+                let stale = feature.dependencies.len();
+                feature.dependencies = canonical.clone();
+                repaired = true;
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "feature {}: dependencies recomputed from the canonical operation projection; {stale} stale edge(s) replaced",
+                    feature.id
+                )));
+            }
+            if !repaired {
+                return Err(error);
+            }
+            crate::history::write::features::synthesize_neutral_features(
+                &ir.model,
+                &ir.model.parameters,
+                &ir.model.bodies,
+                native,
+                orphaned,
+            )
+        }
+        ok => ok,
+    }
 }
 
 const GLOBAL_PARAMETERS: &str = "Global parameters";
