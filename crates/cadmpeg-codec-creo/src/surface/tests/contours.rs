@@ -9,7 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use crate::CreoCodec;
 
 fn contour_payload() -> Vec<u8> {
@@ -111,7 +111,7 @@ fn rejects_an_undefined_traversal_byte() {
 
 #[test]
 fn container_and_native_arena_retain_contour_entries() {
-    let data = build_prt("c", &[("VisibGeom", contour_payload())]);
+    let data = build_whole_prt("c", &[("VisibGeom", contour_payload())]);
     let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.surfaces.contours.len(), 2);
