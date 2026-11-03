@@ -5748,17 +5748,18 @@ fn saved_line_block(
         }
         cursor = next + 1;
         let mut values = [None; 8];
-        let mut filled = 0;
+        let mut filled: usize = 0;
         while cursor < segment_end && filled < 6 {
             if payload.get(cursor) == Some(&0xe3)
                 || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             {
                 break;
             }
-            if let Some(run) = saved_zero_run(payload, cursor) {
-                values[filled..filled + run].fill(Some(0.0));
-                filled += run;
-                cursor += 2;
+            let previous = filled.checked_sub(1).map(|slot| values[slot]);
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, previous) {
+                values[filled..filled + copies].fill(value);
+                filled += copies;
+                cursor += width;
                 continue;
             }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -5926,10 +5927,13 @@ fn saved_named_scalars_in<const N: usize>(
     let mut values = [None; N];
     let mut filled = 0;
     while filled < N {
-        if let Some(run) = saved_zero_run(payload, cursor).filter(|_| N == 3) {
-            values.get_mut(filled..filled + run)?.fill(Some(0.0));
-            filled += run;
-            cursor += 2;
+        let previous = filled.checked_sub(1).map(|slot| values[slot]);
+        if let Some((value, copies, width)) =
+            saved_repeat(payload, cursor, previous).filter(|_| N == 3)
+        {
+            values.get_mut(filled..filled + copies)?.fill(value);
+            filled += copies;
+            cursor += width;
             continue;
         }
         let (decoded, next) = read(payload, cursor, end, cache);
@@ -5941,12 +5945,28 @@ fn saved_named_scalars_in<const N: usize>(
     Some(values)
 }
 
-/// The zero slots of a saved-section coordinate image where `e4` and `e5`
-/// repeat a standalone `18` zero once and twice.
-fn saved_zero_run(payload: &[u8], cursor: usize) -> Option<usize> {
+/// One saved-section coordinate repeat step: the value it fills, the slots it
+/// fills, and the bytes it consumes.
+///
+/// `e4` and `e5` copy the `previous` slot once and twice. A standalone `18`
+/// before them is one zero slot.
+fn saved_repeat(
+    payload: &[u8],
+    cursor: usize,
+    previous: Option<Option<f64>>,
+) -> Option<(Option<f64>, usize, usize)> {
+    let copies = |byte: u8| match byte {
+        0xe4 => Some(1),
+        0xe5 => Some(2),
+        _ => None,
+    };
+    if let Some(previous) = previous {
+        if let Some(count) = payload.get(cursor).copied().and_then(copies) {
+            return Some((previous, count, 1));
+        }
+    }
     match payload.get(cursor..cursor + 2)? {
-        [0x18, 0xe4] => Some(2),
-        [0x18, 0xe5] => Some(3),
+        [0x18, next] if copies(*next).is_some() => Some((Some(0.0), 1, 1)),
         _ => None,
     }
 }
@@ -6098,15 +6118,16 @@ fn saved_positional_generated_entities(
         };
         let mut cursor = after_id + header_size + 1;
         let mut values = [None; 14];
-        let mut filled = 0;
+        let mut filled: usize = 0;
         while cursor < row_end && filled < value_count {
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
-            if let Some(run) = saved_zero_run(payload, cursor) {
-                values[filled..filled + run].fill(Some(0.0));
-                filled += run;
-                cursor += 2;
+            let previous = filled.checked_sub(1).map(|slot| values[slot]);
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, previous) {
+                values[filled..filled + copies].fill(value);
+                filled += copies;
+                cursor += width;
                 continue;
             }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
