@@ -489,9 +489,16 @@ size = 11
 note = "This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6."
 
 [[record.field]]
-name = "zero_run_6"
+name = "text"
 offset = 0
-type = "bytes[6]"
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record.field]]
+name = "zero_run_5"
+offset = 1
+type = "bytes[5]"
 source = "spec"
 anchor = "The wide expression trailer is eleven bytes"
 

@@ -208,8 +208,10 @@ pub(crate) mod design_parameter_tail {
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 11;
-    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_6: usize = 0;
+    /// Offset of `text` (`u8`). Spec §3.1.
+    pub(crate) const TEXT: usize = 0;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 1;
     /// Offset of `driven` (`u8`). Spec §3.1.
     pub(crate) const DRIVEN: usize = 6;
     /// Offset of `reserved_7` (`u8`). Spec §3.1.

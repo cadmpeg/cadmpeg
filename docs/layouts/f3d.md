@@ -200,7 +200,8 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The wide expression trailer is eleven bytes |
+| 0 | 1 | `text` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 1 | 5 | `zero_run_5` | `bytes[5]` | little | spec | The wide expression trailer is eleven bytes |
 | 6 | 1 | `driven` | `u8` | little | spec | The wide expression trailer is eleven bytes |
 | 7 | 1 | `reserved_7` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
 | 8 | 1 | `favorite` | `u8` | little | spec | The wide expression trailer is eleven bytes |

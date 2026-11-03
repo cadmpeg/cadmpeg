@@ -162,6 +162,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     evaluated_value: f64,
     evaluated_value_offset: FrameRelative,
     flags: crate::records::parameters::DesignParameterFlags,
+    text_value: Option<ParsedParameterUnit>,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -192,6 +193,13 @@ impl ParsedDesignParameter {
             }),
             None => None,
         };
+        let text_value = match self.text_value {
+            Some(text) => Some(crate::records::identity::RecordedValue {
+                value: text.value,
+                offset: text.offset.absolute(frame_start)?,
+            }),
+            None => None,
+        };
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
                 id: ids::native_design_parameter_id(stream, frame_start),
@@ -217,6 +225,8 @@ impl ParsedDesignParameter {
         )
         .ok()?
         .with_flags(self.flags)
+        .ok()?
+        .with_text_value(text_value)
         .ok()
     }
 }
@@ -329,21 +339,30 @@ fn trailer_flag(bytes: &[u8], at: usize) -> Option<bool> {
     }
 }
 
-/// Flags and document flag of the wide expression trailer that starts `bytes`.
-fn wide_expression_trailer_flags(
-    bytes: &[u8],
-) -> Option<(crate::records::parameters::DesignParameterFlags, bool)> {
-    if bytes.get(wide_trailer::ZERO_RUN_6..wide_trailer::DRIVEN) != Some(&[0; 6][..])
+/// Flags of a wide expression trailer.
+#[derive(Clone, Copy)]
+struct WideTrailerFlags {
+    record: crate::records::parameters::DesignParameterFlags,
+    text: bool,
+    document: bool,
+}
+
+/// Flags of the wide expression trailer that starts `bytes`.
+fn wide_expression_trailer_flags(bytes: &[u8]) -> Option<WideTrailerFlags> {
+    if bytes.get(wide_trailer::ZERO_RUN_5..wide_trailer::DRIVEN) != Some(&[0; 5][..])
         || bytes.get(wide_trailer::RESERVED_7) != Some(&wide_trailer::RESERVED_7_VALUE)
         || bytes.get(wide_trailer::RESERVED_9) != Some(&wide_trailer::RESERVED_9_VALUE)
     {
         return None;
     }
-    let flags = crate::records::parameters::DesignParameterFlags {
-        driven: trailer_flag(bytes, wide_trailer::DRIVEN)?,
-        favorite: trailer_flag(bytes, wide_trailer::FAVORITE)?,
-    };
-    Some((flags, trailer_flag(bytes, wide_trailer::DOCUMENT)?))
+    Some(WideTrailerFlags {
+        record: crate::records::parameters::DesignParameterFlags {
+            driven: trailer_flag(bytes, wide_trailer::DRIVEN)?,
+            favorite: trailer_flag(bytes, wide_trailer::FAVORITE)?,
+        },
+        text: trailer_flag(bytes, wide_trailer::TEXT)?,
+        document: trailer_flag(bytes, wide_trailer::DOCUMENT)?,
+    })
 }
 
 /// Driven flag of a compact owned expression trailer.
@@ -406,7 +425,7 @@ fn parse_header_form(
         && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6)))
     .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
     .flatten()
-    .filter(|(_, document)| *document == owner_record_index.is_none());
+    .filter(|wide| wide.document == owner_record_index.is_none());
     let compact_driven = if discriminated {
         None
     } else {
@@ -449,7 +468,7 @@ fn parse_header_form(
         None => parameter_text!(payload, source_kind_at, 1..=256),
     };
     let document_flag = match wide_flags {
-        Some((_, document)) => document,
+        Some(wide) => wide.document,
         None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
     };
     if discriminated
@@ -459,15 +478,20 @@ fn parse_header_form(
         return None;
     }
     let flags = match (wide_flags, compact_driven) {
-        (Some((flags, _)), _) => flags,
+        (Some(wide), _) => wide.record,
         (None, Some(driven)) => crate::records::parameters::DesignParameterFlags {
             driven,
             favorite: false,
         },
         (None, None) => crate::records::parameters::DesignParameterFlags::default(),
     };
-    let first_at = source_kind_end + usize::from(discriminated) * 4;
-    if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
+    let (text_value, first_at) = if discriminated {
+        lp_utf16_bounded(payload, source_kind_end, 0..=4096)?
+    } else {
+        (String::new(), source_kind_end)
+    };
+    let text = wide_flags.is_some_and(|wide| wide.text);
+    if !text && !text_value.is_empty() {
         return None;
     }
     let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
@@ -512,6 +536,10 @@ fn parse_header_form(
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
         flags,
+        text_value: text.then(|| ParsedParameterUnit {
+            value: text_value,
+            offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
+        }),
     }))
 }
 
@@ -602,6 +630,7 @@ fn parse_legacy_287_design_parameter(
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
             flags: crate::records::parameters::DesignParameterFlags::default(),
+            text_value: None,
         }))
     })();
     parsed.transpose()
@@ -819,6 +848,7 @@ fn parse_typed_compact_design_parameter(
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
             flags: crate::records::parameters::DesignParameterFlags::default(),
+            text_value: None,
         }))
     })();
     parsed.transpose()
@@ -873,6 +903,7 @@ fn parse_legacy_design_parameter(
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
             flags: crate::records::parameters::DesignParameterFlags::default(),
+            text_value: None,
         }))
     })();
     parsed.transpose()
