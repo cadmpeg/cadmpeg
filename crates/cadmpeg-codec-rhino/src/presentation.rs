@@ -5263,6 +5263,7 @@ pub(crate) fn install(
         NativeInstall {
             losses,
             opaque_records,
+            give_ups: Vec::new(),
         },
         materials,
     ))
