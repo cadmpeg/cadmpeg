@@ -509,9 +509,7 @@ impl<'a> PhysicalParse<'a> {
         // A transfer without its Terminate card gives up the absent tail:
         // records past the last held byte are missing, so the cut charges
         // one record.unreadable even when every held record is complete.
-        if let (Some(view), card::SourceEnd::EndsIn(open)) =
-            (scan.source_view(), scan.source_end)
-        {
+        if let (Some(view), card::SourceEnd::EndsIn(open)) = (scan.source_view(), scan.source_end) {
             let end = view.end();
             if let Some(extent) = view.child(end, end) {
                 let section = open.section();
