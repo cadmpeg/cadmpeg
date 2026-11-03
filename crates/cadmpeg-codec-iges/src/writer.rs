@@ -5582,71 +5582,62 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
 }
 
 fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    macro_rules! arena {
+        ($name:literal, $field:ident) => {
+            (
+                $name,
+                !ir.model.$field.is_empty(),
+                ir.model
+                    .$field
+                    .iter()
+                    .map(|record| record.id.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        ($name:literal, $field:ident, method) => {
+            (
+                $name,
+                !ir.model.$field.is_empty(),
+                ir.model
+                    .$field
+                    .iter()
+                    .map(|record| record.id().to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+    }
     let unsupported = [
-        ("subds", !ir.model.subds.is_empty()),
-        ("assets", !ir.model.assets.is_empty()),
-        ("features", !ir.model.features.is_empty()),
-        (
-            "feature_input_topologies",
-            !ir.model.feature_input_topologies.is_empty(),
-        ),
-        (
-            "feature_result_topologies",
-            !ir.model.feature_result_topologies.is_empty(),
-        ),
-        ("configurations", !ir.model.configurations.is_empty()),
-        ("parameters", !ir.model.parameters.is_empty()),
-        ("sketches", !ir.model.sketches.is_empty()),
-        ("sketch_entities", !ir.model.sketch_entities.is_empty()),
-        (
-            "sketch_constraints",
-            !ir.model.sketch_constraints.is_empty(),
-        ),
-        ("spatial_sketches", !ir.model.spatial_sketches.is_empty()),
-        (
-            "spatial_sketch_entities",
-            !ir.model.spatial_sketch_entities.is_empty(),
-        ),
-        (
-            "spatial_sketch_constraints",
-            !ir.model.spatial_sketch_constraints.is_empty(),
-        ),
-        ("spreadsheets", !ir.model.spreadsheets.is_empty()),
-        (
-            "product_definitions",
-            !ir.model.product_definitions.is_empty(),
-        ),
-        ("occurrences", !ir.model.occurrences.is_empty()),
-        ("assembly_joints", !ir.model.assembly_joints.is_empty()),
-        ("drawings", !ir.model.drawings.is_empty()),
-        (
-            "semantic_annotations",
-            !ir.model.semantic_annotations.is_empty(),
-        ),
-        (
-            "presentation_documents",
-            !ir.model.presentation_documents.is_empty(),
-        ),
-        (
-            "view_presentations",
-            !ir.model.view_presentations.is_empty(),
-        ),
-        ("tessellations", !ir.model.tessellations.is_empty()),
-        ("appearances", !ir.model.appearances.is_empty()),
-        (
-            "appearance_bindings",
-            !ir.model.appearance_bindings.is_empty(),
-        ),
-        ("pmi", !ir.model.pmi.is_empty()),
-        (
-            "presentation_layers",
-            !ir.model.presentation_layers.is_empty(),
-        ),
+        arena!("subds", subds),
+        arena!("assets", assets),
+        arena!("features", features),
+        arena!("feature_input_topologies", feature_input_topologies),
+        arena!("feature_result_topologies", feature_result_topologies),
+        arena!("configurations", configurations),
+        arena!("parameters", parameters),
+        arena!("sketches", sketches),
+        arena!("sketch_entities", sketch_entities, method),
+        arena!("sketch_constraints", sketch_constraints),
+        arena!("spatial_sketches", spatial_sketches),
+        arena!("spatial_sketch_entities", spatial_sketch_entities, method),
+        arena!("spatial_sketch_constraints", spatial_sketch_constraints),
+        arena!("spreadsheets", spreadsheets),
+        arena!("product_definitions", product_definitions),
+        arena!("occurrences", occurrences),
+        arena!("assembly_joints", assembly_joints),
+        arena!("drawings", drawings),
+        arena!("semantic_annotations", semantic_annotations),
+        arena!("presentation_documents", presentation_documents),
+        arena!("view_presentations", view_presentations),
+        arena!("tessellations", tessellations),
+        arena!("appearances", appearances),
+        arena!("appearance_bindings", appearance_bindings),
+        arena!("pmi", pmi),
+        arena!("presentation_layers", presentation_layers),
     ];
     let losses = unsupported
         .into_iter()
-        .filter(|(_, present)| *present)
-        .map(|(arena, _)| {
+        .filter(|(_, present, _)| *present)
+        .map(|(arena, _, ids)| {
             let code = if matches!(
                 arena,
                 "features"
@@ -5666,7 +5657,10 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            code.note(format!("IGES omits unsupported model arena {arena}"))
+            code.note(format!(
+                "IGES omits unsupported model arena {arena}: {}",
+                ids.join(", ")
+            ))
         })
         .collect();
     for vertex in &ir.model.vertices {
