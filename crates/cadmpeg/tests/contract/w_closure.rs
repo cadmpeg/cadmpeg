@@ -263,3 +263,43 @@ fn cadir_edits_reach_the_output() {
 fn step_edits_reach_the_output() {
     assert_none(&edits(Format::Step, "step", "step", &[false]));
 }
+
+#[test]
+fn cadir_declares_no_reduced_fields() {
+    assert!(cadmpeg_ir::codec::write::REDUCED_FIELDS.is_empty());
+}
+
+#[test]
+fn cadir_reports_no_loss_and_no_synthesis_cause() {
+    let encoder = cadmpeg_registry::build_encoder(Format::Cadir);
+    let mut findings = Vec::new();
+    for format in ["step", "iges", "rhino", "fcstd", "f3d", "sldprt"] {
+        let source = codec(format);
+        for path in sampled(format) {
+            let bytes = std::fs::read(&path).expect("fixture bytes");
+            let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+                continue;
+            };
+            let Ok(written) = cadmpeg_test_support::writer_closure::write(
+                encoder.as_ref(),
+                &first,
+                false,
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            ) else {
+                findings.push(format!("{}: cadir refuses", path.display()));
+                continue;
+            };
+            if !written.report.losses.is_empty() {
+                findings.push(format!(
+                    "{}: cadir charges {} loss(es)",
+                    path.display(),
+                    written.report.losses.len()
+                ));
+            }
+            if written.report.synthesis_cause().is_some() {
+                findings.push(format!("{}: cadir carries a synthesis cause", path.display()));
+            }
+        }
+    }
+    assert_none(&findings);
+}
