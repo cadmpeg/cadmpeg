@@ -44,7 +44,7 @@ use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
 use super::index::{
-    index_carriers_with_analytic, scan_carriers_for_role, CarrierIndex, IndexedCurve,
+    index_carriers_with_nodes, scan_carriers_for_role, CarrierIndex, IndexedCurve, NodeCarriers,
 };
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
@@ -2317,10 +2317,26 @@ pub(crate) fn decode_bodies(
             .flatten()
             .and_then(|records| {
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let analytic = super::carrier_nodes::analytic(&records, header.body_offset)?;
+                let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
+                let mut lane_refusals = Vec::new();
+                let splines = super::spline::nodes::carriers(
+                    &records,
+                    header.body_offset,
+                    &mut lane_refusals,
+                );
+                if splines.is_none() {
+                    lane_refusals.clear();
+                }
                 Some((
                     typed::nodes::facts(&records, header.body_offset)?,
-                    (tables, analytic),
+                    (
+                        tables,
+                        NodeCarriers {
+                            analytic,
+                            splines,
+                            lane_refusals,
+                        },
+                    ),
                 ))
             });
         if let Some((facts, node_records)) = node_stream {
@@ -2352,9 +2368,9 @@ pub(crate) fn decode_bodies(
         let is_deltas = is_deltas_stream(header);
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
-        let (node_tables, node_analytic) = node_tables.unzip();
-        carriers.merge_missing(match node_analytic {
-            Some(analytic) => index_carriers_with_analytic(ctx, body, analytic)?,
+        let (node_tables, node_carriers) = node_tables.unzip();
+        carriers.merge_missing(match node_carriers {
+            Some(carriers) => index_carriers_with_nodes(ctx, body, carriers)?,
             None => scan_carriers_for_role(ctx, body, is_deltas)?,
         });
         let curve_attrs = carriers.curve_attrs();

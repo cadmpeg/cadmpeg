@@ -2,7 +2,7 @@
 //! A complete base-schema node sequence with one node of each topology type.
 
 /// One field value in base-schema order.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum F {
     I(u32),
     P(u16),
@@ -10,6 +10,14 @@ pub(crate) enum F {
     C(u8),
     B(u8),
     V([f64; 3]),
+    /// A short.
+    S(u16),
+    /// A logical.
+    L(bool),
+    /// A variable real field; its count precedes the node index.
+    Reals(Vec<f64>),
+    /// A variable short field; its count precedes the node index.
+    Shorts(Vec<u16>),
 }
 
 /// The null-real sentinel.
@@ -24,14 +32,29 @@ fn node(out: &mut Vec<u8>, kind: u16, index: u16, fields: &[F]) {
 fn node_with_program(out: &mut Vec<u8>, kind: u16, program: &[u8], index: u16, fields: &[F]) {
     out.extend_from_slice(&kind.to_be_bytes());
     out.extend_from_slice(program);
+    let count = fields.iter().find_map(|field| match field {
+        F::Reals(values) => Some(values.len()),
+        F::Shorts(values) => Some(values.len()),
+        _ => None,
+    });
+    if let Some(count) = count {
+        out.extend_from_slice(&u32::try_from(count).unwrap().to_be_bytes());
+    }
     out.extend_from_slice(&index.to_be_bytes());
     for field in fields {
-        match *field {
+        match field {
             F::I(value) => out.extend_from_slice(&value.to_be_bytes()),
-            F::P(value) => out.extend_from_slice(&value.to_be_bytes()),
+            F::P(value) | F::S(value) => out.extend_from_slice(&value.to_be_bytes()),
             F::R(value) => out.extend_from_slice(&value.to_be_bytes()),
-            F::C(value) | F::B(value) => out.push(value),
+            F::C(value) | F::B(value) => out.push(*value),
+            F::L(value) => out.push(u8::from(*value)),
             F::V(values) => values
+                .iter()
+                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Reals(values) => values
+                .iter()
+                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Shorts(values) => values
                 .iter()
                 .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
         }

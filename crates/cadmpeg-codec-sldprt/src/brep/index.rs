@@ -637,22 +637,30 @@ pub(super) fn scan_carriers(
     scan_carriers_with_framing(ctx, body, Framing::Scan(None))
 }
 
-/// Index the carriers of `body` with its compact analytic carriers taken from
-/// `analytic`, read from the stream's node sequence.
-pub(super) fn index_carriers_with_analytic(
+/// Index the carriers of `body` with its compact analytic and NURBS carriers
+/// taken from `carriers`, read from the stream's node sequence.
+pub(super) fn index_carriers_with_nodes(
     ctx: &DecodeContext<'_>,
     body: &[u8],
-    analytic: Vec<Carrier>,
+    carriers: NodeCarriers,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(analytic))
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(carriers))
 }
 
-/// The source of the compact analytic carriers of one stream body.
+/// The carriers of one stream read from its node sequence. A family that
+/// the node sequence does not supply is scanned.
+pub(super) struct NodeCarriers {
+    pub(super) analytic: Option<Vec<Carrier>>,
+    pub(super) splines: Option<spline::nodes::NodeSplines>,
+    pub(super) lane_refusals: Vec<LossNote>,
+}
+
+/// The source of the compact analytic and NURBS carriers of one stream body.
 enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
     Scan(Option<bool>),
     /// Carriers read from the node sequence.
-    Nodes(Vec<Carrier>),
+    Nodes(NodeCarriers),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -669,13 +677,21 @@ fn scan_carriers_with_framing(
     framing: Framing,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
-    match framing {
-        Framing::Nodes(analytic) => {
+    let mut lane_refusals = Vec::new();
+    let (node_analytic, node_splines, deltas) = match framing {
+        Framing::Nodes(carriers) => {
+            lane_refusals.extend(carriers.lane_refusals);
+            (carriers.analytic, carriers.splines, None)
+        }
+        Framing::Scan(deltas) => (None, None, deltas),
+    };
+    match node_analytic {
+        Some(analytic) => {
             for carrier in analytic {
                 out.insert(carrier);
             }
         }
-        Framing::Scan(deltas) => {
+        None => {
             let mut i = 0usize;
             while i + 2 <= body.len() {
                 if body[i] == 0x00 {
@@ -691,11 +707,17 @@ fn scan_carriers_with_framing(
             }
         }
     }
-    let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
+    let (curves, surfaces) = match node_splines {
+        Some(splines) => (splines.curves, splines.surfaces),
+        None => (
+            spline::scan_curve_carriers(body, &mut lane_refusals),
+            spline::scan_surface_carriers(body, &mut lane_refusals),
+        ),
+    };
+    for carrier in curves.into_values() {
         out.insert(Carrier::Curve(carrier));
     }
-    for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
+    for carrier in surfaces.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
     for wrapper in subset::scan(ctx, body, &out, subset::Pass::Exact)? {
