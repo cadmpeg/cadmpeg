@@ -93,9 +93,12 @@ fn decode_container<'a>(
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
     let presentation_inventory =
         crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
-    let design_inventory = crate::design::inventory(ctx, &container.rse)?;
-    let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
-    let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
+    let design_inventory =
+        crate::design::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let sketch_inventory =
+        crate::sketch::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
+    let feature_inventory =
+        crate::feature::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let mut ir = CadIr::empty();
     // Design projection derives only design-class records (features,
     // sketches, parameters) and the native records behind them, so a geometry
@@ -604,7 +607,6 @@ fn decode_container<'a>(
         &design_inventory.parameter_tables,
     )?;
     namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
-    namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
     namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
@@ -614,7 +616,6 @@ fn decode_container<'a>(
         "pm_dc_sketch_constraints",
         &sketch_inventory.constraints,
     )?;
-    namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
     let pattern_operands = feature_inventory.pattern_operands.native_records()?;
     if !pattern_operands.is_empty() {
         namespace.set_arena(ctx, "pm_dc_pattern_operands", &pattern_operands)?;
@@ -673,7 +674,6 @@ fn decode_container<'a>(
         &feature_inventory.kernel_entity_links,
     )?;
     namespace.set_arena(ctx, "pm_dc_work_planes", &feature_inventory.work_planes)?;
-    namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
@@ -947,18 +947,6 @@ fn decode_container<'a>(
                 segment_bulk_issues.len()
             )));
         }
-        if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
-                "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
-                design_inventory.issues.len()
-            )));
-        }
-        if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
-        }
         let unnamed_labels = feature_inventory
             .labels
             .iter()
@@ -977,12 +965,6 @@ fn decode_container<'a>(
         if replaced_names != 0 {
             losses.push(InventorLossCode::FeatureLabelNameReplaced.note(format!(
                 "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
-            )));
-        }
-        if !feature_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
-                "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
             )));
         }
         if unresolved.features != 0 {
@@ -1482,10 +1464,6 @@ fn decode_container<'a>(
             design_parameter_count,
         ),
         (
-            crate::coverage::DESIGN_RECORD_ISSUES,
-            design_inventory.issues.len(),
-        ),
-        (
             crate::coverage::PM_DC_SKETCHES,
             sketch_inventory.sketches.len(),
         ),
@@ -1504,10 +1482,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_SKETCH_CONSTRAINTS,
             sketch_inventory.constraints.len(),
-        ),
-        (
-            crate::coverage::SKETCH_RECORD_ISSUES,
-            sketch_inventory.issues.len(),
         ),
         (
             crate::coverage::PM_DC_FEATURES,
@@ -1532,10 +1506,6 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_ENTITY_STYLE_LINKS,
             feature_inventory.entity_style_links.len(),
-        ),
-        (
-            crate::coverage::FEATURE_RECORD_ISSUES,
-            feature_inventory.issues.len(),
         ),
         (
             crate::coverage::FEATURES_TRANSFERRED,

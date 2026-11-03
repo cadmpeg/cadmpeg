@@ -293,7 +293,6 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
-        issues: Vec::new(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -301,7 +300,6 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -323,7 +321,6 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
-            issues: Vec::new(),
             edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
             ..Default::default()
         };

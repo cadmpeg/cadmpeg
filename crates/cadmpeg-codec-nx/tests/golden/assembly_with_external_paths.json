@@ -16,7 +16,40 @@
         "faces": [],
         "features": [],
         "loops": [],
-        "occurrences": [],
+        "occurrences": [
+          {
+            "id": "nx:document:occurrence#external-0",
+            "name": "child.prt",
+            "native_ref": "nx:external-reference:/Root/UG_PART/ExternalReferences#0",
+            "ordinal": 0,
+            "parent": {
+              "kind": "root"
+            },
+            "prototype": {
+              "document": {
+                "path": "child.prt",
+                "resolution": "path"
+              },
+              "scope": "external"
+            }
+          },
+          {
+            "id": "nx:document:occurrence#external-1",
+            "name": "nested/b.prt",
+            "native_ref": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
+            "ordinal": 1,
+            "parent": {
+              "kind": "root"
+            },
+            "prototype": {
+              "document": {
+                "path": "nested/b.prt",
+                "resolution": "path"
+              },
+              "scope": "external"
+            }
+          }
+        ],
         "parameters": [],
         "pcurves": [],
         "pmi": [],
@@ -63,7 +96,7 @@
       },
       "scope": {
         "design": false,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {
@@ -119,33 +152,13 @@
         },
         {
           "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/UG_PART/ExternalReferences#0 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/UG_PART/ExternalReferences#1 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
             "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
+            "kind": "parametric_record_omitted",
             "namespace": "decode",
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "message": "requested full depth but the nx decoder did not deliver classes: design",
           "severity": "error"
         }
       ],
@@ -158,7 +171,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": false,
-          "model": false
+          "model": true
         }
       }
     },

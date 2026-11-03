@@ -50,15 +50,10 @@
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
-              "input_block.0": "nx:om-data-blocks-0:block#1",
-              "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000000-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
+              "object_index.3": "null"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -91,7 +86,7 @@
               "tokens": [
                 {
                   "kind": "text",
-                  "value": "25 mm"
+                  "value": "25"
                 }
               ]
             },
@@ -100,9 +95,6 @@
             "native_ref": "nx:om-entry-0:expression#399",
             "ordinal": 0,
             "owner": "nx:om-entry-0:feature#equations-372",
-            "properties": {
-              "unit": "millimeter"
-            },
             "value": {
               "kind": "length",
               "value": 25.0
@@ -544,7 +536,6 @@
               "native_ref": "derived",
               "ordinal": "derived",
               "owner": "derived",
-              "properties": "derived",
               "value": "derived"
             },
             "scope": "fields"
