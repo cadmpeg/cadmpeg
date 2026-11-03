@@ -4,7 +4,9 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::IgesCodec;
+use super::{IgesCodec, IgesVersion};
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -986,4 +988,61 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
         .expect("validate the neutral model");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
+}
+
+/// Fuzzer bytes whose first control byte selects IGES 5.2 with a digest-breaking
+/// source edit. The writer plans the parsed document, writes it, and decodes the
+/// output. Decode degrades the mutated cube to ownerless support geometry, so
+/// re-planning the decoded document with its source fidelity must stop at the
+/// specified empty-model refusal instead of an earlier native-echo refusal.
+const WRITER_REPLAY_CRASH: &[u8] =
+    include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
+
+#[test]
+fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
+    let (control, json) = WRITER_REPLAY_CRASH
+        .split_first()
+        .expect("fuzzer bytes carry a control byte");
+    assert_eq!(*control & 0x80, 0);
+    assert_ne!(*control & 0x40, 0);
+    let version = match control % 3 {
+        0 => IgesVersion::V5_1,
+        1 => IgesVersion::V5_2,
+        _ => IgesVersion::V5_3,
+    };
+    let text = std::str::from_utf8(json).expect("fuzzer bytes carry JSON");
+    let ir = cadmpeg_ir::document::CadIr::from_json(text).expect("fuzzer JSON parses");
+    let plan = Encoder::plan(
+        &IgesCodec,
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    )
+    .expect("parsed document plans");
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).expect("planned document writes");
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(encoded.as_slice()), &DecodeOptions::default())
+        .expect("writer output decodes");
+    let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
+    decoded_ir
+        .source
+        .as_mut()
+        .expect("IGES decode supplies source metadata")
+        .attributes
+        .insert(
+            cadmpeg_core::nonblank_literal!("iges_fuzz_edit"),
+            "edited".into(),
+        );
+    let replay = Encoder::plan(
+        &IgesCodec,
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    );
+    let Err(error) = replay else {
+        panic!("degraded decode output re-planned without transferable content")
+    };
+    assert!(
+        error.to_string().contains("refuses an empty model"),
+        "{error}"
+    );
 }

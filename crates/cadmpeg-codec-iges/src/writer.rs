@@ -5172,17 +5172,69 @@ fn represented_name_properties(
     Some(product_sources)
 }
 
+fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
+    if record
+        .field("entity_type")
+        .and_then(|value| value.as_i64())
+        != Some(110)
+    {
+        return false;
+    }
+    let Some(parameters) = record
+        .field("parameters")
+        .and_then(|value| value.as_array().cloned())
+    else {
+        return false;
+    };
+    let mut endpoints = [0.0; 6];
+    for (slot, parameter) in parameters.iter().skip(1).take(6).enumerate() {
+        let Some(number) = parameter
+            .get("value")
+            .and_then(|value| value.get("value"))
+            .and_then(serde_json::Value::as_f64)
+        else {
+            return false;
+        };
+        endpoints[slot] = number;
+    }
+    endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
+}
+
 fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let Some(namespace) = ir.native.namespace("iges") else {
         return Ok(Vec::new());
     };
     let represented_name_properties = represented_name_properties(ir, namespace);
-    if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-        if records.is_empty() || ALLOWED_NATIVE_ARENAS.contains(&arena.as_str()) {
-            return false;
+    let mut losses = Vec::new();
+    let mut omitted_property_sources = BTreeSet::new();
+    if represented_name_properties.is_none() {
+        for arena in ["product_properties", "properties"] {
+            let Some(records) = namespace.arenas().get(arena) else {
+                continue;
+            };
+            if records.is_empty() {
+                continue;
+            }
+            for record in records {
+                if let Some(source) = record
+                    .field("source_entity")
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                {
+                    omitted_property_sources.insert(source);
+                }
+            }
+            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
+                "IGES native arena {arena} holds {} name-property record(s) that the semantic writer omits; body names transfer through the neutral model",
+                records.len()
+            )));
         }
-        if matches!(arena.as_str(), "product_properties" | "properties") {
-            return represented_name_properties.is_none();
+    }
+    if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
+        if records.is_empty()
+            || ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
+            || matches!(arena.as_str(), "product_properties" | "properties")
+        {
+            return false;
         }
         true
     }) {
@@ -5200,7 +5252,9 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             let name_property_represented = represented_name_properties
                 .as_ref()
                 .is_some_and(|properties| properties.contains(record.id()));
-            (entity_type == Some(406) && !name_property_represented)
+            (entity_type == Some(406)
+                && !name_property_represented
+                && !omitted_property_sources.contains(record.id()))
                 || !matches!(
                     entity_type,
                     Some(
@@ -5256,6 +5310,13 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
             || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
     }) {
+        if degenerate_native_line(record) {
+            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
+                "IGES native line {} has coincident endpoints; the semantic writer omits zero-length lines",
+                record.id()
+            )));
+            continue;
+        }
         let Some(sequence) = record
             .field("directory_sequence")
             .and_then(|value| value.as_i64())
@@ -5350,11 +5411,10 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         ));
     }
     if has_native_topology && !has_trimmed_sheet_topology(ir) {
-        return Err(CodecError::NotImplemented(
-            "IGES semantic writer cannot preserve native trimming without neutral topology".into(),
+        losses.push(IgesLossCode::PassthroughRecordOmitted.note(
+            "IGES native topology records have no neutral projection; the semantic writer omits unprojected trimming".to_owned(),
         ));
     }
-    let mut losses = Vec::new();
     for (arena, records) in namespace.arenas() {
         if records.is_empty() {
             continue;
