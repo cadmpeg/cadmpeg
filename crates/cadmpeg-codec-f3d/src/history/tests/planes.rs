@@ -409,8 +409,7 @@ fn bound_mirror_plane(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
-        scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) = scope.payload_mut()
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({
@@ -524,7 +523,10 @@ fn bound_mirror_plane(
         &identities,
         std::slice::from_ref(&history),
     );
-    scope.mirror_construction().expect("mirror construction").plane
+    scope
+        .mirror_construction()
+        .expect("mirror construction")
+        .plane
 }
 
 #[test]
