@@ -4664,8 +4664,16 @@ fn directional_point_dimension(
     else {
         return None;
     };
-    let first_locus = SketchLocus::Entity(first.id().clone());
-    let second_locus = SketchLocus::Entity(second.id().clone());
+    let first_locus = || SketchLocus::Entity(first.id().clone());
+    let second_locus = || SketchLocus::Entity(second.id().clone());
+    // The canonical order measures second minus first.
+    let ordered = |along: f64| {
+        if along * evaluated_mm < 0.0 {
+            (second_locus(), first_locus())
+        } else {
+            (first_locus(), second_locus())
+        }
+    };
     let horizontal = linear_measurement_matches(
         first_position.u - second_position.u,
         evaluated_mm,
@@ -4677,16 +4685,24 @@ fn directional_point_dimension(
         linear_tolerance,
     );
     match (horizontal, vertical) {
-        (true, false) => Some(Definition::HorizontalDistance {
-            first: first_locus,
-            second: second_locus,
-            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
-        }),
-        (false, true) => Some(Definition::VerticalDistance {
-            first: first_locus,
-            second: second_locus,
-            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
-        }),
+        (true, false) => {
+            let (first, second) =
+                ordered(second_position.u - first_position.u);
+            Some(Definition::HorizontalDistance {
+                first,
+                second,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
+            })
+        }
+        (false, true) => {
+            let (first, second) =
+                ordered(second_position.v - first_position.v);
+            Some(Definition::VerticalDistance {
+                first,
+                second,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
+            })
+        }
         (false, false) | (true, true) => None,
     }
 }
