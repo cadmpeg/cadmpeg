@@ -206,6 +206,14 @@ or regenerated current-design selection.
 
 **Need.** We must know the value domains to preserve release or complexity signals and to detect header corruption from the bytes.
 
+### PS-40. Clear and text-wrapped sections in one payload
+
+**Question.** Can one `UG_PART/UG_PART` payload hold both clear sections and text-wrapped sections, and where does a clear section end when a text-wrapped section follows it?
+
+**Known.** `siemens_nx.md` §2.4 "The sections after the UGII prefix are clear sections or text-wrapped sections." defines both forms. A clear section ends at the next complete transmit header or at the stream boundary. The decoder reads the text-wrapped sections of a payload only when the payload holds no clear section.
+
+**Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

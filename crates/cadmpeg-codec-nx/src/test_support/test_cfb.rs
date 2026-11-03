@@ -3,14 +3,27 @@
 //!
 //! An NX legacy part is a Compound File Binary image whose `UG_PART` storage
 //! holds the `UGII` payload. These builders write that image directly: sector
-//! table, directory entries, and an uncompressed payload. Nothing here goes
-//! through `zlib_compress`, so a golden built from one of these pins no
-//! compressor output.
+//! table, directory entries, and the payload. The fixed builders write an
+//! uncompressed payload and pin no compressor output in a golden;
+//! `legacy_cfb_with_ug_payload` writes the payload it is given.
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
 pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
+    let description = b": TRANSMIT FILE (partition) created by test";
+    let mut payload = b"\x0d\x01UGII  \x32".to_vec();
+    payload.extend_from_slice(b"PS");
+    payload.extend_from_slice(
+        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    payload.extend_from_slice(description);
+    legacy_cfb_with_ug_payload(&payload)
+}
+
+/// A legacy CFB image whose 5120-byte `UG_PART/UG_PART` stream starts with
+/// `ug_payload` and is zero-filled after it.
+pub(crate) fn legacy_cfb_with_ug_payload(ug_payload: &[u8]) -> Vec<u8> {
     const SECTOR: usize = 512;
     const END: u32 = 0xffff_fffe;
     const FREE: u32 = 0xffff_ffff;
@@ -59,18 +72,10 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
         cadmpeg_core::decode::u64_from_index(STREAM_SECTORS * SECTOR),
     );
 
-    let payload = sector_mut(&mut file, 1);
-    payload[..8].copy_from_slice(b"\x0d\x01UGII  ");
-    payload[8] = 0x32;
-    let description = b": TRANSMIT FILE (partition) created by test";
-    let mut at = 9;
-    payload[at..at + 2].copy_from_slice(b"PS");
-    at += 2;
-    payload[at..at + 4].copy_from_slice(
-        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
-    );
-    at += 4;
-    payload[at..at + description.len()].copy_from_slice(description);
+    assert!(ug_payload.len() <= STREAM_SECTORS * SECTOR);
+    // Stream sector 1 follows the header sector, and sectors 1 through 10 are contiguous.
+    let start = 2 * SECTOR;
+    file[start..start + ug_payload.len()].copy_from_slice(ug_payload);
 
     let fat = sector_mut(&mut file, FAT_SECTOR);
     fat.fill(0xff);

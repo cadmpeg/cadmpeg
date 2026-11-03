@@ -223,6 +223,7 @@ mod tests {
         let stream = |subtype, file_offset| crate::parasolid::Stream {
             file_offset,
             consumed: 0,
+            compressed: true,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
@@ -243,6 +244,7 @@ mod tests {
         let mut streams = vec![crate::parasolid::Stream {
             file_offset: 10,
             consumed: 0,
+            compressed: true,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }];
@@ -262,6 +264,7 @@ mod tests {
         let stream = |subtype, schema: Option<&str>, file_offset| Stream {
             file_offset,
             consumed: 0,
+            compressed: true,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
@@ -280,6 +283,7 @@ mod tests {
             Stream {
                 file_offset: 20,
                 consumed: 0,
+                compressed: true,
                 inflated: Vec::new(),
                 body: crate::parasolid::StreamBody::Preview,
             },
@@ -326,6 +330,7 @@ mod tests {
             streams: vec![crate::parasolid::Stream {
                 file_offset: 0,
                 consumed: 3,
+                compressed: true,
                 inflated: vec![1, 2, 3],
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
@@ -357,6 +362,7 @@ mod tests {
             crate::parasolid::Stream {
                 file_offset,
                 consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
+                compressed: true,
                 inflated,
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,

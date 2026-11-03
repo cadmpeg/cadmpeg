@@ -7,6 +7,7 @@ pub(crate) fn stream(bytes: Vec<u8>) -> crate::parasolid::Stream {
     crate::parasolid::Stream {
         file_offset: 0,
         consumed: u64::try_from(bytes.len()).unwrap(),
+        compressed: true,
         inflated: bytes,
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,

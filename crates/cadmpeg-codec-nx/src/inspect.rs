@@ -150,6 +150,13 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                 stored: None,
                 expanded: Some(inflated_len),
             },
+            container::ContainerLayout::LegacyCfb { .. } if stream.compressed => {
+                EntryStorage::Compressed {
+                    method: CompressionMethod::Zlib,
+                    stored: Some(stream.consumed),
+                    expanded: Some(inflated_len),
+                }
+            }
             container::ContainerLayout::LegacyCfb { .. } => {
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,

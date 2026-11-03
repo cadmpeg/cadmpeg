@@ -1131,3 +1131,114 @@ fn overlapping_attribute_identifiers_are_rejected_in_one_pass() {
         .iter()
         .any(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind()));
 }
+
+/// A text header ending in `**END_OF_HEADER` and `terminator_tail`.
+fn text_header(terminator_tail: &[u8]) -> Vec<u8> {
+    let mut bytes = b"**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz****\n".to_vec();
+    bytes.extend_from_slice(b"**PARASOLID !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~0123456789****\n");
+    bytes.extend_from_slice(b"**PART1;\nFORMAT=binary;\nGUISE=partition;\n**PART2;\n");
+    bytes.extend_from_slice(b"SCH=SCH_1_13006;\n**PART3;\n**END_OF_HEADER");
+    bytes.extend_from_slice(terminator_tail);
+    bytes
+}
+
+#[test]
+fn legacy_text_wrapped_sections_inflate_their_zlib_members() {
+    let stream = partition_stream();
+    let member = zlib_compress(&stream);
+    let mut bytes = b"\x0d\x01UGII  4".to_vec();
+    bytes.extend_from_slice(&[0xc0, 0xd1, 0xf1, 0xed]);
+    bytes.extend(text_header(b"*****\n+"));
+    let first = bytes.len();
+    bytes.extend_from_slice(&member);
+    bytes.extend_from_slice(&[0xc0, 0xd1, 0xf1, 0xed]);
+    bytes.extend(text_header(b"**\n"));
+    let second = bytes.len();
+    bytes.extend_from_slice(&member);
+    bytes.extend(text_header(b" not a terminator line\n"));
+    bytes.extend_from_slice(&member);
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let streams = super::extract_legacy_streams(ctx, root).unwrap();
+
+            assert_eq!(streams.len(), 2);
+            assert_eq!(streams[0].file_offset, first);
+            assert_eq!(streams[1].file_offset, second);
+            for extracted in &streams {
+                assert_eq!(extracted.inflated, stream);
+                assert_eq!(extracted.kind(), StreamKind::Partition);
+                assert_eq!(
+                    extracted.consumed,
+                    u64::try_from(member.len()).expect("fixture length fits u64")
+                );
+            }
+        },
+    );
+}
+
+fn extract_legacy(bytes: &[u8]) -> Vec<super::Stream> {
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(bytes);
+            super::extract_legacy_streams(ctx, root).unwrap()
+        },
+    )
+}
+
+#[test]
+fn legacy_clear_sections_leave_text_wrapped_sections_unread() {
+    let description = b": TRANSMIT FILE (partition)";
+    let mut bytes = b"PS".to_vec();
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    bytes.extend(text_header(b"\n+"));
+    bytes.extend(zlib_compress(&partition_stream()));
+
+    let streams = extract_legacy(&bytes);
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].file_offset, 0);
+    assert!(!streams[0].compressed);
+}
+
+#[test]
+fn text_wrapped_terminators_without_a_complete_member_are_skipped() {
+    let stream = partition_stream();
+    let mut bytes = text_header(b"*\n+");
+    bytes.extend_from_slice(b"\x78\x01not deflate data");
+    bytes.extend(text_header(b"*\n+abc"));
+    bytes.extend(text_header(b"*\n"));
+    let member = bytes.len();
+    bytes.extend(zlib_compress(&stream));
+
+    let streams = extract_legacy(&bytes);
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].file_offset, member);
+    assert!(streams[0].compressed);
+    assert_eq!(streams[0].inflated, stream);
+}
+
+#[test]
+fn text_wrapped_search_resumes_after_each_member() {
+    // A stored-block member carries a second envelope verbatim; that inner
+    // envelope lies inside the first member and is not a section.
+    let mut inner = text_header(b"\n");
+    inner.extend(zlib_compress(&partition_stream()));
+    let mut bytes = text_header(b"\n");
+    let member = bytes.len();
+    bytes.extend(zlib_compress_at_level(&inner, 0));
+
+    let streams = extract_legacy(&bytes);
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].file_offset, member);
+    assert_eq!(streams[0].inflated, inner);
+}

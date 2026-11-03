@@ -12,6 +12,7 @@ fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: V
     Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated,
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
