@@ -2012,14 +2012,6 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             cap_ruling_ids.insert(pcurve.curve_id);
         }
     }
-    let count_framed_rows = scan
-        .curves
-        .parameters
-        .iter()
-        .filter(|record| record.count_framed)
-        .map(|record| record.curve_id)
-        .collect::<BTreeSet<_>>();
-    let mut count_framed_curves = 0_usize;
     let mut transferred = BTreeSet::new();
     for (curve_id, candidates) in candidates {
         if evaluable_path_counts.get(&curve_id).copied() != Some(candidates.len()) {
@@ -2103,15 +2095,6 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             },
         )?;
         transferred.insert(id);
-        count_framed_curves += usize::from(count_framed_rows.contains(&curve_id));
-    }
-    if count_framed_curves > 0 {
-        losses.push(
-            crate::loss::CreoLossCode::CountFramedCurveCarrierUnverified.note(format!(
-                "Transferred {count_framed_curves} model curve(s) from rows that only a sample \
-                 count frames; each takes its placement from its incident surface charts alone"
-            )),
-        );
     }
     transferred.extend(crate::decode::sweep::surfaces::transfer_hole_generators(
         ctx,
@@ -2122,6 +2105,27 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         source_carriers,
         &reconciled_endpoints,
     )?);
+    let mut count_framed_curves = 0_usize;
+    for record in scan
+        .curves
+        .parameters
+        .iter()
+        .filter(|record| record.count_framed)
+    {
+        let id = crate::identity::compose_checked::<CurveId>(
+            &crate::identity::VISIBGEOM_CURVE,
+            record.curve_id,
+        )?;
+        count_framed_curves += usize::from(transferred.contains(&id));
+    }
+    if count_framed_curves > 0 {
+        losses.push(
+            crate::loss::CreoLossCode::CountFramedCurveCarrierUnverified.note(format!(
+                "Transferred {count_framed_curves} model curve(s) from rows that only a sample \
+                 count frames; each takes its placement from its incident surface charts alone"
+            )),
+        );
+    }
     Ok(transferred)
 }
 
