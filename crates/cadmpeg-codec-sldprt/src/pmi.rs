@@ -521,7 +521,7 @@ pub(crate) fn apply_to_parameters(
                     value: cache,
                     properties: BTreeMap::new(),
                     pmi: None,
-                    native_ref: None,
+                    native_ref: Some(record.id.clone()),
                 });
                 Some(index)
             }

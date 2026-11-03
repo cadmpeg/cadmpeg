@@ -976,6 +976,7 @@ mod tests {
     #[test]
     fn schema_past_the_zstd_window_allowance_is_unsupported_without_a_refusal() {
         use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+        use cadmpeg_core::decode::{LimitScope, ResourceFailure};
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         // A streamed frame as a level-22 encoder writes it: a 128 MiB window and no
         // content size. Laid out by `zip_fixture`: `zip` is built without its `zstd`
@@ -990,13 +991,24 @@ mod tests {
         let (ctx, root) =
             DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
                 .expect("ZIP fits service input limit");
-        let error = super::SchemaCatalog::load(&ctx, root)
-            .err()
-            .expect("the schema cannot be read");
-        assert!(
-            matches!(&error, CodecError::NotImplemented(message) if message.ends_with("per-expansion allowance")),
-            "{error:?}"
+        // #215 §4.5: a per-expansion limit gives up its part, not its session.
+        // The window check raises a Part-scoped refusal, and the part runner
+        // acknowledges it, so the session stays open.
+        let allowance = ctx.per_expand_allowance();
+        let part = ctx
+            .run_part(|| super::SchemaCatalog::load(&ctx, root).map(drop))
+            .expect("only this part is given up");
+        let Err(CodecError::ResourceLimit(limit)) = part.as_ref() else {
+            panic!("a window above the allowance is a part refusal: {part:?}");
+        };
+        assert_eq!(limit.scope, LimitScope::Part);
+        assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
+        assert_eq!(limit.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!(
+            (limit.limit, limit.used, limit.additional),
+            (allowance, 0, 1 << 27)
         );
+        assert_eq!(limit.operation, "Zstandard per-expansion window");
         assert_eq!(ctx.resource_refusal(), None);
         assert!(ctx.finish_session().is_ok());
     }
