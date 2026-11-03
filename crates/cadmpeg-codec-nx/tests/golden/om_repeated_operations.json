@@ -1501,7 +1501,7 @@
       },
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -1552,17 +1552,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -1574,7 +1563,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": true,
-          "model": false
+          "model": true
         }
       }
     },
@@ -2024,17 +2013,6 @@
         }
       },
       "decode_digest": "6580f2088ada8b2dafa56a3286de97a3218f80cd28bfcfe3cb8ea4fb34a91d91",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAACgBAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABUBAAAAAAAABgAAAAJAAAACwAAAAEAAAABAAAAGAAAAP////8AAAAAAAAELE9N//8AAQIUVUdTOjpGRUFUVVJFX1JFQ09SRKCBIQEjRWeJq83vBiFVR1M6Ok1vZGxVdGlsczo6Qm9vbGVhbkNvbXBvbmVudGUJbV90YXJnZXSAAQIIbV90b29sc4EDBHVuZnJhbWVkIFVHUzo6UGF5bG9hZFRleHSZAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAOAAAALAAAAAUBDk5YIDIwMjcuMzEwMgBmZWF0dXJlLXJlY29yZHOAzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv9GT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },

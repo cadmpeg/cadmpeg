@@ -16,9 +16,9 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 use cadmpeg_ir::document::ArenaClass;
-use cadmpeg_ir::CodecFormat;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::CodecFormat;
 
 mod database;
 #[cfg(test)]
@@ -873,12 +873,7 @@ fn collect_dimensions(
                 if let Some(sections) = output.untyped_sections.as_deref_mut() {
                     sections.insert(parent.to_owned());
                 }
-                losses.push(parse_capped_loss(
-                    parent,
-                    payload.window().len(),
-                    0,
-                    1,
-                ));
+                losses.push(parse_capped_loss(parent, payload.window().len(), 0, 1));
                 return Ok(());
             }
             Err(PmiParseError::Resource(error)) => return Err(error),
@@ -917,10 +912,7 @@ fn parse_cell_record(
 /// A value inside one database piece gives up exactly its bytes. An overflow
 /// value spans pages without one source extent; its first piece stands in
 /// for the cell while the enclosing section record keeps the remaining bytes.
-fn cell_extent<'a, 'b>(
-    image: &'b database::read::MapImage<'a>,
-    fallback: View<'b>,
-) -> View<'b> {
+fn cell_extent<'a, 'b>(image: &'b database::read::MapImage<'a>, fallback: View<'b>) -> View<'b> {
     image.value_extent().unwrap_or(fallback)
 }
 
@@ -1038,20 +1030,14 @@ fn collect_dimension_maps(
                 let guid_start = base
                     .checked_add(offset)
                     .and_then(|map| map.checked_sub(36))
-                    .ok_or_else(|| {
-                        CodecError::malformed("PMI map part precedes its section")
-                    })?;
+                    .ok_or_else(|| CodecError::malformed("PMI map part precedes its section"))?;
                 let end = candidates
                     .get(index)
-                    .map(|(_, next)| base.checked_add(next.saturating_sub(36)))
+                    .map(|(_, next)| base.checked_add(next.checked_sub(36)?))
                     .unwrap_or_else(|| base.checked_add(payload.len()))
-                    .ok_or_else(|| {
-                        CodecError::malformed("PMI map part escapes its section")
-                    })?;
+                    .ok_or_else(|| CodecError::malformed("PMI map part escapes its section"))?;
                 let Some(extent) = source.child(guid_start, end) else {
-                    return Err(CodecError::malformed(
-                        "PMI map part escapes its section",
-                    ));
+                    return Err(CodecError::malformed("PMI map part escapes its section"));
                 };
                 let mut part_losses = give_up_pmi_record(
                     ctx,
@@ -1198,9 +1184,7 @@ fn extract_dimension(
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
     if embedded_guid {
-        let identity_start = offset
-            .checked_sub(36)
-            .ok_or("PMI map lacks its GUID key")?;
+        let identity_start = offset.checked_sub(36).ok_or("PMI map lacks its GUID key")?;
         let identity = payload
             .get(
                 identity_start

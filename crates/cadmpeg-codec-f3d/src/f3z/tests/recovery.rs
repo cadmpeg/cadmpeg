@@ -62,7 +62,14 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
+            .any(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.provenance.is_some()
+            }));
         assert_eq!(
             decoded
                 .source_fidelity()
@@ -77,7 +84,14 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
         assert!(summary
             .losses
             .iter()
-            .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
+            .any(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.provenance.is_some()
+            }));
     }
 }
 
@@ -173,7 +187,14 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
+        .any(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.provenance.is_some()
+            }));
 }
 
 #[test]
