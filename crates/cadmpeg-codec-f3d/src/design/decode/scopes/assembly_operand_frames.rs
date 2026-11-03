@@ -228,6 +228,7 @@ pub(super) fn exact_assembly_operand_frames(
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: Some(u64_from_index(reference_at + 1)),
+            null_construction: false,
             transform,
             transform_offset: Some(u64_from_index(transform_at)),
         })
@@ -355,6 +356,7 @@ pub(super) fn exact_as_built_operand_frame(
     Some(DesignAssemblyOperandFrame {
         reference_record_index,
         reference_offset: Some(u64::try_from(reference_at).ok()?),
+        null_construction: group_layout.is_some_and(|layout| layout.null_construction),
         transform,
         transform_offset: Some(u64::try_from(transform_at).ok()?),
     })

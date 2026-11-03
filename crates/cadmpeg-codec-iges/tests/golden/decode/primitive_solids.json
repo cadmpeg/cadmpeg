@@ -5,7 +5,86 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:application:attribute#document:author",
+          "name": "author",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "author"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:generation_date",
+          "name": "generation_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "20260714.000000"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:organization",
+          "name": "organization",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "org"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:receiver",
+          "name": "receiver",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "product"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:start",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "original fixture"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:system_id",
+          "name": "system_id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -58,7 +137,7 @@
           "name": "BLOCK",
           "native_ref": "iges:solid:primitive#D1",
           "needs_recompute": false,
-          "ordinal": 1,
+          "ordinal": 0,
           "suppressed": null
         },
         {
@@ -112,7 +191,7 @@
           "name": "SPHERE",
           "native_ref": "iges:solid:primitive#D11",
           "needs_recompute": false,
-          "ordinal": 11,
+          "ordinal": 5,
           "suppressed": null
         },
         {
@@ -173,7 +252,7 @@
           "name": "TORUS",
           "native_ref": "iges:solid:primitive#D13",
           "needs_recompute": false,
-          "ordinal": 13,
+          "ordinal": 6,
           "suppressed": null
         },
         {
@@ -241,7 +320,7 @@
           "name": "ELLIPSO",
           "native_ref": "iges:solid:primitive#D15",
           "needs_recompute": false,
-          "ordinal": 15,
+          "ordinal": 7,
           "suppressed": null
         },
         {
@@ -288,7 +367,7 @@
           "name": "DEFAULT",
           "native_ref": "iges:solid:primitive#D3",
           "needs_recompute": false,
-          "ordinal": 3,
+          "ordinal": 1,
           "suppressed": null
         },
         {
@@ -363,7 +442,7 @@
           "name": "WEDGE",
           "native_ref": "iges:solid:primitive#D5",
           "needs_recompute": false,
-          "ordinal": 5,
+          "ordinal": 2,
           "suppressed": null
         },
         {
@@ -413,7 +492,7 @@
           "name": "CYLINDER",
           "native_ref": "iges:solid:primitive#D7",
           "needs_recompute": false,
-          "ordinal": 7,
+          "ordinal": 3,
           "suppressed": null
         },
         {
@@ -470,7 +549,7 @@
           "name": "FRUSTUM",
           "native_ref": "iges:solid:primitive#D9",
           "needs_recompute": false,
-          "ordinal": 9,
+          "ordinal": 4,
           "suppressed": null
         }
       ],
@@ -1711,8 +1790,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
