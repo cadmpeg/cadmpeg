@@ -1297,12 +1297,12 @@ fn decode_preserves_owned_network_connect_points() {
     );
     assert_eq!(
         points[0].fields().unwrap()["owner"],
-        "iges:entity:directory#3"
+        "iges:product:network-definition#D3"
     );
     assert_eq!(points[1].fields().unwrap()["position"][2], 3.0);
     assert_eq!(
         points[1].fields().unwrap()["owner"],
-        "iges:entity:directory#7"
+        "iges:product:network-instance#D7"
     );
     assert!(
         result.report().losses.is_empty(),

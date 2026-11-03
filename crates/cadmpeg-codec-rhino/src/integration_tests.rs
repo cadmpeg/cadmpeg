@@ -1419,7 +1419,7 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
 }
 
 #[test]
-fn future_settings_payload_is_retained_without_known_prefix() {
+fn future_settings_payload_is_given_up_as_its_record() {
     let archive = ArchiveVersion::V5;
     let future_annotation = crc_chunk(archive, 0x2000_8034, &[0x20]);
     let valid_point = object_record_with_payload(
@@ -1445,17 +1445,28 @@ fn future_settings_payload_is_retained_without_known_prefix() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let retained = result
-        .source_fidelity()
-        .retained_records()
+    let unreadable = result
+        .report()
+        .losses
         .iter()
-        .find(|(id, _)| {
-            id.as_str()
-                .starts_with("rhino:opaque:record#10000015-20008034-")
+        .find(|loss| {
+            loss.code.to_string().contains("record.unreadable")
+                && loss.message.contains("rhino.table_record")
         })
-        .map(|(_, record)| record)
-        .expect("future settings payload is retained");
-    assert_eq!(retained.data(), Some(future_annotation.as_slice()));
+        .expect("future settings payload is given up as its record");
+    assert!(
+        result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record| record.data() == Some(future_annotation.as_slice())),
+        "given-up settings bytes keep their one home"
+    );
+    assert_eq!(
+        unreadable.dropped,
+        ["rhino:document:annotation_settings#current".to_owned()],
+        "the loss names the record the uncut document holds"
+    );
     assert_valid(&result);
 }
 

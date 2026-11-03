@@ -67,18 +67,14 @@ fn original_point_coordinates_keep_exact_nonzero_windows_native_values_and_sourc
             assert_eq!(records[0].integer(index), Some(i64::from(value)));
         }
         let scan = crate::card::scan(&normalized.bytes).expect("rendered grammar");
-        let (directory, quarantined) = crate::directory::parse_with_keys(
+        let directory = crate::directory::parse_with_keys(
             &scan,
             normalized.admission.global.global_table(),
             &ctx,
             |key| normalized.identities.semantic_sequence(key),
         )
         .expect("unchanged Directory grammar");
-        assert!(quarantined.is_empty());
-        let legacy =
-            crate::parameter::assemble(&scan, &directory, [], &normalized.admission.global)
-                .expect("unchanged Parameter grammar");
-        assert_eq!(records, &legacy.records);
+        assert_eq!(directory.len(), records.len());
         let decoded = crate::test_support::decode(bytes);
         assert_eq!(decoded.ir().model.points.len(), 2);
         assert_eq!(

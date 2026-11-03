@@ -375,10 +375,10 @@ fn unknown_kernel_layer() -> DialectMatch {
 /// evidence.
 ///
 /// A selected carrier has an ASM or ACIS signature. Failure to parse its
-/// header therefore maps to the total kernel row. `Unavailable` is a
-/// host-selection state: it does not prove that a kernel stream exists, so
-/// manufacturing `acis:unknown` for it would turn missing carrier evidence
-/// into a false kernel identity. Inspection and decode both call this
+/// header therefore maps to the total kernel row. An unlocated or withheld
+/// carrier is a host-selection state: it does not prove that a kernel stream
+/// exists, so manufacturing `acis:unknown` for it would turn missing carrier
+/// evidence into a false kernel identity. Inspection and decode both call this
 /// function and therefore make the same distinction.
 fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
     match state {
@@ -386,7 +386,9 @@ fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch
             Ok(header) => Some(kernel_layer(carrier.family, header)),
             Err(_) => Some(unknown_kernel_layer()),
         },
-        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
+        ActiveCarrierState::NotApplicable
+        | ActiveCarrierState::Unlocated { .. }
+        | ActiveCarrierState::Withheld => None,
     }
 }
 
