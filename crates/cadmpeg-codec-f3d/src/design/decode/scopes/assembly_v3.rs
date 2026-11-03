@@ -28,6 +28,18 @@ pub(crate) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) 
             .is_some_and(|(guid, version)| *version == 3 && guid.eq_ignore_ascii_case(TYPE_GUID))
 }
 
+/// Whether a scope's joint binds its feature only after archive merge, which
+/// can still refuse a joint whose occurrence path does not complete.
+pub(crate) fn joint_binds_after_merge(
+    scope: &DesignParameterScope,
+    types: &StreamTypes<'_>,
+) -> bool {
+    scope
+        .assembly_alignment()
+        .is_some_and(|alignment| alignment.frame_sense.is_some())
+        && registered(scope, types)
+}
+
 pub(crate) struct ScopeGrammar {
     pub(crate) frames: [DesignAssemblyOperandFrame; 2],
     pub(crate) owners: [u32; 4],

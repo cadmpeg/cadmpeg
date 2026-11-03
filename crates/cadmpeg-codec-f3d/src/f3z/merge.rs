@@ -610,10 +610,7 @@ fn rebind_joint_descent(
                 .map(|entry| crate::design::decode::meta::stream_types_by_entity(&types, &entry))
                 .unwrap_or_default()
         });
-        if scope
-            .assembly_alignment()
-            .is_some_and(|alignment| alignment.frame_sense.is_some())
-            && crate::design::decode::scopes::assembly_v3::registered(&scope, stream_types)
+        if crate::design::decode::scopes::assembly_v3::joint_binds_after_merge(&scope, stream_types)
         {
             complete_scopes.insert(scope.id);
         }
@@ -682,7 +679,32 @@ fn rebind_joint_descent(
     ir.model
         .assembly_joints
         .retain(|joint| !refused.contains(&joint.id));
+    bind_retained_joint_features(
+        &mut ir.model.features,
+        &ir.model.assembly_joints,
+        &complete_scopes,
+    );
     Ok(())
+}
+
+/// Bind the features of joints that survived complete descent. A refused joint
+/// has no row, so its feature keeps its native definition and parameters.
+fn bind_retained_joint_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    joints: &[cadmpeg_ir::products::AssemblyJoint],
+    complete_scopes: &std::collections::BTreeSet<String>,
+) {
+    let retained = joints
+        .iter()
+        .filter(|joint| {
+            joint
+                .native_ref
+                .as_ref()
+                .is_some_and(|scope| complete_scopes.contains(scope.as_str()))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::design::assembly::bind_assembly_joint_features(features, &retained);
 }
 
 type JointChildren<'a> = std::collections::BTreeMap<

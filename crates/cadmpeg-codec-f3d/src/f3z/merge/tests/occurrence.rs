@@ -1492,6 +1492,62 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
 }
 
 #[test]
+fn a_refused_joint_leaves_its_feature_native() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+    let joint = |id: &str, scope: &str| {
+        let mut joint = AssemblyJoint::paired(
+            JointId::mint(id).unwrap(),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: JointOperand::root("first", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+                JointConnector {
+                    operand: JointOperand::root("second", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.native_ref = Some(scope.to_owned().try_into().unwrap());
+        joint
+    };
+    let mut retained_feature = feature("f3d:model:feature#retained", 0);
+    retained_feature.native_ref = Some("f3d:scope#retained".to_owned().try_into().unwrap());
+    let mut refused_feature = feature("f3d:model:feature#refused", 1);
+    refused_feature.native_ref = Some("f3d:scope#refused".to_owned().try_into().unwrap());
+    let mut features = [retained_feature, refused_feature];
+    let complete = std::collections::BTreeSet::from([
+        "f3d:scope#retained".to_owned(),
+        "f3d:scope#refused".to_owned(),
+    ]);
+    super::super::bind_retained_joint_features(
+        &mut features,
+        &[joint("f3d:model:joint#retained", "f3d:scope#retained")],
+        &complete,
+    );
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
+#[test]
 fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{
