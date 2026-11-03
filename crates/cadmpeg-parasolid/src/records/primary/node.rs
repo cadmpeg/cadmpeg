@@ -92,6 +92,52 @@ impl<'r> Node<'r> {
         Some(out)
     }
 
+    /// The value of a scalar short field.
+    #[must_use]
+    pub fn short(&self, name: &str) -> Option<u16> {
+        self.scalar(name, DataType::Short)?.u16_be()
+    }
+
+    /// The value of a scalar logical field.
+    #[must_use]
+    pub fn logical(&self, name: &str) -> Option<bool> {
+        match self.scalar(name, DataType::Logical)?.u8()? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    }
+
+    /// A view over the named variable field when it holds `data_type`, and
+    /// its element count.
+    fn variable(&self, name: &str, data_type: DataType) -> Option<(View<'r>, usize)> {
+        let fields = &self.record.definition.fields;
+        let index = fields
+            .iter()
+            .position(|field| field.name.as_str() == name)?;
+        let field = fields.get(index)?;
+        (field.data_type == data_type && field.n_elements == 1 && field.transmit).then_some(())?;
+        let count = usize::try_from(self.record.variable_length?).ok()?;
+        let range = self.record.fields.get(index)?.clone();
+        Some((View::over_retained(self.source.get(range)?), count))
+    }
+
+    /// The values of a variable real field.
+    #[must_use]
+    pub fn reals(&self, name: &str) -> Option<Vec<f64>> {
+        let (mut view, count) = self.variable(name, DataType::Real)?;
+        (0..count)
+            .map(|_| view.u64_be().map(f64::from_bits))
+            .collect()
+    }
+
+    /// The values of a variable short field.
+    #[must_use]
+    pub fn shorts(&self, name: &str) -> Option<Vec<u16>> {
+        let (mut view, count) = self.variable(name, DataType::Short)?;
+        (0..count).map(|_| view.u16_be()).collect()
+    }
+
     /// The value of a scalar integer field.
     #[must_use]
     pub fn integer(&self, name: &str) -> Option<u32> {

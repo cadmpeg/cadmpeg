@@ -1002,87 +1002,89 @@ pub(crate) fn scan_curve_carriers(
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
             continue;
         };
-        let Some(control) = arrays.f64s.get(&descriptor.control_attr) else {
-            continue;
-        };
-        let Some(multiplicities) = arrays.u16s.get(&descriptor.multiplicity_attr) else {
-            continue;
-        };
-        let Some(unique_knots) = arrays.f64s.get(&descriptor.knot_attr) else {
-            continue;
-        };
-        let Some(expected_control_values) =
-            descriptor.control_count.checked_mul(descriptor.dimension)
-        else {
-            continue;
-        };
-        if control.len() != expected_control_values {
-            continue;
+        if let Some(carrier) = assemble_curve(&arrays, attr, off, descriptor, refusals) {
+            out.entry(attr).or_insert(carrier);
         }
-        if !unique_knots.iter().all(|value| value.is_finite()) || !unique_knots.is_sorted() {
-            continue;
-        }
-        let mut points = Vec::new();
-        let mut weights = (descriptor.dimension == 4).then(Vec::new);
-        for pole in control.chunks_exact(descriptor.dimension) {
-            if pole.iter().any(|value| !value.is_finite()) {
-                points.clear();
-                break;
-            }
-            let weight = if descriptor.dimension == 4 {
-                pole[3]
-            } else {
-                1.0
-            };
-            if !weight.is_finite() || weight.abs() <= f64::EPSILON {
-                points.clear();
-                break;
-            }
-            points.push(Point3::new(
-                pole[0] / weight * LEN_TO_MM,
-                pole[1] / weight * LEN_TO_MM,
-                pole[2] / weight * LEN_TO_MM,
-            ));
-            if let Some(values) = &mut weights {
-                values.push(weight);
-            }
-        }
-        if points.len() != descriptor.control_count {
-            continue;
-        }
-        let expected = points.len() + index_from_u32(descriptor.degree) + 1;
-        let Some(knots) = expanded_knots(unique_knots, multiplicities, expected) else {
-            continue;
-        };
-        if knots.len() != expected {
-            continue;
-        }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            descriptor.degree,
-            knots,
-            points,
-            weights,
-            false,
-        ) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                let note = crate::loss::spline_lane_refusal(format_args!(
-                    "curve carrier attribute {attr}: {error}"
-                ));
-                refusals.push(note);
-                continue;
-            }
-        };
-        out.entry(attr).or_insert(CurveCarrier {
-            marker_reversed: None,
-            attr,
-            offset: off,
-            end: off + 2,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            parameter_range: None,
-        });
     }
     out
+}
+
+/// The NURBS curve carrier of `B_CURVE` `attr` at `off` from `descriptor` and
+/// the arrays it names. A lane refusal is recorded in `refusals`.
+fn assemble_curve(
+    arrays: &Arrays,
+    attr: u32,
+    off: usize,
+    descriptor: &CurveDescriptor,
+    refusals: &mut Vec<LossNote>,
+) -> Option<CurveCarrier> {
+    let control = arrays.f64s.get(&descriptor.control_attr)?;
+    let multiplicities = arrays.u16s.get(&descriptor.multiplicity_attr)?;
+    let unique_knots = arrays.f64s.get(&descriptor.knot_attr)?;
+    let expected_control_values = descriptor.control_count.checked_mul(descriptor.dimension)?;
+    if control.len() != expected_control_values {
+        return None;
+    }
+    if !unique_knots.iter().all(|value| value.is_finite()) || !unique_knots.is_sorted() {
+        return None;
+    }
+    let mut points = Vec::new();
+    let mut weights = (descriptor.dimension == 4).then(Vec::new);
+    for pole in control.chunks_exact(descriptor.dimension) {
+        if pole.iter().any(|value| !value.is_finite()) {
+            points.clear();
+            break;
+        }
+        let weight = if descriptor.dimension == 4 {
+            pole[3]
+        } else {
+            1.0
+        };
+        if !weight.is_finite() || weight.abs() <= f64::EPSILON {
+            points.clear();
+            break;
+        }
+        points.push(Point3::new(
+            pole[0] / weight * LEN_TO_MM,
+            pole[1] / weight * LEN_TO_MM,
+            pole[2] / weight * LEN_TO_MM,
+        ));
+        if let Some(values) = &mut weights {
+            values.push(weight);
+        }
+    }
+    if points.len() != descriptor.control_count {
+        return None;
+    }
+    let expected = points.len() + index_from_u32(descriptor.degree) + 1;
+    let knots = expanded_knots(unique_knots, multiplicities, expected)?;
+    if knots.len() != expected {
+        return None;
+    }
+    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        descriptor.degree,
+        knots,
+        points,
+        weights,
+        false,
+    ) {
+        Ok(nurbs) => nurbs,
+        Err(error) => {
+            let note = crate::loss::spline_lane_refusal(format_args!(
+                "curve carrier attribute {attr}: {error}"
+            ));
+            refusals.push(note);
+            return None;
+        }
+    };
+    Some(CurveCarrier {
+        marker_reversed: None,
+        attr,
+        offset: off,
+        end: off + 2,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        parameter_range: None,
+    })
 }
 
 /// Two-dimensional `00 86` B-curves by `attr`, in stored support parameters
@@ -1298,157 +1300,148 @@ pub(crate) fn scan_surface_carriers(
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {
             continue;
         };
-        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
-            continue;
-        };
-        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
-            continue;
-        };
-        let Some(control) =
-            exact_f64_array(bytes, &arrays, descriptor.refs[0], expected_control_values)
-        else {
-            continue;
-        };
-        let Some(SurfaceKnotValues {
-            unique: u_unique,
-            multiplicities: u_mult,
-        }) = surface_knot_values(
-            bytes,
-            &arrays,
-            descriptor.refs[3],
-            descriptor.refs[1],
-            descriptor.u_knot_count,
-        )
-        else {
-            continue;
-        };
-        let Some(SurfaceKnotValues {
-            unique: v_unique,
-            multiplicities: v_mult,
-        }) = surface_knot_values(
-            bytes,
-            &arrays,
-            descriptor.refs[4],
-            descriptor.refs[2],
-            descriptor.v_knot_count,
-        )
-        else {
-            continue;
-        };
-        if control.len() != expected_control_values {
-            continue;
+        if let Some(carrier) = assemble_surface(bytes, &arrays, attr, off, descriptor, refusals) {
+            out.entry(attr).or_insert(carrier);
         }
-        let Some(u_expected) = descriptor
-            .u_count
-            .checked_add(index_from_u32(descriptor.u_degree))
-            .and_then(|value| value.checked_add(1))
-        else {
-            continue;
-        };
-        let Some(v_expected) = descriptor
-            .v_count
-            .checked_add(index_from_u32(descriptor.v_degree))
-            .and_then(|value| value.checked_add(1))
-        else {
-            continue;
-        };
-        let Some(u_multiplicity_sum) = multiplicity_sum(&u_mult) else {
-            continue;
-        };
-        let Some(v_multiplicity_sum) = multiplicity_sum(&v_mult) else {
-            continue;
-        };
-        if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
-            continue;
-        }
-        if !u_unique.iter().all(|value| value.is_finite())
-            || !v_unique.iter().all(|value| value.is_finite())
-            || !u_unique.is_sorted()
-            || !v_unique.is_sorted()
-        {
-            continue;
-        }
-        let mut points = Vec::new();
-        let dimension = if descriptor.rational {
-            descriptor.dimension
-        } else {
-            3
-        };
-        let mut weights = descriptor.rational.then(Vec::new);
-        for pole in control.chunks_exact(dimension) {
-            if pole.iter().any(|value| !value.is_finite()) {
-                points.clear();
-                break;
-            }
-            let weight = if descriptor.rational { pole[3] } else { 1.0 };
-            if !weight.is_finite() || weight.abs() <= f64::EPSILON {
-                points.clear();
-                break;
-            }
-            points.push(Point3::new(
-                pole[0] / weight * LEN_TO_MM,
-                pole[1] / weight * LEN_TO_MM,
-                pole[2] / weight * LEN_TO_MM,
-            ));
-            if let Some(values) = &mut weights {
-                values.push(weight);
-            }
-        }
-        if points.len() != expected_poles {
-            continue;
-        }
-        let (Some(u_knots), Some(v_knots)) = (
-            expanded_knots(&u_unique, &u_mult, u_expected),
-            expanded_knots(&v_unique, &v_mult, v_expected),
-        ) else {
-            continue;
-        };
-        if u_knots.len() != u_expected || v_knots.len() != v_expected {
-            continue;
-        }
-        let pole_rows = points
-            .chunks(descriptor.v_count)
-            .map(<[_]>::to_vec)
-            .collect::<Vec<_>>();
-        let weight_rows = weights.map(|values| {
-            values
-                .chunks(descriptor.v_count)
-                .map(<[_]>::to_vec)
-                .collect::<Vec<_>>()
-        });
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                descriptor.u_degree,
-                u_knots,
-                descriptor.u_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                descriptor.v_degree,
-                v_knots,
-                descriptor.v_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
-            false,
-        ) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                let note = crate::loss::spline_lane_refusal(format_args!(
-                    "surface carrier attribute {attr}: {error}"
-                ));
-                refusals.push(note);
-                continue;
-            }
-        };
-        out.entry(attr).or_insert(SurfaceCarrier {
-            attr,
-            offset: off,
-            end: off + 2,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            orientation_reversed: false,
-            marker_reversed: false,
-        });
     }
     out
+}
+
+/// The NURBS surface carrier of `B_SURFACE` `attr` at `off` from `descriptor`
+/// and the arrays it names. A lane refusal is recorded in `refusals`.
+fn assemble_surface(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u32,
+    off: usize,
+    descriptor: &SurfaceDescriptor,
+    refusals: &mut Vec<LossNote>,
+) -> Option<SurfaceCarrier> {
+    let expected_poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
+    let expected_control_values = expected_poles.checked_mul(descriptor.dimension)?;
+    let control = exact_f64_array(bytes, arrays, descriptor.refs[0], expected_control_values)?;
+    let SurfaceKnotValues {
+        unique: u_unique,
+        multiplicities: u_mult,
+    } = surface_knot_values(
+        bytes,
+        arrays,
+        descriptor.refs[3],
+        descriptor.refs[1],
+        descriptor.u_knot_count,
+    )?;
+    let SurfaceKnotValues {
+        unique: v_unique,
+        multiplicities: v_mult,
+    } = surface_knot_values(
+        bytes,
+        arrays,
+        descriptor.refs[4],
+        descriptor.refs[2],
+        descriptor.v_knot_count,
+    )?;
+    if control.len() != expected_control_values {
+        return None;
+    }
+    let u_expected = descriptor
+        .u_count
+        .checked_add(index_from_u32(descriptor.u_degree))
+        .and_then(|value| value.checked_add(1))?;
+    let v_expected = descriptor
+        .v_count
+        .checked_add(index_from_u32(descriptor.v_degree))
+        .and_then(|value| value.checked_add(1))?;
+    let u_multiplicity_sum = multiplicity_sum(&u_mult)?;
+    let v_multiplicity_sum = multiplicity_sum(&v_mult)?;
+    if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
+        return None;
+    }
+    if !u_unique.iter().all(|value| value.is_finite())
+        || !v_unique.iter().all(|value| value.is_finite())
+        || !u_unique.is_sorted()
+        || !v_unique.is_sorted()
+    {
+        return None;
+    }
+    let mut points = Vec::new();
+    let dimension = if descriptor.rational {
+        descriptor.dimension
+    } else {
+        3
+    };
+    let mut weights = descriptor.rational.then(Vec::new);
+    for pole in control.chunks_exact(dimension) {
+        if pole.iter().any(|value| !value.is_finite()) {
+            points.clear();
+            break;
+        }
+        let weight = if descriptor.rational { pole[3] } else { 1.0 };
+        if !weight.is_finite() || weight.abs() <= f64::EPSILON {
+            points.clear();
+            break;
+        }
+        points.push(Point3::new(
+            pole[0] / weight * LEN_TO_MM,
+            pole[1] / weight * LEN_TO_MM,
+            pole[2] / weight * LEN_TO_MM,
+        ));
+        if let Some(values) = &mut weights {
+            values.push(weight);
+        }
+    }
+    if points.len() != expected_poles {
+        return None;
+    }
+    let (Some(u_knots), Some(v_knots)) = (
+        expanded_knots(&u_unique, &u_mult, u_expected),
+        expanded_knots(&v_unique, &v_mult, v_expected),
+    ) else {
+        return None;
+    };
+    if u_knots.len() != u_expected || v_knots.len() != v_expected {
+        return None;
+    }
+    let pole_rows = points
+        .chunks(descriptor.v_count)
+        .map(<[_]>::to_vec)
+        .collect::<Vec<_>>();
+    let weight_rows = weights.map(|values| {
+        values
+            .chunks(descriptor.v_count)
+            .map(<[_]>::to_vec)
+            .collect::<Vec<_>>()
+    });
+    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            descriptor.u_degree,
+            u_knots,
+            descriptor.u_periodic,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            descriptor.v_degree,
+            v_knots,
+            descriptor.v_periodic,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
+        false,
+    ) {
+        Ok(nurbs) => nurbs,
+        Err(error) => {
+            let note = crate::loss::spline_lane_refusal(format_args!(
+                "surface carrier attribute {attr}: {error}"
+            ));
+            refusals.push(note);
+            return None;
+        }
+    };
+    Some(SurfaceCarrier {
+        attr,
+        offset: off,
+        end: off + 2,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+        orientation_reversed: false,
+        marker_reversed: false,
+    })
 }
 
 /// Exact-read spans of the admitted NURBS carriers of one stream body.
@@ -1968,6 +1961,8 @@ fn surface_knot_records(
     }
     resolved.pop().map(|(_, records)| records)
 }
+
+pub(super) mod nodes;
 
 #[cfg(test)]
 mod tests {

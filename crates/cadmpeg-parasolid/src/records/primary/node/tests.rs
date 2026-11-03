@@ -97,3 +97,43 @@ fn a_stopped_sequence_is_not_terminated() {
         assert_eq!(records.nodes().count(), 1);
     });
 }
+
+/// A base-schema `KNOT_SET` (128): its variable `knots` field, counted before the index.
+fn knot_set(index: u16, knots: &[f64]) -> Vec<u8> {
+    let mut bytes = vec![0, 128, 255];
+    bytes.extend_from_slice(&u32::try_from(knots.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    for knot in knots {
+        bytes.extend_from_slice(&knot.to_be_bytes());
+    }
+    bytes
+}
+
+/// A base-schema `KNOT_MULT` (127): its variable `mult` field.
+fn knot_mult(index: u16, mult: &[u16]) -> Vec<u8> {
+    let mut bytes = vec![0, 127, 255];
+    bytes.extend_from_slice(&u32::try_from(mult.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    for value in mult {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn variable_fields_read_their_counted_elements() {
+    let mut bytes = header();
+    bytes.extend(knot_set(3, &[0.0, 0.5, 1.0]));
+    bytes.extend(knot_mult(4, &[3, 1, 3]));
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        assert!(records.is_terminated());
+        let nodes: Vec<_> = records.nodes().collect();
+        assert_eq!(nodes[0].reals("knots"), Some(vec![0.0, 0.5, 1.0]));
+        assert_eq!(nodes[0].real("knots"), None);
+        assert_eq!(nodes[0].shorts("knots"), None);
+        assert_eq!(nodes[1].shorts("mult"), Some(vec![3, 1, 3]));
+        assert_eq!(nodes[1].short("mult"), None);
+    });
+}
