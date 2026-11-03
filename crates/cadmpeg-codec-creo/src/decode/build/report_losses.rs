@@ -849,10 +849,7 @@ fn unstatable_vertex_orbit_note(orbits: &[crate::topology::HalfEdgeId]) -> Optio
     )
 }
 
-pub(super) fn push_structural_layer_notes(
-    losses: &mut Vec<LossNote>,
-    scan: &ContainerScan,
-) {
+pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
     struct CurveExpressionTransfer(usize);
     impl std::fmt::Display for CurveExpressionTransfer {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -892,9 +889,7 @@ pub(super) fn push_structural_layer_notes(
         } else {
             CreoLossCode::SurfacePrototypeFieldRetained
         };
-        push_report_loss(losses, code, {
-            refusal
-        });
+        push_report_loss(losses, code, refusal);
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.
@@ -976,11 +971,7 @@ mod tests {
             diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
         }
         let mut losses = Vec::new();
-        push_brep_transfer_note(
-            &mut losses,
-            &diagnostics,
-            0,
-        );
+        push_brep_transfer_note(&mut losses, &diagnostics, 0);
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
         assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
@@ -1009,11 +1000,7 @@ mod tests {
             },
         );
         let mut losses = Vec::new();
-        push_brep_transfer_note(
-            &mut losses,
-            &diagnostics,
-            0,
-        );
+        push_brep_transfer_note(&mut losses, &diagnostics, 0);
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
         let (_, rejection) = losses[0]
@@ -1042,11 +1029,7 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(
-                &mut losses,
-                &diagnostics,
-                4,
-            );
+            push_brep_transfer_note(&mut losses, &diagnostics, 4);
             losses
         };
         let message = &losses[0].message;

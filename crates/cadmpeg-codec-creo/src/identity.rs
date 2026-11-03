@@ -33,9 +33,24 @@ pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
             "section"
         )),
         "FamilyInf" => Some(cadmpeg_ir::identity_namespace!(
-            "creo", "FamilyInf", "section"
+            "creo",
+            "FamilyInf",
+            "section"
         )),
-        _ => None,
+        "AllFeatur" | "FeatDefs" | "FeatDefsIndex" | "FeatDefsDtm" | "Geomlists" | "GeomDepen"
+        | "Model_L05_PX" | "Model_L05P" | "BasicData" | "BasBasData" | "BasFullData"
+        | "FullMData" => Some(cadmpeg_ir::identity_namespace!(
+            "creo",
+            "ModelData",
+            "section"
+        )),
+        "MdlStatus" | "MdlRefInfo" | "DispCntrl" | "ColorSchemeInfo" | "LargeText"
+        | "BasicText" | "IdsGenInfoDb" | "NeuPrtSld" | "NeuAsmSld" | "SolidPersistTable"
+        | "SolidPrimdata" | "DEPDB_DATA" | "UnitSystemDef_L03" | "PDMTrail_L03" | "ActEntity"
+        | "DispDataTable" => Some(cadmpeg_ir::identity_namespace!(
+            "creo", "Metadata", "section"
+        )),
+        _ => Some(cadmpeg_ir::identity_namespace!("creo", "opaque", "section")),
     }
 }
 

@@ -629,7 +629,12 @@ pub(crate) fn object(
 }
 
 #[cfg(test)]
-pub(crate) fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
+pub(crate) fn integer(
+    parent: &str,
+    name: &str,
+    value: i32,
+    offset: usize,
+) -> legacy::IntegerRecord {
     legacy::ValueRecord {
         name: name.to_string(),
         attribute_id: 0,
@@ -771,7 +776,6 @@ mod tests {
     };
     use crate::legacy;
     use crate::legacy::{ObjectPayload, StringPayload};
-
 
     #[test]
     fn joins_complete_ordered_table_rows() {

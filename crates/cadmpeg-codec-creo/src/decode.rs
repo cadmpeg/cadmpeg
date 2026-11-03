@@ -19,7 +19,7 @@ mod coverage;
 mod curve_expressions;
 mod document_projection;
 mod expanded;
-mod feature_history;
+pub(crate) mod feature_history;
 mod holes;
 mod native;
 mod native_records;
@@ -180,6 +180,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
         "admit Creo sections",
     )?;
+    // Scope follows the located parts (§1.1): a class whose parts were found
+    // but failed stays in scope, so scope is derived before the failed parts
+    // are excluded from transfer (§4.5).
+    let scope = located_scope(&scan);
+    let mut scan = scan;
+    container::exclude_incomplete_sections(&mut scan);
     let BuiltIr {
         mut ir,
         annotations,
@@ -196,7 +202,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     ir.scope = if ctx.container_only() {
         cadmpeg_ir::ContentScope::container()
     } else {
-        located_scope(&scan)
+        scope
     };
     let mut body = build_report(
         &scan,

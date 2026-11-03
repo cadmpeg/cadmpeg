@@ -65,8 +65,8 @@ pub(super) fn project(
             };
             let native_ref = retained_offset
                 .map(|offset| {
-                    let namespace = crate::identity::section_namespace(section.name())
-                        .ok_or_else(|| {
+                    let namespace =
+                        crate::identity::section_namespace(section.name()).ok_or_else(|| {
                             CodecError::malformed("thumbnail section without a namespace")
                         })?;
                     crate::identity::compose_checked::<UnknownId>(&namespace, offset)
@@ -163,13 +163,10 @@ pub(super) fn project(
         // `creo:family_info:driver_table#root` record, but no grammar is
         // defined for the binary driver-table entity it names. The section
         // framing the entity is retained untyped (§1.3); the loss names it.
-        let namespace =
-            crate::identity::section_namespace(driver.name()).ok_or_else(|| {
-                CodecError::malformed("driver-table section without a namespace")
-            })?;
-        let retained =
-            crate::identity::compose_checked::<UnknownId>(&namespace, driver.offset())
-                .map(|id| id.as_str().to_owned())?;
+        let namespace = crate::identity::section_namespace(driver.name())
+            .ok_or_else(|| CodecError::malformed("driver-table section without a namespace"))?;
+        let retained = crate::identity::compose_checked::<UnknownId>(&namespace, driver.offset())
+            .map(|id| id.as_str().to_owned())?;
         losses.push(CreoLossCode::ConfigurationDriverUnresolved.note(format!(
             "FamilyInf driver-table entity has no decoded grammar; its {} section bytes are retained untyped as {}.",
             driver.length(),

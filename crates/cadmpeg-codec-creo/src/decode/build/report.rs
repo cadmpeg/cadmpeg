@@ -94,10 +94,33 @@ pub(in super::super) fn build_report(
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
     let mut losses = Vec::new();
-    for message in &scan.framing.expansion_losses {
-        push_report_loss(&mut losses, CreoLossCode::CompressedSectionUnexpanded, {
-            &message.message
-        });
+    // Every section given up as a part charges one `record.unreadable`: the
+    // failed expansion and every other detected truncation give up the
+    // section, retain its bytes, and name no other loss for the span (§4.5
+    // rule 3). The structured `dropped` field stays empty: the section's
+    // rows are excluded before transfer, so no record is built from them.
+    for incomplete in &scan.framing.incomplete_sections {
+        let length = scan
+            .framing
+            .sections
+            .iter()
+            .find(|section| section.offset() == incomplete.offset)
+            .map_or(0, |section| section.length());
+        let mut provenance = cadmpeg_ir::SourceProvenance::root(
+            "creo",
+            cadmpeg_core::decode::u64_from_index(incomplete.offset),
+        );
+        if length != 0 {
+            provenance = provenance
+                .with_byte_len(cadmpeg_core::decode::u64_from_index(length))
+                .map_err(cadmpeg_core::CodecError::from)?;
+        }
+        let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note(format!(
+            "part {} stream=None offset={} length={}: {}; dropped=[]",
+            incomplete.label, incomplete.offset, length, incomplete.reason,
+        ));
+        loss.dropped = Vec::new();
+        losses.push(loss.with_provenance(provenance));
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
     losses.extend(crate::decode::analytic::pcurves::unresolved_pcurve_chart_losses(scan));

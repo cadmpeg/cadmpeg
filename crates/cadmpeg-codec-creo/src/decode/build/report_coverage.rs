@@ -382,7 +382,10 @@ pub(super) fn push_coverage_drop_losses(
     // `document_projection`, which carries the retained record id; the counts
     // stay for this refusal check.
     if coverage_count(coverage, "transferred_configuration_driver_table_count")
-        > coverage_count(coverage, "decoded_configuration_driver_table_reference_count")
+        > coverage_count(
+            coverage,
+            "decoded_configuration_driver_table_reference_count",
+        )
     {
         return Err(CodecError::malformed(
             "transferred driver count exceeds decoded count",
@@ -470,11 +473,7 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(
-                    &mut Vec::new(),
-                    &coverage,
-                    &[]
-                ),
+                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -489,11 +488,7 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(
-                    &mut Vec::new(),
-                    &coverage,
-                    &[]
-                ),
+                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -515,12 +510,8 @@ mod tests {
     fn coverage_family_loss_preserves_breakdown_under_service_profile() {
         let losses = {
             let mut losses = Vec::new();
-            push_coverage_drop_losses(
-                &mut losses,
-                &two_untransferred_planes(),
-                &[],
-            )
-            .expect("record the coverage drop losses");
+            push_coverage_drop_losses(&mut losses, &two_untransferred_planes(), &[])
+                .expect("record the coverage drop losses");
             losses
         };
         assert_eq!(losses.len(), 1);
@@ -562,12 +553,7 @@ mod tests {
             );
         }
         let mut losses = Vec::new();
-        push_coverage_drop_losses(
-            &mut losses,
-            &coverage,
-            &[],
-        )
-        .expect("report retained incidence");
+        push_coverage_drop_losses(&mut losses, &coverage, &[]).expect("report retained incidence");
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,

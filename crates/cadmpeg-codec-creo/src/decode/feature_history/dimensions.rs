@@ -200,7 +200,7 @@ pub(in super::super) fn feature_relation_table_complete(
     feature_relation_table_expected_rows(table) == Some(table.rows.len())
 }
 
-pub(in super::super) fn feature_relation_table_expected_rows(
+pub(crate) fn feature_relation_table_expected_rows(
     table: &crate::feature::definitions::FeatureRelationTable,
 ) -> Option<usize> {
     match table.declared_count {

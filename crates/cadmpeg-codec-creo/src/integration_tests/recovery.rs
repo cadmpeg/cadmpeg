@@ -37,14 +37,19 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("independent section is decoded");
         let decoded = EditableDecodeResult::from(decoded);
+        // A failed expansion gives up the section as a part: one
+        // `record.unreadable` names it, and the bytes are retained.
         let losses = decoded
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string() == "creo/container.compressed-section-unexpanded")
+            .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
             .collect::<Vec<_>>();
         assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("undefined code"));
+        assert!(losses[0].message.contains(name), "{losses:#?}");
+        assert!(!decoded.report().losses.iter().any(|loss| {
+            loss.code.to_string() == "creo/container.compressed-section-unexpanded"
+        }));
         assert!(decoded
             .source_fidelity()
             .retained_records()
@@ -59,3 +64,4 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
         assert_eq!(scan.framing.census.srf_array_count, None);
     }
 }
+
