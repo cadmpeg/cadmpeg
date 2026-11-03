@@ -220,6 +220,36 @@ fn saved_line_accepts_bare_entity_reference_before_coordinates() {
 }
 
 #[test]
+fn saved_line_repeats_the_preceding_slot() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\x48\x2e\0\xe4\x18\x2f\x2e\0\xe4\x18\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(
+        line.endpoints,
+        [
+            [Some(-15.0), Some(-15.0), Some(0.0)],
+            [Some(15.0), Some(15.0), Some(0.0)]
+        ]
+    );
+}
+
+#[test]
+fn saved_line_skips_the_gen_info_value_before_its_coordinates() {
+    let payload = b"\xe0\0entity(line)\0\x80\x02\xe2\x08\x18\xe5\x2f\x59\0\x18\xe4\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(line.entity_id, 2);
+    assert_eq!(
+        line.endpoints,
+        [[Some(0.0); 3], [Some(100.0), Some(0.0), Some(0.0)]]
+    );
+}
+
+#[test]
 fn saved_line_expands_zero_runs() {
     let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x18\xe4\xe3";
     let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
@@ -740,7 +770,10 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
 
 #[test]
 fn saved_generated_line_requires_its_orientation_invariant() {
-    let payload = [0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe3];
+    // `2a f0 00` is the lattice image of 1.0.
+    let payload = [
+        0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0x2a, 0xf0, 0x00, 0x0f, 0x0f, 0xe3,
+    ];
     let order = FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
