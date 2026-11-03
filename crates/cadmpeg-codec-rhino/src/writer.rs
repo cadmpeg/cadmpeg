@@ -427,7 +427,7 @@ fn write_archive_prefix(
                 exported.records
             }
             TCODE_TEXTURE_MAPPING_TABLE => {
-                let exported = tables::texture_mappings::mappings(ir)?;
+                let exported = tables::texture_mappings::mappings(ir, version)?;
                 texture_losses.extend(exported.losses);
                 exported.records
             }
@@ -994,7 +994,7 @@ fn native_dispositions(
             );
         }
     }
-    let emitted_mappings = tables::texture_mappings::mappings(ir)?;
+    let emitted_mappings = tables::texture_mappings::mappings(ir, version)?;
     for record in records_in(ir, "texture_mappings") {
         if emitted_mappings.written.contains(record.id()) {
             dispositions.set_record(

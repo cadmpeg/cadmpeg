@@ -839,6 +839,11 @@ struct TextureMappingRecord {
     /// re-emission. The primitive is an untyped polymorphic object whose
     /// parameters CADIR does not model; only its bytes round-trip it.
     primitive_bytes: Option<NativeBytes<Vec<u8>>>,
+    /// Decimal source archive version (`docs/formats/rhino_3dm.md` §4).
+    /// Chunk length fields are four bytes below archive 50 and eight bytes
+    /// at and above it, so the retained bytes only re-emit onto a target
+    /// with the same width.
+    source_archive_version: u64,
     texture_space: u32,
     capped: bool,
 }
@@ -4095,6 +4100,7 @@ fn parse_texture_mapping(
             uvw_transform,
             primitive_class_uuid,
             primitive_bytes,
+            source_archive_version: archive.value(),
             texture_space,
             capped,
         },
