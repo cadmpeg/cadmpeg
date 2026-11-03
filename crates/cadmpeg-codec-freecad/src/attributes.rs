@@ -27,6 +27,24 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     {
         return true;
     }
+    // A shape payload the B-rep transfer admitted owns its property.
+    if property.type_name == "Part::PropertyPartShape"
+        && ir
+            .native
+            .namespace("fcstd")
+            .and_then(|namespace| {
+                namespace
+                    .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+                    .ok()
+            })
+            .is_some_and(|payloads| {
+                payloads
+                    .iter()
+                    .any(|payload| payload.property == property.id)
+            })
+    {
+        return true;
+    }
     // Cells belong to the spreadsheet even when the sheet is empty and has
     // no parameter whose native_ref would otherwise consume the property.
     if property.name == "cells"
@@ -208,6 +226,16 @@ pub(crate) fn stays_native(property: &PropertyRecord) -> bool {
             .values()
             .iter()
             .any(|value| value.decoded_json.is_some()),
+        // An expression engine with no rows binds nothing; its framing
+        // stays native without an attribute.
+        "App::PropertyExpressionEngine"
+            if property.values().iter().all(|value| {
+                value.tag == "ExpressionEngine"
+                    && value.attributes.get("count").is_some_and(|count| count == "0")
+            }) =>
+        {
+            true
+        }
         _ => false,
     }
 }
