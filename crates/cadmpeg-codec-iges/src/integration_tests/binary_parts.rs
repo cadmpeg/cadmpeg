@@ -41,8 +41,23 @@ fn binary_bounded_directory_failure_keeps_real_later_point_and_one_exact_source_
         .collect();
     let actual_display: Vec<_> = native.arenas()["display_attributes"].iter().collect();
     assert_eq!(actual_display, expected_display);
-    assert!(native.arenas()["quarantined_directory_records"].is_empty());
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), 1);
@@ -141,8 +156,23 @@ fn binary_failed_directory_and_its_bounded_parameter_keep_the_independent_curren
             .count(),
         2
     );
-    assert!(native.arenas()["quarantined_directory_records"].is_empty());
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .unwrap()
         .is_ok());

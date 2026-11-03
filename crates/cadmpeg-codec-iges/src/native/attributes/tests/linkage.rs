@@ -6,6 +6,12 @@ use super::*;
 fn assert_inward_links(ir: &cadmpeg_ir::CadIr) {
     let namespace = ir.native.namespace("iges").expect("native namespace");
     for attribute in &ir.model.attributes {
+        // Document attributes carry Start and Global metadata with no native
+        // record; every other projected attribute links inward (#222 §7.7).
+        if attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document {
+            assert_eq!(attribute.native_ref, None);
+            continue;
+        }
         let id = attribute
             .native_ref
             .as_deref()

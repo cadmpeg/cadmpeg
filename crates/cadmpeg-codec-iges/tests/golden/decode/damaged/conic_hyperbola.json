@@ -5,7 +5,86 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:application:attribute#document:author",
+          "name": "author",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "author"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:generation_date",
+          "name": "generation_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "20260714.000000"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:organization",
+          "name": "organization",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "org"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:receiver",
+          "name": "receiver",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "product"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:start",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "original fixture"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#document:system_id",
+          "name": "system_id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -87,22 +166,7 @@
         "copious_data": [],
         "definition_levels": [],
         "directions": [],
-        "display_attributes": [
-          {
-            "color_definition": null,
-            "color_number": 0,
-            "id": "iges:presentation:display-attributes#D1",
-            "level_definition": null,
-            "level_number": 0,
-            "line_font_definition": null,
-            "line_font_number": 0,
-            "line_weight_mm": null,
-            "line_weight_number": 0,
-            "source_entity": "iges:entity:directory#1",
-            "view": 0,
-            "visible": true
-          }
-        ],
+        "display_attributes": [],
         "drawings": [],
         "entities": [
           {
@@ -228,8 +292,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -241,6 +303,11 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#7cfb430719be9617f24e242c4363979f344c7320c9c888cba1b924826a42406e"
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -307,7 +374,10 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part iges.parameter_field stream=\"iges/parameter/405/567\" offset=62 length=18: malformed container: IGES Parameter Data D1, logical offset Some(62): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card); dropped=[]",
+        "dropped": [
+          "iges:entity:directory#1"
+        ],
+        "message": "part iges.parameter_field stream=\"iges/parameter/405/567\" offset=62 length=18: malformed container: IGES Parameter Data D1, logical offset Some(62): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card); dropped=[iges:entity:directory#1]",
         "provenance": {
           "byte_len": 18,
           "format": "iges",
