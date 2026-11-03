@@ -18424,11 +18424,12 @@ source = "spec"
 anchor = "header is followed by 28 zero bytes"
 
 [[record.field]]
-name = "constant_three"
+name = "prefix_word"
 offset = 39
 type = "u32"
 source = "spec"
-anchor = "u32 value 3 at offset 39"
+anchor = "prefix word 2 or 3"
+note = "The prefix word is 2 or 3."
 
 [[record.field]]
 name = "zero_run_13"
@@ -21121,7 +21122,7 @@ name = "assembly_wide_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "The 945-byte `Assemble` scope uses the wide operand-frame form"
+anchor = "entries spans 945 bytes and uses the wide operand-frame form"
 note = "This size-less byte record describes the frame-sense prefix of the 945-byte scope. Offsets are relative to the scope's primary indexed header."
 
 [[record.field]]
@@ -21129,7 +21130,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "The 945-byte `Assemble` scope uses the wide operand-frame form"
+anchor = "entries spans 945 bytes and uses the wide operand-frame form"
 
 [[record.gap]]
 offset = 11
@@ -28506,3 +28507,583 @@ offset = 20
 type = "u8"
 source = "spec"
 anchor = "an expansion byte `E`"
+
+[[record]]
+name = "assembly_version_five_scope"
+kind = "byte"
+section = "Assembly operands"
+anchor = "version-five\nexpanded two-matrix layout"
+size = 945
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs"
+note = "Expanded prologue, two explicit matrices, and sixteen plain reference-table entries."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "expanded"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = 1
+
+[[record.field]]
+name = "expansion_zeros"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "facing"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "zero_run_26"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "first_frame_zeros"
+offset = 48
+type = "bytes[6]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_identity"
+offset = 54
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = 0
+
+[[record.field]]
+name = "first_matrix"
+offset = 55
+type = "f64[16]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "first_guid"
+offset = 183
+type = "bytes[76]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_reference"
+offset = 259
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_frame_zeros"
+offset = 270
+type = "bytes[6]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_identity"
+offset = 276
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = 0
+
+[[record.field]]
+name = "second_matrix"
+offset = 277
+type = "f64[16]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_guid"
+offset = 405
+type = "bytes[76]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "owner_prefix_zeros"
+offset = 481
+type = "bytes[4]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "angle_owner"
+offset = 485
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "angle_zeros"
+offset = 496
+type = "bytes[2]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0]
+
+[[record.field]]
+name = "z_owner"
+offset = 498
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "x_owner"
+offset = 509
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "y_owner"
+offset = 520
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "owner_suffix_zeros"
+offset = 531
+type = "bytes[6]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "locator_count"
+offset = 537
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = 2
+
+[[record.field]]
+name = "first_locator"
+offset = 541
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_locator"
+offset = 552
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "joint"
+offset = 563
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "guid"
+offset = 574
+type = "bytes[76]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "table_prefix_zeros"
+offset = 650
+type = "bytes[3]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "reference_count"
+offset = 653
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = 16
+
+[[record.field]]
+name = "references"
+offset = 657
+type = "bytes[176]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "current_history"
+offset = 833
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "kind"
+offset = 837
+type = "bytes[20]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "ordinal"
+offset = 857
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_prefix_zeros"
+offset = 861
+type = "bytes[15]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_tail_reference"
+offset = 876
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "additional_tail_reference"
+offset = 887
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "previous_history"
+offset = 898
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_word_a"
+offset = 902
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_scalar"
+offset = 906
+type = "f64"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_word_b"
+offset = 914
+type = "u32"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_tail_reference"
+offset = 918
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "first_boolean"
+offset = 929
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "second_boolean"
+offset = 930
+type = "u8"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_separator"
+offset = 931
+type = "bytes[1]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0]
+
+[[record.field]]
+name = "last_tail_reference"
+offset = 932
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+
+[[record.field]]
+name = "tail_zeros"
+offset = 943
+type = "bytes[2]"
+source = "spec"
+anchor = "Version 5 uses the same type GUID and field order"
+value = [0, 0]
+
+[[record]]
+name = "assembly_wide_null_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "This null-construction matrix locator spans 215 bytes."
+size = 215
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "transform"
+offset = 58
+type = "f64[16]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "zero_separator"
+offset = 186
+type = "u8"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 187
+type = "bytes[11]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 198
+type = "bytes[11]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "discriminator"
+offset = 209
+type = "u32"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record.field]]
+name = "zero_tail"
+offset = 213
+type = "bytes[2]"
+source = "spec"
+anchor = "This null-construction matrix locator spans 215 bytes."
+
+[[record]]
+name = "assembly_locator_prefix_two"
+kind = "byte"
+section = "Assembly operands"
+anchor = "prefix word 2 or 3"
+[[record.gap]]
+offset = 0
+size = 39
+note = "Indexed header and zero prefix."
+[[record.field]]
+name = "word"
+offset = 39
+type = "u32"
+value = 2
+source = "spec"
+anchor = "prefix word 2 or 3"
+
+[[record]]
+name = "assembly_locator_prefix_three"
+kind = "byte"
+section = "Assembly operands"
+anchor = "prefix word 2 or 3"
+[[record.gap]]
+offset = 0
+size = 39
+note = "Indexed header and zero prefix."
+[[record.field]]
+name = "word"
+offset = 39
+type = "u32"
+value = 3
+source = "spec"
+anchor = "prefix word 2 or 3"
+
+[[record]]
+name = "assembly_wide_null_identity_77"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity variants span 77 bytes"
+size = 77
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "separator"
+offset = 58
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 70
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 75
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record]]
+name = "assembly_wide_null_identity_87"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity variants span 77 bytes"
+size = 87
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Common wide prefix."
+
+[[record.field]]
+name = "construction_reference"
+offset = 56
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 57
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "separator"
+offset = 58
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 81
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 85
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity variants span 77 bytes"

@@ -1405,7 +1405,7 @@ A `SurfaceStitch` scope has `2n + 2` ordered references for positive input-surfa
 
 A `BoundaryFill` scope in the two-cell body form is 413 bytes and has eight ordered references. Reference zero is a counted boundary-tool group with role `0x0000000400000000` and references one and two as its ordered body-recipe members. References three and five are counted selected-cell groups with role `0x0000000500000000`; their sole body-recipe members are references four and six respectively. Reference seven carries the operation settings. Each selected-cell group produces one solid result body. For each body-recipe reference, persistent candidate faces present in the exact preceding topology supply their owning body set through complete body-region-shell-face incidence. The intersection across every reference in one member must contain exactly one body. A complete group resolves to its member-ordered, deduplicated historical body selection; an unresolved member retains the complete native group.
 
-A `Split` scope has two nonempty counted construction groups that partition its ordered references. Reference zero is the tool group. Its members follow contiguously. The next reference is the target group with role `0x0000000400000000`; every remaining reference is one of its body-recipe members. A role-`0x0000000900000000` tool group has exactly one member. That member is a face recipe with the complete terminal program `[0, −1]`, no positive header value, and no topology nodes. Its unique referenced face in the exact preceding topology is the splitting tool. A role-`0x0000002100000000` tool group has one or more surface or plane construction members and retains the complete group as the splitting tool. Both tool roles use the `DcFeatureOperationIdFlag` metadata prefix before the member count. The operation partitions every target body with the tool surfaces and retains every result body. Reference zero can instead be a face operand record with a `face_recipe_data` recipe and no enclosing group.
+A `Split` scope has two nonempty counted construction groups that partition its ordered references. Reference zero is the tool group. Its members follow contiguously. The next reference is the target group with role `0x0000000400000000`; every remaining reference is one of its body-recipe members. A role-`0x0000000900000000` tool group has exactly one member. That member is a face recipe with the complete terminal program `[0, −1]`, no positive header value, and no topology nodes. Its unique referenced face in the exact preceding topology is the splitting tool. A role-`0x0000002100000000` tool group has one or more surface or plane construction members. When the group has exactly one member and that member is a compact entity-selection record whose sole identity `p` names the WorkPlane scope at record index `p + 1`, that WorkPlane feature is the splitting plane and a dependency of the operation. Any other role-`0x0000002100000000` group is retained complete as the splitting tool. Both tool roles use the `DcFeatureOperationIdFlag` metadata prefix before the member count. The operation partitions every target body with the tool surfaces and retains every result body. Reference zero can instead be a face operand record with a `face_recipe_data` recipe and no enclosing group.
 
 A `SplitFace` scope with `r` ordered references is `290 + 11(r - 1)` bytes, or one byte longer in its alternate frame. The class-418/266 and class-277/258 forms are `286 + 11(r - 1)` bytes. These compact forms share a fixed prefix with eleven zero bytes at offsets 11 through 21, byte `01` at offset 22, four zero bytes at offsets 23 through 26, bytes `01 01` at offsets 27 and 28, and three zero bytes at offsets 29 through 31; the first marked construction reference starts at offset 32. Their u32 ordered-reference count is at offset 168, the first ordered-reference marker is at offset 172, and the LP-UTF16 kind payload starts at `180 + 11r`. Every frame contains exactly two nonempty counted construction-operand groups. The first reference is the splitting-tool group with role `0x0000002100000000`; it uses the `DcFeatureOperationIdFlag` metadata prefix defined for `SurfaceStitch` groups. A path tool has nested entity-selection members whose primary identity names one planar Sketch and whose secondary identity names one curve in that Sketch. An edge path tool instead has nested entity-selection members with no secondary or curve-secondary identity; each primary identity must resolve through history to exactly one edge in the feature's preceding topology. The ordered edge slots form a historical path in the feature input topology. If any member fails this proof, the tool remains native. A plane tool has one or more compact entity-selection members. Each member's sole identity `p` names the WorkPlane scope at record index `p + 1`. The ordered WorkPlane features are the tool dependencies. The second group immediately follows the tool members in the scope reference table, has role `0x0000001000000000`, and contains the bounded-face operands partitioned by the operation. The two groups and their members consume the complete reference table. A path projects its ordered Sketch curves or historical input edges onto the selected faces; every plane extends through them. Both forms retain every resulting face region.
 
@@ -1936,6 +1936,21 @@ occurrence GUIDs traverse child occurrences within the selected insertion,
 including child occurrences that insert another document. The scope
 connector belongs to the innermost occurrence in that path.
 
+Version 5 uses the same type GUID and field order with these extensions.
+Its joint reference selects type version 6.
+Nine zero bytes follow the facing byte's two zero bytes. Each connector
+stores six zero bytes between its reference and identity byte, and an
+LP-UTF16 GUID of 36 code units after its identity byte or explicit matrix.
+Two zero bytes follow the angle-owner reference. An additional nonnull
+reference follows the first tail reference. This tail uses separator length
+`S = 0`. One zero byte separates its two boolean bytes from its last
+reference. Version 5 uses eleven-byte plain local references. Its span is
+`377 + (R + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+select angle, Z, X, and Y lanes. The zero run after the four owner references
+is six bytes. This form stores four alignment owners. The version-five
+expanded two-matrix layout with `R = 16` spans 945 bytes; its complete field
+table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
+
 The scope matrices are operand-local connector frames. Let `C0` and `C1` be
 these frames after composition with their operand poses. The mate equation
 is `C0 = C1 * T(X, Y, Z) * Rz(angle) * F`. Angle is in radians; offsets and
@@ -1944,13 +1959,13 @@ matrix translations are in centimetres. Facing byte `0` selects identity
 translation, rotation, facing. This equation defines the joint
 relation. Occurrence transforms retain their stored placement.
 
-The 945-byte `Assemble` scope uses the wide operand-frame form. It stores
+The expanded two-matrix version-5 `Assemble` scope with sixteen reference-table
+entries spans 945 bytes and uses the wide operand-frame form. It stores
 `u8 1` at offset 20, four zero bytes, the frame-sense byte at offset 25, and zero
 bytes at offsets 26 through 36. Its operand references are at offsets 37 and
 259. Seven zero bytes follow each reference, rigid row-major transforms start
-at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its four
-parameter owners are the angle, X, Y, and Z alignment lanes in owner-local
-order, and they are the first four entries of its reference table. The
+at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its explicit
+owner references select angle, Z, X, and Y alignment lanes. The
 operand-path-locator count is at offset 537 and the two marked locator
 references are at offsets 541 and 552.
 
@@ -1971,9 +1986,13 @@ and 567 in the 850-byte scope, after the count 2.
 
 A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
 
+A wide version-five locator has prefix word 2 or 3. A null construction reference occupies one zero byte at 56. With flag 0 at 57, the rigid matrix starts at 58, the separator is at 186, the scope backlink at 187, the wrapper reference at 198, the discriminator at 209, and the two-byte zero tail at 213. This null-construction matrix locator spans 215 bytes. For version-three and version-five Assemble scopes, the scope connector supplies the operand frame; the locator path supplies its occurrence qualifier.
+
+The null-construction identity variants span 77 bytes with a null wrapper and 87 bytes with a present wrapper. Their flag is 1 at 57, separator at 58, backlink at 59 and wrapper at 70. The discriminator and zero tail start at 71 and 75 for the 77-byte form, and 81 and 85 for the 87-byte form. A qualified operand requires a present wrapper.
+
 A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
-header is followed by 28 zero bytes, u32 value 3 at offset 39, 13 zero bytes,
+header is followed by 28 zero bytes, a u32 prefix word at offset 39, 13 zero bytes,
 a nonzero marked same-segment reference at offset 56, and an identity flag byte
 at offset 67. Flag `0` is followed by a row-major rigid 4×4 transform at offset
 68; flag `1` stores no transform. One zero byte follows the flag or the

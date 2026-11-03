@@ -981,7 +981,7 @@ fn closing_paths_bound_counts_and_require_local_references() {
 }
 
 #[test]
-fn version_three_joint_relations_preserve_saved_occurrence_poses() {
+fn versioned_joint_relations_preserve_saved_occurrence_poses() {
     use crate::records::feature::assembly::{
         DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
@@ -1031,22 +1031,43 @@ fn version_three_joint_relations_preserve_saved_occurrence_poses() {
         transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
         transform_offset: 36,
     });
-    for (version, facing) in [
-        (3, Some(DesignJointFrameSense::Opposed)),
-        (3, None),
-        (4, Some(DesignJointFrameSense::Opposed)),
+    for (version, facing, legacy_five) in [
+        (3, Some(DesignJointFrameSense::Opposed), false),
+        (3, None, false),
+        (4, Some(DesignJointFrameSense::Opposed), false),
+        (5, Some(DesignJointFrameSense::Opposed), false),
+        (5, Some(DesignJointFrameSense::Opposed), true),
     ] {
         let mut scope = DesignParameterScope::empty(
             &format!("{STREAM}:design-parameter-scope#0"),
             DesignFeatureKind::Assemble,
             30,
         );
+        let mut frames = frames.clone();
+        if legacy_five {
+            use crate::layout::assembly_version_five_scope as five;
+            scope
+                .try_edit(|draft| {
+                    let span = cadmpeg_core::decode::u64_from_index(five::LEN);
+                    draft.feature_ordinal_offset += span - draft.frame_length;
+                    draft.frame_length = span;
+                    draft.paired_byte_offset = span;
+                })
+                .unwrap();
+            for (frame, (reference, matrix)) in frames.iter_mut().zip([
+                (five::FIRST_REFERENCE, five::FIRST_MATRIX),
+                (five::SECOND_REFERENCE, five::SECOND_MATRIX),
+            ]) {
+                frame.reference_offset = cadmpeg_core::decode::u64_from_index(reference + 1);
+                frame.transform_offset = cadmpeg_core::decode::u64_from_index(matrix);
+            }
+        }
         let alignment = DesignAssemblyAlignment::try_new(
             0.0,
             [0.0; 3],
             Vec::new(),
             Some(DesignAssemblyAlignmentForm::qualified(
-                frames.clone(),
+                frames,
                 [operand(0), operand(1)],
             )),
         )
@@ -1084,7 +1105,7 @@ fn version_three_joint_relations_preserve_saved_occurrence_poses() {
         )
         .unwrap();
         let parent = instance(&carriers, &[100]);
-        let expected = if version == 3 && facing.is_some() {
+        let expected = if matches!(version, 3 | 5) && facing.is_some() && !legacy_five {
             millimetres(saved)
         } else {
             millimetres(carriers[0].transform().unwrap().value.into())

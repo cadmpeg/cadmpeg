@@ -5610,7 +5610,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte header is followed by 28 zero bytes |
 | 11 | 28 | `zero_run_28` | `bytes[28]` | little | spec | header is followed by 28 zero bytes |
-| 39 | 4 | `constant_three` | `u32` | little | spec | u32 value 3 at offset 39 |
+| 39 | 4 | `prefix_word` | `u32` | little | spec | The prefix word is 2 or 3. |
 | 43 | 13 | `zero_run_13` | `bytes[13]` | little | spec | 13 zero bytes |
 | 56 | 11 | `nonzero_record_reference` | `bytes[11]` | little | spec | a nonzero marked same-segment reference at offset 56 |
 | 67 | 1 | `identity_flag` | `u8` | little | spec | an identity flag byte at offset 67 |
@@ -6440,7 +6440,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 945-byte `Assemble` scope uses the wide operand-frame form |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | entries spans 945 bytes and uses the wide operand-frame form |
 | 20 | 1 | `wide_marker` | `u8` | little | spec | `u8 1` at offset 20 |
 | 21 | 4 | `zero_run_21` | `bytes[4]` | little | spec | four zero bytes, the frame-sense byte at offset 25 |
 | 25 | 1 | `frame_sense` | `u8` | little | spec | the frame-sense byte at offset 25 |
@@ -8364,6 +8364,147 @@ Parsed by:
 | 0 | 11 | `header` | `bytes[11]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte |
 | 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
+
+## `assembly_version_five_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: 945 B
+
+Expanded prologue, two explicit matrices, and sixteen plain reference-table entries.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | Version 5 uses the same type GUID and field order · value `1` |
+| 21 | 4 | `expansion_zeros` | `bytes[4]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0]` |
+| 25 | 1 | `facing` | `u8` | little | spec | Version 5 uses the same type GUID and field order |
+| 26 | 11 | `zero_run_26` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 37 | 11 | `first_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 48 | 6 | `first_frame_zeros` | `bytes[6]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0]` |
+| 54 | 1 | `first_identity` | `u8` | little | spec | Version 5 uses the same type GUID and field order · value `0` |
+| 55 | 128 | `first_matrix` | `f64[16]` | little | spec | Version 5 uses the same type GUID and field order |
+| 183 | 76 | `first_guid` | `bytes[76]` | little | spec | Version 5 uses the same type GUID and field order |
+| 259 | 11 | `second_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 270 | 6 | `second_frame_zeros` | `bytes[6]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0]` |
+| 276 | 1 | `second_identity` | `u8` | little | spec | Version 5 uses the same type GUID and field order · value `0` |
+| 277 | 128 | `second_matrix` | `f64[16]` | little | spec | Version 5 uses the same type GUID and field order |
+| 405 | 76 | `second_guid` | `bytes[76]` | little | spec | Version 5 uses the same type GUID and field order |
+| 481 | 4 | `owner_prefix_zeros` | `bytes[4]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0]` |
+| 485 | 11 | `angle_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 496 | 2 | `angle_zeros` | `bytes[2]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0]` |
+| 498 | 11 | `z_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 509 | 11 | `x_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 520 | 11 | `y_owner` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 531 | 6 | `owner_suffix_zeros` | `bytes[6]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0]` |
+| 537 | 4 | `locator_count` | `u32` | little | spec | Version 5 uses the same type GUID and field order · value `2` |
+| 541 | 11 | `first_locator` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 552 | 11 | `second_locator` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 563 | 11 | `joint` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 574 | 76 | `guid` | `bytes[76]` | little | spec | Version 5 uses the same type GUID and field order |
+| 650 | 3 | `table_prefix_zeros` | `bytes[3]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0]` |
+| 653 | 4 | `reference_count` | `u32` | little | spec | Version 5 uses the same type GUID and field order · value `16` |
+| 657 | 176 | `references` | `bytes[176]` | little | spec | Version 5 uses the same type GUID and field order |
+| 833 | 4 | `current_history` | `u32` | little | spec | Version 5 uses the same type GUID and field order |
+| 837 | 20 | `kind` | `bytes[20]` | little | spec | Version 5 uses the same type GUID and field order |
+| 857 | 4 | `ordinal` | `u32` | little | spec | Version 5 uses the same type GUID and field order |
+| 861 | 15 | `tail_prefix_zeros` | `bytes[15]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 876 | 11 | `first_tail_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 887 | 11 | `additional_tail_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 898 | 4 | `previous_history` | `u32` | little | spec | Version 5 uses the same type GUID and field order |
+| 902 | 4 | `tail_word_a` | `u32` | little | spec | Version 5 uses the same type GUID and field order |
+| 906 | 8 | `tail_scalar` | `f64` | little | spec | Version 5 uses the same type GUID and field order |
+| 914 | 4 | `tail_word_b` | `u32` | little | spec | Version 5 uses the same type GUID and field order |
+| 918 | 11 | `second_tail_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 929 | 1 | `first_boolean` | `u8` | little | spec | Version 5 uses the same type GUID and field order |
+| 930 | 1 | `second_boolean` | `u8` | little | spec | Version 5 uses the same type GUID and field order |
+| 931 | 1 | `tail_separator` | `bytes[1]` | little | spec | Version 5 uses the same type GUID and field order · value `[0]` |
+| 932 | 11 | `last_tail_reference` | `bytes[11]` | little | spec | Version 5 uses the same type GUID and field order |
+| 943 | 2 | `tail_zeros` | `bytes[2]` | little | spec | Version 5 uses the same type GUID and field order · value `[0, 0]` |
+
+## `assembly_wide_null_matrix_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 58 | 128 | `transform` | `f64[16]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 186 | 1 | `zero_separator` | `u8` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 187 | 11 | `scope_backlink` | `bytes[11]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 198 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 209 | 4 | `discriminator` | `u32` | little | spec | This null-construction matrix locator spans 215 bytes. |
+| 213 | 2 | `zero_tail` | `bytes[2]` | little | spec | This null-construction matrix locator spans 215 bytes. |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
+
+## `assembly_locator_prefix_two`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 39 | 4 | `word` | `u32` | little | spec | prefix word 2 or 3 · value `2` |
+
+Unstated regions:
+
+- `0..39` (39 B): Indexed header and zero prefix.
+
+## `assembly_locator_prefix_three`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 39 | 4 | `word` | `u32` | little | spec | prefix word 2 or 3 · value `3` |
+
+Unstated regions:
+
+- `0..39` (39 B): Indexed header and zero prefix.
+
+## `assembly_wide_null_identity_77`
+
+Spec §Assembly operands · layout: byte offsets · size: 77 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 58 | 1 | `separator` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 59 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 70 | 1 | `wrapper_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 71 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity variants span 77 bytes |
+| 75 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity variants span 77 bytes |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
+
+## `assembly_wide_null_identity_87`
+
+Spec §Assembly operands · layout: byte offsets · size: 87 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 58 | 1 | `separator` | `u8` | little | spec | The null-construction identity variants span 77 bytes |
+| 59 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 70 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The null-construction identity variants span 77 bytes |
+| 81 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity variants span 77 bytes |
+| 85 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity variants span 77 bytes |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
 
 ## Not tabulated
 
