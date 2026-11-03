@@ -12,8 +12,8 @@
     },
     {
       "attributes": {
-        "entity_count": "8",
-        "unknown_entities": ""
+        "entity_count": "10",
+        "unknown_entities": "CARTESIAN_TRANSFORMATION_OPERATOR_3D:1,EXAMPLE_RECORD:1,SURFACE_REPLICA:1"
       },
       "compression": "none",
       "name": "DATA[0]",
@@ -40,22 +40,6 @@
   "losses": [
     {
       "code": {
-        "code": "parse.record-omitted",
-        "kind": "noncanonical_source_syntax",
-        "namespace": "step",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "instance #8 omitted: unresolved instance reference #999; exact source retained",
-      "provenance": {
-        "format": "step",
-        "offset": 590,
-        "tag": "data_record"
-      },
-      "severity": "warning"
-    },
-    {
-      "code": {
         "code": "geometry.document-angle-unit-unresolved",
         "kind": "geometry_not_transferred",
         "namespace": "step",
@@ -64,10 +48,59 @@
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "CARTESIAN_TRANSFORMATION_OPERATOR_3D #8 has invalid axes, origin, or scale",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "SURFACE_REPLICA #9 has invalid or unresolved parent/operator",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 CARTESIAN_TRANSFORMATION_OPERATOR_3D instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 SURFACE_REPLICA instance(s) as named opaque STEP records",
+      "severity": "warning"
     }
   ],
   "notes": [
-    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242",
-    "instance #8 omitted: unresolved instance reference #999; exact source retained"
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]
 }

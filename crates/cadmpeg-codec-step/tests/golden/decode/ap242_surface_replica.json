@@ -38,27 +38,13 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "unknown",
+            "record": "step:data:surface_replica#9"
           },
-          "id": "step:data:surface#7",
+          "id": "step:data:surface#9",
           "source_object": {
             "format": "step",
-            "object_id": "#7"
+            "object_id": "#9"
           }
         }
       ],
@@ -70,7 +56,17 @@
       "step": {
         "unknowns": [
           {
-            "id": "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345"
+            "id": "step:data:cartesian_transformation_operator_3d#8"
+          },
+          {
+            "id": "step:data:example_record#7"
+          },
+          {
+            "id": "step:data:surface_replica#9",
+            "links": [
+              "step:data:example_record#7",
+              "step:data:cartesian_transformation_operator_3d#8"
+            ]
           }
         ]
       }
@@ -135,27 +131,57 @@
       },
       {
         "code": {
-          "code": "record.unreadable",
+          "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "error"
+          "namespace": "step",
+          "scope": "namespaced"
         },
-        "dropped": [
-          "step:data:point#3",
-          "step:data:surface#8"
-        ],
-        "message": "part step.simple_entity_instance stream=\"\" offset=590 length=31: malformed container: unresolved instance reference #999; dropped=[step:data:point#3, step:data:surface#8]",
-        "provenance": {
-          "byte_len": 31,
-          "format": "step",
-          "offset": 590
+        "message": "CARTESIAN_TRANSFORMATION_OPERATOR_3D #8 has invalid axes, origin, or scale",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "scope": "namespaced"
         },
-        "severity": "error"
+        "message": "SURFACE_REPLICA #9 has invalid or unresolved parent/operator",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 CARTESIAN_TRANSFORMATION_OPERATOR_3D instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step",
+          "scope": "namespaced"
+        },
+        "message": "preserved 1 SURFACE_REPLICA instance(s) as named opaque STEP records",
+        "severity": "warning"
       }
     ],
     "notes": [
-      "byte accounting: 306 structural, 348 typed, 31 named opaque, 0 unclassified"
+      "byte accounting: 293 structural, 333 typed, 119 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,
@@ -167,14 +193,36 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9d2eefc99771d16deb005e136b2f9a7e328b13d919ecb594ef7f4542e0d2a53c",
+    "decode_digest": "009ae4fde73eea148ddff859719c447b3376d44b7db845cf262b72bb9adab668",
     "retained_records": {
-      "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345": {
+      "step:data:cartesian_transformation_operator_3d#8": {
         "bytes": {
-          "data": "Izg9U1VSRkFDRV9SRVBMSUNBKCcnLCM3LCM5OTkpOw==",
+          "data": "Izg9Q0FSVEVTSUFOX1RSQU5TRk9STUFUSU9OX09QRVJBVE9SXzNEKCcnLCM0LCM1LCMzLDEuKTs=",
           "retention": "inline"
         },
-        "offset": 590,
+        "offset": 594,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:example_record#7": {
+        "bytes": {
+          "data": "Izc9RVhBTVBMRV9SRUNPUkQoJ29wYXF1ZSBiYXNpcycpOw==",
+          "retention": "inline"
+        },
+        "offset": 559,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:data:surface_replica#9": {
+        "bytes": {
+          "data": "Izk9U1VSRkFDRV9SRVBMSUNBKCcnLCM3LCM4KTs=",
+          "retention": "inline"
+        },
+        "offset": 651,
         "stream": "",
         "untyped": [
           "model"
