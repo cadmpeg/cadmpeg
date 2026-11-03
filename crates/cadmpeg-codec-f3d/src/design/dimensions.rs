@@ -4686,8 +4686,7 @@ fn directional_point_dimension(
     );
     match (horizontal, vertical) {
         (true, false) => {
-            let (first, second) =
-                ordered(second_position.u - first_position.u);
+            let (first, second) = ordered(second_position.u - first_position.u);
             Some(Definition::HorizontalDistance {
                 first,
                 second,
@@ -4695,8 +4694,7 @@ fn directional_point_dimension(
             })
         }
         (false, true) => {
-            let (first, second) =
-                ordered(second_position.v - first_position.v);
+            let (first, second) = ordered(second_position.v - first_position.v);
             Some(Definition::VerticalDistance {
                 first,
                 second,
