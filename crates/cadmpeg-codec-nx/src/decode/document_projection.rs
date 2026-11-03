@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral homes for independently typed NX document records.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
     attributes::{AttributeValue, SourceAttribute},
-    products::{ProductDefinition, ProductDefinitionKind},
+    products::{
+        ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
+        PrototypeReference,
+    },
     report::loss::LossNote,
     CadIr,
 };
@@ -24,50 +27,77 @@ pub(super) fn project(
     };
     let before = ir.model.entity_count();
     let mut products = Vec::new();
+    let mut occurrences = Vec::new();
     let mut attributes = Vec::new();
     let mut appearances = Vec::new();
+    let mut prototypes = BTreeMap::new();    if let Some(records) = namespace.arenas().get("fast_load_component_prototypes") {
+        for record in records {
+            let fields = record.fields()?;
+            let name = fields
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.trim().is_empty());
+            let product_id = cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &cadmpeg_ir::identity_namespace!("nx", "document", "product"),
+                cadmpeg_ir::identity_key!("prototype-").then(products.len()),
+            );
+            prototypes.insert(record.id().to_owned(), product_id.clone());
+            products.push(ProductDefinition {
+                id: product_id,
+                kind: ProductDefinitionKind::Part,
+                source_name: name.map(str::to_owned),
+                label: None,
+                description: None,
+                part_number: None,
+                bom_properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                sketches: Vec::new(),
+                native_ref: Some(record.id().to_owned()),
+            });
+        }
+    }
+    // The available fast-load grammar contains a prototype roster, not
+    // placement matrices. Unknown placement is not an identity transform.
+    if let Some(records) = namespace.arenas().get("fast_load_component_occurrences") {
+        for record in records {
+            let fields = record.fields()?;
+            let prototype = fields
+                .get("prototype")
+                .and_then(Value::as_str)
+                .and_then(|prototype| prototypes.get(prototype))
+                .map(|definition| PrototypeReference::Local {
+                    definition: definition.clone(),
+                })
+                .unwrap_or(PrototypeReference::Unresolved {});
+            let ordinal = fields
+                .get("ordinal")
+                .and_then(Value::as_u64)
+                .and_then(|ordinal| u32::try_from(ordinal).ok())
+                .unwrap_or(0);
+            let id = cadmpeg_ir::ids::OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("nx", "document", "occurrence"),
+                cadmpeg_ir::identity_key!("occurrence-").then(occurrences.len()),
+            );
+            occurrences.push(Occurrence {
+                id,
+                prototype,
+                parent: OccurrenceParent::Root {},
+                ordinal,
+                transform: None,
+                linked_prototype: None,
+                name: None,
+                visible: None,
+                link: None,
+                native_ref: Some(record.id().to_owned()),
+            });
+        }
+    }
+    occurrences.extend(external_occurrences(namespace)?);
     for (arena, records) in namespace.arenas() {
         for record in records {
             let fields = record.fields()?;
             match arena.as_str() {
-                "fast_load_component_prototypes" => {
-                    let Some(name) = fields
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .filter(|name| !name.trim().is_empty())
-                    else {
-                        losses.push(NxLossCode::NeutralRecordUnprojected.note(format!(
-                            "Component prototype {} has no decoded name.",
-                            record.id()
-                        )));
-                        continue;
-                    };
-                    let product_id = cadmpeg_ir::ids::ProductDefinitionId::compose(
-                        &cadmpeg_ir::identity_namespace!("nx", "document", "product"),
-                        cadmpeg_ir::identity_key!("prototype-").then(products.len()),
-                    );
-                    products.push(ProductDefinition {
-                        id: product_id,
-                        kind: ProductDefinitionKind::Part,
-                        source_name: Some(name.to_owned()),
-                        label: None,
-                        description: None,
-                        part_number: None,
-                        bom_properties: BTreeMap::new(),
-                        bodies: Vec::new(),
-                        sketches: Vec::new(),
-                        native_ref: Some(record.id().to_owned()),
-                    });
-                }
-                "fast_load_component_occurrences" => {
-                    // The available fast-load grammar contains a prototype
-                    // roster, not placement matrices. Unknown placement is not
-                    // an identity transform.
-                    losses.push(NxLossCode::NeutralRecordUnprojected.note(format!(
-                        "Component occurrence {} names prototype {}, but its placement is not decoded; its typed roster record is held without inventing a neutral placement.",
-                        record.id(), fields.get("prototype").and_then(Value::as_str).unwrap_or("<unresolved>")
-                    )));
-                }
+                "fast_load_component_prototypes" | "fast_load_component_occurrences" => {}
                 "display_jt_string_property_atoms" => {
                     if let Some(value) = fields.get("value").and_then(Value::as_str) {
                         let Some(target) = cadmpeg_ir::attributes::AttributeTarget::record_for(
@@ -95,31 +125,16 @@ pub(super) fn project(
                         )));
                     }
                 }
-                "material_texture_assets" | "material_texture_catalog_entries" => {
-                    losses.push(NxLossCode::NeutralRecordUnprojected.note(format!(
-                        "Material texture record {} ({arena}) retains decoded resource/catalog fields, but no decoded shader slot, material assignment or texture mapping supplies the required neutral appearance fields; no default mapping was invented.", record.id()
-                    )));
-                }
                 "display_jt_material_attributes" => {
                     let appearance = material(record.id(), &fields)?;
                     appearances.push(appearance);
-                }
-                "external_references"
-                | "external_reference_records"
-                | "external_reference_indexed_records"
-                | "external_reference_empty_records"
-                | "external_reference_tail_reference_pairs"
-                | "external_reference_record_string_uses"
-                | "external_reference_record_children" => {
-                    losses.push(NxLossCode::NeutralRecordUnprojected.note(format!(
-                        "External-reference record {} ({arena}) has no decoded occurrence placement; its typed reference fields remain held.", record.id()
-                    )));
                 }
                 _ => {}
             }
         }
     }
     ir.model.product_definitions.extend(products);
+    ir.model.occurrences.extend(occurrences);
     ir.model.attributes.extend(attributes);
     ir.model.appearances.extend(appearances);
     ctx.charge_entities(
@@ -127,6 +142,126 @@ pub(super) fn project(
         "admit NX document projections",
     )?;
     Ok(())
+}
+
+/// One neutral external occurrence per resolved child-part lane, or per
+/// stored child path in an entry without a record lane. Strings selected by
+/// a record lane are fragments of the joined child path, not children.
+fn external_occurrences(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<Vec<Occurrence>, CodecError> {
+    let empty = Vec::new();
+    let strings = namespace
+        .arenas()
+        .get("external_references")
+        .unwrap_or(&empty);
+    let records = namespace
+        .arenas()
+        .get("external_reference_records")
+        .unwrap_or(&empty);
+    let children = namespace
+        .arenas()
+        .get("external_reference_record_children")
+        .unwrap_or(&empty);
+    let mut record_entries = BTreeMap::new();
+    for record in records {
+        let fields = record.fields()?;
+        if let Some(entry) = fields.get("source_entry").and_then(Value::as_str) {
+            record_entries.insert(record.id().to_owned(), entry.to_owned());
+        }
+    }
+    let mut paths = BTreeMap::new();
+    let mut string_entries = BTreeMap::new();
+    for record in strings {
+        let fields = record.fields()?;
+        if let Some(path) = fields.get("path").and_then(Value::as_str) {
+            paths.insert(record.id().to_owned(), path.to_owned());
+        }
+        if let Some(entry) = fields.get("source_entry").and_then(Value::as_str) {
+            string_entries.insert(record.id().to_owned(), entry.to_owned());
+        }
+    }
+    let laned: BTreeSet<&str> = record_entries.values().map(String::as_str).collect();
+    let mut occurrences = Vec::new();
+    for child in children {
+        let fields = child.fields()?;
+        let (Some(record), Some(name), Some(directory)) = (
+            fields.get("external_record").and_then(Value::as_str),
+            fields
+                .get("name_reference")
+                .and_then(Value::as_str)
+                .and_then(|id| paths.get(id)),
+            fields
+                .get("directory_reference")
+                .and_then(Value::as_str)
+                .and_then(|id| paths.get(id)),
+        ) else {
+            continue;
+        };
+        if !record_entries.contains_key(record) {
+            continue;
+        }
+        let path = child_path(directory, name);
+        occurrences.push(external_occurrence(
+            occurrences.len(),
+            path,
+            Some(child.id().to_owned()),
+        ));
+    }
+    if occurrences.is_empty() {
+        for record in strings {
+            let id = record.id().to_owned();
+            let (Some(path), Some(entry)) = (paths.get(&id), string_entries.get(&id)) else {
+                continue;
+            };
+            if laned.contains(entry.as_str()) {
+                continue;
+            }
+            occurrences.push(external_occurrence(
+                occurrences.len(),
+                path.clone(),
+                Some(id),
+            ));
+        }
+    }
+    Ok(occurrences)
+}
+
+/// Join a child directory and name into one stored path.
+fn child_path(directory: &str, name: &str) -> String {
+    if directory.is_empty() {
+        name.to_owned()
+    } else if directory.ends_with('/') || directory.ends_with('\\') {
+        format!("{directory}{name}")
+    } else {
+        format!("{directory}/{name}")
+    }
+}
+
+fn external_occurrence(
+    ordinal: usize,
+    path: String,
+    native_ref: Option<String>,
+) -> Occurrence {
+    let id = cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("nx", "document", "occurrence"),
+        cadmpeg_ir::identity_key!("external-").then(ordinal),
+    );
+    Occurrence {
+        id,
+        prototype: PrototypeReference::External {
+            document: ExternalDocument::path(path.clone()),
+            object: None,
+        },
+        parent: OccurrenceParent::Root {},
+        ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+        transform: None,
+        linked_prototype: None,
+        name: Some(path),
+        visible: None,
+        link: None,
+        native_ref,
+    }
 }
 
 fn material(
