@@ -9,6 +9,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use crate::loss::CatiaLossCode;
 use crate::test_support::test_b5::{
     append_b5_record, b5_closed_triangle_stream, b5_closed_triangle_stream_over_edges,
@@ -62,7 +63,12 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
     crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("generated B5 topology");
@@ -189,7 +195,12 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
 fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     let stream = b5_closed_triangle_stream_with_native_vertex_chain();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("generated B5 topology");
@@ -258,7 +269,12 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
     crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("generated B5 topology");

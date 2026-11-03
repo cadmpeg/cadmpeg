@@ -76,7 +76,8 @@ fn semantic_writer_round_trips_typed_shell() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(feature.parameters["Thickness"], "3mm");
+    // D5 (#237): the edited thickness renders the canonical literal.
+    assert_eq!(feature.parameters["Thickness"], "3 mm");
     assert_eq!(feature.properties["RemovedFaces"], "face:5,face:6");
     assert_eq!(feature.properties["Outward"], "true");
     assert!(matches!(
@@ -148,7 +149,8 @@ fn semantic_writer_round_trips_typed_thicken() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(feature.parameters["Thickness"], "3mm");
+    // D5 (#237): the edited thickness renders the canonical literal.
+    assert_eq!(feature.parameters["Thickness"], "3 mm");
     assert_eq!(feature.properties["Faces"], "face:5,face:6");
     assert_eq!(feature.properties["BothSides"], "true");
     assert_eq!(feature.properties["Reverse"], "false");
@@ -889,9 +891,10 @@ fn semantic_writer_preserves_absent_feature_selections() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
-    assert_eq!(features[0].parameters["Distance"], "2.5mm");
+    // D5 (#237): edited distances render the canonical literal.
+    assert_eq!(features[0].parameters["Distance"], "2.5 mm");
     assert!(!features[0].properties.contains_key("Edges"));
-    assert_eq!(features[1].parameters["Thickness"], "1.5mm");
+    assert_eq!(features[1].parameters["Thickness"], "1.5 mm");
     assert!(!features[1].properties.contains_key("RemovedFaces"));
     assert_eq!(
         features[2].parameters["Angle"],

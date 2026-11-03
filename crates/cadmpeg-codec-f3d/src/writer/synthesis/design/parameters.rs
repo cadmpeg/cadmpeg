@@ -101,32 +101,45 @@ pub(super) fn regenerate(
             )));
         }
     }
+    // W2: the neutral parameters are rewritten from the same full-input
+    // projection the generator checks, so a regenerated native always agrees
+    // with the neutral model it was authored from.
+    let body_key_bodies = target
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            body.native_ref
+                .as_ref()
+                .map(|native_ref| (native_ref.clone(), body.id.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     target.model.parameters = super::with_context(|ctx| {
         Ok(
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 ctx,
                 &crate::design::feature_project::ProjectInputs {
                     native: &native.design_parameters,
-                    owners: &[],
-                    scopes: &[],
-                    timelines: &[],
-                    construction_groups: &[],
-                    fillet_radius_groups: &[],
-                    edge_operands: &[],
-                    edge_identity_operands: &[],
-                    edge_treatment_vertex_operands: &[],
-                    entity_selection_operands: &[],
-                    curve_identities: &[],
-                    face_operands: &[],
-                    body_recipe_operands: &[],
-                    legacy_loft_body_carriers: &[],
-                    placements: &[],
-                    body_bindings: &[],
-                    body_key_bodies: None,
-                    component_naming_spaces: &[],
-                    histories: &[],
-                    face_boundaries: &[],
-                    sheet_metal_settings: &[],
+                    owners: &native.design_parameter_owners,
+                    scopes: &native.design_parameter_scopes,
+                    timelines: &native.design_feature_timelines,
+                    construction_groups: &native.design_construction_operand_groups,
+                    fillet_radius_groups: &native.design_fillet_radius_groups,
+                    edge_operands: &native.design_edge_operands,
+                    edge_identity_operands: &native.design_edge_identity_operands,
+                    edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
+                    entity_selection_operands: &native.design_entity_selection_operands,
+                    curve_identities: &native.sketch_curve_identities,
+                    face_operands: &native.design_face_operands,
+                    body_recipe_operands: &native.design_body_recipe_operands,
+                    legacy_loft_body_carriers: &native.design_loft_legacy_body_carriers,
+                    placements: &native.design_sketch_placements,
+                    body_bindings: &native.design_body_bindings,
+                    body_key_bodies: Some(&body_key_bodies),
+                    component_naming_spaces: &native.design_component_naming_spaces,
+                    histories: &native.asm_histories,
+                    face_boundaries: &native.asm_face_boundaries,
+                    sheet_metal_settings: &native.design_sheet_metal_settings,
                 },
             )?
             .parameters,
