@@ -187,6 +187,11 @@ pub(super) fn write(
         }
     }
     let mut defaults = HashMap::new();
+    // Bodies sharing one view provider have one `ShapeColor` and
+    // `Visibility`: the writer writes the first body's and charges the rest
+    // (#238 §5.5).
+    let mut first_by_provider: HashMap<&String, &cadmpeg_ir::topology::Body> = HashMap::new();
+    let mut charged: HashSet<&String> = HashSet::new();
     for body in &ir.model.bodies {
         let Some(name) = body_names.get(body.id.as_str()) else {
             continue;
@@ -194,18 +199,40 @@ pub(super) fn write(
         if body.visible.is_none() && body.color.is_none() && !providers.contains_key(name) {
             continue;
         }
-        let provider = providers
-            .entry(name.clone())
-            .or_insert_with(|| Provider::new(name.clone()));
-        provider.properties.remove("ShapeColor");
-        provider.properties.remove("Transparency");
-        let target = AppearanceTarget::Body(body.id.clone());
-        if let Some(visible) = ir.effective_visibility(&target) {
-            provider.visible(visible);
-        }
-        if let Some(color) = ir.effective_display_color(&target) {
-            object_color(provider, color);
-            defaults.insert(name.clone(), packed(color));
+        let Some(first) = first_by_provider.get(name) else {
+            first_by_provider.insert(name, body);
+            let provider = providers
+                .entry(name.clone())
+                .or_insert_with(|| Provider::new(name.clone()));
+            provider.properties.remove("ShapeColor");
+            provider.properties.remove("Transparency");
+            // `ShapeColor` and `Transparency` are the independent body
+            // style's native home; a bound appearance travels in
+            // `ShapeMaterial` alone and never overwrites them (#238 §5.5).
+            let target = AppearanceTarget::Body(body.id.clone());
+            if let Some(visible) = ir.effective_visibility(&target) {
+                provider.visible(visible);
+            }
+            if let Some(color) = body.color {
+                object_color(provider, color);
+                defaults.insert(name.clone(), packed(color));
+            }
+            continue;
+        };
+        if (body.color != first.color || body.visible != first.visible) && charged.insert(name) {
+            let ids = ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| body_names.get(body.id.as_str()) == Some(name))
+                .map(|body| body.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(
+                FreecadLossCode::AppearanceBodyStyleNotTransferred.note(format!(
+                    "bodies {ids} share one view provider; the first body's style is written"
+                )),
+            );
         }
     }
     let mut arrays = BTreeMap::<(String, &str), BTreeMap<usize, u32>>::new();
@@ -262,14 +289,31 @@ pub(super) fn write(
                     );
                 }
             } else if let Some(color) = appearance.base_color.or(Some(color)) {
-                // An explicit binding carries its appearance's color; the
-                // body fallback applies only where no binding names the
-                // target. The shared effective-color resolver is unchanged.
-                object_color(provider, color);
+                // A bound appearance's color travels in `ShapeMaterial`
+                // alone and never overwrites an independent body style in
+                // `ShapeColor` (#238 §5.5). The bound color remains the
+                // array fallback for topology color lists naming this
+                // provider.
                 defaults.insert(name.clone(), packed(color));
             }
         }
         material(provider, appearance)?;
+        // A bare whole-body bound color with no complete material has no
+        // valid encoding: the decode recreates bindings from a written
+        // `ShapeColor`, so only a truly unencodable appearance is lost
+        // here. Subelement bindings travel in topology color lists and are
+        // never material-bound (#238 §5.5).
+        if selection(&binding.target).is_none()
+            && !provider.properties.contains_key("ShapeMaterial")
+            && appearance.base_color.is_some()
+        {
+            losses.push(
+                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance {} bare color has no complete material encoding and is omitted",
+                    appearance.id
+                )),
+            );
+        }
         if !binding.channels.is_empty() {
             losses.push(
                 FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
