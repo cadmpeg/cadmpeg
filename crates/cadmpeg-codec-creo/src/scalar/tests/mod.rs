@@ -86,7 +86,7 @@ fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0x18];
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
+        super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, 0.0, &ScalarCache::default())
             .map(std::iter::Iterator::count)
     };
     assert_eq!(
@@ -104,6 +104,39 @@ fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
     assert_eq!(limit.operation, "creo inline origin depth");
     assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+}
+
+#[test]
+fn compact_inline_origin_repeats_the_carried_slot_and_signs_eight_byte_coordinates() {
+    let decode = |bytes: &[u8], carried: f64| {
+        with_context(bytes, |ctx| {
+            super::decode_inline_non_plane_origin_prefix(
+                ctx,
+                bytes,
+                0,
+                carried,
+                &ScalarCache::default(),
+            )
+            .map(Iterator::collect::<Vec<_>>)
+        })
+        .expect("decode the compact inline origin")
+    };
+    let held = [0xe4, 0x2f, 0x08, 0x00, 0x18];
+    assert_eq!(decode(&held, 0.0), vec![([0.0, 3.0, 0.0], 5)]);
+    assert_eq!(decode(&held, -1.0), vec![([-1.0, 3.0, 0.0], 5)]);
+    assert_eq!(decode(&[0x18, 0xe4, 0xe4], 1.0), vec![([0.0, 0.0, 0.0], 3)]);
+    assert_eq!(decode(&[0xe6, 0x2f], 0.0), vec![([0.0, 0.0, 0.0], 1)]);
+    assert!(decode(&[0xe5, 0xe5], 0.0).is_empty());
+
+    let mut signed = vec![0x48, 0x22, 0x00];
+    for (prefix, value) in [(0x2d, 6.5_f64), (0x46, -10.25)] {
+        signed.push(prefix);
+        signed.extend_from_slice(&value.abs().to_be_bytes()[1..]);
+    }
+    assert_eq!(
+        decode(&signed, 0.0),
+        vec![([-9.0, 6.5, -10.25], signed.len())]
+    );
 }
 
 #[test]

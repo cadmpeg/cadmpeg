@@ -203,9 +203,9 @@ fn inline_11_10_13_cylinder_row(first_bound: f64, center: f64, second_bound: f64
     push_inline_test_negative_coordinate(&mut payload, second_bound);
     payload.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0, 0x0e, 0xf7, 0x17, 0xe3]);
     payload.extend_from_slice(&[0x10, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x10]);
-    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    push_inline_test_signed_first_directrix(&mut payload, -4.0);
     payload.push(0x18);
-    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    push_inline_test_signed_first_directrix(&mut payload, -4.0);
     payload.extend_from_slice(&[0x0f, 0xe3]);
     payload
 }
@@ -745,7 +745,7 @@ fn cylinder_inline_suffix_uses_the_held_axis_placement_witness() {
     payload.extend_from_slice(&[0xf7, 0x17, 0xe3]);
     payload.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
     for value in [-4.0, 0.0, -2.0] {
-        push_inline_test_scalar(&mut payload, value);
+        push_inline_test_signed_first_directrix(&mut payload, value);
     }
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
@@ -776,7 +776,7 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
     let frame = record
         .positional_cone_frame()
         .expect("compact Y-axis cone carrier");
-    assert_eq!(frame.frame().origin(), [1.0, 8.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [0.0, -8.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
