@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    dimension_expression, feature_dimension_parameter_row_id, insert_dimension_property,
+    feature_dimension_parameter_row_id, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
     transfer_feature_dimensions,
 };
@@ -147,8 +147,18 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
     );
     assert_eq!(properties["value_token"], "00f17f");
     assert_eq!(
-        dimension_expression(Some(5.0)).expect("expression fits"),
-        "5"
+        cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(5.0).expect("fixture value is valid")
+        )
+        .literal_expression(),
+        cadmpeg_ir::features::Expression::text("5 mm")
+    );
+    assert_eq!(
+        cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(5.0).expect("fixture value is valid")
+        )
+        .literal_expression(),
+        cadmpeg_ir::features::Expression::text("5 rad")
     );
 }
 

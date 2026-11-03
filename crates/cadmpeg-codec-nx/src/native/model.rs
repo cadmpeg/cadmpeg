@@ -318,7 +318,6 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) deltas_instances: Vec<ParasolidDeltasInstance>,
     pub(super) deltas_partition_prefixes: Vec<ParasolidDeltasPartitionPrefix>,
     pub(super) deltas_schemas: Vec<ParasolidDeltasSchema>,
-    pub(super) deltas_residual_spans: Vec<ParasolidDeltasResidualSpan>,
     pub(super) deltas_metadata: Vec<ParasolidDeltasMetadata>,
     pub(super) blend_surface_records: Vec<ParasolidBlendSurfaceRecord>,
     pub(super) blend_bound_records: Vec<ParasolidBlendBoundRecord>,
@@ -580,6 +579,9 @@ pub(crate) struct NativeModel {
     pub(super) toggle: ToggleRecords,
     pub(super) features: FeatureRecords,
     pub(super) om: OmRecords,
+    /// Residual gap spans outside admitted deltas events. The spans stay in
+    /// retained records marked untyped (§1.3); they are not native records.
+    pub(super) deltas_gap_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
 /// The segment-history subset needed before geometry construction can decide
@@ -1385,10 +1387,13 @@ impl NativeModel {
             instances: deltas_instances,
             partition_prefixes: deltas_partition_prefixes,
             schemas: deltas_schemas,
-            residual_spans: deltas_residual_spans,
+            // Residual spans are not native records (§4.5). The spans stay in
+            // retained records marked untyped (§1.3).
+            residual_spans: deltas_gap_spans,
             metadata: deltas_metadata,
         } = deltas_events;
         Ok(NativeModel {
+            deltas_gap_spans,
             display_jt: DisplayJtRecords {
                 graph: DisplayJtGraph::from_wire(DisplayJtGraphWire {
                     documents: display_jt_documents,
@@ -1429,7 +1434,6 @@ impl NativeModel {
                 deltas_instances,
                 deltas_partition_prefixes,
                 deltas_schemas,
-                deltas_residual_spans,
                 deltas_metadata,
                 blend_surface_records: parasolid_blend_surface_records,
                 blend_bound_records: parasolid_blend_bound_records,

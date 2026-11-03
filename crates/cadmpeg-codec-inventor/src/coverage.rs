@@ -19,7 +19,6 @@ pub(crate) const PROPERTIES: CoverageKey = CoverageKey::new("properties");
 pub(crate) const PREVIEW_ASSETS: CoverageKey = CoverageKey::new("preview_assets");
 pub(crate) const PROTEIN_ENTRIES: CoverageKey = CoverageKey::new("protein_entries");
 pub(crate) const PROTEIN_ASSETS: CoverageKey = CoverageKey::new("protein_assets");
-pub(crate) const PROTEIN_REJECTIONS: CoverageKey = CoverageKey::new("protein_rejections");
 pub(crate) const PROTEIN_APPEARANCES: CoverageKey = CoverageKey::new("protein_appearances");
 pub(crate) const APPEARANCE_BINDINGS_TRANSFERRED: CoverageKey =
     CoverageKey::new("appearance_bindings_transferred");
