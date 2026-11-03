@@ -272,9 +272,12 @@ pub(super) fn write(
         }
         material(provider, appearance)?;
         if !binding.channels.is_empty() {
-            losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                "appearance binding {} independent channel gates have no native provider state", binding.id
-            )));
+            losses.push(
+                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance binding {} independent channel gates have no native provider state",
+                    binding.id
+                )),
+            );
         }
         for (key, value) in &appearance.properties {
             match key.as_str() {
