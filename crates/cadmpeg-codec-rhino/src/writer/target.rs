@@ -66,25 +66,6 @@ pub(crate) fn plan(
     let model = &input.ir.model;
     for (name, count, code) in [
         (
-            "procedural_surfaces",
-            model.procedural_surfaces.len(),
-            RhinoLossCode::WriterProceduralReduced,
-        ),
-        (
-            "procedural_curves",
-            model
-                .procedural_curves
-                .iter()
-                .filter(|value| {
-                    !matches!(
-                        value.definition(),
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
-                    )
-                })
-                .count(),
-            RhinoLossCode::WriterProceduralReduced,
-        ),
-        (
             "features",
             model.features.len(),
             RhinoLossCode::WriterDesignOmitted,
@@ -355,12 +336,12 @@ const _: () = {
 /// complete preservation of an arena. The verifier promotes populated arenas
 /// only after comparing their complete records under one global identity map.
 ///
-/// Procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, spatial sketches and entities,
-/// spreadsheets, assembly joints, drawings, pmi, physical materials, mass
-/// properties, rigid bodies, colliders, articulations, physics scenes, solver
-/// settings and declared measures are `Dropped` or `Omitted` with a per-arena
-/// loss. Topology is written as Brep and point objects. Unsupported bodies and
+/// Procedural definitions are reduced to solved carriers with a per-record
+/// loss; features, configurations, parameters, sketches, sketch entities
+/// and constraints, spatial sketches and entities, spreadsheets,
+/// assembly joints, drawings, pmi, physical materials, mass properties,
+/// rigid bodies, colliders, articulations, physics scenes, solver settings
+/// and declared measures are `Dropped` or `Omitted` with a per-arena loss. Topology is written as Brep and point objects. Unsupported bodies and
 /// free entities are omitted with Error losses; unowned pcurves are also
 /// reported. `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records.
@@ -383,7 +364,7 @@ const COVERAGE: ArenaDispositions = {
         curves: Reported,
         subds: Dropped,
         pcurves: Reported,
-        procedural_surfaces: Dropped,
+        procedural_surfaces: Reported,
         procedural_curves: Reported,
         assets: Reported,
         features: Dropped,
