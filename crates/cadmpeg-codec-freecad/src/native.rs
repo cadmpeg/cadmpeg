@@ -1813,10 +1813,12 @@ impl Serialize for ValueRecord {
 }
 
 /// Persisted values of a property, or a status-only transient declaration.
+///
+/// A value that cannot be read is not a body: the property record keeps its
+/// name and type with no body while its bytes are given up as their own
+/// `freecad.property_value` part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PropertyBody {
-    /// Rejected generic property payload.
-    Unreadable(String),
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
@@ -1910,13 +1912,6 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 }
 
 impl PropertyRecord {
-    fn payload_error(&self) -> Option<&str> {
-        match &self.body {
-            Some(PropertyBody::Unreadable(detail)) => Some(detail),
-            _ => None,
-        }
-    }
-
     /// Whether this is a status-only transient property declaration.
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, Some(PropertyBody::Transient))
@@ -1926,7 +1921,7 @@ impl PropertyRecord {
     pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             Some(PropertyBody::Persisted { values, .. }) => values,
-            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
@@ -1934,7 +1929,7 @@ impl PropertyRecord {
     pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             Some(PropertyBody::Persisted { links, .. }) => links,
-            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
@@ -1942,14 +1937,14 @@ impl PropertyRecord {
     pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             Some(PropertyBody::Persisted { side_entries, .. }) => side_entries,
-            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
     pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
         match &mut self.body {
             Some(PropertyBody::Persisted { values, .. }) => Some(values),
-            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => None,
+            Some(PropertyBody::Transient) | None => None,
         }
     }
 }
@@ -1964,7 +1959,6 @@ struct PropertyRecordWire {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
-    payload_error: Option<String>,
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
@@ -1984,8 +1978,6 @@ struct PropertyRecordOut<'a> {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    payload_error: Option<&'a str>,
     dynamic: Option<&'a DynamicPropertyMeta>,
     order: usize,
     values: Option<&'a [ValueRecord]>,
@@ -2003,7 +1995,6 @@ impl Serialize for PropertyRecord {
             family: self.family,
             status: self.status,
             transient: self.is_transient(),
-            payload_error: self.payload_error(),
             dynamic: self.dynamic.as_ref(),
             order: self.order,
             values: self.body.as_ref().map(|_| self.values()),
@@ -2020,7 +2011,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
         let body = match (wire.values, wire.links, wire.side_entries) {
             (None, None, None) => {
-                if wire.transient || wire.payload_error.is_some() {
+                if wire.transient {
                     return Err("absent property body cannot declare a payload".into());
                 }
                 None
@@ -2031,21 +2022,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
                         return Err("property values require contiguous order and backward parent references".into());
                     }
                 }
-                if let Some(detail) = wire.payload_error {
-                    if detail.trim().is_empty()
-                        || wire.transient
-                        || !values.is_empty()
-                        || !links.is_empty()
-                        || !side_entries.is_empty()
-                        || wire.dynamic.is_some()
-                    {
-                        return Err(
-                            "unreadable property requires a diagnostic and no admitted payload"
-                                .into(),
-                        );
-                    }
-                    Some(PropertyBody::Unreadable(detail))
-                } else if wire.transient {
+                if wire.transient {
                     if !values.is_empty()
                         || !links.is_empty()
                         || !side_entries.is_empty()
