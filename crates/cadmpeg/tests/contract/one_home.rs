@@ -213,5 +213,6 @@ mod damaged_one_home {
         inventor_damaged_one_home => "inventor", inventor_damaged_parts_have_one_home;
         sat_damaged_one_home => "sat", sat_damaged_parts_have_one_home;
         nx_damaged_one_home => "nx", nx_damaged_parts_have_one_home;
+        f3d_damaged_one_home => "f3d", f3d_damaged_parts_have_one_home;
     }
 }

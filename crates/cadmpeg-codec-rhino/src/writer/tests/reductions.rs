@@ -244,3 +244,28 @@ fn rigid_transformed_carrier_resolves_to_an_explicit_line() {
         .any(|reduced| reduced.edge == ir.model.edges[1].id.as_str() && reduced.leaf.is_none()));
     assert!(admit(&ir).is_ok());
 }
+
+#[test]
+fn carrier_resolution_loss_names_affected_coedges() {
+    use super::super::{model::ReducedCarrier, reduction_loss};
+    let loss = reduction_loss(&ReducedCarrier {
+        edge: "cadir:model:edge#resolved",
+        leaf: Some("cadir:model:curve#leaf"),
+        skipped: vec!["cadir:model:curve#composite"],
+        coedges: vec!["cadir:model:coedge#uses-leaf"],
+    });
+    assert!(
+        loss.message.contains("cadir:model:coedge#uses-leaf"),
+        "{loss:?}"
+    );
+    let loss = reduction_loss(&ReducedCarrier {
+        edge: "cadir:model:edge#resolved",
+        leaf: None,
+        skipped: vec!["cadir:model:curve#placed"],
+        coedges: Vec::new(),
+    });
+    assert!(
+        !loss.message.contains("affecting coedge"),
+        "{loss:?}"
+    );
+}

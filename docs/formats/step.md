@@ -1118,7 +1118,10 @@ of its value component, and its numeric value is positive. Representation
 uncertainty is a linear tolerance measured in the representation's length
 unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
-representation-item closure. ISO 10303-43 associates a representation context
+representation-item closure. The writer adopts a retained file context's
+partial composition for its own file context: a synthesized uncertainty
+would break the drawing presentation-context neighbour on re-decode, so the
+writer emits exactly the retained partials. ISO 10303-43 associates a representation context
 with each direct item root and every indirectly referenced `representation_item`
 or `founded_item` in its graph. A generic `REPRESENTATION_RELATIONSHIP`
 relates representations but does not make one representation part of the
@@ -1727,6 +1730,17 @@ The writer records each omitted shell, face, loop, and edge relation as a
 topology-transfer loss. Omitted outer shells, void shells, and outer bounds
 are errors. Other omitted topology relations are warnings. The strict
 unsupported policy rejects output when any topology-transfer loss exists.
+A sheet region whose faces carry boundary surfaces but no edge topology is
+written as a `GEOMETRIC_SET` of those surfaces under a
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`: the set representation
+round-trips the body. Only a face with no loops on a self-bounded surface
+(a curve-bounded surface with explicit boundaries) qualifies; a failed loop
+never promotes its support to a root. A solid whose shell bounds are all pole
+vertex loops is written as a `MANIFOLD_SOLID_BREP` over a `CLOSED_SHELL`: the
+loops are the poles of a closed skin, not an opening. A carrier no live
+record references is orphaned and is written as a root so it round-trips;
+a carrier a live record references belongs to that record even when the
+record itself failed to write.
 
 ISO 10303-41 defines a `PRODUCT_DEFINITION` as one aspect or view of a
 product for an identified life-cycle stage. Different
@@ -2116,7 +2130,11 @@ bindings for that target and records `appearance.binding-target-conflict`
 with the target and binding identities. An unconflicted body style may still
 transfer through the normal body-to-face projection. Strict export rejects the
 non-empty loss report. The writer does not select a binding from model order,
-aggregate order, or first occurrence.
+aggregate order, or first occurrence. An appearance no binding references
+would vanish with its dead targets: the writer binds it to the recovery
+shape item (the emitted geometric set, or the first standalone carrier) so
+the appearance record reappears. The binding is an addition the comparison
+allows.
 
 Visibility remains binding-level and does not change visibility on a shared
 geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
@@ -2145,7 +2163,12 @@ referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
 retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,
 including a simple leaf subtype and a shape-aspect partial in a complex datum
-feature. ISO 10303-47 defines `DATUM` as a `SHAPE_ASPECT` subtype with the
+feature. The link key is the aspect's content, never its instance number: the
+entity kind, name, datum identification, and datum-target form, serialized as
+a JSON array string. A rewrite allocates new instance numbers, so an
+instance-numbered link can never round-trip. The writer emits one aspect
+entity per distinct key (`DATUM`, `DATUM_FEATURE`, `DATUM_TARGET`, or
+`SHAPE_ASPECT`), so the re-decode computes the same keys. ISO 10303-47 defines `DATUM` as a `SHAPE_ASPECT` subtype with the
 explicit `identification` attribute. A simple `DATUM` instance lists the
 inherited `name`, `description`, `of_shape`, and `product_definitional`
 attributes and then `identification` as its fifth attribute. In external
@@ -2198,9 +2221,10 @@ transfer that point as a typed PMI target.
 A geometric validation property is a `PROPERTY_DEFINITION` named
 `geometric validation property`, linked to a representation by
 `PROPERTY_DEFINITION_REPRESENTATION`. Its definition is either a
-`PRODUCT_DEFINITION_SHAPE` for a part or a `SHAPE_ASPECT` for geometric items.
-At part level the scope contains visible solid bodies for solid properties and
-visible independent sheet bodies for surface properties. Geometry-level scope
+`PRODUCT_DEFINITION_SHAPE` for a part, a `SHAPE_ASPECT` for geometric items,
+or the advanced face the property was measured on: a face definition names
+that face's bodies. At part level the scope contains visible solid bodies for
+solid properties and visible independent sheet bodies for surface properties. Geometry-level scope
 uses the items associated with the shape aspect by
 `SHAPE_DEFINITION_REPRESENTATION` through a property definition, or by
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` or `ITEM_IDENTIFIED_REPRESENTATION_USAGE`.
@@ -2221,6 +2245,9 @@ The measure item names distinguish the quantities:
 Names are case-insensitive. Area and volume values use their explicit measure
 units; point coordinates use the representation context's length unit. Derived
 unit factors have total length exponents two for area and three for volume.
+The writer emits one property, representation, and representation link per
+declared measure whose bodies it emitted, attached to an emitted advanced
+face of those bodies, with the source item and representation names.
 Simple instances list inherited attributes in schema order. Complex
 instances place each attribute in its declaring partial. `REPRESENTATION`
 carries items and context; `REPRESENTATION_ITEM` carries the item name;
@@ -2270,7 +2297,10 @@ including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a
 named opaque source record. An unrecognized partial inside a complex instance
 does not override an exact leaf. Partial order does not select the kind. The
 writer emits each supported IR kind with its corresponding characteristic
-leaf entity. Presentation PMI retains
+leaf entity. A diameter or radius on a datum feature keeps the
+`DIMENSIONAL_SIZE_WITH_DATUM_FEATURE` form with the annotation's own name:
+it is the only spelling the decoder reads back as the category with that
+name. The middle parameters carry no neutral content. Presentation PMI retains
 annotation identity, text, placement, and explicit occurrence visibility across
 inherited annotation partials. `INVISIBILITY` targeting a transferred
 presentation annotation sets its `visible=false`; it does not change visibility

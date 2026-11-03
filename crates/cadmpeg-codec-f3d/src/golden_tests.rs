@@ -66,6 +66,7 @@ use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
+    f3d_with_smbh_and_protein_with_generated_canvas,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
     f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
     f3d_with_smbh_and_protein_with_generated_form,
@@ -143,6 +144,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         (
             "design_form",
             f3d_with_smbh_and_protein_with_generated_form(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_canvas",
+            f3d_with_smbh_and_protein_with_generated_canvas(&synthetic_geometry_smbh()),
         ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (

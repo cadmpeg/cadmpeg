@@ -129,6 +129,17 @@
     },
     {
       "code": {
+        "code": "writer.entity-omitted",
+        "kind": "geometry_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "body rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742 free-vertex region/shell grouping is reduced to independent point objects; 3 member record(s): rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742, rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742, rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742",
+      "severity": "error"
+    },
+    {
+      "code": {
         "code": "writer.attributes-omitted",
         "kind": "attributes_not_transferred",
         "namespace": "rhino",

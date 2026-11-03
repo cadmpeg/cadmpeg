@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 mod append;
+mod fem;
 mod fonts;
 pub(super) use append::append;
 mod structure;
@@ -22,6 +23,7 @@ pub(super) const ARENAS: &[&str] = &[
     "units_data",
     "groups",
     "associativities",
+    "fem_entities",
 ];
 
 pub(super) struct NativeExport {
@@ -161,6 +163,7 @@ fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
         status: EntityStatus::Independent,
         parameter_body: parameter_body.into_bytes(),
         transform: None,
+        subscript: 0,
     }
 }
 fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
@@ -201,6 +204,7 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
             },
         ),
         "associativities" => structure::shape(record)?,
+        "fem_entities" => fem::shape(record)?,
         _ => return Err("record has no native inverse".into()),
     })
 }

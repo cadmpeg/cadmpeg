@@ -134,8 +134,8 @@ const _: () = assert!(
 );
 
 const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
-    194, 196, 198, 314, 406, 502, 504, 508, 510, 514,
+    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 134, 136, 138, 141, 142, 143, 144,
+    146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
 ];
 
 mod attributes;
@@ -444,6 +444,7 @@ fn append_color_definitions(
             form: 0,
             label: String::new(),
             status: EntityStatus::Definition,
+            subscript: 0,
             parameter_body: format!(
                 "{},{},{},;",
                 number(components[0]),
@@ -481,6 +482,7 @@ fn append_name_properties(
             form: 15,
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
+            subscript: 0,
             parameter_body: format!("1,{}H{name};", name.len()).into_bytes(),
             transform: None,
         });
@@ -1230,6 +1232,8 @@ impl crate::IgesVersion {
                     100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
                     0
                 ) | (104, 0 | 2 | 3)
+                    | (134 | 136 | 138 | 418, 0)
+                    | (146 | 148, 0..=34)
                     | (406, 15)
             ),
             crate::IgesVersion::V5_0 => matches!(
@@ -1251,6 +1255,8 @@ impl crate::IgesVersion {
                         | 314,
                     0
                 ) | (104, 1..=3)
+                    | (134 | 136 | 138 | 418, 0)
+                    | (146 | 148, 0..=34)
                     | (406, 15)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
@@ -1261,6 +1267,8 @@ impl crate::IgesVersion {
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
                     406 => entity.form == 15,
+                    134 | 136 | 138 | 418 => entity.form == 0,
+                    146 | 148 => (0..=34).contains(&entity.form),
                     514 => {
                         entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
                     }
@@ -2529,6 +2537,7 @@ fn brep_entities(
             form: 1,
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
+            subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: None,
         });
@@ -2578,6 +2587,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependentEdgeList,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2727,6 +2737,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2772,6 +2783,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2827,6 +2839,7 @@ fn brep_entities(
                 } else {
                     EntityStatus::Independent
                 },
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2864,6 +2877,7 @@ fn brep_entities(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: body_placement(ir, body.id.as_str()),
             });
@@ -3464,6 +3478,7 @@ fn topology_entities(
             form: 0,
             label: String::new(),
             status: EntityStatus::Independent,
+            subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: body_placement(ir, body.id.as_str()),
         });
@@ -4283,6 +4298,7 @@ fn boundary_entity(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -4386,6 +4402,7 @@ fn curve_on_surface_entity(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: format!(
             "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
@@ -4439,6 +4456,7 @@ fn push_composite_entity_with_reference_offset(
         form: 0,
         label: String::new(),
         status,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     });
@@ -5564,71 +5582,62 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
 }
 
 fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    macro_rules! arena {
+        ($name:literal, $field:ident) => {
+            (
+                $name,
+                !ir.model.$field.is_empty(),
+                ir.model
+                    .$field
+                    .iter()
+                    .map(|record| record.id.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        ($name:literal, $field:ident, method) => {
+            (
+                $name,
+                !ir.model.$field.is_empty(),
+                ir.model
+                    .$field
+                    .iter()
+                    .map(|record| record.id().to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+    }
     let unsupported = [
-        ("subds", !ir.model.subds.is_empty()),
-        ("assets", !ir.model.assets.is_empty()),
-        ("features", !ir.model.features.is_empty()),
-        (
-            "feature_input_topologies",
-            !ir.model.feature_input_topologies.is_empty(),
-        ),
-        (
-            "feature_result_topologies",
-            !ir.model.feature_result_topologies.is_empty(),
-        ),
-        ("configurations", !ir.model.configurations.is_empty()),
-        ("parameters", !ir.model.parameters.is_empty()),
-        ("sketches", !ir.model.sketches.is_empty()),
-        ("sketch_entities", !ir.model.sketch_entities.is_empty()),
-        (
-            "sketch_constraints",
-            !ir.model.sketch_constraints.is_empty(),
-        ),
-        ("spatial_sketches", !ir.model.spatial_sketches.is_empty()),
-        (
-            "spatial_sketch_entities",
-            !ir.model.spatial_sketch_entities.is_empty(),
-        ),
-        (
-            "spatial_sketch_constraints",
-            !ir.model.spatial_sketch_constraints.is_empty(),
-        ),
-        ("spreadsheets", !ir.model.spreadsheets.is_empty()),
-        (
-            "product_definitions",
-            !ir.model.product_definitions.is_empty(),
-        ),
-        ("occurrences", !ir.model.occurrences.is_empty()),
-        ("assembly_joints", !ir.model.assembly_joints.is_empty()),
-        ("drawings", !ir.model.drawings.is_empty()),
-        (
-            "semantic_annotations",
-            !ir.model.semantic_annotations.is_empty(),
-        ),
-        (
-            "presentation_documents",
-            !ir.model.presentation_documents.is_empty(),
-        ),
-        (
-            "view_presentations",
-            !ir.model.view_presentations.is_empty(),
-        ),
-        ("tessellations", !ir.model.tessellations.is_empty()),
-        ("appearances", !ir.model.appearances.is_empty()),
-        (
-            "appearance_bindings",
-            !ir.model.appearance_bindings.is_empty(),
-        ),
-        ("pmi", !ir.model.pmi.is_empty()),
-        (
-            "presentation_layers",
-            !ir.model.presentation_layers.is_empty(),
-        ),
+        arena!("subds", subds),
+        arena!("assets", assets),
+        arena!("features", features),
+        arena!("feature_input_topologies", feature_input_topologies),
+        arena!("feature_result_topologies", feature_result_topologies),
+        arena!("configurations", configurations),
+        arena!("parameters", parameters),
+        arena!("sketches", sketches),
+        arena!("sketch_entities", sketch_entities, method),
+        arena!("sketch_constraints", sketch_constraints),
+        arena!("spatial_sketches", spatial_sketches),
+        arena!("spatial_sketch_entities", spatial_sketch_entities, method),
+        arena!("spatial_sketch_constraints", spatial_sketch_constraints),
+        arena!("spreadsheets", spreadsheets),
+        arena!("product_definitions", product_definitions),
+        arena!("occurrences", occurrences),
+        arena!("assembly_joints", assembly_joints),
+        arena!("drawings", drawings),
+        arena!("semantic_annotations", semantic_annotations),
+        arena!("presentation_documents", presentation_documents),
+        arena!("view_presentations", view_presentations),
+        arena!("tessellations", tessellations),
+        arena!("appearances", appearances),
+        arena!("appearance_bindings", appearance_bindings),
+        arena!("pmi", pmi),
+        arena!("presentation_layers", presentation_layers),
     ];
     let losses = unsupported
         .into_iter()
-        .filter(|(_, present)| *present)
-        .map(|(arena, _)| {
+        .filter(|(_, present, _)| *present)
+        .map(|(arena, _, ids)| {
             let code = if matches!(
                 arena,
                 "features"
@@ -5648,7 +5657,10 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            code.note(format!("IGES omits unsupported model arena {arena}"))
+            code.note(format!(
+                "IGES omits unsupported model arena {arena}: {}",
+                ids.join(", ")
+            ))
         })
         .collect();
     for vertex in &ir.model.vertices {
@@ -5920,7 +5932,8 @@ fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Ent
         form: 0,
         label: String::new(),
         status,
-        parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
+        subscript: 0,
+        parameter_body: format!("{},{},{},0;", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     }
 }
@@ -5941,6 +5954,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     })
@@ -6112,6 +6126,7 @@ fn domain_bounded_wrap(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     });
@@ -6126,6 +6141,7 @@ fn domain_bounded_wrap(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: format!(
             "0,{},1,{};",
             reference_marker(surface_index),
@@ -6454,6 +6470,7 @@ fn extrusion_surface_entities(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: format!(
             "{},{},{},{};",
             reference_marker(directrix_index),
@@ -6674,6 +6691,7 @@ fn revolution_surface_entities(
             form: 0,
             label: String::new(),
             status: EntityStatus::Independent,
+            subscript: 0,
             parameter_body: format!(
                 "{},{},{},{};",
                 reference_marker(base_index),
@@ -6715,6 +6733,7 @@ fn surface_entities(
                     form: 0,
                     label: String::new(),
                     status: EntityStatus::Independent,
+                    subscript: 0,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(origin, u_axis, v_axis)?),
                 }]);
@@ -6733,6 +6752,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{};",
                     reference_marker(location),
@@ -6764,6 +6784,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
@@ -6805,6 +6826,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{};",
                     reference_marker(location),
@@ -6846,6 +6868,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
@@ -6881,6 +6904,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{};",
                     reference_marker(location),
@@ -7017,6 +7041,7 @@ fn encode_nurbs_surface(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -8047,6 +8072,7 @@ fn curve_entity(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{},{};",
                     number(start_x),
@@ -8088,6 +8114,7 @@ fn curve_entity(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "0,0,0,{},{},{},{};",
                     number(start_xy[0]),
@@ -8133,6 +8160,7 @@ fn curve_entity(
                 form,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
@@ -8173,6 +8201,7 @@ fn curve_entity(
                 form: 3,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "1,0,0,0,{},0,0,{},{},{},{};",
                     number(finite(-4.0 * focal_distance, "parabola coefficient -4f")?),
@@ -8213,6 +8242,7 @@ fn curve_entity(
                 form: 2,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
@@ -8347,6 +8377,7 @@ fn encode_nurbs(
         form: 0,
         label: String::new(),
         status,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -8828,6 +8859,7 @@ struct Entity {
     status: EntityStatus,
     parameter_body: Vec<u8>,
     transform: Option<Placement>,
+    subscript: u32,
 }
 
 impl Entity {
@@ -8917,6 +8949,7 @@ fn encode_file(
                     form: 0,
                     label: String::new(),
                     status: EntityStatus::Independent,
+                    subscript: 0,
                     parameter_body: format!("{transform_parameters};").into_bytes(),
                     transform: None,
                 },
@@ -9049,7 +9082,7 @@ fn encode_file(
                     .and_then(|presentation| presentation.label.as_deref())
                     .unwrap_or(&entity.label)
                     .to_owned(),
-                "0".into(),
+                entity.subscript.to_string(),
             ],
             directory_sequence + 1,
         )?);
