@@ -1201,11 +1201,12 @@ pub(super) fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistor
         .states()
         .iter()
         .flat_map(|state| &state.records)
-        .filter(|record| match &record.framing {
-            crate::history_records::AsmHistoryRecordFraming::Framed { index, .. } => {
-                *index == identity
-            }
-            crate::history_records::AsmHistoryRecordFraming::Opaque { .. } => identity == 0,
+        .filter(|record| {
+            matches!(
+                &record.framing,
+                crate::history_records::AsmHistoryRecordFraming::Framed { index, .. }
+                if *index == identity
+            )
         });
     let record = matches.next()?;
     if matches.next().is_some() {

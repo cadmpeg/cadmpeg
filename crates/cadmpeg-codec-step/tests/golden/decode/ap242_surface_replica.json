@@ -23,7 +23,36 @@
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
-      "procedural_surfaces": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "kind": "replica",
+            "source": "step:data:surface#7",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "id": "step:construction:surface_replica#10",
+          "surface": "step:data:surface#10"
+        }
+      ],
       "product_definitions": [],
       "regions": [],
       "semantic_annotations": [],
@@ -38,13 +67,76 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "unknown",
-            "record": "step:data:surface_replica#9"
+            "basis": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "transformed",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
           },
-          "id": "step:data:surface#9",
+          "id": "step:data:surface#10",
           "source_object": {
             "format": "step",
-            "object_id": "#9"
+            "object_id": "#10"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#7",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#10"
           }
         }
       ],
@@ -52,25 +144,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": [
-          {
-            "id": "step:data:cartesian_transformation_operator_3d#8"
-          },
-          {
-            "id": "step:data:example_record#7"
-          },
-          {
-            "id": "step:data:surface_replica#9",
-            "links": [
-              "step:data:example_record#7",
-              "step:data:cartesian_transformation_operator_3d#8"
-            ]
-          }
-        ]
-      }
-    },
+    "native": {},
     "scope": {
       "design": true,
       "model": true
@@ -128,60 +202,10 @@
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "CARTESIAN_TRANSFORMATION_OPERATOR_3D #8 has invalid axes, origin, or scale",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "SURFACE_REPLICA #9 has invalid or unresolved parent/operator",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 CARTESIAN_TRANSFORMATION_OPERATOR_3D instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
-        },
-        "message": "preserved 1 SURFACE_REPLICA instance(s) as named opaque STEP records",
-        "severity": "warning"
       }
     ],
     "notes": [
-      "byte accounting: 293 structural, 333 typed, 119 named opaque, 0 unclassified"
+      "byte accounting: 293 structural, 467 typed, 0 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,
@@ -193,44 +217,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "009ae4fde73eea148ddff859719c447b3376d44b7db845cf262b72bb9adab668",
-    "retained_records": {
-      "step:data:cartesian_transformation_operator_3d#8": {
-        "bytes": {
-          "data": "Izg9Q0FSVEVTSUFOX1RSQU5TRk9STUFUSU9OX09QRVJBVE9SXzNEKCcnLCM0LCM1LCMzLDEuKTs=",
-          "retention": "inline"
-        },
-        "offset": 594,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:example_record#7": {
-        "bytes": {
-          "data": "Izc9RVhBTVBMRV9SRUNPUkQoJ29wYXF1ZSBiYXNpcycpOw==",
-          "retention": "inline"
-        },
-        "offset": 559,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:data:surface_replica#9": {
-        "bytes": {
-          "data": "Izk9U1VSRkFDRV9SRVBMSUNBKCcnLCM3LCM4KTs=",
-          "retention": "inline"
-        },
-        "offset": 651,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "decode_digest": "9bd8d0d5924fe5c9b0d80f7d9923edc5f8ab41e71f0a608f150e2d88274198e1",
+    "unrepresented": []
   }
 }
