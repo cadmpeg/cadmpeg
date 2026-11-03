@@ -177,9 +177,7 @@ fn scalar(
         ) => None,
         None => {
             let record = native?;
-            let unit = record
-                .unit()
-                .map(|unit| unit.value.as_str().to_owned());
+            let unit = record.unit().map(|unit| unit.value.as_str().to_owned());
             let value = record.evaluated_value().get();
             value.is_finite().then_some((unit, value))
         }

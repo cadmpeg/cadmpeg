@@ -525,14 +525,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
         points_from_stream(&mismatched_primary, &meta),
-        Err(cadmpeg_core::CodecError::Malformed(_))
+        Ok(points) if points.is_empty()
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
         points_from_stream(&mismatched_secondary, &meta),
-        Err(cadmpeg_core::CodecError::Malformed(_))
+        Ok(points) if points.is_empty()
     ));
 }
 

@@ -15,6 +15,7 @@ mod synthesis;
 pub(crate) mod target;
 mod write_error;
 
+use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
@@ -463,6 +464,7 @@ pub(super) fn write_semantic_at(
         &emitted_sections,
         retain_native_brep,
         patch_active_configuration,
+        &mut normalization_losses,
     )?;
     consumed_source_layout |= !opaque.is_empty();
     let document_envelope = crate::container::first_solidworks_envelope(
@@ -921,24 +923,70 @@ fn section_type_ids(
             source_ids
                 .get_mut(section)
                 .and_then(VecDeque::pop_front)
-                .map_or_else(
-                    || {
-                        0x20u32
-                            .checked_add(u32::try_from(index).map_err(|_| {
-                                // (O-capacity): the target field cannot encode a value outside its width.
-                                CodecError::NotImplemented(
-                                    "SLDPRT section count exceeds type-id space".into(),
-                                )
-                            })?)
-                            .ok_or_else(|| {
-                                // (O-capacity): the target field cannot encode a value outside its width.
-                                CodecError::NotImplemented("SLDPRT type-id overflow".into())
-                            })
-                    },
-                    Ok,
-                )
+                .map_or_else(|| section_type_id_at(index), Ok)
         })
         .collect()
+}
+
+/// Capacity rows: stated field widths the writer enforces through the named
+/// helper alone (#217 §5.0).
+pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "material.name",
+        limit: 255,
+        source: "docs/formats/sldprt.md §8: a u8 UTF-16 code-unit count gives its length",
+        helper: "material_name_len",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.type_id",
+        limit: u32::MAX as u64 - 0x20,
+        source: "docs/formats/sldprt.md §1.1: type_id u32 LE",
+        helper: "section_type_id_at",
+    },
+];
+
+/// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[].vertices[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::F32,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[].vertex_normals[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::F32,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+];
+
+/// The u8 UTF-16 code-unit count of one SWObjects material name.
+pub(crate) fn material_name_len(name: &str) -> Result<u8, CodecError> {
+    let units = name.encode_utf16().count();
+    if u64::try_from(units).is_ok_and(|units| units > CAPACITY_FIELDS[0].limit) {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        return Err(CodecError::NotImplemented(
+            "SLDPRT material name is too long".into(),
+        ));
+    }
+    u8::try_from(units)
+        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))
+}
+
+/// The u32 type id of one container section by position.
+pub(crate) fn section_type_id_at(index: usize) -> Result<u32, CodecError> {
+    if u64::try_from(index).is_ok_and(|index| index > CAPACITY_FIELDS[1].limit) {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        return Err(CodecError::NotImplemented(
+            "SLDPRT section count exceeds type-id space".into(),
+        ));
+    }
+    0x20u32
+        .checked_add(u32::try_from(index).map_err(|_| {
+            CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
+        })?)
+        .ok_or_else(|| CodecError::NotImplemented("SLDPRT type-id overflow".into()))
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
@@ -1281,31 +1329,6 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-fn encodable_curve(geometry: &cadmpeg_ir::geometry::CurveGeometry) -> bool {
-    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-    if matches!(
-        geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-    ) {
-        return true;
-    }
-    curve_values(geometry, 1.0).is_ok()
-}
-
-fn encodable_surface(geometry: &cadmpeg_ir::geometry::SurfaceGeometry) -> bool {
-    use cadmpeg_ir::geometry::{SurfaceGeometry, SolvedSurfaceGeometry};
-    let SurfaceGeometry::Solved(solved) = geometry else {
-        return false;
-    };
-    if matches!(solved, SolvedSurfaceGeometry::Nurbs(_)) {
-        return true;
-    }
-    let Some(reference) = geometry.solved().map(surface_reference) else {
-        return false;
-    };
-    surface_values(geometry, reference, 1.0).is_ok()
-}
-
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
@@ -1389,40 +1412,36 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    // Ownerless carriers stay representable without topology: an unreferenced
-    // support point, plane or curve still reappears when the target encodes
-    // it (§5.2). A carrier without source provenance is unreachable alone, so
-    // only referenced carriers and provenanced encodable ones stay. The
-    // boundary topology above and the pcurve uses below trim unconditionally.
     let points = subset
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
-    subset.model.points.retain(|point| {
-        points.contains(&point.id) || point.source_object.is_some()
-    });
+    subset
+        .model
+        .points
+        .retain(|point| points.contains(&point.id));
     let surfaces = subset
         .model
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
-    subset.model.surfaces.retain(|surface| {
-        surfaces.contains(&surface.id)
-            || (surface.source_object.is_some() && encodable_surface(&surface.geometry))
-    });
+    subset
+        .model
+        .surfaces
+        .retain(|surface| surfaces.contains(&surface.id));
     let curves = subset
         .model
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
-    subset.model.curves.retain(|curve| {
-        curves.contains(&curve.id)
-            || (curve.source_object.is_some() && encodable_curve(&curve.geometry))
-    });
+    subset
+        .model
+        .curves
+        .retain(|curve| curves.contains(&curve.id));
     let pcurves = subset
         .model
         .coedges
@@ -1474,6 +1493,7 @@ fn opaque_blocks(
     emitted_sections: &HashSet<String>,
     retain_native_brep: bool,
     patch_active_configuration: bool,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let native = ir
         .native
@@ -1482,11 +1502,18 @@ fn opaque_blocks(
         .transpose()
         .map_err(CodecError::from)?;
     let mut seen = HashSet::new();
-    records
+    let mut unplaced = Vec::new();
+    let sections = records
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(record.id.as_str())?;
+            let provenance = match annotations.provenance.get(record.id.as_str()) {
+                Some(provenance) => provenance,
+                None => {
+                    unplaced.push(record.id.as_str().to_owned());
+                    return None;
+                }
+            };
             let section = provenance.stream();
             if matches!(
                 provenance.tag.as_deref(),
@@ -1531,7 +1558,13 @@ fn opaque_blocks(
                 }
                 return None;
             }
-            let mut payload = record.data?.to_vec();
+            let mut payload = match record.data {
+                Some(data) => data.to_vec(),
+                None => {
+                    unplaced.push(record.id.as_str().to_owned());
+                    return None;
+                }
+            };
             if let Some(active) = ir
                 .model
                 .configurations
@@ -1568,7 +1601,16 @@ fn opaque_blocks(
             }
             Some(Ok((section.to_string(), payload)))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if !unplaced.is_empty() {
+        unplaced.sort();
+        losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+            "{} retained block(s) have no provenance or payload and were not re-emitted: {}",
+            unplaced.len(),
+            unplaced.join(", ")
+        )));
+    }
+    Ok(sections)
 }
 
 fn retained_swobjects_sections(
@@ -3336,10 +3378,8 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
 }
 
 fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
+    let length = material_name_len(name)?;
     let name = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(name.len())
-        // (O-capacity): the target field cannot encode a value outside its width.
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))?;
     if name.is_empty() {
         return Err(CodecError::Malformed(
             "SLDPRT material name is empty".into(),

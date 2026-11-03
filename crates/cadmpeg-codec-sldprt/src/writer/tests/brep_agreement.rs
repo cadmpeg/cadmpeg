@@ -130,17 +130,24 @@ fn removing_referenced_extrusion_parameter_is_malformed() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_id = decoded.ir().model.parameters[0].id.clone();
     decoded.ir_mut().model.parameters.clear();
-    let error = crate::test_support::plan_inherited_write(
+    // The extrusion needing the removed parameter cascades under W1 instead
+    // of refusing (#237): the write succeeds and no record names the removed
+    // parameter.
+    let mut encoded = Vec::new();
+    crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
+        &mut encoded,
     )
-    .unwrap_err();
+    .expect("a feature needing a removed parameter cascades");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cascaded output decodes");
+    let document = serde_json::to_value(regenerated.ir()).expect("output serializes");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(_)),
-        "{error:?}"
+        !document.to_string().contains(parameter_id.as_str()),
+        "no record names the removed parameter"
     );
-    assert!(error.to_string().contains(parameter_id.as_str()), "{error}");
 }
 
 #[test]

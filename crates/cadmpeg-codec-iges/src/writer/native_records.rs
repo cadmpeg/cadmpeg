@@ -3,7 +3,7 @@
 
 use super::{
     attributes, number, reference_marker, CadIr, DirectoryLineFont, Entity, EntityStatus,
-    FiniteReal, IgesLossCode, LossNote,
+    FiniteReal, LossNote,
 };
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
