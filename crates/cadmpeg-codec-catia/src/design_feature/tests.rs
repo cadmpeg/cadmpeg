@@ -557,10 +557,8 @@ fn operation_schema_owner_declarations_transfer_as_native_features() {
         );
         assert_eq!(feature.native_ref.as_deref(), Some(*id));
         assert_eq!(feature.source_tag.as_deref(), Some(*kind));
-        assert_eq!(
-            feature.ordinal,
-            (cadmpeg_core::decode::u64_from_index(ordinal)) * 10
-        );
+        // §2.2: dense ordinals in first-field-byte-offset order.
+        assert_eq!(feature.ordinal, ordinal as u64);
     }
     assert_eq!(transfer.feature_ids.len(), cases.len());
     assert_eq!(transfer.consumed_records().count(), 0);
