@@ -465,8 +465,8 @@ bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
 uses the lane-specific negative sub-unit form and reconstructs
 `BF <tail6> 00`. The positive sub-unit form `4f <tail6>` reconstructs
 `3F <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
-reconstructs `40 <tail7>`; the same form is positive in the saved-section
-coordinate lane. Its sign counterpart `46 <tail7>` reconstructs `C0 <tail7>`. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
+reconstructs `40 <tail7>`, and its sign counterpart `46 <tail7>` reconstructs
+`C0 <tail7>`; the saved-section coordinate lane reads the pair the same way. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
 `41 <tail7>` forms reconstruct `3F <tail7>`. The unresolved `00 XX YY` and
 `34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
 occupies four.

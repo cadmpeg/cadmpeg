@@ -5607,9 +5607,9 @@ fn saved_section_scalar(
         // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
-    if prefix == 0x2d && offset + 8 <= end {
+    if matches!(prefix, 0x2d | 0x46) && offset + 8 <= end {
         let mut raw = [0; 8];
-        raw[0] = 0x40;
+        raw[0] = if prefix == 0x2d { 0x40 } else { 0xc0 };
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);

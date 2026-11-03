@@ -1161,10 +1161,10 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
         \xe0\x00entity(line)\0\xe3\xf7\x01\x00\xf7\x02\xe2\
         \xf1\xf7\x03\x2a\xe2"
         .to_vec();
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4, 0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xf0\xf7\x04\xeb\x01\x02\x03\x04\x05\x2b\xe2");
-    payload.extend_from_slice(&[0xe4, 0xe4, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0xe4, 0xe4, 0x0f, 0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -1218,7 +1218,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         \xe0\x00entity(arc)\0\xe0\x01id\0\x2c\
         \xe0\x02center\0\xf1\xf8\x03\x0f\xe4"
         .to_vec();
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(b"\xe0\x02radius\0\xe4");
     payload.extend_from_slice(b"\xe0\x02end1\0\xf8\x03\x0f\x0f\x0f");
     payload.extend_from_slice(b"\xe0\x02end2\0\xf8\x03\xe4\xe4\xe4");
