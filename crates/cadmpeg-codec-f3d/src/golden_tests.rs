@@ -994,10 +994,15 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         let Some(hash) = text.rfind('#') else {
             return false;
         };
+        // A negative sentinel such as `f3d:brep:entity#-1` remints with the
+        // same rule as any other positional identity.
+        let digits = text[hash + 1..]
+            .strip_prefix('-')
+            .unwrap_or(&text[hash + 1..]);
         text.starts_with("f3d:")
             && !text[..hash].is_empty()
-            && !text[hash + 1..].is_empty()
-            && text[hash + 1..].bytes().all(|byte| byte.is_ascii_digit())
+            && !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
     }
     fn collect_unmapped(
         value: &serde_json::Value,
