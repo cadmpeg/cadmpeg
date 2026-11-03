@@ -26,7 +26,11 @@ pub(crate) struct InventorContainer<'a> {
 
 impl<'a> InventorContainer<'a> {
     pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
-        let snapshot = CompoundSnapshot::new(ctx, root)?;
+        // A compound container that does not open holds no part: the cut-short
+        // rule refuses it as truncated (§4.5).
+        let snapshot = CompoundSnapshot::new(ctx, root).map_err(|_| {
+            CodecError::truncated(root.location(), "open Inventor compound container")
+        })?;
         if !matches!(
             snapshot.entry("RSeStorage"),
             Some(CompoundEntry::Storage(_))
