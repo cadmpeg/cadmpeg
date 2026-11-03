@@ -2656,7 +2656,21 @@ fn retained_history_sections(
     let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = SldprtNative::load(namespace)?;
+    let mut native = SldprtNative::load(namespace)?;
+    {
+        let mut scoped = Some(native);
+        crate::history::write::configurations::sync_neutral_configurations(
+            &baseline.ir.model.configurations,
+            &mut scoped,
+        );
+        native = scoped.unwrap_or_default();
+    }
+    // Generated histories have no source bytes and no provenance; the
+    // synchronization may invent one for an empty baseline. Only retained
+    // histories can supply replay bytes.
+    native
+        .feature_histories
+        .retain(|history| !history.id.starts_with("sldprt:generated:"));
     let annotations = &baseline.source_fidelity.annotations;
     native
         .feature_histories
