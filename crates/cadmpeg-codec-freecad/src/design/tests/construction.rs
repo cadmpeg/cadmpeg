@@ -71,7 +71,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(tolerance),
         } if result.ir().dimension_value(tolerance).expect("resolved dimension").get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
     ));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -200,7 +200,13 @@ fn retains_native_for_malformed_post_process_controls() {
             ("NonFiniteFuzzy", "FuzzyTolerance"),
         ],
     );
-    assert_eq!(non_placement_losses(result.report()).len(), 8);
+    // #209 §1.1: the fragment holds no model part; the wrapper appends
+    // depth.not-delivered after the codec losses.
+    assert_eq!(non_placement_losses(result.report()).len(), 9);
+    assert_eq!(
+        non_placement_losses(result.report())[8].code.local_code(),
+        "depth.not-delivered"
+    );
     assert_eq!(
         non_placement_losses(result.report())
             .iter()
@@ -480,7 +486,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
     assert_eq!(feature("Reverse").dependencies.len(), 1);
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -540,7 +546,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     ));
     assert_eq!(feature("Ruled").dependencies.len(), 2);
     assert_eq!(feature("Section").dependencies.len(), 2);
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -584,7 +590,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         }) if ( source.ends_with(":Source") && reference.ends_with(":MirrorPlane")) && matches!(geometry_1.get(), cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(*geometry_2.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 2);
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -635,7 +641,7 @@ fn transfers_part_projection_on_surface_construction() {
             && support.ends_with(":SupportFace")) && result.ir().dimension_value(actual_height).expect("resolved dimension").get() == 8.0 && result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1346,7 +1352,7 @@ fn transfers_complete_thickness_construction_controls() {
         }) if (selection.ends_with(":Base")) && result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.5
     ));
     assert_eq!(wall.dependencies.len(), 1);
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1528,7 +1534,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
                 }) if *mode == expected_mode
             )
         );
-        assert!(non_placement_losses(result.report()).is_empty());
+        crate::test_support::assert_design_fragment_scope(&result);
 
         let malformed_values = [
             "<Integer value=\"bad\"/>",
@@ -1608,7 +1614,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
             definition(&result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::ProjectOnSurface { mode: actual, .. }) if *actual == expected
         ));
-        assert!(non_placement_losses(result.report()).is_empty());
+        crate::test_support::assert_design_fragment_scope(&result);
     }
     for value in [
         "<Integer value=\"bad\"/>",
@@ -1691,9 +1697,23 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (pull_direction.x - 0.0).abs() < 1.0e-12
             && (pull_direction.y + 1.0).abs() < 1.0e-12
             && pull_direction.z.abs() < 1.0e-12
-            && (result.ir().dimension_value(angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(angle).expect("resolved dimension").get() - 5f64.to_radians()).abs() < 1.0e-12
     ));
-    assert_eq!(draft.dependencies.len(), 3);
+    // D26 keeps the definition's link-property operands as retained in
+    // neutral form. The pull direction resolves to a bare vector: a datum
+    // axis has no slot in the neutral Draft (DraftPull.plane names a datum
+    // plane, which validate_neutral enforces), so Pull leaves no definition
+    // reference. The source edge survives in the typed native PullDirection
+    // link and in dense ordinals.
+    assert_eq!(draft.dependencies.len(), 2);
+    let pull = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pull"))
+        .expect("pull feature");
+    assert!(pull.ordinal < draft.ordinal);
     let face_draft = result
         .ir()
         .model
@@ -1708,7 +1728,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             ..
         })
     ));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]

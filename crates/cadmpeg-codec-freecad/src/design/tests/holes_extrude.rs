@@ -178,7 +178,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         } if result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 12.0
     ));
     assert_eq!(hole.dependencies.len(), 1);
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .findings;
@@ -235,7 +235,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
                 kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 specification: None,
             },) if absent.ir().dimension_value(actual_length).expect("resolved dimension").get() == 25.0)));
-    assert!(absent.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&absent);
 
     let malformed_values = [
         ("App::PropertyEnumeration", r#"<Integer value="bad"/>"#),
@@ -421,7 +421,7 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             }
         };
         assert_eq!(designation.as_deref(), expected, "{case}: label selection");
-        assert!(result.report().losses.is_empty(), "{case}");
+        crate::test_support::assert_design_fragment_scope(&result);
         assert!(
             retains_thread_size_property(&result, value),
             "{case}: native property was not retained"
@@ -522,7 +522,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     ];
     for target in targets {
         let result = decode(&hole_document(target, None));
-        assert!(result.report().losses.is_empty(), "{target}");
+        crate::test_support::assert_design_fragment_scope(&result);
         let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
@@ -621,7 +621,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     ];
     for (target, replacement) in valid {
         let result = decode(&hole_document(target, Some(replacement)));
-        assert!(result.report().losses.is_empty(), "{target}");
+        crate::test_support::assert_design_fragment_scope(&result);
         let FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter,
             bottom,
@@ -757,7 +757,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             r#"<Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="99"/></Property>"#,
         ),
     ));
-    assert!(high_bits.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&high_bits);
     assert!(matches!(
         hole_definition(&high_bits),
         FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -808,7 +808,7 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
                 },
                 ..
             },) if result.ir().dimension_value(actual_diameter).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 5.0)));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1076,11 +1076,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
             if kind.as_str() == "Part::Part2DObjectPython"
     ));
-    assert!(
-        result.report().losses.is_empty(),
-        "the vendor profile stays native without a loss: {:?}",
-        result.report().losses
-    );
+    crate::test_support::assert_design_fragment_scope(&result);
     assert!(
         result.source_fidelity().unrepresented().is_empty(),
         "typed profile placement remains available"
@@ -1169,7 +1165,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             ..
         }) if result.ir().dimension_value(length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1267,7 +1263,7 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
             ..
         }) if profile.ends_with(":Sketch")
     ));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
     assert_valid_document(result.ir());
 }
 
@@ -1315,7 +1311,7 @@ fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
             }) if profile.ends_with(":Profile")
         ));
     }
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
     assert_valid_document(result.ir());
 }
 
