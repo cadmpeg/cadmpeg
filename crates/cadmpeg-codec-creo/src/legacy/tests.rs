@@ -1163,17 +1163,26 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
 
 #[test]
 fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout() {
+    fn scan(data: &[u8]) -> Result<container::ContainerScan<'_>, cadmpeg_core::CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("the fixture fits the test decode context");
+        container::scan_bytes(&ctx, data)
+    }
+    // A truncated persistence claim frames no section and no legacy layout:
+    // with no part at all the decode refuses as truncated (#215 §4.5).
     let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
-    assert_eq!(
-        container::scan_bytes_ok(incomplete).framing.layout,
-        Layout::Unknown(UnknownLayout::NoDiscriminant)
-    );
+    assert!(matches!(
+        scan(incomplete.as_slice()),
+        Err(cadmpeg_core::CodecError::Truncated { .. })
+    ));
     let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER";
-    assert_eq!(
-        container::scan_bytes_ok(empty_schema).framing.layout,
-        Layout::Unknown(UnknownLayout::NoDiscriminant)
-    );
+    assert!(matches!(
+        scan(empty_schema.as_slice()),
+        Err(cadmpeg_core::CodecError::Truncated { .. })
+    ));
 
     let embedded = build_prt_raw(
         "c",

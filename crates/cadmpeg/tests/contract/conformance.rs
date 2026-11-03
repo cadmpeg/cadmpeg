@@ -48,7 +48,7 @@ fn decode_data_findings(document: &Value, report: &Value, format: &str) -> Vec<S
     findings
 }
 
-fn fixtures(format: &str) -> Vec<PathBuf> {
+pub(crate) fn fixtures(format: &str) -> Vec<PathBuf> {
     let root = workspace();
     let (directory, extension) = match format {
         "step" => (

@@ -118,21 +118,7 @@ pub(crate) enum DatabaseHeader {
     Unframed {
         /// The schema the stream declared.
         schema: RseSchema,
-        /// Where the substituted grammar stopped.
-        detail: String,
     },
-}
-
-impl DatabaseHeader {
-    /// The detail an unframed schema reports as a database issue.
-    pub(crate) fn unframed_detail(schema: RseSchema, detail: &str) -> String {
-        format!(
-            "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
-             {detail}",
-            schema.value(),
-            RseSchema::SCHEMA_31.value()
-        )
-    }
 }
 
 pub(crate) fn parse_database(
@@ -151,10 +137,7 @@ pub(crate) fn parse_database(
     match schema_31_body(ctx, cursor, id, schema) {
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok(DatabaseHeader::Unframed {
-            schema,
-            detail: error.to_string(),
-        }),
+        Err(_) => Ok(DatabaseHeader::Unframed { schema }),
     }
 }
 
@@ -582,13 +565,12 @@ mod tests {
         });
         bytes.push(0);
         with_context(&bytes, |ctx| {
-            let DatabaseHeader::Unframed { schema, detail } =
+            let DatabaseHeader::Unframed { schema } =
                 parse_database(ctx, &bytes).expect("schema declaration survives trailing bytes")
             else {
                 panic!("trailing bytes cannot frame");
             };
             assert_eq!(schema, RseSchema::SCHEMA_31);
-            assert!(detail.contains("trailing bytes"), "{detail}");
         });
     }
 
@@ -620,13 +602,10 @@ mod tests {
         bytes.truncate(28);
         with_context(&bytes, |ctx| {
             let header = parse_database(ctx, &bytes).expect("a foreign schema is not an error");
-            let DatabaseHeader::Unframed { schema, detail } = header else {
+            let DatabaseHeader::Unframed { schema } = header else {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema(12));
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
-            assert!(reported.contains("schema 12"), "{reported}");
-            assert!(reported.contains("schema 31 grammar"), "{reported}");
         });
     }
 
@@ -636,12 +615,10 @@ mod tests {
         bytes.truncate(28);
         with_context(&bytes, |ctx| {
             let header = parse_database(ctx, &bytes).expect("schema 31 degrades after declaration");
-            let DatabaseHeader::Unframed { schema, detail } = header else {
+            let DatabaseHeader::Unframed { schema } = header else {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema::SCHEMA_31);
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
-            assert!(reported.contains("schema 31"), "{reported}");
         });
     }
 
