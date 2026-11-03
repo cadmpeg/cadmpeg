@@ -670,15 +670,6 @@
         },
         "offset": 76,
         "stream": "creo:ActDatums",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNBY3REYXR1bXMKBCIEAQAADw8PD0YAAAAAAAAAD0YIAAAAAAAALQAAAAAAAAAPLQgAAAAAAAAjCiNNZGxTdGF0dXMKUm91bmQgaWQgMwBEYXR1bSBQbGFuZSBpZCA0AA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
         "untyped": [
           "model"
         ]
