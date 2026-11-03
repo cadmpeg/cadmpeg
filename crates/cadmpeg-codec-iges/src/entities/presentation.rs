@@ -23,7 +23,7 @@ struct TextFontDefinition {
     supersedes: Option<u32>,
 }
 
-fn standard_color(number: i64) -> Option<Color> {
+pub(crate) fn standard_color(number: i64) -> Option<Color> {
     let (r, g, b) = match number {
         1 => (0.0, 0.0, 0.0),
         2 => (1.0, 0.0, 0.0),
@@ -142,7 +142,7 @@ fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: Globa
     !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
-fn appearance(
+pub(crate) fn appearance(
     ir: &mut CadIr,
     id: AppearanceId,
     name: Option<String>,
