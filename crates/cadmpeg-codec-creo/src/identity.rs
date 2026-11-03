@@ -86,6 +86,28 @@ pub(crate) fn source_object_id_checked(value: impl Display) -> Result<NonBlankSt
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
 }
 
+/// The `record.unreadable` part-stub identity for a given-up section: the
+/// shared part helper's address over the codec, the part label and the
+/// section offset, so the stub, the retained bytes and the loss provenance
+/// name one part (§4.5 rule 1).
+pub(crate) fn part_stub_id(
+    label: &str,
+    offset: usize,
+) -> Result<cadmpeg_ir::ids::UnknownId, CodecError> {
+    use cadmpeg_core::decode::u64_from_index;
+    let mut address = Vec::new();
+    for field in [label.as_bytes(), "".as_bytes()] {
+        address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+        address.extend_from_slice(field);
+    }
+    address.extend_from_slice(&u64_from_index(offset).to_be_bytes());
+    cadmpeg_ir::ids::UnknownId::try_from(format!(
+        "creo:source:part#{}",
+        cadmpeg_ir::hash::sha256_hex(&address)
+    ))
+    .map_err(|_| CodecError::malformed("given-up Creo part identity is invalid"))
+}
+
 /// Return the rows whose identifier occurs exactly once, in input order.
 pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) -> Vec<&T> {
     let mut counts = BTreeMap::<u32, usize>::new();

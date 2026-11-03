@@ -22,6 +22,11 @@ entry for every root-relative input filename and no other entries. Inputs under
 exact topology counts, a bounding box, and scalar measures with explicit
 absolute or relative tolerances. The report records the measured values and
 the expectation status.
+
+When ``CADMPEG_IGES_MANIFEST`` names the contract suite's ``manifest.json``,
+the file set must agree exactly, and the FreeCAD solid and face counts must
+equal the cadmpeg re-decode counts in the matching entry. An entry carrying
+``error`` needs only a successful import; its counts do not exist.
 """
 
 from __future__ import annotations
@@ -115,6 +120,38 @@ def load_expectations(path: Path) -> dict[str, Any]:
     ):
         raise ValueError(f"{path}: files must map names to expectation objects")
     return files
+
+
+def load_manifest(path: Path) -> dict[str, Any]:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+        raise ValueError(f"{path}: expected JSON object with version 1")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not all(
+        isinstance(name, str) and isinstance(entry, dict)
+        for name, entry in files.items()
+    ):
+        raise ValueError(f"{path}: files must map names to objects")
+    return files
+
+
+def check_manifest_counts(
+    observed: dict[str, Any], entry: dict[str, Any], filename: str
+) -> list[str]:
+    if "error" in entry:
+        return []
+    errors = []
+    for field in ("solids", "faces"):
+        expected = entry.get(field)
+        if isinstance(expected, bool) or not isinstance(expected, int):
+            errors.append(f"manifest {field} for {filename} is not an integer")
+        elif observed[field] != expected:
+            errors.append(
+                f"{field}: expected {expected}, observed {observed[field]}"
+            )
+    unknown = set(entry) - {"solids", "faces", "error"}
+    errors.extend(f"unknown manifest field: {field}" for field in sorted(unknown))
+    return errors
 
 
 def _number(value: Any, field: str, errors: list[str]) -> float | None:
@@ -276,12 +313,27 @@ def main() -> None:
             if extra:
                 details.append(f"expectations without files: {', '.join(extra)}")
             raise ValueError("; ".join(details))
+    manifest_path = os.environ.get("CADMPEG_IGES_MANIFEST")
+    manifest = load_manifest(Path(manifest_path)) if manifest_path else None
+    if manifest is not None:
+        actual_names = {path.relative_to(input_directory).as_posix() for path in files}
+        expected_names = set(manifest)
+        missing = sorted(actual_names - expected_names)
+        extra = sorted(expected_names - actual_names)
+        if missing or extra:
+            details = []
+            if missing:
+                details.append(f"files without a manifest entry: {', '.join(missing)}")
+            if extra:
+                details.append(f"manifest entries without a file: {', '.join(extra)}")
+            raise ValueError("; ".join(details))
 
     results = []
     failures = []
     for path in files:
         filename = path.relative_to(input_directory).as_posix()
         expectation = expectations.get(filename) if expectations is not None else None
+        manifest_entry = manifest.get(filename) if manifest is not None else None
         metrics = None
         try:
             entry_require_shape = require_shape or bool(
@@ -295,8 +347,15 @@ def main() -> None:
                 if expectation is not None
                 else []
             )
-            if expectation_errors:
-                raise ValueError("expectation mismatch: " + "; ".join(expectation_errors))
+            manifest_errors = (
+                check_manifest_counts(metrics, manifest_entry, filename)
+                if manifest_entry is not None
+                else []
+            )
+            if expectation_errors or manifest_errors:
+                raise ValueError(
+                    "expectation mismatch: " + "; ".join(expectation_errors + manifest_errors)
+                )
         except Exception as error:  # FreeCAD modules raise Python and OCC exceptions.
             failure = {"filename": filename, "error": str(error)}
             if metrics is not None:
@@ -309,9 +368,13 @@ def main() -> None:
             result = {"filename": filename, **metrics}
             if expectation is not None:
                 result["expectation"] = {"status": "passed", "spec": expectation}
+            if manifest_entry is not None:
+                result["manifest"] = {"status": "passed"}
+            print(f"PASS {filename}", file=sys.stderr, flush=True)
             results.append(result)
     report = {
         "expectations": expectations_path,
+        "manifest": manifest_path,
         "failures": failures,
         "files": results,
     }
@@ -324,4 +387,12 @@ def main() -> None:
         raise SystemExit(1)
 
 
-main()
+try:
+    main()
+except SystemExit:
+    raise
+except Exception as error:
+    # FreeCADCmd propagates SystemExit but swallows any other uncaught
+    # exception with a zero exit, which would let a failed gate pass.
+    print(f"FAILED: {error}", file=sys.stderr, flush=True)
+    raise SystemExit(1)

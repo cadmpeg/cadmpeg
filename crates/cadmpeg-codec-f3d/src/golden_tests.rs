@@ -19,9 +19,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::{
-    codec::write::SynthesisCause, report::export::WritePath, CadIr,
-};
+use cadmpeg_ir::{codec::write::SynthesisCause, report::export::WritePath, CadIr};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{mutation_roundtrip, ExpectedWritePath, MutationOutcome};
@@ -66,7 +64,6 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
-    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -74,7 +71,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
@@ -519,20 +516,14 @@ fn patch_outcome(_name: &str, bytes: &[u8]) -> Lane {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             let cause = plan.report().synthesis_cause().cloned();
-            // An edit patches, or the patch path declines and synthesis
-            // carries the explicit `PatchDeclined` cause (§1.4). Anything
-            // else — a replay of an edited document, an uncaused synthesis,
-            // or a `SourceUnrepresented` for represented content — breaks
-            // the lane.
+            // A patch lane asserts Patched. Anything else — a replay of an
+            // edited document, an uncaused synthesis, a `SourceUnrepresented`
+            // or a `PatchDeclined`-cause synthesis for represented content —
+            // breaks the lane. Where the patcher declines because of a
+            // decoder divergence, the failure stands and the divergence is
+            // recorded for unit 225-f3d-b with the record named.
             let expected = if represented {
                 matches!(path, WritePath::Patched { .. }) && cause.is_none()
-                    || matches!(
-                        (&path, &cause),
-                        (
-                            WritePath::Synthesized { .. },
-                            Some(SynthesisCause::PatchDeclined { .. }),
-                        )
-                    )
             } else {
                 matches!(
                     (&path, &cause),
@@ -544,7 +535,7 @@ fn patch_outcome(_name: &str, bytes: &[u8]) -> Lane {
             };
             if !expected {
                 return Err(if represented {
-                    "the patch lane edits the IR, so a fully represented golden must patch or decline into synthesis with a cause"
+                    "the patch lane edits the IR, so a fully represented golden must patch"
                 } else {
                     "the patch lane must synthesize with SourceUnrepresented for a golden with unrepresented content"
                 });
@@ -986,6 +977,176 @@ fn an_edit_survives_the_patch_writer() {
     );
 }
 
+/// Rename every positional neutral identity canonically, rewriting all
+/// references consistently. Synthesis remints the positional BREP
+/// identities its blob order implies and regenerates the native rows the
+/// neutral `native_ref` fields name, while a patch preserves the retained
+/// numbering. Model records rekey by arena and position; native references,
+/// which have no neutral home, rekey by kind in sorted order.
+fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
+    fn ephemeral_id(text: &str) -> bool {
+        let Some(hash) = text.rfind('#') else {
+            return false;
+        };
+        // A negative sentinel such as `f3d:brep:entity#-1` remints with the
+        // same rule as any other positional identity.
+        let digits = text[hash + 1..]
+            .strip_prefix('-')
+            .unwrap_or(&text[hash + 1..]);
+        text.starts_with("f3d:")
+            && !text[..hash].is_empty()
+            && !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+    }
+    fn collect_unmapped(
+        value: &serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+        kinds: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) {
+        match value {
+            serde_json::Value::String(text) => {
+                if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
+                    let kind = text.rsplit_once('#').map(|(kind, _)| kind).unwrap_or(text);
+                    kinds
+                        .entry(kind.to_owned())
+                        .or_default()
+                        .insert(text.clone());
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    collect_unmapped(value, mapping, kinds);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for value in fields.values() {
+                    collect_unmapped(value, mapping, kinds);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn rewrite(
+        value: &mut serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+    ) {
+        match value {
+            serde_json::Value::String(text) => {
+                if let Some(replacement) = mapping.get(text.as_str()) {
+                    *text = replacement.clone();
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rewrite(value, mapping);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for value in fields.values_mut() {
+                    rewrite(value, mapping);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut mapping = std::collections::BTreeMap::new();
+    if let Some(model) = value.get("model").and_then(|model| model.as_object()) {
+        for (arena, records) in model {
+            if arena == "coedges" {
+                continue;
+            }
+            if let Some(records) = records.as_array() {
+                for (ordinal, record) in records.iter().enumerate() {
+                    if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                        if ephemeral_id(id) {
+                            mapping.insert(id.to_owned(), format!("{arena}#{ordinal}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Coedge records have no canonical order; the patch preserves the
+    // retained order while synthesis re-derives it. Sort each side's coedges
+    // by their (already rekeyed) edge, sense and owner loop before assigning
+    // positional identities.
+    if let Some(coedges) = value
+        .pointer_mut("/model/coedges")
+        .and_then(|coedges| coedges.as_array_mut())
+    {
+        let key = |record: &serde_json::Value| {
+            let field = |name: &str| {
+                record
+                    .get(name)
+                    .and_then(|field| field.as_str())
+                    .map(|field| mapping.get(field).cloned().unwrap_or_else(|| field.into()))
+                    .unwrap_or_default()
+            };
+            [field("edge"), field("sense"), field("owner_loop")].join("\0")
+        };
+        coedges.sort_by_cached_key(|record| key(record));
+        for (ordinal, record) in coedges.iter().enumerate() {
+            if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                if ephemeral_id(id) {
+                    mapping.insert(id.to_owned(), format!("coedges#{ordinal}"));
+                }
+            }
+        }
+    }
+    let mut kinds: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    collect_unmapped(value, &mapping, &mut kinds);
+    for (kind, ids) in kinds {
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            mapping.insert(id, format!("{kind}#{ordinal}"));
+        }
+    }
+    // Loop rings have no canonical start. Rotate each ring to its smallest
+    // member after rekeying so a rotated-but-identical boundary compares
+    // equal on both sides.
+    fn rotate_rings(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rotate_rings(value);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                if let Some(boundary) = fields.get_mut("boundary") {
+                    if let Some(boundary) = boundary.as_object_mut() {
+                        let is_ring =
+                            boundary.get("kind").and_then(|kind| kind.as_str()) == Some("ring");
+                        if is_ring {
+                            if let Some(coedges) = boundary
+                                .get_mut("coedges")
+                                .and_then(|coedges| coedges.as_array_mut())
+                            {
+                                if let Some(position) = coedges
+                                    .iter()
+                                    .map(|coedge| coedge.to_string())
+                                    .enumerate()
+                                    .min_by(|(_, left), (_, right)| left.cmp(right))
+                                    .map(|(position, _)| position)
+                                {
+                                    coedges.rotate_left(position);
+                                }
+                            }
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    rotate_rings(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    rewrite(value, &mapping);
+    // Loop rings have no canonical start; rotate after rekeying so both
+    // sides start at the same canonical member.
+    rotate_rings(value);
+}
+
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
 fn an_edit_survives_native_writer_fallback() {
@@ -1024,11 +1185,39 @@ fn an_edit_survives_native_writer_fallback() {
         F3dCodec.encode(&edited, &mut authored).unwrap();
         let preserved = decode_result(&preserved).unwrap();
         let authored = decode_result(&authored).unwrap();
-        assert_eq!(
-            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]),
-            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
-            "{name}"
-        );
+        // Patch preserves the retained container while synthesis authors a
+        // fresh one. The save date and the generated-versus-retained BREP
+        // carrier basename are container provenance, not document content;
+        // neutralize them so the comparison judges the edit's meaning.
+        let mut preserved_view = cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
+        let mut authored_view = cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
+        for view in [&mut preserved_view, &mut authored_view] {
+            if let Some(save_date) = view.pointer_mut("/source/attributes/save_date") {
+                *save_date = serde_json::Value::Null;
+            }
+            if let Some(extras) = view.pointer_mut("/source/identity/dialects/extra") {
+                if let Some(extras) = extras.as_array_mut() {
+                    for extra in extras {
+                        if let Some(carrier) = extra.pointer_mut("/declared/carrier") {
+                            if carrier
+                                .as_str()
+                                .is_some_and(|carrier| carrier.ends_with(".smbh"))
+                            {
+                                *carrier =
+                                    serde_json::Value::String("neutralized-carrier.smbh".into());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Patch preserves retained identities while synthesis remints the
+        // positional BREP identities its blob order implies. Rekey each
+        // side's ephemeral neutral identities in sorted order so the
+        // comparison judges structure and references, not numbering.
+        rekey_ephemeral_brep_ids(&mut preserved_view);
+        rekey_ephemeral_brep_ids(&mut authored_view);
+        assert_eq!(preserved_view, authored_view, "{name}");
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");

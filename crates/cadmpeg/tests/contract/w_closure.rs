@@ -222,8 +222,43 @@ fn step_writes_its_fixtures_without_fidelity() {
 }
 
 #[test]
+fn sldprt_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Sldprt, &["sldprt"], false));
+}
+
+#[test]
+fn sldprt_writes_its_fixtures_with_fidelity() {
+    assert_none(&run(Format::Sldprt, &["sldprt"], true));
+}
+
+#[test]
+fn sldprt_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Sldprt, "sldprt"));
+}
+
+#[test]
 fn step_off_catalog_sources_write_under_inherit() {
     assert_none(&off_catalog_inherit_writes(Format::Step, "step"));
+}
+
+#[test]
+fn iges_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Iges, &["iges"], false));
+}
+
+#[test]
+fn iges_writes_its_fixtures_with_fidelity() {
+    assert_none(&run(Format::Iges, &["iges"], true));
+}
+
+#[test]
+fn iges_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Iges, "iges"));
+}
+
+#[test]
+fn iges_edits_reach_the_output() {
+    assert_none(&edits(Format::Iges, "iges", "iges", &[false, true]));
 }
 
 #[test]
@@ -268,6 +303,11 @@ fn step_edits_reach_the_output() {
 }
 
 #[test]
+fn sldprt_edits_reach_the_output() {
+    assert_none(&edits(Format::Sldprt, "sldprt", "sldprt", &[true, false]));
+}
+
+#[test]
 fn rhino_writes_its_fixtures_without_fidelity() {
     assert_none(&run(Format::Rhino, &["rhino"], false));
 }
@@ -280,6 +320,21 @@ fn rhino_off_catalog_sources_write_under_inherit() {
 #[test]
 fn rhino_edits_reach_the_output() {
     assert_none(&edits(Format::Rhino, "rhino", "rhino", &[false]));
+}
+
+#[test]
+fn f3d_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::F3d, &["f3d"], false));
+}
+
+#[test]
+fn f3d_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::F3d, "f3d"));
+}
+
+#[test]
+fn f3d_edits_reach_the_output() {
+    assert_none(&edits(Format::F3d, "f3d", "f3d", &[true, false]));
 }
 
 #[test]

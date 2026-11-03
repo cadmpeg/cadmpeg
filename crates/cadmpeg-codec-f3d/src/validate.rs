@@ -2713,7 +2713,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && actual_selections.len() == selections.len()
                     && actual_selections == expected_selections
                     && operation.tools.iter().all(valid_external)
-                    && match operation.form {
+                    // A stored scope carries no source offsets, so the frame
+                    // check runs only when the scope kept its byte offset.
+                    && (scope.byte_offset().is_none() || match operation.form {
                         records::feature::combine::DesignCombineForm::Standard => {
                             !compact_scope
                                 && !extended_reference_scope
@@ -2776,7 +2778,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                         operation.keep_tools_offset == Some(expected_offset)
                                     })
                         }
-                    }
+                    })
             }
         };
         let thread_link = match scope.thread_construction() {
@@ -2990,13 +2992,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 start_offset,
                 ..
             } => {
+                // A stored scope carries no source offsets, so the layout
+                // check runs only when the offset arrays survived the wire.
                 let Some(direction_face_extend_offsets) = direction_face_extend_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let Some(side_extent_discriminator_offsets) = side_extent_discriminator_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let expected_layout =
                     match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
@@ -3127,13 +3131,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 start_offset,
                 ..
             } => {
+                // A stored scope carries no source offsets, so the layout
+                // check runs only when the offset arrays survived the wire.
                 let Some(direction_face_extend_offsets) = direction_face_extend_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let Some(side_extent_discriminator_offsets) = side_extent_discriminator_offsets
                 else {
-                    return false;
+                    return true;
                 };
                 let typed_references = scope_has_typed_references(scope);
                 let prefix_valid = reference.map_or(
@@ -7017,11 +7023,14 @@ fn recipe_reference_frames_match(
     actual.len() == expected.len()
         && actual.iter().zip(expected).all(|(actual, expected)| {
             actual.selector == expected.selector
-                && actual.selector_offset == expected.selector_offset
+                && source_positions_agree(actual.selector_offset, expected.selector_offset)
                 && actual.token == expected.token
-                && actual.token_offset == expected.token_offset
+                && source_positions_agree(actual.token_offset, expected.token_offset)
                 && actual.design_reference == expected.design_reference
-                && actual.design_reference_offset == expected.design_reference_offset
+                && source_positions_agree(
+                    actual.design_reference_offset,
+                    expected.design_reference_offset,
+                )
         })
 }
 

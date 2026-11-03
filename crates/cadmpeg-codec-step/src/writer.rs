@@ -43,6 +43,9 @@ enum Refusal {
 pub(crate) struct Emitter {
     schema: StepSchema,
     lines: Vec<String>,
+    /// External references (`REFERENCE` section bindings) in emission order.
+    /// Reference ids share the file's instance numbering with DATA records.
+    anchors: Vec<(u64, String)>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
@@ -61,6 +64,7 @@ impl Emitter {
         Emitter {
             schema,
             lines: Vec::new(),
+            anchors: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
             refusal: Cell::new(None),
@@ -100,6 +104,9 @@ impl Emitter {
         emit: impl FnOnce(&mut Self) -> Option<Ref>,
     ) -> Option<Ref> {
         let start = self.lines.len();
+        // No anchor is emitted inside a carrier transaction, so the anchor
+        // count is fixed here and the bound below stays exact.
+        let committed = cadmpeg_core::decode::u64_from_index(start + self.anchors.len());
         let counts = self.counts.clone();
         let prior = self.refusal.get();
         let result = emit(self);
@@ -107,7 +114,7 @@ impl Emitter {
             self.lines.truncate(start);
             self.counts = counts;
             self.interned
-                .retain(|_, reference| reference.0 <= cadmpeg_core::decode::u64_from_index(start));
+                .retain(|_, reference| reference.0 <= committed);
             self.refusal.set(prior);
             None
         } else {
@@ -115,22 +122,46 @@ impl Emitter {
         }
     }
 
+    /// Allocate the next file-unique instance number.
+    ///
+    /// Data instances and external references share one numbering, so an
+    /// anchor emitted before the first DATA record still shifts that record.
+    fn alloc(&self) -> u64 {
+        cadmpeg_core::decode::u64_from_index(self.lines.len() + self.anchors.len()) + 1
+    }
+
     /// Append `#id = TYPE(params);` and return the allocated reference.
     ///
     /// `type_` is also the entity-count key. Complex instances use their leading
     /// keyword as the key.
     pub(crate) fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
-        let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
+        let id = self.alloc();
         self.lines.push(format!("#{id} = {type_}({params});"));
-        *self.counts.entry(type_).or_insert(0) += 1;
+        *self.counts.entry(type_).or_default() += 1;
         Ref(id)
+    }
+
+    /// Append an external `#id=<uri>;` reference binding and return its id.
+    ///
+    /// The binding leaves the DATA section for the file's `REFERENCE` section;
+    /// the caller writes that section from [`Self::take_anchors`].
+    pub(crate) fn emit_anchor(&mut self, uri: &str) -> Ref {
+        let id = self.alloc();
+        self.anchors.push((id, uri.to_owned()));
+        *self.counts.entry("ANCHOR").or_default() += 1;
+        Ref(id)
+    }
+
+    /// Drain the emitted external references in emission order.
+    pub(crate) fn take_anchors(&mut self) -> Vec<(u64, String)> {
+        std::mem::take(&mut self.anchors)
     }
 
     /// Append a preformatted entity or complex-instance body.
     ///
     /// `tally` supplies its entity-count key.
     pub(crate) fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
-        let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
+        let id = self.alloc();
         self.lines.push(format!("#{id} = {body};"));
         *self.counts.entry(tally).or_insert(0) += 1;
         Ref(id)

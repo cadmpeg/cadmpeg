@@ -380,6 +380,9 @@ pub(crate) enum StepLossCode {
     /// reported here instead, with its measured value, because the cost is
     /// continuous and a threshold cannot express it.
     EdgeVertexOffCarrier,
+    /// Neutral records share an identity; all but one occurrence keep no
+    /// separate STEP record. The writer carries one occurrence per identity.
+    DuplicateNeutralIdOmitted,
 }
 
 impl StepLossCode {
@@ -554,6 +557,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
+        Self::DuplicateNeutralIdOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -750,6 +754,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
+            Self::DuplicateNeutralIdOmitted => "document.duplicate-record-omitted",
         }
     }
 
@@ -945,7 +950,8 @@ impl StepLossCode {
             | Self::TessellationItemBodyUnresolved
             | Self::TessellationItemUndeclared
             | Self::TessellationPlacementUnresolved
-            | Self::TessellationPlacementAmbiguous => LossTaxonomy::ReferenceGraphNotClosed,
+            | Self::TessellationPlacementAmbiguous
+            | Self::DuplicateNeutralIdOmitted => LossTaxonomy::ReferenceGraphNotClosed,
             Self::PcurveEndpointsDiscontinuous
             | Self::PcurveLocusDiscontinuous
             | Self::PcurveCarrierUnwritable
@@ -1195,6 +1201,7 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "geometry.edge-vertex-off-carrier",
+                "document.duplicate-record-omitted",
             ]
         );
     }

@@ -9,6 +9,7 @@ mod helix;
 mod orientation;
 mod products;
 mod reports;
+mod robustness;
 pub(crate) mod round_trips;
 mod signed_carriers;
 mod styles;

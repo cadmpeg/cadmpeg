@@ -45,7 +45,30 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                     prepared = topology::admit_bodies(&prepared, &mut losses)?;
                     native::repair_keys(&mut prepared)?;
                     bytes.clear();
-                    super::generate::write_new(&prepared, &mut bytes)?
+                    match super::generate::write_new(&prepared, &mut bytes) {
+                        Ok(coverage) => coverage,
+                        Err(error) if declines(&error) => {
+                            // §5.0: a limitation the reductions cannot
+                            // localize is still not a refusal. Shed the
+                            // native design the generator cannot express
+                            // and retry; every omission is reported.
+                            native::shed_design(&mut prepared)?;
+                            bytes.clear();
+                            match super::generate::write_new(&prepared, &mut bytes) {
+                                Ok(coverage) => coverage,
+                                Err(error) if declines(&error) => {
+                                    losses.push(F3dLossCode::WriterNoExportableSolids.note(format!(
+                                        "unsupported writer content remains after shedding design: {error}; wrote an empty geometry carrier"
+                                    )));
+                                    prepared = CadIr::empty();
+                                    bytes.clear();
+                                    super::generate::write_new(&prepared, &mut bytes)?
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
                 Err(error) => return Err(error),
             }

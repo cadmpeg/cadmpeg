@@ -852,6 +852,9 @@ impl CodecBackend for FcstdCodec {
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
+        // The request governs projection homes while the decode populates
+        // them. #209 §1.1: the delivered scope derives at the end, from the
+        // request and the located carriers, never from the request alone.
         ir.set_scope(ctx.depth().required_scope())
             .map_err(CodecError::malformed)?;
         if let Some((name, source)) = thumbnail {
@@ -1281,6 +1284,65 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
+        // #209 §1.1: the delivered scope derives from the request and the
+        // located carriers. A requested class is held when its neutral
+        // arenas hold records or when its source carriers were located,
+        // even when their projection failed or the depth excluded their
+        // records. A class whose parts were found but failed stays in scope.
+        let required = ctx.depth().required_scope();
+        let (model_carriers, design_carriers, failed_classes) = {
+            let mut failed = cadmpeg_ir::ArenaClasses::new();
+            let native_namespace = ir.native.namespace("fcstd");
+            if let Some(namespace) = native_namespace {
+                let stubs = namespace
+                    .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+                    .map_err(CodecError::malformed)?;
+                for stub in &stubs {
+                    if let Some(retained) = source_fidelity.retained_record(stub.id.as_str()) {
+                        for class in retained.untyped().iter() {
+                            failed.insert(*class);
+                        }
+                    }
+                }
+            }
+            let payloads = native_namespace
+                .map(|namespace| {
+                    namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+                })
+                .transpose()
+                .map_err(CodecError::malformed)?
+                .unwrap_or_default();
+            let objects = native_namespace
+                .map(|namespace| namespace.arena_as::<native::ObjectRecord>("objects"))
+                .transpose()
+                .map_err(CodecError::malformed)?
+                .unwrap_or_default();
+            (
+                payloads
+                    .iter()
+                    .any(|payload| !matches!(payload.payload, crate::brep::ShapePayload::Empty)),
+                objects
+                    .iter()
+                    .any(|object| crate::design::is_design_object(&object.type_name)),
+                failed,
+            )
+        };
+        let model = required.model
+            && (ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some()
+                || model_carriers
+                || failed_classes.contains(&cadmpeg_ir::ArenaClass::Model));
+        let design = required.design
+            && (ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Design)
+                .is_some()
+                || design_carriers
+                || failed_classes.contains(&cadmpeg_ir::ArenaClass::Design));
+        ir.set_scope(cadmpeg_ir::ContentScope { model, design })
+            .map_err(CodecError::malformed)?;
         let scope = ir.scope;
         Ok(Decoded {
             ir,

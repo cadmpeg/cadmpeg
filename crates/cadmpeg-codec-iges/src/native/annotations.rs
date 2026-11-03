@@ -930,11 +930,13 @@ pub(super) fn build(
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
+    tainted: &BTreeSet<u32>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
     let (by_directory, entries) = indexes;
     collect_native_items(
         directory
             .iter()
+            .filter(|entry| !tainted.contains(&entry.sequence))
             .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
         |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
             let record = by_directory.get(&entry.sequence).copied();

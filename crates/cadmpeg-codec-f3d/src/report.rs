@@ -119,8 +119,7 @@ pub(crate) fn entry_part_loss(
             part.name
         ))
     })?;
-    let mut provenance =
-        cadmpeg_ir::SourceProvenance::in_stream("f3d", stream, part.range.start);
+    let mut provenance = cadmpeg_ir::SourceProvenance::in_stream("f3d", stream, part.range.start);
     if length != 0 {
         provenance = provenance.with_byte_len(length)?;
     }
