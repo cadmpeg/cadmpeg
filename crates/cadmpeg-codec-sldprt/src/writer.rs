@@ -424,7 +424,7 @@ pub(super) fn write_semantic_at(
     let source_envelope = source_scan
         .as_ref()
         .map(|scan| {
-            crate::container::native_layout::source_envelope(scan.source_image, &scan.blocks)
+            crate::container::native_layout::source_envelope(scan.source_image, &scan.blocks, false)
         })
         .transpose()?
         .flatten();

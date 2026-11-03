@@ -76,12 +76,13 @@ fn fixture_native_envelope_context(
         }
     };
     let scan = container::scan(&source);
-    let source =
-        if crate::container::native_layout::source_envelope(&source, &scan.blocks)?.is_some() {
-            source
-        } else {
-            container::native_envelope_fixture(&source)
-        };
+    let source = if crate::container::native_layout::source_envelope(&source, &scan.blocks, false)?
+        .is_some()
+    {
+        source
+    } else {
+        container::native_envelope_fixture(&source)
+    };
     let mut fidelity = cloned.unwrap_or_else(|| {
         SourceFidelity::with_annotations(
             cadmpeg_ir::Annotations::default(),

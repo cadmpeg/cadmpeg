@@ -139,6 +139,9 @@ fn is_deleted(
         }
         // #229 §8: the sketch record named by `native_ref` already holds it.
         "creo" => arena == "parameters" && map == "properties" && key == "definition_id",
+        // #226 §8: feature `source_properties` is always empty; the Scope
+        // reader moved to the native record.
+        "sldprt" => arena == "features" && map == "source_properties" && key == "Scope",
         // #230 §8: the parameter triples, `input_parameter_expression.S.O`,
         // the `parameter_use.N` construction lanes, and every entry whose
         // value is a native record id.
