@@ -1,0 +1,111 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {},
+      "compression": "stored",
+      "name": "Manifest.dat",
+      "role": "manifest",
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
+    },
+    {
+      "attributes": {},
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Manifest.dat",
+      "role": "manifest",
+      "size": {
+        "form": "exact",
+        "size": 589
+      }
+    },
+    {
+      "attributes": {
+        "acis_save_format_version": "23100",
+        "asm_entity_count": "5",
+        "asm_flags": "3",
+        "asm_magic": "ASM BinaryFile8",
+        "asm_width": "8",
+        "history_partition_offset": "1597",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "resabs": "0.000001",
+        "resnor": "0.0000000001",
+        "save_date": "Tue Mar 31 16:16:19 2026",
+        "scale": "60",
+        "sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
+        "solved_record_len": "1597"
+      },
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+      "role": "brep-smbh",
+      "size": {
+        "form": "exact",
+        "size": 1610
+      }
+    },
+    {
+      "attributes": {
+        "payload_error": "FusionAssetName[Active]/Previews/thumbnail.png cannot be opened: malformed container: CRC mismatch for FusionAssetName[Active]/Previews/thumbnail.png; stored payload retained"
+      },
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Previews/thumbnail.png",
+      "role": "preview",
+      "size": {
+        "form": "exact",
+        "size": 21
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "dialect": "f3d:manifest-3-2-0-0"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "record.unreadable",
+        "kind": "decode_diagnostic",
+        "namespace": "decode",
+        "scope": "namespaced",
+        "strict_floor": "error"
+      },
+      "message": "part zip.entry stream=\"FusionAssetName[Active]/Previews/thumbnail.png\" offset=3034 length=21: FusionAssetName[Active]/Previews/thumbnail.png cannot be opened: malformed container: CRC mismatch for FusionAssetName[Active]/Previews/thumbnail.png; stored payload retained; dropped=[]",
+      "provenance": {
+        "byte_len": 21,
+        "format": "f3d",
+        "offset": 3034,
+        "stream": "FusionAssetName[Active]/Previews/thumbnail.png"
+      },
+      "severity": "error"
+    }
+  ],
+  "notes": [
+    "Design asset folder (from manifests): FusionAssetName[Active]",
+    "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1610 bytes uncompressed)",
+    "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
+  ]
+}

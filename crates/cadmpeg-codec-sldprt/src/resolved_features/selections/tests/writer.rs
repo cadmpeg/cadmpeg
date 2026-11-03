@@ -81,10 +81,8 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
                 .edge_selections
                 .first()
                 .expect("extended payload holds one edge selection");
-            let (selection_id, selection_sequence) = (
-                parsed_selection.id.clone(),
-                parsed_selection.sequence,
-            );
+            let (selection_id, selection_sequence) =
+                (parsed_selection.id.clone(), parsed_selection.sequence);
             let (lane_id, name_ref) = (lane.id.clone(), lane.names[0].id.clone());
             lane.edge_selections
                 .push(crate::records::FeatureInputEdgeSelection {

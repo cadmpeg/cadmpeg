@@ -37,19 +37,25 @@ pub(super) fn preserve_passthrough_sections(
 ) -> Result<Vec<(UnknownRecord, cadmpeg_ir::ArenaClasses)>, CodecError> {
     let mut unknowns = Vec::new();
     let driver_table = container::undecoded_driver_table_section(scan).map(Section::offset);
-    let incomplete: std::collections::BTreeSet<usize> = scan
+    let incomplete: std::collections::BTreeMap<usize, &'static str> = scan
         .framing
         .incomplete_sections
         .iter()
-        .map(|section| section.offset)
+        .map(|section| (section.offset, section.label))
         .collect();
+    let given_up = |offset: usize| {
+        scan.framing
+            .incomplete_sections
+            .iter()
+            .any(|section| section.offset == offset && section.exclude_rows)
+    };
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
             || section.name() == "NeuPrtSld"
             || section.name() == "NeuAsmSld"
             || Some(section.offset()) == driver_table
-            || incomplete.contains(&section.offset())
+            || incomplete.contains_key(&section.offset())
             || scan
                 .framing
                 .expansion_losses
@@ -141,22 +147,37 @@ pub(super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let namespace = if expansion_failed {
-            cadmpeg_ir::identity_namespace!("creo", "compressed", "section")
+        let id = if given_up(section.offset()) {
+            // A given-up section keeps its bytes under the one part-stub home,
+            // with the identity the `record.unreadable` loss names (§4.5 rule
+            // 1). The loss provenance carries the same offset and length.
+            crate::identity::part_stub_id(
+                incomplete
+                    .get(&section.offset())
+                    .copied()
+                    .unwrap_or("creo.psb_section"),
+                section.offset(),
+            )?
         } else {
-            crate::identity::section_namespace(section.name()).ok_or_else(|| {
-                CodecError::malformed("invalid Creo passthrough section namespace")
-            })?
+            let namespace = if expansion_failed {
+                cadmpeg_ir::identity_namespace!("creo", "compressed", "section")
+            } else {
+                crate::identity::section_namespace(section.name()).ok_or_else(|| {
+                    CodecError::malformed("invalid Creo passthrough section namespace")
+                })?
+            };
+            crate::identity::compose_checked::<UnknownId>(&namespace, offset)?
         };
-        let id = crate::identity::compose_checked::<UnknownId>(&namespace, offset)?;
-        annotate(
-            annotations,
-            &id,
-            section.name(),
-            cadmpeg_core::decode::u64_from_index(offset),
-            tag,
-            exactness,
-        )?;
+        if !given_up(section.offset()) {
+            annotate(
+                annotations,
+                &id,
+                section.name(),
+                cadmpeg_core::decode::u64_from_index(offset),
+                tag,
+                exactness,
+            )?;
+        }
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain Creo passthrough section",
@@ -168,7 +189,7 @@ pub(super) fn preserve_passthrough_sections(
             ])
         } else if Some(section.offset()) == driver_table {
             cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Design])
-        } else if incomplete.contains(&section.offset()) {
+        } else if incomplete.contains_key(&section.offset()) {
             // A given-up section's bytes can hold either class; geometry and
             // thumbnail sections keep their precise class below.
             match section.role() {

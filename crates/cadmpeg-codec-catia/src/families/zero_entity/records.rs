@@ -451,6 +451,76 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
         .then_some(end)
 }
 
+/// The framed end of the `a9 03` record opening at `position`, from its tag
+/// alone. `None` when the record's own bytes do not state an end: content
+/// damage drops the record in the transfer, never the walk.
+fn zero_entity_framed_end(data: &[u8], position: usize) -> Option<usize> {
+    let tag = [
+        data[position + a9_03::TAG_HI],
+        data[position + a9_03::TAG_LO_LENGTH_DRIVER],
+    ];
+    let nominal_end =
+        position.checked_add(usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12);
+    let Some(nominal_end) = nominal_end else {
+        return None;
+    };
+    if tag == [0x21, 0x18]
+        && position
+            .checked_add(12)
+            .is_some_and(|at| data.get(at) == Some(&0x10))
+    {
+        // The tag and its discriminator fix the 292-byte logical extent.
+        // Content damage drops the record in the transfer, never the walk,
+        // so that damage gives up one record.
+        return position.checked_add(292);
+    }
+    if tag == [0x21, 0x18] {
+        return Some(nominal_end);
+    }
+    if tag == [0x61, 0x42] {
+        return zero_entity_face_roster_logical_end(data, position);
+    }
+    if matches!(tag, [0x34, 0xc8 | 0x5e]) {
+        return zero_entity_nurbs_logical_end(data, position);
+    }
+    if let Some(length) = zero_entity_fixed_logical_length(tag) {
+        return position.checked_add(length);
+    }
+    Some(nominal_end)
+}
+
+/// The truncated tail of a cut `a9 03` stream: the first record header the
+/// walk stops at, with the available extent end. A framed end past `range`
+/// is a cut record; a record whose own bytes state no end is damage. Either
+/// way the part's end cannot be found, so the decoder gives up the rest of
+/// its stream as one part (§4.5). A cut source keeps its prefix records.
+pub(crate) fn zero_entity_truncated_tail_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Option<(usize, usize)> {
+    if data.get(range.clone()).is_none() {
+        return None;
+    }
+    let mut position = range.start;
+    while position + a9_03::LEN <= range.end {
+        if data[position + a9_03::FAMILY..position + a9_03::TAG_HI] != [0xa9, 0x03] {
+            position += 1;
+            continue;
+        }
+        match zero_entity_framed_end(data, position) {
+            Some(end) if end <= range.end => {
+                position = end;
+            }
+            // A framed end past the range is a cut record; no framed end at
+            // all is a damaged record. Both give up the stream tail.
+            _ => {
+                return Some((position, range.end));
+            }
+        }
+    }
+    None
+}
+
 fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEntityRecord> {
     if data.get(range.clone()).is_none() {
         return Vec::new();
@@ -466,42 +536,8 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
             data[position + a9_03::TAG_HI],
             data[position + a9_03::TAG_LO_LENGTH_DRIVER],
         ];
-        let nominal_end =
-            position.checked_add(usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12);
-        let Some(nominal_end) = nominal_end else {
+        let Some(end) = zero_entity_framed_end(data, position) else {
             break;
-        };
-        let end = if tag == [0x21, 0x18]
-            && position
-                .checked_add(12)
-                .is_some_and(|at| data.get(at) == Some(&0x10))
-        {
-            // The tag and its discriminator fix the 292-byte logical extent.
-            // Content damage drops the record in the transfer, never the walk,
-            // so that damage gives up one record.
-            let Some(end) = position.checked_add(292) else {
-                break;
-            };
-            end
-        } else if tag == [0x21, 0x18] {
-            nominal_end
-        } else if tag == [0x61, 0x42] {
-            let Some(end) = zero_entity_face_roster_logical_end(data, position) else {
-                break;
-            };
-            end
-        } else if matches!(tag, [0x34, 0xc8 | 0x5e]) {
-            let Some(end) = zero_entity_nurbs_logical_end(data, position) else {
-                break;
-            };
-            end
-        } else if let Some(length) = zero_entity_fixed_logical_length(tag) {
-            let Some(end) = position.checked_add(length) else {
-                break;
-            };
-            end
-        } else {
-            nominal_end
         };
         if end > range.end {
             break;

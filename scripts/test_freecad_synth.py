@@ -85,13 +85,15 @@ else:
         with patch.dict(os.environ, {"CADMPEG_SYNTH_TEST_MODE": mode}):
             return PREPARE.prepare(self.cli, fixtures or self.fixtures, self.output)
 
-    def test_materializes_all_eighteen_public_fixtures_without_fidelity(self) -> None:
+    def test_materializes_every_public_fixture_without_fidelity(self) -> None:
         public = Path(__file__).resolve().parents[1] / "corpus/freecad_fcstd/fixtures"
-        self.assertEqual(self.prepare(fixtures=public), 18)
+        expected = len(list(public.glob("*.FCStd")))
+        self.assertGreater(expected, 0)
+        self.assertEqual(self.prepare(fixtures=public), expected)
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertEqual(len(calls), 36)
-        self.assertEqual(len(list(self.output.glob("*.FCStd"))), 18)
-        self.assertEqual(len(list(self.output.glob("*.report.json"))), 18)
+        self.assertEqual(len(calls), 2 * expected)
+        self.assertEqual(len(list(self.output.glob("*.FCStd"))), expected)
+        self.assertEqual(len(list(self.output.glob("*.report.json"))), expected)
         for arguments in calls[1::2]:
             self.assertEqual(arguments[0], "convert")
             self.assertEqual(arguments[arguments.index("--to") + 1], "fcstd:schema-4")
@@ -100,10 +102,11 @@ else:
         for report in self.output.glob("*.report.json"):
             self.assertEqual(json.loads(report.read_text()), SUCCESS)
 
-    def test_wrong_fixture_count_refuses_before_invoking_cli(self) -> None:
-        (self.fixtures / "fixture_00.FCStd").unlink()
-        with self.assertRaisesRegex(RuntimeError, "expected 18.*found 17"):
-            self.prepare()
+    def test_empty_fixture_set_refuses_before_invoking_cli(self) -> None:
+        empty = self.root / "empty-fixtures"
+        empty.mkdir()
+        with self.assertRaisesRegex(RuntimeError, "no FCStd fixtures"):
+            self.prepare(fixtures=empty)
         self.assertFalse(self.log.exists())
 
     def test_requires_successful_current_wire_synthesized_reports(self) -> None:
@@ -133,6 +136,7 @@ class NativeAcceptanceTests(unittest.TestCase):
             path.with_suffix(".report.json").write_text(json.dumps(SUCCESS))
         self.opened = []
         self.closed = []
+        self.recomputed = []
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -147,9 +151,18 @@ class NativeAcceptanceTests(unittest.TestCase):
             if special and mode == "no_document":
                 return None
             shape = SimpleNamespace(isNull=lambda: special and mode == "null_shape",
-                                    isValid=lambda: not (special and mode == "invalid_shape"))
-            return SimpleNamespace(Name=path.stem, Objects=[SimpleNamespace(Name="Body", Shape=shape),
+                                    isValid=lambda: not (special and mode == "invalid_shape"),
+                                    Faces=[object()], Solids=[object(), object()])
+            document = SimpleNamespace(Name=path.stem, Objects=[SimpleNamespace(Name="Body", Shape=shape),
                                                           SimpleNamespace(Name="Parameter")])
+
+            def recompute():
+                self.recomputed.append(path.name)
+                if special and mode == "recompute_failure":
+                    raise RuntimeError("recompute diverged")
+
+            document.recompute = recompute
+            return document
 
         def close_document(name: str) -> None:
             self.closed.append(name)
@@ -164,15 +177,18 @@ class NativeAcceptanceTests(unittest.TestCase):
     def test_all_eighteen_inputs_open_validate_and_close(self) -> None:
         self.assertEqual(VERIFY.verify(self.application(), self.root, self.report), 18)
         self.assertEqual(len(self.opened), 18)
+        self.assertEqual(len(self.recomputed), 18)
         self.assertEqual(len(self.closed), 18)
         self.assertTrue(all(result["accepted"] and result["objects"] == 2 for result in self.results()))
 
     def test_native_failures_are_reported_while_other_inputs_continue(self) -> None:
         for mode, reason in [("open_failure", "cannot load"), ("no_document", "returned no document"),
-                             ("invalid_shape", "invalid shape"), ("close_failure", "closeDocument failed")]:
+                             ("invalid_shape", "invalid shape"), ("close_failure", "closeDocument failed"),
+                             ("recompute_failure", "recompute diverged")]:
             with self.subTest(mode=mode):
                 self.opened.clear()
                 self.closed.clear()
+                self.recomputed.clear()
                 with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
                     VERIFY.verify(self.application(mode), self.root, self.report)
                 results = self.results()
@@ -236,13 +252,89 @@ class NativeAcceptanceTests(unittest.TestCase):
         (self.root / "fixture_00.FCStd").unlink()
         with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
             VERIFY.verify(self.application(), self.root, self.report)
-        self.assertEqual(len(self.results()), 17)
+        results = self.results()
+        self.assertEqual(len(results), 18)
+        self.assertTrue(all(result["accepted"] for result in results[:17]))
+        self.assertFalse(results[17]["accepted"])
+        self.assertIn("fixture_00.report.json", results[17]["error"])
 
     def test_native_entry_point_uses_configured_directory_and_report(self) -> None:
         with patch.dict(sys.modules, {"FreeCAD": self.application()}), patch.dict(os.environ, {
                 "CADMPEG_FCSTD_INPUT_DIR": str(self.root), "CADMPEG_FCSTD_REPORT": str(self.report)}):
             runpy.run_path(str(Path(__file__).with_name("verify-freecad-synth.py")), run_name="__main__")
         self.assertEqual(len(self.results()), 18)
+
+
+class ManifestAcceptanceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.report = self.root / "interop.json"
+        for name in ["step__box.FCStd", "damaged/step__broken.FCStd"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"authored archive")
+        self.manifest = {
+            "step__box.FCStd": {"solids": 2, "faces": 1},
+            "damaged/step__broken.FCStd": {"error": "output does not decode"},
+        }
+        self.opened = []
+        self.closed = []
+        self.recomputed = []
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def application(self):
+        def open_document(filename: str):
+            self.opened.append(filename)
+            shape = SimpleNamespace(isNull=lambda: False, isValid=lambda: True,
+                                    Faces=[object()], Solids=[object(), object()])
+            document = SimpleNamespace(Name=Path(filename).stem,
+                                       Objects=[SimpleNamespace(Name="Body", Shape=shape)])
+            document.recompute = lambda: self.recomputed.append(filename)
+            return document
+
+        def close_document(name: str) -> None:
+            self.closed.append(name)
+
+        return SimpleNamespace(openDocument=open_document, closeDocument=close_document)
+
+    def test_manifest_counts_must_match_recomputed_geometry(self) -> None:
+        self.assertEqual(VERIFY.verify(self.application(), self.root, self.report, self.manifest), 2)
+        self.assertEqual(len(self.opened), 2)
+        self.assertEqual(len(self.recomputed), 2)
+        self.assertEqual(len(self.closed), 2)
+        for result in json.loads(self.report.read_text())["files"]:
+            self.assertTrue(result["accepted"], result)
+
+    def test_manifest_count_mismatch_is_reported(self) -> None:
+        self.manifest["step__box.FCStd"] = {"solids": 5, "faces": 1}
+        with self.assertRaisesRegex(RuntimeError, "interop acceptance failed"):
+            VERIFY.verify(self.application(), self.root, self.report, self.manifest)
+        results = json.loads(self.report.read_text())["files"]
+        self.assertFalse(results[1]["accepted"])
+        self.assertIn("solids: expected 5, observed 2", results[1]["error"])
+
+    def test_file_without_manifest_entry_is_refused(self) -> None:
+        del self.manifest["damaged/step__broken.FCStd"]
+        with self.assertRaisesRegex(ValueError, "without a manifest entry"):
+            VERIFY.verify(self.application(), self.root, self.report, self.manifest)
+        self.assertEqual(self.opened, [])
+
+    def test_manifest_entry_without_file_is_refused(self) -> None:
+        self.manifest["step__ghost.FCStd"] = {"solids": 0, "faces": 0}
+        with self.assertRaisesRegex(ValueError, "without a file"):
+            VERIFY.verify(self.application(), self.root, self.report, self.manifest)
+
+    def test_manifest_entry_point_reads_the_named_manifest(self) -> None:
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps({"version": 1, "writer": "fcstd", "files": self.manifest}))
+        with patch.dict(sys.modules, {"FreeCAD": self.application()}), patch.dict(os.environ, {
+                "CADMPEG_FCSTD_INPUT_DIR": str(self.root), "CADMPEG_FCSTD_REPORT": str(self.report),
+                "CADMPEG_FCSTD_MANIFEST": str(manifest_path)}):
+            runpy.run_path(str(Path(__file__).with_name("verify-freecad-synth.py")), run_name="__main__")
+        self.assertEqual(len(json.loads(self.report.read_text())["files"]), 2)
 
 
 if __name__ == "__main__":
