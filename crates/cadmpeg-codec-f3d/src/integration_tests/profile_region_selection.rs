@@ -87,21 +87,20 @@ fn fixture(
         .iter()
         .map(|primary| {
             json!({
-                "kind": 3, "kind_offset": 0, "curve_primary_id": primary,
-                "curve_primary_id_offset": 4, "incidence_words": [0, 0, 0, 0, 3, 8, 0, 0],
-                "incidence_words_offset": 8,
+                "kind": 3, "curve_primary_id": primary,
+                "incidence_words": [0, 0, 0, 0, 3, 8, 0, 0],
             })
         })
         .collect::<Vec<_>>();
     let operand: DesignSketchProfileOperand = serde_json::from_value(json!({
-        "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 10,
+        "scope_reference_ordinal": 0, "record_index": 100,
         "class_tag": "301", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
-        "asset_id_offset": 20, "entity_id": "0_42", "entity_suffix": 42,
-        "entity_reference_offset": 100, "paired_class_tag": "259", "paired_byte_offset": 200,
+        "entity_id": "0_42", "entity_suffix": 42,
+        "paired_class_tag": "259",
         "region_selection": {
-            "record_index": 103, "byte_offset": 300, "class_tag": "302", "region_count_offset": 336,
-            "regions": [{"member_count_offset": 340, "members": members}],
-            "companion_class_tag": "260", "companion_byte_offset": 700,
+            "record_index": 103, "class_tag": "302",
+            "regions": [{"members": members}],
+            "companion_class_tag": "260",
         }
     }))
     .unwrap();
@@ -120,10 +119,11 @@ fn bound_profile(members: &[u32]) -> ProfileRef {
     let (sketch, entities, curves, scope) = fixture(members);
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
+        "needs_recompute": false,
         "native_ref": scope.id,
         "definition": {"definition": "extrude", "profile": {"kind": "sketch", "value": sketch.id},
             "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
-            "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+            "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": {"kind": "literal", "value": 1.0}}}},
             "op": "cut", "solid": true}
     })).unwrap();
     crate::test_support::with_decode_context(|ctx| {

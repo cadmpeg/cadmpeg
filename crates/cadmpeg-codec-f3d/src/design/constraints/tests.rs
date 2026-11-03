@@ -370,7 +370,10 @@ fn rectangular_grid_relation(counts: [u32; 2], distances: [f64; 2]) -> SketchRel
         members: (members
             .iter()
             .copied()
-            .map(SketchRelationMember::from_index)
+            .map(|index| SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(index)
+            })
             .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),
@@ -401,7 +404,10 @@ fn rectangular_grid_relation(counts: [u32; 2], distances: [f64; 2]) -> SketchRel
         return_members: (members
             .iter()
             .copied()
-            .map(SketchRelationReturnMember::from_index)
+            .map(|index| SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(index)
+            })
             .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),

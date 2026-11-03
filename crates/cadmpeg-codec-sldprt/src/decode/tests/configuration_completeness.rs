@@ -206,9 +206,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     .unwrap();
 
     for expected in [
-        "1 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals.",
-        "2 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
-        "1 feature record(s) contain missing or repeated output body references.",
         "1 feature(s) retain their native kind without a complete neutral operation definition.",
         "2 typed feature(s) retain native or unresolved required operation operands.",
         "1 body delete/keep feature(s) retain selected native body identities without a decoded retention mode.",

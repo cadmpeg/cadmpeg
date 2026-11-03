@@ -64,29 +64,20 @@ fn scope() -> DesignParameterScope {
 }
 
 fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
-    let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap()).collect();
     serde_json::from_value(serde_json::json!({
         "id": GROUP_ID,
-        "byte_offset": 0,
         "class_tag": "261",
         "record_index": 43,
         "scope_record_index": scope_record_index,
         "scope_reference_ordinal": 0,
         "members": members,
-        "member_offsets": member_offsets,
         "role": 68_719_476_736_u64,
-        "role_offset": 0,
-        "paired_byte_offset": 200,
         "paired_class_tag": "266",
         "frame": {
-            "member_count_offset": 0,
             "opaque_index": 1,
-            "opaque_index_offset": 18,
             "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 22,
             "trailing_flags": [],
             "trailing_record_indices": [],
-            "trailing_record_offsets": [],
             "variant": false
         }
     }))

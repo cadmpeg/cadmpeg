@@ -15,6 +15,10 @@ use rmp::Marker;
 use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
+use cadmpeg_ir::document::ArenaClass;
+use cadmpeg_ir::CodecFormat;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+use cadmpeg_ir::unknown::UnknownRecord;
 
 mod database;
 #[cfg(test)]
@@ -682,6 +686,7 @@ pub(crate) fn dimensions(
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
     untyped_sections: &mut std::collections::BTreeSet<String>,
+    stubs: &mut Vec<UnknownRecord>,
 ) -> Result<Vec<PmiDimension>, CodecError> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
@@ -704,6 +709,7 @@ pub(crate) fn dimensions(
                 records: &mut records,
                 seen: &mut seen,
                 untyped_sections: Some(untyped_sections),
+                stubs,
             },
         )?;
     }
@@ -714,7 +720,8 @@ pub(crate) fn dimensions(
 /// Parse PMI records from a raw `PMISemanticDataDB` payload.
 ///
 /// Used by focused tests and the `sldprt_pmi` fuzz target. Parent/section are
-/// placeholders; production decode supplies real block identities.
+/// placeholders; production decode supplies real block identities. Given-up
+/// map parts are dropped with the test: only their losses are kept.
 pub(crate) fn parse_payload(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
@@ -724,6 +731,7 @@ pub(crate) fn parse_payload(
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
     let stream = cadmpeg_ir::stream_name!("Contents/PMISemanticDataDB");
+    let mut stubs = Vec::new();
     collect_dimensions(
         ctx,
         payload,
@@ -735,6 +743,7 @@ pub(crate) fn parse_payload(
             records: &mut records,
             seen: &mut seen,
             untyped_sections: None,
+            stubs: &mut stubs,
         },
     )?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
@@ -745,6 +754,7 @@ struct DimensionOutput<'a> {
     records: &'a mut Vec<PmiDimension>,
     seen: &'a mut HashSet<String>,
     untyped_sections: Option<&'a mut std::collections::BTreeSet<String>>,
+    stubs: &'a mut Vec<UnknownRecord>,
 }
 
 fn collect_dimensions(
@@ -771,14 +781,18 @@ fn collect_dimensions(
         }
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
+            // A damaged page graph is not a part: its unread bytes stay in
+            // the retained section record, marked untyped through the
+            // section identity. The scan below recovers readable maps.
             if let Some(sections) = output.untyped_sections.as_deref_mut() {
                 sections.insert(parent.to_owned());
             }
-            losses.push(
-                SldprtLossCode::PmiSemanticRecordMalformed
-                    .note(format!("PMISemanticDataDB section {parent}: {error}")),
-            );
-            // Retain independent readable maps when its database graph failed.
+            losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                "PMISemanticDataDB section {parent} at stream {} offset {} length {}: {error}",
+                stream.as_str(),
+                u64_from_index(payload.start()),
+                u64_from_index(payload.window().len()),
+            )));
             return collect_dimension_maps(
                 ctx,
                 payload,
@@ -801,36 +815,155 @@ fn collect_dimensions(
             )));
             continue;
         }
-        let first = output.records.len();
-        collect_dimension_maps(
-            ctx,
-            image.encoded,
-            stream,
-            parent,
-            &mut Annotations::default(),
-            losses,
-            DimensionOutput {
-                records: output.records,
-                seen: output.seen,
-                untyped_sections: output.untyped_sections.as_deref_mut(),
-            },
-        )?;
-        for record in &mut output.records[first..] {
-            record.offset = image.original_pointer(record.offset)?;
-            if let Some((_, offset)) = &mut record.display_text {
-                *offset = image.original_pointer(*offset)?;
-            }
-            crate::annotations::note(
-                annotations,
-                &record.id,
-                stream,
-                record.offset,
-                "messagepack_dim_sem_data",
-                Exactness::ByteExact,
-            )?;
+        let normalized = image.key.to_ascii_lowercase();
+        if output.seen.contains(&normalized) {
+            continue;
         }
+        // A PMI record is the value of its UnQLite cell. The value parses
+        // as one record at the cell's start; the scan below only recovers
+        // maps when the page graph itself is damaged.
+        match parse_cell_record(ctx, &image, &normalized, parent) {
+            Ok(Some(record)) => {
+                let mut record = record;
+                record.offset = image.original_pointer(record.offset)?;
+                if let Some((_, offset)) = &mut record.display_text {
+                    *offset = image.original_pointer(*offset)?;
+                }
+                if record.item_count.get() != 1 {
+                    if let Some(sections) = output.untyped_sections.as_deref_mut() {
+                        sections.insert(parent.to_owned());
+                    }
+                    losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                        "PMI record {} contains {} additional semantic dimension item(s) without typed payloads",
+                        record.id, record.item_count.get() - 1
+                    )));
+                }
+                crate::annotations::note(
+                    annotations,
+                    record.id.clone(),
+                    stream,
+                    record.offset,
+                    "messagepack_dim_sem_data",
+                    Exactness::ByteExact,
+                )?;
+                output.records.push(record);
+            }
+            Ok(None) => {
+                if let Some(sections) = output.untyped_sections.as_deref_mut() {
+                    sections.insert(parent.to_owned());
+                }
+                losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                    "PMISemanticDataDB cell (guid {normalized}) has no supported typed semantic record"
+                )));
+            }
+            Err(PmiParseError::Malformed(message)) => {
+                let mut part_losses = give_up_pmi_record(
+                    ctx,
+                    cell_extent(&image, payload),
+                    stream,
+                    parent,
+                    &normalized,
+                    &message,
+                    output.stubs,
+                    &mut output.untyped_sections,
+                )?;
+                losses.append(&mut part_losses);
+            }
+            Err(PmiParseError::Capped) => {
+                if let Some(sections) = output.untyped_sections.as_deref_mut() {
+                    sections.insert(parent.to_owned());
+                }
+                losses.push(parse_capped_loss(
+                    parent,
+                    payload.window().len(),
+                    0,
+                    1,
+                ));
+                return Ok(());
+            }
+            Err(PmiParseError::Resource(error)) => return Err(error),
+        }
+        output.seen.insert(normalized);
     }
     Ok(())
+}
+
+/// Parse one UnQLite cell value as its PMI record.
+///
+/// The value holds exactly one record at its start. The work budget scales
+/// with the cell value, not the enclosing section.
+fn parse_cell_record(
+    ctx: &DecodeContext<'_>,
+    image: &database::read::MapImage<'_>,
+    guid: &str,
+    parent: &str,
+) -> Result<Option<PmiDimension>, PmiParseError> {
+    let value = image.encoded;
+    let Some(work_limit) = value
+        .window()
+        .len()
+        .checked_mul(PMI_PARSE_WORK_PER_PAYLOAD_BYTE)
+    else {
+        return Err(PmiParseError::Capped);
+    };
+    let work = WorkBudget::new(work_limit);
+    // The cell value starts after its GUID key; the record parses at the
+    // value's start with the cell key as its identity.
+    extract_dimension(ctx, value, image.key.len(), guid, parent, &work, false)
+}
+
+/// The source extent of one UnQLite cell value for a part give-up.
+///
+/// A value inside one database piece gives up exactly its bytes. An overflow
+/// value spans pages without one source extent; its first piece stands in
+/// for the cell while the enclosing section record keeps the remaining bytes.
+fn cell_extent<'a, 'b>(
+    image: &'b database::read::MapImage<'a>,
+    fallback: View<'b>,
+) -> View<'b> {
+    image.value_extent().unwrap_or(fallback)
+}
+
+/// Give up one failed PMI map or cell value as its `sldprt.pmi_record` part.
+///
+/// The part keeps its source bytes in a retained record marked untyped and
+/// charges one `record.unreadable` loss. The stub reaches the document
+/// through the caller's unknowns; the loss returns to the caller's losses.
+fn give_up_pmi_record(
+    ctx: &DecodeContext<'_>,
+    extent: View<'_>,
+    stream: &cadmpeg_ir::StreamName,
+    parent: &str,
+    guid: &str,
+    message: &str,
+    stubs: &mut Vec<UnknownRecord>,
+    untyped: &mut Option<&mut std::collections::BTreeSet<String>>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut part = PartOutput::new(CodecFormat::Sldprt, ctx);
+    let spec = PartSpec::new("pmi_record")
+        .in_stream(stream.clone())
+        .holding([ArenaClass::Design]);
+    let message = format!("PMISemanticDataDB map (guid {guid}) in section {parent}: {message}");
+    let result: Option<()> = ctx.decode_part(&mut part, extent, spec, |_| {
+        Err(CodecError::malformed(message.as_str()))
+    })?;
+    debug_assert!(result.is_none());
+    let (_, _, fidelity, losses) = part.into_parts();
+    for (id, record) in fidelity.retained_records() {
+        let Some(data) = record.data() else {
+            continue;
+        };
+        if let Some(sections) = untyped.as_deref_mut() {
+            sections.insert(id.as_str().to_owned());
+        }
+        stubs.push(UnknownRecord::retained(
+            id.clone(),
+            u64_from_index(extent.start()),
+            data.to_vec(),
+            Vec::new(),
+        ));
+    }
+    Ok(losses)
 }
 
 fn collect_dimension_maps(
@@ -847,10 +980,11 @@ fn collect_dimension_maps(
         records,
         seen,
         mut untyped_sections,
+        stubs,
     } = output;
-    let mut candidates = candidate_maps(payload);
+    let candidates = candidate_maps(payload).collect::<Vec<_>>();
     let Some(work_limit) = payload.len().checked_mul(PMI_PARSE_WORK_PER_PAYLOAD_BYTE) else {
-        let skipped = candidates.count();
+        let skipped = candidates.len();
         if skipped > 0 {
             if let Some(sections) = untyped_sections.as_deref_mut() {
                 sections.insert(parent.to_owned());
@@ -860,12 +994,15 @@ fn collect_dimension_maps(
         return Ok(());
     };
     let work = WorkBudget::new(work_limit);
-    while let Some((guid, offset)) = candidates.next() {
+    let mut index = 0;
+    while index < candidates.len() {
+        let (guid, offset) = candidates[index];
+        index += 1;
         let normalized = guid.to_ascii_lowercase();
         if seen.contains(&normalized) {
             continue;
         }
-        match extract_dimension(ctx, source, offset, &normalized, parent, &work) {
+        match extract_dimension(ctx, source, offset, &normalized, parent, &work, true) {
             Ok(Some(record)) => {
                 if record.item_count.get() != 1 {
                     if let Some(sections) = untyped_sections.as_deref_mut() {
@@ -895,18 +1032,44 @@ fn collect_dimension_maps(
                 )));
             }
             Err(PmiParseError::Malformed(message)) => {
-                if let Some(sections) = untyped_sections.as_deref_mut() {
-                    sections.insert(parent.to_owned());
-                }
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                // A failed map gives up its part: the GUID-prefixed bytes
+                // from this candidate to the next, or to the section end.
+                let base = source.start();
+                let guid_start = base
+                    .checked_add(offset)
+                    .and_then(|map| map.checked_sub(36))
+                    .ok_or_else(|| {
+                        CodecError::malformed("PMI map part precedes its section")
+                    })?;
+                let end = candidates
+                    .get(index)
+                    .map(|(_, next)| base.checked_add(next.saturating_sub(36)))
+                    .unwrap_or_else(|| base.checked_add(payload.len()))
+                    .ok_or_else(|| {
+                        CodecError::malformed("PMI map part escapes its section")
+                    })?;
+                let Some(extent) = source.child(guid_start, end) else {
+                    return Err(CodecError::malformed(
+                        "PMI map part escapes its section",
+                    ));
+                };
+                let mut part_losses = give_up_pmi_record(
+                    ctx,
+                    extent,
+                    stream,
+                    parent,
+                    &normalized,
+                    &message,
+                    stubs,
+                    &mut untyped_sections,
+                )?;
+                losses.append(&mut part_losses);
             }
             Err(PmiParseError::Capped) => {
                 if let Some(sections) = untyped_sections.as_deref_mut() {
                     sections.insert(parent.to_owned());
                 }
-                let skipped = candidates.count() + 1;
+                let skipped = candidates.len() - index + 1;
                 losses.push(parse_capped_loss(parent, payload.len(), offset, skipped));
                 return Ok(());
             }
@@ -960,6 +1123,7 @@ fn extract_dimension(
     guid: &str,
     parent: &str,
     work: &WorkBudget,
+    embedded_guid: bool,
 ) -> Result<Option<PmiDimension>, PmiParseError> {
     let payload = source.window();
     let mut cursor = offset;
@@ -1033,20 +1197,24 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
-    let identity_start = offset.checked_sub(36).ok_or("PMI map lacks its GUID key")?;
-    let identity = payload
-        .get(
-            identity_start
-                ..identity_start
-                    .checked_add(36)
-                    .ok_or("PMI GUID source offset overflows")?,
-        )
-        .ok_or("PMI GUID key lies outside its source")?;
-    let actual_guid = std::str::from_utf8(identity)
-        .map_err(|_| PmiParseError::from("PMI GUID key is not UTF-8"))?
-        .to_ascii_lowercase();
-    if actual_guid != guid {
-        return Err("PMI GUID key differs from its record identity".into());
+    if embedded_guid {
+        let identity_start = offset
+            .checked_sub(36)
+            .ok_or("PMI map lacks its GUID key")?;
+        let identity = payload
+            .get(
+                identity_start
+                    ..identity_start
+                        .checked_add(36)
+                        .ok_or("PMI GUID source offset overflows")?,
+            )
+            .ok_or("PMI GUID key lies outside its source")?;
+        let actual_guid = std::str::from_utf8(identity)
+            .map_err(|_| PmiParseError::from("PMI GUID key is not UTF-8"))?
+            .to_ascii_lowercase();
+        if actual_guid != guid {
+            return Err("PMI GUID key differs from its record identity".into());
+        }
     }
     let id = format!("sldprt:pmi:dimension#{guid}");
     let display_text = match outer.get("dimText") {

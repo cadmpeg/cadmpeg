@@ -260,55 +260,58 @@
             "id": "step:data:vertex_point#8"
           },
           {
-            "id": "step:file:omitted#1035"
+            "id": "step:source:part#1f161740850602ea314d9b65d92395f37b2e54f8b777d9f1a3e3e934fc1b40ce"
           },
           {
-            "id": "step:file:omitted#1068"
+            "id": "step:source:part#254d1d20feb6e399bd3659472ee50b739b1f8477fa3a6519377d59b1c72037c2"
           },
           {
-            "id": "step:file:omitted#1159"
+            "id": "step:source:part#316e0e041bbf0e744f825c8a9c614c476a4dc7dec559f35bc6be55789627eb20"
           },
           {
-            "id": "step:file:omitted#1196"
+            "id": "step:source:part#3bc9f308186dd5a1f8f67d45622a053275b491b2575339f1aa1a2fce180e8ecf"
           },
           {
-            "id": "step:file:omitted#1222"
+            "id": "step:source:part#40c3b3089ecd4b234f3e317f3173555fb4edfd2fb1ecaeabe640e929af02c129"
           },
           {
-            "id": "step:file:omitted#1263"
+            "id": "step:source:part#419377233dd162b246dfc2a1e7ce4af6e1aed7f122976012bdb2911388b8e0ae"
           },
           {
-            "id": "step:file:omitted#1319"
+            "id": "step:source:part#4b0457d91c71e2a7ec62b08bdb99f2c4bd4af40de1da4e2c1f7fb112293e45bb"
           },
           {
-            "id": "step:file:omitted#1616"
+            "id": "step:source:part#5223bb00dec98a6b454ebc13aabcb866a60d33b711419c06921c0b55e8217494"
           },
           {
-            "id": "step:file:omitted#1663"
+            "id": "step:source:part#545526062498ed16a1630708c858684b6caf3810269380693698f93019661426"
           },
           {
-            "id": "step:file:omitted#2327"
+            "id": "step:source:part#6fae274c0de3e82ab97ef5277accf77ad5d932d9553fc320056a3eee8d5824c7"
           },
           {
-            "id": "step:file:omitted#2358"
+            "id": "step:source:part#71ef662e2e9795f05d47c27a58c13644ce929e631caf7def771810702272798a"
           },
           {
-            "id": "step:file:omitted#509"
+            "id": "step:source:part#8ae9ef46985f8ac2733786dcf7a2e02c90e1f5c98fa49cd360936273fd437222"
           },
           {
-            "id": "step:file:omitted#786"
+            "id": "step:source:part#90c27db5801a725f821c1e65018ea67715258b7af50d232a79f49559c985e895"
           },
           {
-            "id": "step:file:omitted#828"
+            "id": "step:source:part#a45f2ef7c5ed085614c180b53e996d0e49beb5623d7d5d874ed8d36ccd3f7114"
           },
           {
-            "id": "step:file:omitted#862"
+            "id": "step:source:part#bfefd47fc7fd9e8ffefe8c3d4c9ba3196ebe1870a5c2ee47a755d53203c019e1"
           },
           {
-            "id": "step:file:omitted#930"
+            "id": "step:source:part#ceef1dd577c5ed4ca7fd96c8f4f08c7e1436837170c6de3d92e5408121370ded"
           },
           {
-            "id": "step:file:omitted#965"
+            "id": "step:source:part#d757311eee34e8b82b78c73d7470719c3aca75c0439c5d8549a352857c3b63ef"
+          },
+          {
+            "id": "step:source:part#f6c9c854af09b4528f931046def78270c9737dd3ae005c25b9652885a7d1fa9d"
           }
         ]
       }
@@ -360,278 +363,6 @@
       }
     },
     "losses": [
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #7 omitted: unresolved instance reference #4; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 509,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #17 omitted: unresolved instance reference #4; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 786,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #20 omitted: depends on omitted instance #17; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 862,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #23 omitted: depends on omitted instance #20; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 965,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #25 omitted: depends on omitted instance #23; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1035,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #26 omitted: depends on omitted instance #25; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1068,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #29 omitted: depends on omitted instance #26; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1159,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #30 omitted: depends on omitted instance #29; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1196,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #47 omitted: depends on omitted instance #29; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1616,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #48 omitted: depends on omitted instance #29; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1663,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #67 omitted: depends on omitted instance #29; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 2327,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #33 omitted: depends on omitted instance #30; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1319,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #31 omitted: depends on omitted instance #33; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1222,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #32 omitted: depends on omitted instance #31; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 1263,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #19 omitted: depends on omitted instance #7; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 828,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #22 omitted: depends on omitted instance #19; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 930,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "parse.record-omitted",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "instance #68 omitted: depends on omitted instance #19; exact source retained",
-        "provenance": {
-          "format": "step",
-          "offset": 2358,
-          "tag": "data_record"
-        },
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
@@ -856,6 +587,278 @@
           "byte_len": 35,
           "format": "step",
           "offset": 413
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=786 length=20: malformed container: unresolved instance reference #4; dropped=[]",
+        "provenance": {
+          "byte_len": 20,
+          "format": "step",
+          "offset": 786
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=862 length=33: malformed container: depends on given-up instance #17; dropped=[]",
+        "provenance": {
+          "byte_len": 33,
+          "format": "step",
+          "offset": 862
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=965 length=34: malformed container: depends on given-up instance #20; dropped=[]",
+        "provenance": {
+          "byte_len": 34,
+          "format": "step",
+          "offset": 965
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1035 length=32: malformed container: depends on given-up instance #23; dropped=[]",
+        "provenance": {
+          "byte_len": 32,
+          "format": "step",
+          "offset": 1035
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1068 length=33: malformed container: depends on given-up instance #25; dropped=[]",
+        "provenance": {
+          "byte_len": 33,
+          "format": "step",
+          "offset": 1068
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1159 length=36: malformed container: depends on given-up instance #26; dropped=[]",
+        "provenance": {
+          "byte_len": 36,
+          "format": "step",
+          "offset": 1159
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=2327 length=30: malformed container: depends on given-up instance #29; dropped=[]",
+        "provenance": {
+          "byte_len": 30,
+          "format": "step",
+          "offset": 2327
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1663 length=73: malformed container: depends on given-up instance #29; dropped=[]",
+        "provenance": {
+          "byte_len": 73,
+          "format": "step",
+          "offset": 1663
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1616 length=46: malformed container: depends on given-up instance #29; dropped=[]",
+        "provenance": {
+          "byte_len": 46,
+          "format": "step",
+          "offset": 1616
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1196 length=25: malformed container: depends on given-up instance #29; dropped=[]",
+        "provenance": {
+          "byte_len": 25,
+          "format": "step",
+          "offset": 1196
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1319 length=38: malformed container: depends on given-up instance #30; dropped=[]",
+        "provenance": {
+          "byte_len": 38,
+          "format": "step",
+          "offset": 1319
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1222 length=40: malformed container: depends on given-up instance #33; dropped=[]",
+        "provenance": {
+          "byte_len": 40,
+          "format": "step",
+          "offset": 1222
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=1263 length=55: malformed container: depends on given-up instance #31; dropped=[]",
+        "provenance": {
+          "byte_len": 55,
+          "format": "step",
+          "offset": 1263
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=509 length=23: malformed container: unresolved instance reference #4; dropped=[]",
+        "provenance": {
+          "byte_len": 23,
+          "format": "step",
+          "offset": 509
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=828 length=33: malformed container: depends on given-up instance #7; dropped=[]",
+        "provenance": {
+          "byte_len": 33,
+          "format": "step",
+          "offset": 828
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=2358 length=30: malformed container: depends on given-up instance #19; dropped=[]",
+        "provenance": {
+          "byte_len": 30,
+          "format": "step",
+          "offset": 2358
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part step.simple_entity_instance stream=\"\" offset=930 length=34: malformed container: depends on given-up instance #19; dropped=[]",
+        "provenance": {
+          "byte_len": 34,
+          "format": "step",
+          "offset": 930
         },
         "severity": "error"
       }
@@ -1205,106 +1208,18 @@
           "model"
         ]
       },
-      "step:file:omitted#1035": {
+      "step:source:part#1f161740850602ea314d9b65d92395f37b2e54f8b777d9f1a3e3e934fc1b40ce": {
         "bytes": {
-          "data": "IzI1PUVER0VfTE9PUCgnJywoIzIyLCMyMywjMjQpKTs=",
+          "data": "IzIzPU9SSUVOVEVEX0VER0UoJycsKiwqLCMyMCwuVC4pOw==",
           "retention": "inline"
         },
-        "offset": 1035,
+        "offset": 965,
         "stream": "",
         "untyped": [
           "model"
         ]
       },
-      "step:file:omitted#1068": {
-        "bytes": {
-          "data": "IzI2PUZBQ0VfT1VURVJfQk9VTkQoJycsIzI1LC5ULik7",
-          "retention": "inline"
-        },
-        "offset": 1068,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1159": {
-        "bytes": {
-          "data": "IzI5PUFEVkFOQ0VEX0ZBQ0UoJycsKCMyNiksIzI4LC5ULik7",
-          "retention": "inline"
-        },
-        "offset": 1159,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1196": {
-        "bytes": {
-          "data": "IzMwPU9QRU5fU0hFTEwoJycsKCMyOSkpOw==",
-          "retention": "inline"
-        },
-        "offset": 1196,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1222": {
-        "bytes": {
-          "data": "IzMxPVNIRUxMX0JBU0VEX1NVUkZBQ0VfTU9ERUwoJycsKCMzMykpOw==",
-          "retention": "inline"
-        },
-        "offset": 1222,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1263": {
-        "bytes": {
-          "data": "IzMyPU1BTklGT0xEX1NVUkZBQ0VfU0hBUEVfUkVQUkVTRU5UQVRJT04oJycsKCMzMSksIzIpOw==",
-          "retention": "inline"
-        },
-        "offset": 1263,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1319": {
-        "bytes": {
-          "data": "IzMzPU9SSUVOVEVEX09QRU5fU0hFTEwoJycsKiwjMzAsLkYuKTs=",
-          "retention": "inline"
-        },
-        "offset": 1319,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1616": {
-        "bytes": {
-          "data": "IzQ3PU9WRVJfUklESU5HX1NUWUxFRF9JVEVNKCcnLCgjNDYpLCMyOSwjNjcpOw==",
-          "retention": "inline"
-        },
-        "offset": 1616,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#1663": {
-        "bytes": {
-          "data": "IzQ4PVBSRVNFTlRBVElPTl9MQVlFUl9BU1NJR05NRU5UKCdtYWNoaW5lZCBmYWNlcycsJ3ByaW1hcnkgZmFjZScsKCMyOSkpOw==",
-          "retention": "inline"
-        },
-        "offset": 1663,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#2327": {
+      "step:source:part#254d1d20feb6e399bd3659472ee50b739b1f8477fa3a6519377d59b1c72037c2": {
         "bytes": {
           "data": "IzY3PVNUWUxFRF9JVEVNKCcnLCgjNjYpLCMyOSk7",
           "retention": "inline"
@@ -1315,29 +1230,18 @@
           "model"
         ]
       },
-      "step:file:omitted#2358": {
+      "step:source:part#316e0e041bbf0e744f825c8a9c614c476a4dc7dec559f35bc6be55789627eb20": {
         "bytes": {
-          "data": "IzY4PVNUWUxFRF9JVEVNKCcnLCgjNjYpLCMxOSk7",
+          "data": "IzMwPU9QRU5fU0hFTEwoJycsKCMyOSkpOw==",
           "retention": "inline"
         },
-        "offset": 2358,
+        "offset": 1196,
         "stream": "",
         "untyped": [
           "model"
         ]
       },
-      "step:file:omitted#509": {
-        "bytes": {
-          "data": "Izc9VkVSVEVYX1BPSU5UKCcnLCM0KTs=",
-          "retention": "inline"
-        },
-        "offset": 509,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#786": {
+      "step:source:part#3bc9f308186dd5a1f8f67d45622a053275b491b2575339f1aa1a2fce180e8ecf": {
         "bytes": {
           "data": "IzE3PUxJTkUoJycsIzQsIzE0KTs=",
           "retention": "inline"
@@ -1348,7 +1252,29 @@
           "model"
         ]
       },
-      "step:file:omitted#828": {
+      "step:source:part#40c3b3089ecd4b234f3e317f3173555fb4edfd2fb1ecaeabe640e929af02c129": {
+        "bytes": {
+          "data": "Izc9VkVSVEVYX1BPSU5UKCcnLCM0KTs=",
+          "retention": "inline"
+        },
+        "offset": 509,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#419377233dd162b246dfc2a1e7ce4af6e1aed7f122976012bdb2911388b8e0ae": {
+        "bytes": {
+          "data": "IzI2PUZBQ0VfT1VURVJfQk9VTkQoJycsIzI1LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 1068,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#4b0457d91c71e2a7ec62b08bdb99f2c4bd4af40de1da4e2c1f7fb112293e45bb": {
         "bytes": {
           "data": "IzE5PUVER0VfQ1VSVkUoJycsIzYsIzcsIzU3LC5ULik7",
           "retention": "inline"
@@ -1359,7 +1285,7 @@
           "model"
         ]
       },
-      "step:file:omitted#862": {
+      "step:source:part#5223bb00dec98a6b454ebc13aabcb866a60d33b711419c06921c0b55e8217494": {
         "bytes": {
           "data": "IzIwPUVER0VfQ1VSVkUoJycsIzcsIzgsIzE3LC5ULik7",
           "retention": "inline"
@@ -1370,23 +1296,12 @@
           "model"
         ]
       },
-      "step:file:omitted#930": {
+      "step:source:part#545526062498ed16a1630708c858684b6caf3810269380693698f93019661426": {
         "bytes": {
-          "data": "IzIyPU9SSUVOVEVEX0VER0UoJycsKiwqLCMxOSwuVC4pOw==",
+          "data": "IzY4PVNUWUxFRF9JVEVNKCcnLCgjNjYpLCMxOSk7",
           "retention": "inline"
         },
-        "offset": 930,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      },
-      "step:file:omitted#965": {
-        "bytes": {
-          "data": "IzIzPU9SSUVOVEVEX0VER0UoJycsKiwqLCMyMCwuVC4pOw==",
-          "retention": "inline"
-        },
-        "offset": 965,
+        "offset": 2358,
         "stream": "",
         "untyped": [
           "model"
@@ -1398,6 +1313,94 @@
           "retention": "inline"
         },
         "offset": 413,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#71ef662e2e9795f05d47c27a58c13644ce929e631caf7def771810702272798a": {
+        "bytes": {
+          "data": "IzMyPU1BTklGT0xEX1NVUkZBQ0VfU0hBUEVfUkVQUkVTRU5UQVRJT04oJycsKCMzMSksIzIpOw==",
+          "retention": "inline"
+        },
+        "offset": 1263,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#8ae9ef46985f8ac2733786dcf7a2e02c90e1f5c98fa49cd360936273fd437222": {
+        "bytes": {
+          "data": "IzQ4PVBSRVNFTlRBVElPTl9MQVlFUl9BU1NJR05NRU5UKCdtYWNoaW5lZCBmYWNlcycsJ3ByaW1hcnkgZmFjZScsKCMyOSkpOw==",
+          "retention": "inline"
+        },
+        "offset": 1663,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#90c27db5801a725f821c1e65018ea67715258b7af50d232a79f49559c985e895": {
+        "bytes": {
+          "data": "IzIyPU9SSUVOVEVEX0VER0UoJycsKiwqLCMxOSwuVC4pOw==",
+          "retention": "inline"
+        },
+        "offset": 930,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#a45f2ef7c5ed085614c180b53e996d0e49beb5623d7d5d874ed8d36ccd3f7114": {
+        "bytes": {
+          "data": "IzMxPVNIRUxMX0JBU0VEX1NVUkZBQ0VfTU9ERUwoJycsKCMzMykpOw==",
+          "retention": "inline"
+        },
+        "offset": 1222,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#bfefd47fc7fd9e8ffefe8c3d4c9ba3196ebe1870a5c2ee47a755d53203c019e1": {
+        "bytes": {
+          "data": "IzQ3PU9WRVJfUklESU5HX1NUWUxFRF9JVEVNKCcnLCgjNDYpLCMyOSwjNjcpOw==",
+          "retention": "inline"
+        },
+        "offset": 1616,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#ceef1dd577c5ed4ca7fd96c8f4f08c7e1436837170c6de3d92e5408121370ded": {
+        "bytes": {
+          "data": "IzI1PUVER0VfTE9PUCgnJywoIzIyLCMyMywjMjQpKTs=",
+          "retention": "inline"
+        },
+        "offset": 1035,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#d757311eee34e8b82b78c73d7470719c3aca75c0439c5d8549a352857c3b63ef": {
+        "bytes": {
+          "data": "IzI5PUFEVkFOQ0VEX0ZBQ0UoJycsKCMyNiksIzI4LC5ULik7",
+          "retention": "inline"
+        },
+        "offset": 1159,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "step:source:part#f6c9c854af09b4528f931046def78270c9737dd3ae005c25b9652885a7d1fa9d": {
+        "bytes": {
+          "data": "IzMzPU9SSUVOVEVEX09QRU5fU0hFTEwoJycsKiwjMzAsLkYuKTs=",
+          "retention": "inline"
+        },
+        "offset": 1319,
         "stream": "",
         "untyped": [
           "model"

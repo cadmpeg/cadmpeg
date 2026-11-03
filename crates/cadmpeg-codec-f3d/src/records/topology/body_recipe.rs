@@ -432,6 +432,15 @@ pub(crate) struct DesignBodyRecipeOperandWire {
 impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
     type Error = String;
     fn try_from(wire: DesignBodyRecipeOperandWire) -> Result<Self, Self::Error> {
+        let nested_record_index = wire
+            .record_index
+            .checked_add(3)
+            .ok_or("body operand record indices overflow")?;
+        if u64::from(nested_record_index) != wire.nested_record_index {
+            return Err(
+                "body operand nested record index disagrees with logical record chain".into(),
+            );
+        }
         if wire
             .next_record_index
             .checked_sub(wire.record_index)

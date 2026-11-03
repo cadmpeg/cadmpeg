@@ -12,6 +12,8 @@ pub(crate) struct MapImage<'a> {
     pub(crate) encoded: View<'a>,
     pieces: Vec<View<'a>>,
     database: View<'a>,
+    key_len: usize,
+    value_len: usize,
 }
 
 impl MapImage<'_> {
@@ -34,6 +36,19 @@ impl MapImage<'_> {
             start = end;
         }
         Err(malformed())
+    }
+
+    /// The cell value's source extent when it lies within one database piece.
+    ///
+    /// Overflow values span several pages and have no single source extent;
+    /// the caller falls back to the cell's first piece.
+    pub(crate) fn value_extent(&self) -> Option<View<'_>> {
+        let [piece] = self.pieces.as_slice() else {
+            return None;
+        };
+        let start = piece.start().checked_add(self.key_len)?;
+        let end = start.checked_add(self.value_len)?;
+        (end <= piece.start().checked_add(piece.window().len())?).then(|| piece.child(start, end))?
     }
 }
 
@@ -207,6 +222,8 @@ impl<'context> Reader<'_, 'context> {
             encoded,
             pieces,
             database: self.source,
+            key_len,
+            value_len,
         })
     }
 }
