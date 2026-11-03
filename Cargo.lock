@@ -301,6 +301,7 @@ dependencies = [
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
+ "indexmap",
  "roxmltree",
  "serde",
  "serde_json",
