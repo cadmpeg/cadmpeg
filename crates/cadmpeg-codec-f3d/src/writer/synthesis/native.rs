@@ -48,8 +48,33 @@ const WRITTEN: &[&str] = &[
     "persistent_subentity_tags",
 ];
 
+/// Rebuild ASM history chain links from the retained state order. A
+/// coherent chain is left untouched; an edited chain is relinked instead of
+/// refused. Node identities, owners and payloads are content and are kept.
+fn relink_history_chains(histories: &mut [crate::history_records::AsmHistory]) {
+    for history in histories {
+        if history.states().is_empty() || crate::history::graph_is_coherent(history) {
+            continue;
+        }
+        let node_indices: Vec<i64> = history
+            .states()
+            .iter()
+            .map(|state| state.node_index)
+            .collect();
+        let mut previous: Option<i64> = None;
+        for (position, state) in history.states_mut().iter_mut().enumerate() {
+            state.previous_ref = previous;
+            state.next_ref = node_indices.get(position + 1).copied();
+            previous = Some(state.node_index);
+        }
+    }
+}
+
 pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let mut original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    // W2: chain links are source layout, not content. Rebuild them from the
+    // retained state order instead of refusing an edited chain.
+    relink_history_chains(&mut original.asm_histories);
     validate_input(target, &original)?;
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
@@ -630,6 +655,31 @@ pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions 
                         NativeDisposition::Regenerated
                     };
                     result.set_record("f3d", arena, record.id(), disposition);
+                }
+            }
+            // W3: the arena declaration states what the writer did with the
+            // arena. Any regenerated record regenerates the arena; a carried
+            // record writes it; an arena with no carried record is dropped.
+            // The per-record exceptions and the omission losses name the
+            // dropped records.
+            let mut written = false;
+            let mut regenerated = false;
+            for record in before {
+                match result.record_disposition("f3d", arena, record.id()) {
+                    NativeDisposition::Written => written = true,
+                    NativeDisposition::Regenerated => regenerated = true,
+                    NativeDisposition::Dropped => {}
+                }
+            }
+            if regenerated || written {
+                if let Some(space) = result.namespaces.get_mut("f3d") {
+                    if let Some(entry) = space.arenas.get_mut(arena) {
+                        entry.disposition = if regenerated {
+                            NativeDisposition::Regenerated
+                        } else {
+                            NativeDisposition::Written
+                        };
+                    }
                 }
             }
         }
