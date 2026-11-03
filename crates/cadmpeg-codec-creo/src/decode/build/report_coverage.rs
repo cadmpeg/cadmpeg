@@ -378,22 +378,15 @@ pub(super) fn push_coverage_drop_losses(
             ),
         );
     }
-    let unresolved_configuration_driver_tables = coverage_count(
-        coverage,
-        "decoded_configuration_driver_table_reference_count",
-    )
-    .checked_sub(coverage_count(
-        coverage,
-        "transferred_configuration_driver_table_count",
-    ))
-    .ok_or_else(|| CodecError::malformed("transferred driver count exceeds decoded count"))?;
-    if unresolved_configuration_driver_tables != 0 {
-        push_report_loss(losses, CreoLossCode::ConfigurationDriverUnresolved, {
-            format_args!(
-                "{unresolved_configuration_driver_tables} referenced configuration driver \
-             table(s) retain unresolved traversal and row semantics."
-            )
-        });
+    // The unresolved driver table is named by the retention loss in
+    // `document_projection`, which carries the retained record id; the counts
+    // stay for this refusal check.
+    if coverage_count(coverage, "transferred_configuration_driver_table_count")
+        > coverage_count(coverage, "decoded_configuration_driver_table_reference_count")
+    {
+        return Err(CodecError::malformed(
+            "transferred driver count exceeds decoded count",
+        ));
     }
     let prohibited_records =
         coverage_count(coverage, "prohibited_active_curve_expression_record_count");

@@ -731,3 +731,80 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .iter()
         .all(|loss| !loss.message.starts_with("Transferred ")));
 }
+
+#[test]
+fn full_decode_projects_thumbnail_as_asset_with_native_ref() {
+    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode thumbnail"),
+    );
+    assert_eq!(result.ir().model.assets.len(), 1);
+    let asset = &result.ir().model.assets[0];
+    assert_eq!(asset.name.as_ref().map(|name| name.as_str()), Some("THMB_IMG_MAIN"));
+    assert_eq!(asset.media_type.as_ref().map(|media| media.as_str()), Some("image/jpeg"));
+    let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
+        panic!("thumbnail asset is embedded");
+    };
+    assert_eq!(data.as_bytes(), jpeg_payload());
+    let unknowns = result.ir().native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(asset.native_ref.as_deref(), Some(unknowns[0].id.as_str()));
+    let retained = result
+        .source_fidelity()
+        .retained_record(unknowns[0].id.as_str())
+        .expect("retained thumbnail");
+    assert!(retained.untyped().contains(&cadmpeg_ir::document::ArenaClass::Model));
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+}
+
+#[test]
+fn full_decode_retains_undecoded_driver_table_section_named_by_loss() {
+    let mut payload = b"drv_tbl_ptr\0\xf7\x05".to_vec();
+    payload.extend_from_slice(b"binary driver-table entity without a decoded grammar");
+    let data = build_prt("c", &[("FamilyInf", payload)]);
+    let scan = container::scan_bytes_ok(data.clone());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "FamilyInf")
+        .expect("FamilyInf section");
+    assert!(matches!(
+        scan.framing.family_table.map(|table| table.pointer),
+        Some(crate::container::FamilyTablePointer::Entity(5))
+    ));
+    let retained_id = format!("creo:FamilyInf:section#{}", section.offset());
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode driver-table pointer"),
+    );
+    assert!(result.ir().model.configurations.is_empty());
+    assert!(result.ir().scope.design);
+    let unknowns = result.ir().native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].id.as_str(), retained_id);
+    let retained = result
+        .source_fidelity()
+        .retained_record(&retained_id)
+        .expect("retained driver-table section");
+    assert!(retained.untyped().contains(&cadmpeg_ir::document::ArenaClass::Design));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::CreoLossCode::ConfigurationDriverUnresolved.kind()
+        })
+        .expect("driver-table loss names the retained record");
+    assert!(loss.message.contains(&retained_id), "{loss:#?}");
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+}

@@ -962,8 +962,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss
-                .message
-                .contains("1 referenced configuration driver table(s) retain unresolved")
+            && loss.message.contains("FamilyInf driver-table entity has no decoded grammar")
+            && loss.message.contains("creo:FamilyInf:section#")
     }));
 }

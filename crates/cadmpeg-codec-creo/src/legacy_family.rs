@@ -590,181 +590,182 @@ impl FamilyTable {
 }
 
 #[cfg(test)]
+pub(crate) fn fixture_offset(id: &str) -> usize {
+    match id {
+        "solid" => 1,
+        "root" => 2,
+        "items-array" => 3,
+        "item" => 4,
+        "instances-array" => 5,
+        "instance" => 6,
+        "model" => 7,
+        "values-array" => 8,
+        "value" => 9,
+        _ => panic!("unknown fixture object"),
+    }
+}
+pub(crate) fn object(
+    _id: &str,
+    name: &str,
+    parent: Option<&str>,
+    mut payload: ObjectPayload,
+    offset: usize,
+) -> ObjectRecord {
+    if let ObjectPayload::Array { elements, .. } = &mut payload {
+        for element in elements {
+            *element = crate::legacy::object_node_id(fixture_offset(element));
+        }
+    }
+    ObjectRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: parent.map(fixture_offset),
+        depth: 0,
+        payload,
+        offset,
+    }
+}
+
+pub(crate) fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
+    legacy::ValueRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: Some(fixture_offset(parent)),
+        depth: 0,
+        payload: NumericPayload::Scalar { value },
+        offset,
+    }
+}
+
+pub(crate) fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
+    legacy::ValueRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: Some(fixture_offset(parent)),
+        depth: 0,
+        payload: NumericPayload::Scalar {
+            value: legacy::Real::from_bits(value.to_bits()),
+        },
+        offset,
+    }
+}
+
+pub(crate) fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
+    legacy::ValueRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: Some(fixture_offset(parent)),
+        depth: 0,
+        payload: StringPayload::Scalar {
+            value: legacy::StringValue::Utf8 {
+                text: value.to_string(),
+            },
+        },
+        offset,
+    }
+}
+
+pub(crate) fn complete_table() -> Persistence {
+    let solid = "solid";
+    let root = "root";
+    let item_array = "items-array";
+    let item = "item";
+    let instance_array = "instances-array";
+    let instance = "instance";
+    let model = "model";
+    let value_array = "values-array";
+    let value = "value";
+    Persistence {
+        objects: vec![
+            object(solid, "Solid", None, ObjectPayload::Inline, 1),
+            object(root, FAMILY_ROOT, Some(solid), ObjectPayload::Arrow, 2),
+            object(
+                item_array,
+                ITEMS_ARRAY,
+                Some(root),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![item.to_string()],
+                },
+                3,
+            ),
+            object(
+                item,
+                ITEMS_ARRAY,
+                Some(item_array),
+                ObjectPayload::Inline,
+                4,
+            ),
+            object(
+                instance_array,
+                INSTANCES_ARRAY,
+                Some(root),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![instance.to_string()],
+                },
+                5,
+            ),
+            object(
+                instance,
+                INSTANCES_ARRAY,
+                Some(instance_array),
+                ObjectPayload::Arrow,
+                6,
+            ),
+            object(model, FAMILY_ROOT, Some(instance), ObjectPayload::Arrow, 7),
+            object(
+                value_array,
+                VALUES_ARRAY,
+                Some(instance),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![value.to_string()],
+                },
+                8,
+            ),
+            object(
+                value,
+                VALUES_ARRAY,
+                Some(value_array),
+                ObjectPayload::Inline,
+                9,
+            ),
+        ],
+        integer_values: crate::legacy::TypedValues {
+            rows: vec![
+                integer(item, "id", 17, 10),
+                integer(item, "type", 2, 11),
+                integer(item, "invisible", 0, 12),
+                integer(instance, "attributes", 0, 13),
+                integer(value, "type", 50, 14),
+            ],
+            unresolved_count: 0,
+        },
+        real_values: crate::legacy::TypedValues {
+            rows: vec![real(value, VALUE_REAL, 2.5, 15)],
+            unresolved_count: 0,
+        },
+        string_values: vec![
+            string(item, "name", "d0", 16),
+            string(instance, "name", "SMALL", 17),
+        ],
+        ..Persistence::default()
+    }
+}
+
 mod tests {
     use super::{
-        parse, FamilyTableValuePayload, FAMILY_ROOT, INSTANCES_ARRAY, ITEMS_ARRAY, VALUES_ARRAY,
-        VALUE_INTEGER, VALUE_REAL, VALUE_STRING,
+        complete_table, fixture_offset, integer, object, parse, string, FamilyTableValuePayload,
+        FAMILY_ROOT, VALUE_INTEGER, VALUE_STRING,
     };
     use crate::legacy;
-    use crate::legacy::{NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload};
+    use crate::legacy::{ObjectPayload, StringPayload};
 
-    fn fixture_offset(id: &str) -> usize {
-        match id {
-            "solid" => 1,
-            "root" => 2,
-            "items-array" => 3,
-            "item" => 4,
-            "instances-array" => 5,
-            "instance" => 6,
-            "model" => 7,
-            "values-array" => 8,
-            "value" => 9,
-            _ => panic!("unknown fixture object"),
-        }
-    }
-    fn object(
-        _id: &str,
-        name: &str,
-        parent: Option<&str>,
-        mut payload: ObjectPayload,
-        offset: usize,
-    ) -> ObjectRecord {
-        if let ObjectPayload::Array { elements, .. } = &mut payload {
-            for element in elements {
-                *element = crate::legacy::object_node_id(fixture_offset(element));
-            }
-        }
-        ObjectRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: parent.map(fixture_offset),
-            depth: 0,
-            payload,
-            offset,
-        }
-    }
-
-    fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
-        legacy::ValueRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: Some(fixture_offset(parent)),
-            depth: 0,
-            payload: NumericPayload::Scalar { value },
-            offset,
-        }
-    }
-
-    fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
-        legacy::ValueRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: Some(fixture_offset(parent)),
-            depth: 0,
-            payload: NumericPayload::Scalar {
-                value: legacy::Real::from_bits(value.to_bits()),
-            },
-            offset,
-        }
-    }
-
-    fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
-        legacy::ValueRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: Some(fixture_offset(parent)),
-            depth: 0,
-            payload: StringPayload::Scalar {
-                value: legacy::StringValue::Utf8 {
-                    text: value.to_string(),
-                },
-            },
-            offset,
-        }
-    }
-
-    fn complete_table() -> Persistence {
-        let solid = "solid";
-        let root = "root";
-        let item_array = "items-array";
-        let item = "item";
-        let instance_array = "instances-array";
-        let instance = "instance";
-        let model = "model";
-        let value_array = "values-array";
-        let value = "value";
-        Persistence {
-            objects: vec![
-                object(solid, "Solid", None, ObjectPayload::Inline, 1),
-                object(root, FAMILY_ROOT, Some(solid), ObjectPayload::Arrow, 2),
-                object(
-                    item_array,
-                    ITEMS_ARRAY,
-                    Some(root),
-                    ObjectPayload::Array {
-                        dimensions: vec![1],
-                        elements: vec![item.to_string()],
-                    },
-                    3,
-                ),
-                object(
-                    item,
-                    ITEMS_ARRAY,
-                    Some(item_array),
-                    ObjectPayload::Inline,
-                    4,
-                ),
-                object(
-                    instance_array,
-                    INSTANCES_ARRAY,
-                    Some(root),
-                    ObjectPayload::Array {
-                        dimensions: vec![1],
-                        elements: vec![instance.to_string()],
-                    },
-                    5,
-                ),
-                object(
-                    instance,
-                    INSTANCES_ARRAY,
-                    Some(instance_array),
-                    ObjectPayload::Arrow,
-                    6,
-                ),
-                object(model, FAMILY_ROOT, Some(instance), ObjectPayload::Arrow, 7),
-                object(
-                    value_array,
-                    VALUES_ARRAY,
-                    Some(instance),
-                    ObjectPayload::Array {
-                        dimensions: vec![1],
-                        elements: vec![value.to_string()],
-                    },
-                    8,
-                ),
-                object(
-                    value,
-                    VALUES_ARRAY,
-                    Some(value_array),
-                    ObjectPayload::Inline,
-                    9,
-                ),
-            ],
-            integer_values: crate::legacy::TypedValues {
-                rows: vec![
-                    integer(item, "id", 17, 10),
-                    integer(item, "type", 2, 11),
-                    integer(item, "invisible", 0, 12),
-                    integer(instance, "attributes", 0, 13),
-                    integer(value, "type", 50, 14),
-                ],
-                unresolved_count: 0,
-            },
-            real_values: crate::legacy::TypedValues {
-                rows: vec![real(value, VALUE_REAL, 2.5, 15)],
-                unresolved_count: 0,
-            },
-            string_values: vec![
-                string(item, "name", "d0", 16),
-                string(instance, "name", "SMALL", 17),
-            ],
-            ..Persistence::default()
-        }
-    }
 
     #[test]
     fn joins_complete_ordered_table_rows() {
