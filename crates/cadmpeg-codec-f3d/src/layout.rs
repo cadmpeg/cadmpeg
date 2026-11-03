@@ -8010,3 +8010,15 @@ pub(crate) mod assembly_locator_prefix_three {
     /// Stated value of `word` (`u32`). Spec §Assembly operands.
     pub(crate) const WORD_VALUE: u32 = 0x0000_0003;
 }
+
+/// Byte offsets for the `legacy_attributed_external_placement_identity_control` record.
+///
+/// Spec §1.4. Record length 2 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the complete three-property attribute block. The identity selector is 1.
+/// ```
+pub(crate) mod legacy_attributed_external_placement_identity_control {
+    /// Stated value of `control` (`u16`). Spec §1.4.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0001;
+}

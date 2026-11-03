@@ -58,6 +58,52 @@ pub(crate) fn f3d_without_brep_with_xref_placement(
     role: &str,
     transform: [[f64; 4]; 4],
 ) -> Vec<u8> {
+    f3d_with_xref_placements(doc_type, own_name, &[(target, role, transform)], None)
+}
+
+pub(crate) fn f3d_with_identity_xrefs(
+    doc_type: &str,
+    own_name: &str,
+    targets: &[(&str, &str)],
+) -> Vec<u8> {
+    let mut roles = std::collections::BTreeSet::new();
+    let placements = targets
+        .iter()
+        .filter(|(_, role)| roles.insert(*role))
+        .map(|(target, role)| (*target, *role, crate::xref::IDENTITY_ROWS))
+        .collect::<Vec<_>>();
+    let redirections = redirections_json(own_name, targets);
+    f3d_with_xref_placements(
+        doc_type,
+        own_name,
+        &placements,
+        Some(redirections.as_bytes()),
+    )
+}
+
+pub(crate) fn f3d_with_reference_table_and_identity_xrefs(
+    doc_type: &str,
+    own_name: &str,
+    targets: &[(&str, &str)],
+    redirections: &[u8],
+) -> Vec<u8> {
+    let placements = targets
+        .iter()
+        .map(|(target, role)| (*target, *role, crate::xref::IDENTITY_ROWS))
+        .collect::<Vec<_>>();
+    f3d_with_xref_placements(doc_type, own_name, &placements, Some(redirections))
+}
+
+fn f3d_with_xref_placements(
+    doc_type: &str,
+    own_name: &str,
+    placements: &[(&str, &str, [[f64; 4]; 4])],
+    redirections: Option<&[u8]>,
+) -> Vec<u8> {
+    if placements.is_empty() {
+        let generated = redirections_json(own_name, &[]);
+        return f3d_with_redirections_json(doc_type, redirections.unwrap_or(generated.as_bytes()));
+    }
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
@@ -72,43 +118,63 @@ pub(crate) fn f3d_without_brep_with_xref_placement(
         .unwrap();
     zip.write_all(b"{}").unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
-    zip.write_all(redirections_json(own_name, &[(target, role)]).as_bytes())
+    let targets = placements
+        .iter()
+        .map(|(target, role, _)| (*target, *role))
+        .collect::<Vec<_>>();
+    let generated = redirections_json(own_name, &targets);
+    zip.write_all(redirections.unwrap_or(generated.as_bytes()))
         .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
+    let mut bulk = Vec::new();
+    let records = placements
+        .iter()
+        .enumerate()
+        .map(|(ordinal, (_, role, transform))| {
+            let index = 10 + u32::try_from(ordinal).unwrap();
+            let offset = u64::try_from(bulk.len()).unwrap();
+            bulk.extend(xref_placement_record(role, *transform, index));
+            (u64::from(index), offset)
+        })
+        .collect::<Vec<_>>();
+    let indices = records.iter().map(|(index, _)| *index).collect::<Vec<_>>();
     zip.write_all(&design_metastream_with_records(
         &[(
             "CE2913AA-CFE0-4F04-9102-24424ED3BCFA",
             "",
             2,
             "Component",
-            &[10],
+            &indices,
         )],
-        &[(10, 0)],
+        &records,
     ))
     .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&xref_placement_record(role, transform))
-        .unwrap();
+    zip.write_all(&bulk).unwrap();
     zip.finish().unwrap().into_inner()
 }
 
 /// Build the complete modern Design occurrence-placement record used by the
 /// focused archive controls.
-fn xref_placement_record(role: &str, transform: [[f64; 4]; 4]) -> Vec<u8> {
+fn xref_placement_record(role: &str, transform: [[f64; 4]; 4], index: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"256");
-    bytes.extend_from_slice(&10_u64.to_le_bytes());
+    bytes.extend_from_slice(&u64::from(index).to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(cross_document_reference(100, role));
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.push(0);
-    for value in transform.into_iter().flatten() {
-        bytes.extend_from_slice(&value.to_le_bytes());
+    let identity = transform == crate::xref::IDENTITY_ROWS;
+    bytes.push(u8::from(identity));
+    if !identity {
+        for value in transform.into_iter().flatten() {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
     }
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(local_reference(7));

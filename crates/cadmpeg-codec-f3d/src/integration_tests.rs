@@ -9,6 +9,7 @@ mod body_reference_tails;
 mod configuration_parameters;
 mod design_containment;
 mod emboss_operands;
+mod external_placement;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -19,6 +20,7 @@ mod placement_history;
 mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
+mod reference_rows;
 mod sketch_regions;
 mod work_planes;
 

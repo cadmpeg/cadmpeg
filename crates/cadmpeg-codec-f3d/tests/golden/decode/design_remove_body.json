@@ -455,6 +455,7 @@
           }
         ],
         "creation_timestamps": [],
+        "derived_references": [],
         "design_body_bindings": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-binding#25",

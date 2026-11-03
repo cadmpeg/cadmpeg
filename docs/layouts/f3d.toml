@@ -29003,3 +29003,26 @@ offset = 85
 type = "bytes[2]"
 source = "spec"
 anchor = "The null-construction identity variants span 77 bytes"
+
+[[not_applicable]]
+area = "XREF and DERIVED container reference rows"
+reason = "JSON member names delimit variable-length fields in RedirectionsStream.dat and DesignDescription.json."
+section = "1.4"
+anchor = "XREF and DERIVED rows can share an array."
+
+[[record]]
+name = "legacy_attributed_external_placement_identity_control"
+kind = "byte"
+section = "1.4"
+anchor = "The three-property identity form also carries control word"
+size = 2
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the complete three-property attribute block. The identity selector is 1."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "The three-property identity form also carries control word"
+value = 1

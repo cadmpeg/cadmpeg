@@ -8473,9 +8473,23 @@ Unstated regions:
 
 - `0..56` (56 B): Common wide prefix.
 
+## `legacy_attributed_external_placement_identity_control`
+
+Spec §1.4 · layout: byte offsets · size: 2 B
+
+Offsets are relative to the byte after the complete three-property attribute block. The identity selector is 1.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `control` | `u16` | little | spec | The three-property identity form also carries control word · value `1` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and variable-position `Manifest.dat` fields. The fixed lineage suffix has its own record. |
 | Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; the empty table object contains zero tables, columns, rows, and cells. |
+| XREF and DERIVED container reference rows | §1.4 | JSON member names delimit variable-length fields in RedirectionsStream.dat and DesignDescription.json. |

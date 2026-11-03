@@ -1962,3 +1962,5 @@ fn pathless_occurrence_placements_bind_the_target_role_and_close() {
         assert!(super::occurrence_placement(&wrong, None).unwrap().is_none());
     }
 }
+
+mod reference_rows;

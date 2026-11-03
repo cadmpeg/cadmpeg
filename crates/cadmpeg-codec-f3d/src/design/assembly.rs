@@ -1488,13 +1488,17 @@ fn project_qualified_operands(
                     .map(|guid| guid.value.as_str().to_ascii_lowercase())
                     .collect::<Vec<_>>();
                 if let Some((id, consumed)) = paths.resolve(stream, &keys) {
+                    if consumed != keys.len() && paths.refuses_residual_keys(stream, &id) {
+                        return None;
+                    }
                     return Some(JointOperand::occurrence(
                         id,
                         object,
                         keys[consumed..].to_vec(),
                     ));
                 }
-                if paths.ambiguous(stream, &keys)
+                if paths.requires_external_binding(stream)
+                    || paths.ambiguous(stream, &keys)
                     || require_carrier && occurrence.is_none()
                     || occurrence.is_none()
                         && !path.admitted_by_type()
@@ -2049,6 +2053,121 @@ mod tests {
                 cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
                 if occurrence == &occurrences[0].id)
         }));
+        let mut omitted = table.references[0].clone();
+        omitted.placement_source = None;
+        let omitted_scopes = scopes(true, false);
+        let native = crate::native::F3dNative {
+            xref_references: vec![omitted.clone()],
+            design_parameter_scopes: omitted_scopes.clone(),
+            ..Default::default()
+        };
+        let restored: crate::native::F3dNative =
+            serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
+        assert_eq!(restored.design_parameter_scopes, omitted_scopes);
+        assert_eq!(restored.xref_references, [omitted]);
+        let kept = instances(&restored.xref_references);
+        let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &kept,
+        );
+        assert!(!kept_bindings.requires_external_binding("f3d:Design/BulkStream.dat"));
+        let kept_joint = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &kept_bindings,
+        );
+        assert_eq!(kept_joint.joints.len(), 1);
+        assert!(kept_joint.losses.is_empty());
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &[],
+        );
+        let refused = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &bindings,
+        );
+        assert!(refused.joints.is_empty());
+        assert_eq!(refused.losses.len(), 1);
+        assert_eq!(
+            refused.losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
+        let mut missing_child = restored.xref_references[0].clone();
+        missing_child.id = "f3d:xref:reference#1".to_owned();
+        missing_child.ordinal = 1;
+        let mut with_child = table.references.clone();
+        with_child.push(missing_child);
+        let ancestor = instances(&table.references);
+        let partial_bindings =
+            super::super::components::paths::LocalOccurrencePaths::new(&[], &with_child, &ancestor);
+        let original = path(11, true).unwrap();
+        let mut keys = original.occurrence_guids().to_vec();
+        keys.push(crate::records::identity::Located {
+            value: "99999999-9999-4999-8999-999999999999"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            offset: 500,
+        });
+        let descendant = DesignAssemblyOperandPath::try_new_typed(
+            original.link().clone(),
+            11,
+            original.class_tag().clone(),
+            Some(
+                TYPED_OCCURRENCE_PATH_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+            ),
+            original.byte_offset(),
+            keys,
+            original.identity_guids().to_vec(),
+        )
+        .unwrap();
+        let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path: descendant };
+        let continued = super::project_qualified_operands(
+            [&qualifier, &qualifier],
+            [false; 2],
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &[],
+            &inserts,
+            &partial_bindings,
+        )
+        .unwrap();
+        assert!(continued.iter().all(|operand| {
+            matches!(
+                &operand.container,
+                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                    if occurrence == &ancestor[0].id
+            ) && operand.subelements == ["99999999-9999-4999-8999-999999999999".to_owned()]
+        }));
+
+        let mut other_document = restored.xref_references[0].clone();
+        other_document.id =
+            "f3d:xref/role-other/reference-0/occurrence-0/xref:reference#0".to_owned();
+        let other_bindings =
+            super::super::components::paths::LocalOccurrencePaths::new(&[], &[other_document], &[]);
+        let independent = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &other_bindings,
+        );
+        assert_eq!(independent.joints.len(), 1);
+        assert!(independent.losses.is_empty());
+        let validation =
+            cadmpeg_ir::validate_neutral(&cadmpeg_ir::CadIr::empty(), refused.losses).unwrap();
+        assert!(validation.is_ok(), "{validation:#?}");
+
         reference.id = "f3d:xref:reference#1".to_owned();
         reference.ordinal = 1;
         table.references.push(reference);
