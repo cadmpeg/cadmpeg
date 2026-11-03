@@ -602,7 +602,7 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 
 ### 3.2 Surface prototypes
 
-`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. A scalar field ending with bare `18` before that structural close stores zero.
+`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. An `f9` scalar field body ends before that structural close, and a scalar field ending with bare `18` before it stores zero.
 In a named analytic surface-radius field, prefix `28` stores a positive
 eight-byte scalar: `3f` is the implicit first IEEE-754 byte and the seven bytes
 after the prefix are bytes one through seven.
