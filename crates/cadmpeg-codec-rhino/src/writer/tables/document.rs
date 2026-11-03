@@ -185,6 +185,8 @@ pub(in crate::writer) struct PropertyExport {
     pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
     pub(in crate::writer) written: std::collections::BTreeSet<String>,
     pub(in crate::writer) losses: Vec<LossNote>,
+    /// Held `document_settings` records whose `archive_file_name` is re-emitted.
+    pub(in crate::writer) settings_written: std::collections::BTreeSet<String>,
 }
 
 fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
@@ -235,6 +237,7 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
         regenerated: std::collections::BTreeSet::new(),
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
+        settings_written: std::collections::BTreeSet::new(),
     };
     for arena in ["revisions", "document_notes", "applications"] {
         for record in records(ir, arena) {
@@ -285,24 +288,39 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
             output
                 .records
                 .push(crc_chunk(0x2000_8027, &utf16(&value)?)?);
+            output.settings_written.insert(record.id().to_owned());
         }
     }
     Ok(output)
+}
+
+pub(in crate::writer) struct SettingsExport {
+    pub(in crate::writer) records: Vec<Vec<u8>>,
+    /// Held `document_settings` records re-emitted from a neutral resolution.
+    pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
+    /// Held `document_settings` records re-emitted from their typed fields.
+    pub(in crate::writer) written: std::collections::BTreeSet<String>,
 }
 
 pub(in crate::writer) fn settings(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<Vec<u8>>, CodecError> {
-    let mut output = Vec::new();
+) -> Result<SettingsExport, CodecError> {
+    let mut output = SettingsExport {
+        records: Vec::new(),
+        regenerated: std::collections::BTreeSet::new(),
+        written: std::collections::BTreeSet::new(),
+    };
     for setting in records(ir, "document_settings") {
         let fields = setting.fields()?;
+        let mut neutral = false;
+        let before = output.records.len();
         if let Some(url) = fields.get("model_url").and_then(Value::as_str) {
-            output.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
+            output.records.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
         }
         if let Some(value) = fields.get("current_wire_density").and_then(Value::as_i64) {
-            output.push(short_chunk(0xa000_003c, value));
+            output.records.push(short_chunk(0xa000_003c, value));
         }
         if fields
             .get("current_color")
@@ -310,7 +328,7 @@ pub(in crate::writer) fn settings(
         {
             let mut body = color(Some(&fields), "current_color")?.to_vec();
             body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
-            output.push(crc_chunk(0x2000_803a, &body)?);
+            output.records.push(crc_chunk(0x2000_803a, &body)?);
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
             if let Some(record) = records(ir, "layers").iter().find(|record| {
@@ -325,7 +343,10 @@ pub(in crate::writer) fn settings(
                     .iter()
                     .position(|layer| layer.native_ref.as_deref() == Some(record.id()))
                 {
-                    output.push(short_chunk(0xa000_0038, i64::from(wire_index(index)?)));
+                    output
+                        .records
+                        .push(short_chunk(0xa000_0038, i64::from(wire_index(index)?)));
+                    neutral = true;
                 }
             }
         }
@@ -340,12 +361,21 @@ pub(in crate::writer) fn settings(
                     [material_index] => {
                         let mut body = material_index.to_le_bytes().to_vec();
                         body.extend(integer(Some(&fields),"current_material_source",0).to_le_bytes());
-                        output.push(crc_chunk(0x2000_8039,&body)?);
+                        output.records.push(crc_chunk(0x2000_8039,&body)?);
+                        neutral = true;
                     }
                     [] => {},
                     _ => losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("document setting {} /current_material_index {} -> absent; native material {} has multiple authored appearances {:?}, so no unique target exists",setting.id(),index,record.id(),super::materials::MaterialPlan::target_names(ir,record.id())))),
                 }
             }
+        }
+        if output.records.len() == before {
+            continue;
+        }
+        if neutral {
+            output.regenerated.insert(setting.id().to_owned());
+        } else {
+            output.written.insert(setting.id().to_owned());
         }
     }
     Ok(output)

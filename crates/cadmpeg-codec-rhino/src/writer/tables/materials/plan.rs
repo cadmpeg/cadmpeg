@@ -134,6 +134,16 @@ impl MaterialPlan {
                 plan.losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("appearance {} /asset_guid {:?} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,appearance.asset_guid,stored_value)));
             }
             let native = own_material(ir, appearance);
+            if !appearance.textures.is_empty() {
+                let record = native.map_or_else(
+                    || "no linked native material".to_owned(),
+                    |record| record.id().to_owned(),
+                );
+                plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                    "appearance {} textures are omitted; the material table carries no texture channels ({record})",
+                    appearance.id
+                )));
+            }
             if let Some(record) = native {
                 let previous = record.field("source_uuid").unwrap_or(Value::Null);
                 if previous != Value::String(stored.clone()) {

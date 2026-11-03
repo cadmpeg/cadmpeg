@@ -272,15 +272,15 @@ fn write_buffered<'budget>(
         &mut plan.losses,
     )?;
 
-    let (references, occurrence_losses) = tables::products::references(ir, &plan.materials)?;
-    plan.losses.extend(occurrence_losses);
-    for record in &references {
+    let references_exported = tables::products::references(ir, &plan.materials)?;
+    plan.losses.extend(references_exported.losses);
+    for record in &references_exported.records {
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(record, "retain Rhino archive bytes")?;
     }
-    let (annotations, annotation_losses) = tables::annotations::records(ir, &plan.materials)?;
-    plan.losses.extend(annotation_losses);
-    for record in &annotations {
+    let annotations_exported = tables::annotations::records(ir, &plan.materials)?;
+    plan.losses.extend(annotations_exported.losses);
+    for record in &annotations_exported.records {
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(record, "retain Rhino archive bytes")?;
     }
@@ -348,17 +348,15 @@ fn write_archive_prefix(
         ir.tolerances.angular.get(),
     )?];
     let mut setting_losses = Vec::new();
-    settings.extend(tables::document::settings(
-        ir,
-        materials,
-        &mut setting_losses,
-    )?);
+    let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
+    settings.extend(exported.records);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
     output.append(
         &table(ctx, TCODE_SETTINGS_TABLE, &settings)?,
         "retain Rhino archive bytes",
     )?;
+    let mut image_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -372,7 +370,11 @@ fn write_archive_prefix(
         TCODE_INSTANCE_DEFINITION_TABLE,
     ] {
         let records = match typecode {
-            TCODE_BITMAP_TABLE => tables::images::images(ir)?,
+            TCODE_BITMAP_TABLE => {
+                let exported = tables::images::images(ir)?;
+                image_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_LIGHT_TABLE => tables::lights::lights(ir)?,
             TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
             TCODE_HATCH_PATTERN_TABLE => tables::hatches::patterns(ir)?,
@@ -398,6 +400,7 @@ fn write_archive_prefix(
     let mut losses = documents.losses;
     losses.extend(setting_losses);
     losses.extend(views.losses);
+    losses.extend(image_losses);
     Ok(losses)
 }
 
@@ -752,26 +755,14 @@ fn native_dispositions(
                     "linetypes" => NativeDisposition::Written,
                     "text_styles" if tables::fonts::complete(record) => NativeDisposition::Written,
                     "materials"
-                        if tables::materials::native_complete(record)
-                            && ir
-                                .model
-                                .appearances
-                                .iter()
-                                .filter(|appearance| {
-                                    appearance.native_ref.as_deref() == Some(record.id())
-                                })
-                                .all(|appearance| appearance.textures.is_empty()) =>
+                        if ir.model.appearances.iter().any(|appearance| {
+                            appearance.native_ref.as_deref() == Some(record.id())
+                        }) =>
                     {
-                        if ir
-                            .model
-                            .appearances
-                            .iter()
-                            .any(|appearance| appearance.native_ref.as_deref() == Some(record.id()))
-                        {
-                            NativeDisposition::Regenerated
-                        } else {
-                            NativeDisposition::Written
-                        }
+                        NativeDisposition::Regenerated
+                    }
+                    "materials" if tables::materials::native_complete(record) => {
+                        NativeDisposition::Written
                     }
                     _ => NativeDisposition::Dropped,
                 };
@@ -821,7 +812,120 @@ fn native_dispositions(
             }
         }
     }
+    for record in records_in(ir, "document_settings") {
+        if properties.settings_written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "document_settings",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
+    let mut setting_losses = Vec::new();
+    let materials = MaterialPlan::new(ir)?;
+    let document_settings = tables::document::settings(ir, &materials, &mut setting_losses)?;
+    for record in records_in(ir, "document_settings") {
+        if document_settings.regenerated.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "document_settings",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        } else if document_settings.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "document_settings",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
+    for arena in ["lights", "hatch_patterns"] {
+        for record in records_in(ir, arena) {
+            dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+        }
+    }
+    let emitted = tables::annotations::records(ir, &materials)?;
+    let linked_annotations = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .filter(|annotation| emitted.written.contains(annotation.id.as_str()))
+        .map(|annotation| annotation.native_ref.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    for arena in [
+        "annotations",
+        "text_dots",
+        "annotation_arrows",
+        "legacy_v1_records",
+    ] {
+        for record in records_in(ir, arena) {
+            if linked_annotations.contains(record.id()) {
+                dispositions.set_record(
+                    "rhino",
+                    arena,
+                    record.id(),
+                    NativeDisposition::Regenerated,
+                );
+            }
+        }
+    }
+    let linked_definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter_map(|definition| definition.native_ref.as_deref())
+        .collect::<std::collections::BTreeSet<_>>();
+    for record in records_in(ir, "product_definitions") {
+        if linked_definitions.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "product_definitions",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
+    let emitted_references = tables::products::references(ir, &materials)?;
+    let linked_occurrences = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| emitted_references.written.contains(occurrence.id.as_str()))
+        .filter_map(|occurrence| occurrence.native_ref.as_deref())
+        .collect::<std::collections::BTreeSet<_>>();
+    for record in records_in(ir, "product_occurrences") {
+        if linked_occurrences.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "product_occurrences",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
+    let embedded = tables::images::images(ir)?;
+    for record in records_in(ir, "embedded_images") {
+        if embedded.regenerated.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "embedded_images",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
     Ok(dispositions)
+}
+
+/// Held native records of one arena, or an empty slice when absent.
+fn records_in<'a>(ir: &'a CadIr, arena: &str) -> &'a [cadmpeg_ir::NativeRecord] {
+    ir.native
+        .namespace("rhino")
+        .and_then(|namespace| namespace.arenas().get(arena))
+        .map_or(&[], Vec::as_slice)
 }
 
 fn brep_payload(

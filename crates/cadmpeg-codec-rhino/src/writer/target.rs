@@ -4,8 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
+    Consumption, EncodeInput, ExportBody, WritePath,
 };
 
 mod coverage;
@@ -113,21 +113,6 @@ pub(crate) fn plan(
             "sketch_constraints",
             model.sketch_constraints.len(),
             RhinoLossCode::WriterDesignOmitted,
-        ),
-        (
-            "appearances",
-            model.appearances.len(),
-            RhinoLossCode::WriterMaterialOmitted,
-        ),
-        (
-            "appearance_bindings",
-            model.appearance_bindings.len(),
-            RhinoLossCode::WriterMaterialOmitted,
-        ),
-        (
-            "attributes",
-            model.attributes.len(),
-            RhinoLossCode::WriterAttributesOmitted,
         ),
     ] {
         if count != 0 {
@@ -307,17 +292,69 @@ pub(crate) fn plan(
     })
 }
 
+/// Reduced storage rows (#232): neutral JSON paths the 3DM write stores in a
+/// reduced form, with the storage that bounds them. Comparison on these paths
+/// applies the row's storage rule before it compares.
+///
+/// Mesh normals are binary32 on every target; standalone mesh vertices are
+/// binary32 below archive 60 and binary64 at and above. Object and appearance
+/// colors use eight-bit RGBA channels. A quantized write charges the row's
+/// local precision code naming the paths.
+pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
+    (
+        "model.tessellations[].vertex_normals[]",
+        ReducedStorage::F32,
+    ),
+    (
+        "model.tessellations[].vertices[]",
+        ReducedStorage::F32BelowArchive60,
+    ),
+    ("model.bodies[].color", ReducedStorage::U8Channel),
+    ("model.appearances[].base_color", ReducedStorage::U8Channel),
+];
+
+/// The reduced storage of one [`REDUCED_FIELDS`] row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReducedStorage {
+    /// Eight-bit RGBA channels on every target.
+    U8Channel,
+    /// IEEE-754 binary32 on every target.
+    F32,
+    /// IEEE-754 binary32 below archive 60; binary64 at and above.
+    F32BelowArchive60,
+}
+
+/// Format capacity rows (#217 §5.0): the stored fields whose width bounds the
+/// write, with the limit, its source, and the helper that enforces it.
+///
+/// The writer emits only archive words at and above 50, whose chunk framing
+/// stores an eight-byte declared length (`docs/formats/rhino_3dm.md` §4).
+/// `archive_body_len` is the helper that refuses a body the field cannot
+/// store; it constructs `TargetCapacity` once #239 switches the encode path
+/// to `EncodeError`.
+pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
+    field: "chunk.declared_length",
+    limit: 9_223_372_036_854_775_807,
+    source: "docs/formats/rhino_3dm.md §4: archive version >= 50 stores an i64 declared_length",
+    helper: "archive_body_len",
+}];
+
 /// Conservative fallback when synthesized-output verification does not prove
 /// complete preservation of an arena. The verifier promotes populated arenas
 /// only after comparing their complete records under one global identity map.
 ///
 /// Procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, appearances, appearance bindings
-/// and attributes are `Dropped` with a per-arena loss.
-/// Topology is written as Brep and point objects. Unsupported bodies and free
-/// entities are omitted with Error losses; unowned pcurves are also reported.
-/// `points` and `curves` are `Reported` because
+/// sketches, sketch entities and constraints, spatial sketches and entities,
+/// spreadsheets, assembly joints, drawings, pmi, physical materials, mass
+/// properties, rigid bodies, colliders, articulations, physics scenes, solver
+/// settings and declared measures are `Dropped` or `Omitted` with a per-arena
+/// loss. Topology is written as Brep and point objects. Unsupported bodies and
+/// free entities are omitted with Error losses; unowned pcurves are also
+/// reported. `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records.
+/// Every other carrying arena holds records a `writer/tables/*` module emits,
+/// so the base claim is `Reported`: the verifier promotes an arena to
+/// `Written` only after the re-decode agrees with the held records.
 const COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Dropped, Omitted, Reported};
     ArenaDispositions {
@@ -336,7 +373,7 @@ const COVERAGE: ArenaDispositions = {
         pcurves: Reported,
         procedural_surfaces: Dropped,
         procedural_curves: Reported,
-        assets: Omitted,
+        assets: Reported,
         features: Dropped,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
@@ -349,19 +386,19 @@ const COVERAGE: ArenaDispositions = {
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
         spreadsheets: Omitted,
-        product_definitions: Omitted,
-        occurrences: Omitted,
+        product_definitions: Reported,
+        occurrences: Reported,
         assembly_joints: Omitted,
         drawings: Omitted,
-        semantic_annotations: Omitted,
-        presentation_documents: Omitted,
-        view_presentations: Omitted,
+        semantic_annotations: Reported,
+        presentation_documents: Reported,
+        view_presentations: Reported,
         tessellations: Reported,
         appearances: Reported,
         appearance_bindings: Reported,
-        attributes: Dropped,
+        attributes: Reported,
         pmi: Omitted,
-        presentation_layers: Omitted,
+        presentation_layers: Reported,
         physical_materials: Omitted,
         mass_properties: Omitted,
         rigid_bodies: Omitted,
