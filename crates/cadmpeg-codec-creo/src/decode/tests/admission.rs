@@ -11,6 +11,7 @@ use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
 use crate::test_support::build_toc_section_prt;
+use crate::test_support::build_whole_prt;
 use crate::test_support::jpeg_payload;
 use crate::test_support::unix_compress_literals;
 use crate::test_support::visibgeom_payload;
@@ -239,7 +240,10 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
 fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let data = build_prt("c", &[("VisibGeom", payload)]);
+    // A trailing section keeps the probed section whole: a section that
+    // reaches the end of the input with an open parameter body is given up
+    // as a possibly cut part (#215).
+    let data = build_whole_prt("c", &[("VisibGeom", payload)]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

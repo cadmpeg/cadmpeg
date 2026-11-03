@@ -1,0 +1,223 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "kind": "replica",
+            "source": "step:data:surface#7",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "id": "step:construction:surface_replica#10",
+          "surface": "step:data:surface#10"
+        }
+      ],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "basis": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "transformed",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "id": "step:data:surface#10",
+          "source_object": {
+            "format": "step",
+            "object_id": "#10"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#7",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#10"
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "byte accounting: 293 structural, 467 typed, 0 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "9bd8d0d5924fe5c9b0d80f7d9923edc5f8ab41e71f0a608f150e2d88274198e1",
+    "unrepresented": []
+  }
+}

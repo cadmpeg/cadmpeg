@@ -22,6 +22,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    drop_degraded_features(scan, ir, losses)?;
     let before = ir.model.entity_count();
     for section in &scan.framing.sections {
         if section.role() == SectionRole::Thumbnail {
@@ -189,6 +190,84 @@ pub(super) fn project(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
         "admit Creo document projections",
     )?;
+    Ok(())
+}
+
+/// Drop features that lost rows to a given-up part and still fell back to
+/// stored geometry: they need the failed part, so the transfer excludes
+/// them and the part loss names them (#215 rule 2).
+fn drop_degraded_features(
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    if scan.framing.excluded_feature_owners.is_empty() {
+        return Ok(());
+    }
+    let mut lost: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+    for owners in scan.framing.excluded_feature_owners.values() {
+        lost.extend(owners.iter().copied());
+    }
+    let mut dropped: Vec<(u32, String)> = Vec::new();
+    ir.model.features.retain(|feature| {
+        let Some(number) = feature
+            .id
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            return true;
+        };
+        if !lost.contains(&number) {
+            return true;
+        }
+        let degraded = matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::StoredGeometry {}
+            )
+        );
+        if !degraded {
+            return true;
+        }
+        dropped.push((number, feature.id.as_str().to_owned()));
+        false
+    });
+    if dropped.is_empty() {
+        return Ok(());
+    }
+    let mut by_section = std::collections::BTreeMap::<usize, Vec<String>>::new();
+    for (number, id) in &dropped {
+        for (offset, owners) in &scan.framing.excluded_feature_owners {
+            if owners.contains(number) {
+                by_section.entry(*offset).or_default().push(id.clone());
+            }
+        }
+    }
+    for loss in losses.iter_mut() {
+        if !loss.message.ends_with("dropped=[]") {
+            continue;
+        }
+        let Some(offset) = loss.provenance.as_ref().map(|provenance| provenance.offset) else {
+            continue;
+        };
+        let Ok(offset) = usize::try_from(offset) else {
+            continue;
+        };
+        let Some(ids) = by_section.get(&offset) else {
+            continue;
+        };
+        let mut ids = ids.clone();
+        ids.sort();
+        ids.dedup();
+        loss.dropped = ids.clone();
+        loss.message = loss
+            .message
+            .strip_suffix("dropped=[]")
+            .unwrap_or(loss.message.as_str())
+            .to_owned()
+            + &format!("dropped=[{}]", ids.join(", "));
+    }
     Ok(())
 }
 

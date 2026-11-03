@@ -214,11 +214,6 @@ that gate.
   component that uses this frame form transfers its faces only when every
   source face passes admission. Otherwise each projected face stays native with
   `geometry.brep-compact-frame-component-unresolved`.
-- Native B-rep admission emits one derived `brep_face_admission_rejections`
-  record for every rejected candidate face. The record keeps the stable
-  first-failure predicate, face identity, and bounded unresolved half-edge and
-  vertex operands. Aggregate loss text remains a bounded summary; the arena is
-  the complete per-face diagnostic.
 - Two-edge loops transfer when distinct typed non-linear edge carriers have
   complete native pcurve endpoints that close in traversal order. Multiple
   circular loops on one plane additionally require a common center, distinct

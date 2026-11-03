@@ -261,6 +261,46 @@ reference entries in the document parameter arena. A referenced parameter may
 be owned by another feature, including a global equations node, and may occur
 more than once when the source serializes repeated consumption slots.
 
+## Design parameters, configurations, and resolvers
+
+A dimension is a literal or a binding: `Dimension<Q> = Literal(Q) | Parameter(ParameterId)`.
+A bound dimension stores no evaluated value of its own. `CadIr::dimension_value`
+resolves either form against the `parameters` arena.
+
+A `DesignParameter` holds its id, name, ordinal, owning feature, canonical
+`Expression`, evaluated `value` cache, driving flag, display semantics, and PMI
+link. The `expression` holds ordered `tokens`: literal `Text` fragments and
+`Parameter` references by id. The expression is canonical and the value is its
+cache. A single-literal expression equals the value. Dependencies derive from
+the tokens. `owner` names the consuming feature and is independent of product
+ownership. A `source_content` `Parameter(id)` item resolves against the
+parameter arena; the code it carries is canonical over the owner field. `driving`
+marks a parameter that drives its constrained dimension. `set_dimension` edits
+the bound parameter through the feature definition path and returns
+`DrivenParameter` when the parameter does not drive or has dependencies.
+
+A configuration holds `parameter_overrides`: a map from `ParameterId` to the
+overriding `Expression`, plus per-feature `ConfigurationFeatureState` values
+`Suppressed`, `Active`, and `Definition`. Overrides differ from the base; the
+base stays complete on its own.
+
+Consumers read colour through `CadIr::effective_display_color`: an explicit
+display colour first, then the bound appearance colour, then the single-body
+prototype body colour for an occurrence. Consumers read visibility through
+`CadIr::effective_visibility`: the applicable explicit gates combine with
+logical AND. A display-colour field holds only a source colour that builds no
+Appearance. Computed world placement comes from `effective_transform`, which
+composes the occurrence parent tree in document coordinates. Body placements
+stay local to their product definition; the world placement is computed and is
+never stored.
+
+`Feature.needs_recompute` is required on the wire. The edit helpers mark the
+edited feature and its dependents. Decoders set the flag from stored state:
+FreeCAD object status Touched, Creo station-value disagreement, and SolidWorks
+`swConfigurationNeedsUpdate` for every feature; every other decoder reports
+false. Writers preserve the format flag where one exists and otherwise charge
+`export:evaluation.stale` naming the features.
+
 ## Assembly joints
 
 An assembly joint grounds one connector, or connects two connectors through a paired family. Each connector holds an operand and a frame. The frame is in the operand container's own coordinate space: the document root, the prototype of a local occurrence, or the external document. It is not composed with the occurrence placement; the connector's model-space frame is the occurrence placement applied to the frame. An operand container is the document root, a local occurrence, or an external document. An occurrence container optionally holds `occurrence_path`: the native keys of the nested occurrences, outermost first, that lead from the prototype of the occurrence to the document that owns the object. An absent path means that the prototype of the occurrence owns the object. The path identifies the placement of a part that is placed more than once; placement transforms stay on the occurrences.

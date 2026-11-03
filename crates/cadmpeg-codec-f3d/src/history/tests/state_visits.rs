@@ -15,25 +15,33 @@ const SCALE: DesignScale = DesignScale {
 };
 
 fn decoded_histories() -> Vec<AsmHistory> {
-    crate::test_support::with_decode_context(|ctx| {
-        ["BREP.first.smbh", "BREP.second.smbh"]
-            .into_iter()
-            .map(|stream| {
-                crate::history::decode(
-                    ctx,
-                    &SCALE.history_smbh(),
-                    stream,
-                    RefWidth::Eight,
-                    &mut { u64::MAX },
-                    &cadmpeg_core::decode::WorkBudget::new(
-                        crate::history::binding::MAX_HISTORY_BINDING_WORK,
-                    ),
-                )
-                .unwrap()
-                .unwrap()
-            })
-            .collect()
-    })
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::{source_fidelity::parts::PartOutput, CodecFormat};
+
+    ["BREP.first.smbh", "BREP.second.smbh"]
+        .into_iter()
+        .map(|stream| {
+            let smbh = SCALE.history_smbh();
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&smbh, &arena, &DecodePolicy::service())
+                    .expect("history bytes admit a root view");
+            let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
+            crate::history::decode(
+                &ctx,
+                root,
+                stream,
+                RefWidth::Eight,
+                &mut { u64::MAX },
+                &cadmpeg_core::decode::WorkBudget::new(
+                    crate::history::binding::MAX_HISTORY_BINDING_WORK,
+                ),
+                &mut output,
+            )
+            .unwrap()
+            .unwrap()
+        })
+        .collect()
 }
 
 /// Every state of every history, newest history first and newest state first

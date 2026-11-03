@@ -1,0 +1,290 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "step:data:body#21",
+          "kind": "wire",
+          "regions": [
+            "step:data:region#21"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#11",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#11"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#12",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#12"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "step:data:curve#11",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "step:data:vertex#14-wire-21-set-20",
+          "id": "step:data:edge#18-wire-21-set-20",
+          "start": "step:data:vertex#13-wire-21-set-20"
+        },
+        {
+          "carrier": {
+            "curve": "step:data:curve#12",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "step:data:vertex#15-wire-21-set-20",
+          "id": "step:data:edge#19-wire-21-set-20",
+          "start": "step:data:vertex#14-wire-21-set-20"
+        }
+      ],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "step:data:point#3",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#3"
+          }
+        },
+        {
+          "id": "step:data:point#5",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#5"
+          }
+        },
+        {
+          "id": "step:data:point#6",
+          "position": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#6"
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "step:data:body#21",
+          "id": "step:data:region#21",
+          "shells": [
+            "step:data:shell#21"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "step:data:shell#21",
+          "members": [
+            {
+              "id": "step:data:edge#18-wire-21-set-20",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "step:data:edge#19-wire-21-set-20",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "step:data:region#21"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "step:data:vertex#13-wire-21-set-20",
+          "point": "step:data:point#3"
+        },
+        {
+          "id": "step:data:vertex#14-wire-21-set-20",
+          "point": "step:data:point#5"
+        },
+        {
+          "id": "step:data:vertex#15-wire-21-set-20",
+          "point": "step:data:point#6"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "schema": "AP214"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "unverified": {
+                "using": "ap242-e3"
+              }
+            },
+            "declared": {
+              "file_schema_identifier": "AP214",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:unknown"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "unverified": {
+              "using": "ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AP214",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:unknown"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "FILE_SCHEMA identifier AP214; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "byte accounting: 248 structural, 859 typed, 0 named opaque, 0 unclassified"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "decode_digest": "e2c8caea874ecb5981f6d8d3df06bd1dfb615afb648fd24115fa23fb619e1f1f",
+    "unrepresented": []
+  }
+}

@@ -185,68 +185,87 @@ fn geometry_history(split: bool) -> Vec<u8> {
     bytes
 }
 
+/// Decode one history stream, staging any given-up record run in a
+/// discarded part output.
+fn decode_history(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+    stream: &str,
+    remaining: &mut u64,
+    work: &WorkBudget,
+) -> crate::history_records::AsmHistory {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::F3d,
+        ctx,
+    );
+    super::super::decode(ctx, root, stream, RefWidth::Eight, remaining, work, &mut output)
+        .unwrap()
+        .unwrap()
+}
+
 #[test]
 fn skipped_history_does_not_charge_retained_bytes() {
-    use cadmpeg_asm::kernel_header::RefWidth;
-    use cadmpeg_core::decode::DecodePolicy;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut policy = DecodePolicy::desktop();
     // One state retains 19 tail slots plus 18 changes.
     policy.limits.max_retained_bytes = 37 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
+    let bytes = geometry_history(false);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("history bytes admit a root view");
+    {
         // Use the session remainder, including native text already retained.
         ctx.retain_bytes(1, "earlier native text").unwrap();
         let mut remaining = ctx.retained_bytes_available();
         let available = remaining;
-        let large = super::super::decode(
-            ctx,
-            &geometry_history(false),
+        let large = decode_history(
+            &ctx,
+            root,
             "large",
-            RefWidth::Eight,
             &mut remaining,
             &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
-        )
-        .unwrap()
-        .unwrap();
+        );
         assert!(large.binding_budget_exceeded);
         assert!(large.states().iter().all(|state| state.transition.is_none()
             && state.bulletin_boards.is_empty()
             && state.records.is_empty()));
         assert_eq!(remaining, available);
         assert_eq!(ctx.retained_bytes_available(), available);
-    });
+    }
 }
 
 #[test]
 fn skipped_history_leaves_room_for_the_next_smaller_stream() {
-    use cadmpeg_asm::kernel_header::RefWidth;
-    use cadmpeg_core::decode::DecodePolicy;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut policy = DecodePolicy::desktop();
     // Moving the 18 changes to a newer state leaves one slot in the tail.
     policy.limits.max_retained_bytes = 19 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT + 1;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
+    let large_bytes = geometry_history(false);
+    let small_bytes = geometry_history(true);
+    let arena = DecodeArena::new();
+    let (ctx, large_root) = DecodeContext::from_root_bytes(&large_bytes, &arena, &policy)
+        .expect("history bytes admit a root view");
+    let (_, small_root) = DecodeContext::from_root_bytes(&small_bytes, &arena, &policy)
+        .expect("history bytes admit a root view");
+    {
         ctx.retain_bytes(1, "earlier native text").unwrap();
         let mut remaining = ctx.retained_bytes_available();
-        let large = super::super::decode(
-            ctx,
-            &geometry_history(false),
+        let large = decode_history(
+            &ctx,
+            large_root,
             "large",
-            RefWidth::Eight,
             &mut remaining,
             &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
-        )
-        .unwrap()
-        .unwrap();
+        );
         assert!(large.binding_budget_exceeded);
-        let small = super::super::decode(
-            ctx,
-            &geometry_history(true),
+        let small = decode_history(
+            &ctx,
+            small_root,
             "small",
-            RefWidth::Eight,
             &mut remaining,
             &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
-        )
-        .unwrap()
-        .unwrap();
+        );
         assert!(!small.binding_budget_exceeded);
         assert!(small
             .states()
@@ -257,26 +276,19 @@ fn skipped_history_leaves_room_for_the_next_smaller_stream() {
             ctx.retained_bytes_available(),
             policy.limits.max_retained_bytes - 1
         );
-    });
+    }
 }
 
 #[test]
 fn history_past_its_binding_work_keeps_its_records_without_topology() {
-    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let bytes = geometry_history(true);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("history bytes admit a root view");
     let decode = |work: &WorkBudget| {
-        crate::test_support::with_decode_context(|ctx| {
-            super::super::decode(
-                ctx,
-                &bytes,
-                "history",
-                RefWidth::Eight,
-                &mut { u64::MAX },
-                work,
-            )
-            .unwrap()
-            .unwrap()
-        })
+        let mut remaining = u64::MAX;
+        decode_history(&ctx, root, "history", &mut remaining, work)
     };
     let unbounded = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
     let bound = decode(&unbounded);

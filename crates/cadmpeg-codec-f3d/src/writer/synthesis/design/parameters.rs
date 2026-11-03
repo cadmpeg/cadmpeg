@@ -21,7 +21,7 @@ pub(super) fn regenerate(
     let mut parameters = target.model.parameters.iter().collect::<Vec<_>>();
     parameters.sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     for parameter in parameters {
-        let hint = original_native
+        let native_record = original_native
             .iter()
             .find(|record| parameter.native_ref.as_deref() == Some(record.id.as_str()))
             .or_else(|| {
@@ -30,9 +30,8 @@ pub(super) fn regenerate(
                     .filter(|record| record.name() == parameter.name);
                 let first = named.next()?;
                 named.next().is_none().then_some(first)
-            })
-            .and_then(|record| record.unit().map(|unit| unit.value.as_str()));
-        let Some((unit, scalar)) = scalar(parameter, hint) else {
+            });
+        let Some((unit, scalar)) = scalar(parameter, native_record) else {
             losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
                 "parameter {} has no document-scalar F3D encoding",
                 parameter.id,
@@ -150,8 +149,9 @@ pub(super) fn regenerate(
 
 fn scalar(
     parameter: &NeutralParameter,
-    native_unit: Option<&str>,
+    native: Option<&DesignParameter>,
 ) -> Option<(Option<String>, f64)> {
+    let native_unit = native.and_then(|record| record.unit().map(|unit| unit.value.as_str()));
     match parameter.value.as_ref() {
         Some(ParameterValue::Length(value)) => Some((
             Some(
@@ -176,13 +176,10 @@ fn scalar(
             ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_),
         ) => None,
         None => {
-            let unit = parameter.properties.get("unit")?.clone();
-            let value = parameter
-                .properties
-                .get("evaluated_scalar")?
-                .parse::<f64>()
-                .ok()?;
-            value.is_finite().then_some((Some(unit), value))
+            let record = native?;
+            let unit = record.unit().map(|unit| unit.value.as_str().to_owned());
+            let value = record.evaluated_value().get();
+            value.is_finite().then_some((unit, value))
         }
     }
 }

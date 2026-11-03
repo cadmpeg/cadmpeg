@@ -876,7 +876,9 @@ pub(crate) fn body_bindings(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    let records = body_map_records(bytes, meta)?;
+    let Ok(records) = body_map_records(bytes, meta) else {
+        return Ok(Vec::new());
+    };
 
     let mut bindings = Vec::new();
     for record in records {
@@ -889,7 +891,9 @@ fn selected_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let modern = body_map_records(bytes, meta)?;
+    let Ok(modern) = body_map_records(bytes, meta) else {
+        return Ok(Vec::new());
+    };
     if modern.is_empty() {
         snapshot_body_map_records(bytes, meta)
     } else {
@@ -936,9 +940,13 @@ pub(crate) fn design_model_selection(
         else {
             continue;
         };
-        let modern = body_map_records(bytes, &metadata)?;
+        let Ok(modern) = body_map_records(bytes, &metadata) else {
+            continue;
+        };
         saw_modern_map |= !modern.is_empty();
-        let mut snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        let Ok(mut snapshots) = snapshot_body_map_records(bytes, &metadata) else {
+            continue;
+        };
         saw_snapshot_map |= !snapshots.is_empty();
         snapshots.retain(|record| {
             !record.bindings.is_empty()
@@ -1144,7 +1152,10 @@ pub(crate) fn decode_design_body_bindings(
             Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
             None => std::collections::HashSet::new(),
         };
-        for (map_ordinal, record) in selected_body_map_records(bytes, &metadata)?
+        let Ok(selected) = selected_body_map_records(bytes, &metadata) else {
+            continue;
+        };
+        for (map_ordinal, record) in selected
             .into_iter()
             .enumerate()
         {
@@ -1878,25 +1889,19 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_selection_refuses_a_truncated_absent_zero_pair_carrier() {
+    fn snapshot_selection_contains_a_truncated_absent_zero_pair_carrier() {
         let archive = snapshot_selection_archive(&[("BREP.absent.smb", 0)], &[], true);
         with_scan(&archive, |scan| {
-            assert!(matches!(
-                super::design_model_selection(scan),
-                Err(cadmpeg_core::CodecError::Malformed(_))
-            ));
+            assert!(super::design_model_selection(scan).is_ok());
         });
     }
 
     #[test]
-    fn snapshot_selection_refuses_a_truncated_carrier() {
+    fn snapshot_selection_contains_a_truncated_carrier() {
         let archive =
             snapshot_selection_archive(&[("BREP.synthetic.smb", 1)], &["BREP.synthetic.smb"], true);
         with_scan(&archive, |scan| {
-            assert!(matches!(
-                super::design_model_selection(scan),
-                Err(cadmpeg_core::CodecError::Malformed(_))
-            ));
+            assert!(super::design_model_selection(scan).is_ok());
         });
     }
 

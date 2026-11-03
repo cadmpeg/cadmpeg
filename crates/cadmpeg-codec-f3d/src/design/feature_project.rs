@@ -1556,19 +1556,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .scope_record_index()
                     .and_then(|index| scope_ids.get(&(stream, index)))
             });
-            let mut properties = BTreeMap::new();
-            if parameter.kind() != DesignParameterKind::User {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("source_kind"),
-                    parameter.source_kind_str().to_owned(),
-                );
-            }
-            if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("owner_record_index"),
-                    format!("{owner_record_index}"),
-                );
-            }
+            let properties = BTreeMap::new();
             let value = if let Some(count) = dimension_bindings::count_cache(parameter, scopes) {
                 Some(ParameterValue::Integer(i64::from(count)))
             } else {
@@ -1581,14 +1569,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         Angle::new(parameter.evaluated_value().get()).map(ParameterValue::Angle)
                     }
                     None => Some(ParameterValue::Real(parameter.evaluated_value())),
-                    Some(unit) => {
-                        properties.insert(cadmpeg_core::nonblank_literal!("unit"), unit.to_owned());
-                        properties.insert(
-                            cadmpeg_core::nonblank_literal!("evaluated_scalar"),
-                            format!("{}", parameter.evaluated_value().get()),
-                        );
-                        None
-                    }
+                    Some(_) => None,
                 }
             };
             NeutralParameter {

@@ -28,7 +28,7 @@ use super::support_uv::{
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
     IntersectionCompletionSource, SerializedSupportUv,
 };
-use super::{report_untransferred_streams, Counts, Scan};
+use super::{give_up_cut_tails, report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::grouping::group_pairs;
@@ -1375,6 +1375,13 @@ pub(super) fn try_decode_geometry(
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
+    // The geometry route stages the same part give-ups as the metadata
+    // route: cut tails, the unreadable footer region, damaged Config/XML
+    // entries and truncated OM sections (§4.5). Cut entries carry no lane
+    // extent, and the detectors below fire only where extraction swallowed
+    // damage into empty values, so on the covered inputs no span is charged
+    // twice.
+    give_up_cut_tails(ctx, scan, &mut parts)?;
     let outcome = crate::decode::RouteOutcome { design_held, parts };
     Ok(Some((ir, report, annotations, unknowns, outcome)))
 }

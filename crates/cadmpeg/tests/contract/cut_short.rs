@@ -165,8 +165,9 @@ fn check_format(format: &str) {
             let cut = &fixture.bytes[..length];
             match super::support::decode(format, cut) {
                 Ok(decoded) => {
-                    let document = super::support::document(&decoded);
+                    let mut document = super::support::document(&decoded);
                     let report = super::support::report(&decoded);
+                    let fidelity = super::support::fidelity(&decoded);
                     let held = record_ids(&document);
                     let stubs = support::stub_ids(format, &document);
                     for added in held.difference(&uncut_ids) {
@@ -188,6 +189,50 @@ fn check_format(format: &str) {
                             fixture.path.display(),
                             missing.len()
                         ));
+                    }
+                    // Scope follows the located parts (#209 §1.1): a cut that
+                    // removed every part of a class correctly flips that class
+                    // to false. A flip is justified only when no part of the
+                    // class was found, so a class the cut holds as
+                    // unrepresented must stay in scope.
+                    let uncut_scope = uncut_document.get("scope").cloned().unwrap_or_default();
+                    let cut_scope = document.get("scope").cloned().unwrap_or_default();
+                    let unrepresented: BTreeSet<String> = fidelity
+                        .get("unrepresented")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|classes| {
+                            classes
+                                .iter()
+                                .filter_map(|class| class.as_str().map(str::to_owned))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    for class in ["model", "design"] {
+                        let uncut_holds = uncut_scope
+                            .get(class)
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        let cut_holds = cut_scope
+                            .get(class)
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        if uncut_holds && !cut_holds && unrepresented.contains(class) {
+                            findings.push(format!(
+                                "{format}: {} cut at {percent}% drops scope class {class} although a part of {class} was found",
+                                fixture.path.display()
+                            ));
+                        }
+                        if !uncut_holds && cut_holds {
+                            findings.push(format!(
+                                "{format}: {} cut at {percent}% gains scope class {class} it does not hold",
+                                fixture.path.display()
+                            ));
+                        }
+                    }
+                    // The record comparison below covers held records only;
+                    // scope is judged above, so it is not compared twice.
+                    if let Some(scope) = document.get_mut("scope") {
+                        *scope = uncut_scope.clone();
                     }
                     let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
                     let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);

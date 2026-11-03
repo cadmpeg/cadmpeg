@@ -2705,45 +2705,211 @@ pub(super) struct MaterialTextureCatalogEntry {
     pub(super) source_offset: u64,
 }
 
+/// One Config/XML entry selected for parsing: its available payload, or the
+/// span to give up when the entry is present but unreadable.
+enum SelectedXmlEntry<'c> {
+    /// Absent, cut, or otherwise healthy-empty: decode nothing, give up nothing.
+    Skip,
+    /// Exactly one entry with its available payload.
+    Payload {
+        payload: &'c [u8],
+        entry_index: usize,
+        source_entry: String,
+        entry_offset: u64,
+    },
+    /// Duplicate entries with an available first span: present but unreadable.
+    Damaged(u64, u64),
+}
+
+/// Select the single available payload of a Config/XML entry by directory
+/// name. Absence and cut spans are healthy-empty: absence means the table
+/// does not exist, and a cut span belongs to the cut-tail part give-up.
+/// Duplicate entries are present but unreadable (§4.5).
+fn select_xml_entry<'a>(container: &'a Container<'_>, name: &str) -> SelectedXmlEntry<'a> {
+    let mut matches = container
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.name == name);
+    let Some((entry_index, entry)) = matches.next() else {
+        return SelectedXmlEntry::Skip;
+    };
+    if matches.next().is_some() {
+        let (Some((entry_offset, size)), Some(start), Some(len)) = (
+            entry.file_span(),
+            entry
+                .file_span()
+                .and_then(|(offset, _)| usize::try_from(offset).ok()),
+            entry
+                .file_span()
+                .and_then(|(_, size)| usize::try_from(size).ok()),
+        ) else {
+            return SelectedXmlEntry::Skip;
+        };
+        let Some(end) = start.checked_add(len) else {
+            return SelectedXmlEntry::Skip;
+        };
+        if container.data.get(start..end).is_none() {
+            return SelectedXmlEntry::Skip;
+        }
+        return SelectedXmlEntry::Damaged(entry_offset, size);
+    }
+    let Some((entry_offset, size)) = entry.file_span() else {
+        return SelectedXmlEntry::Skip;
+    };
+    let (Some(start), Some(size)) = (
+        usize::try_from(entry_offset).ok(),
+        usize::try_from(size).ok(),
+    ) else {
+        return SelectedXmlEntry::Skip;
+    };
+    let Some(end) = start.checked_add(size) else {
+        return SelectedXmlEntry::Skip;
+    };
+    let Some(payload) = container.data.get(start..end) else {
+        return SelectedXmlEntry::Skip;
+    };
+    SelectedXmlEntry::Payload {
+        payload,
+        entry_index,
+        source_entry: entry.name.clone(),
+        entry_offset,
+    }
+}
+
+/// Whether a structural parse failed with damage rather than a resource
+/// limit: limits propagate, every other error marks the entry unreadable.
+fn is_damage<T>(result: Result<T, CodecError>) -> Result<bool, CodecError> {
+    match result {
+        Ok(_) => Ok(false),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(true),
+    }
+}
+
+/// Absolute spans of Config/XML entries present with an available payload
+/// the structural parse cannot read, each with its §4.5 part kind: the
+/// arrangement table, the typed part attributes, and the QAF material
+/// catalog. Absent and cut entries are healthy-empty; a present entry whose
+/// payload parses to a valid-empty table stays silent (§4.5).
+pub(crate) fn damaged_config_xml_spans(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<(&'static str, u64, u64)>, CodecError> {
+    let mut spans = Vec::new();
+    match select_xml_entry(container, "/Root/part/arrangements") {
+        SelectedXmlEntry::Skip => {}
+        SelectedXmlEntry::Damaged(offset, size) => {
+            spans.push(("nx.configurations", offset, size));
+        }
+        SelectedXmlEntry::Payload {
+            payload,
+            entry_index,
+            source_entry,
+            entry_offset,
+        } => {
+            if is_damage(parse_arrangements_payload(
+                ctx,
+                payload,
+                entry_index,
+                &source_entry,
+                entry_offset,
+            ))? {
+                if let Some((_, size)) = container.entries[entry_index].file_span() {
+                    spans.push(("nx.configurations", entry_offset, size));
+                }
+            }
+        }
+    }
+    match select_xml_entry(container, "/Root/part/attrs") {
+        SelectedXmlEntry::Skip => {}
+        SelectedXmlEntry::Damaged(offset, size) => {
+            spans.push(("nx.part_attributes", offset, size));
+        }
+        SelectedXmlEntry::Payload {
+            payload,
+            entry_index,
+            source_entry,
+            entry_offset,
+        } => {
+            let damaged =
+                match parse_part_attributes(ctx, payload, entry_index, &source_entry, entry_offset)
+                {
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => true,
+                    Ok(None) => true,
+                    Ok(Some(_)) => false,
+                };
+            if damaged {
+                if let Some((_, size)) = container.entries[entry_index].file_span() {
+                    spans.push(("nx.part_attributes", entry_offset, size));
+                }
+            }
+        }
+    }
+    match select_xml_entry(container, "/Root/qafmetadata") {
+        SelectedXmlEntry::Skip => {}
+        SelectedXmlEntry::Damaged(offset, size) => {
+            spans.push(("nx.material_texture_catalog", offset, size));
+        }
+        SelectedXmlEntry::Payload {
+            payload,
+            entry_index,
+            source_entry,
+            entry_offset,
+        } => {
+            let assets = match material_texture::material_texture_assets(container) {
+                Ok(assets) => assets,
+                // The extractor reports asset damage by failing the whole
+                // extraction, which the class-level loss covers: without
+                // assets the catalog cannot join, so there is no catalog
+                // span to attribute here.
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => return Ok(spans),
+            };
+            if is_damage(parse_material_texture_catalog(
+                ctx,
+                payload,
+                entry_index,
+                &source_entry,
+                entry_offset,
+                &assets,
+            ))? {
+                if let Some((_, size)) = container.entries[entry_index].file_span() {
+                    spans.push(("nx.material_texture_catalog", entry_offset, size));
+                }
+            }
+        }
+    }
+    Ok(spans)
+}
+
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
 pub(super) fn material_texture_catalog_entries(
     ctx: &DecodeContext<'_>,
     container: &Container,
     assets: &[MaterialTextureAsset],
 ) -> Result<Vec<MaterialTextureCatalogEntry>, CodecError> {
-    let Some((entry_index, entry)) = container
-        .entries
-        .iter()
-        .enumerate()
-        .find(|(_, entry)| entry.name == "/Root/qafmetadata")
+    let SelectedXmlEntry::Payload {
+        payload,
+        entry_index,
+        source_entry,
+        entry_offset,
+    } = select_xml_entry(container, "/Root/qafmetadata")
     else {
         return Ok(Vec::new());
     };
-    let Some((entry_offset, size)) = entry.file_span() else {
-        return Ok(Vec::new());
-    };
-    let Some(start) = usize::try_from(entry_offset).ok() else {
-        return Ok(Vec::new());
-    };
-    let Some(size) = usize::try_from(size).ok() else {
-        return Ok(Vec::new());
-    };
-    let Some(end) = start.checked_add(size) else {
-        return Ok(Vec::new());
-    };
-    let Some(payload) = container.data.get(start..end) else {
-        return Ok(Vec::new());
-    };
-    let Some(entries) = parse_material_texture_catalog(
+    let entries = match parse_material_texture_catalog(
         ctx,
         payload,
         entry_index,
-        &entry.name,
+        &source_entry,
         entry_offset,
         assets,
-    )?
-    else {
-        return Ok(Vec::new());
+    ) {
+        Ok(entries) => entries.unwrap_or_default(),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => Vec::new(),
     };
     Ok(entries)
 }
@@ -2756,19 +2922,26 @@ fn parse_material_texture_catalog(
     entry_offset: u64,
     assets: &[MaterialTextureAsset],
 ) -> Result<Option<Vec<MaterialTextureCatalogEntry>>, CodecError> {
+    // A present entry whose payload the catalog grammar cannot read is
+    // damage, reported through the helper's part give-up (§4.5): only a
+    // valid-empty table (no material properties) decodes to nothing
+    // silently. The caller maps damage back to empty so extraction keeps
+    // today's values.
+    let damaged =
+        || CodecError::Malformed("NX QAF material catalog entry is present but unreadable".into());
     let Some(xml) = xml_stream_text(payload) else {
-        return Ok(None);
+        return Err(damaged());
     };
     let document = match ctx.parse_xml(xml, "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
-            return Ok(None);
+            return Err(damaged());
         }
     };
     let root = document.root_element();
     if root.tag_name().name() != "folderContents" {
-        return Ok(None);
+        return Err(damaged());
     }
     let assets_by_path = assets
         .iter()
@@ -2778,43 +2951,43 @@ fn parse_material_texture_catalog(
     let mut seen_assets = BTreeSet::new();
     for node in root.children().filter(roxmltree::Node::is_element) {
         if node.tag_name().name() != "folderProperties" {
-            return Ok(None);
+            return Err(damaged());
         }
         let Some(storage_path) = node.attribute("location") else {
-            return Ok(None);
+            return Err(damaged());
         };
         let Some(material_path) = node.attribute("unmappedLocation") else {
-            return Ok(None);
+            return Err(damaged());
         };
         let mut children = node.children().filter(roxmltree::Node::is_element);
         let (Some(create), Some(modify), None) =
             (children.next(), children.next(), children.next())
         else {
-            return Ok(None);
+            return Err(damaged());
         };
         if create.tag_name().name() != "createTime" || modify.tag_name().name() != "modifyTime" {
-            return Ok(None);
+            return Err(damaged());
         }
         let Some(create_time) = create.text() else {
-            return Ok(None);
+            return Err(damaged());
         };
         let Some(modify_time) = modify.text() else {
-            return Ok(None);
+            return Err(damaged());
         };
         if !storage_path.starts_with("materialsTif/") {
             continue;
         }
         let Some(asset) = assets_by_path.get(storage_path) else {
-            return Ok(None);
+            return Err(damaged());
         };
         if material_path
             .strip_prefix("materialsTif/")
             .is_none_or(str::is_empty)
         {
-            return Ok(None);
+            return Err(damaged());
         }
         if !seen_assets.insert(asset.id.as_str()) {
-            return Ok(None);
+            return Err(damaged());
         }
         let ordinal = catalog.len();
         let source_offset = entry_offset
@@ -3181,65 +3354,72 @@ pub(super) fn configurations(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<Configuration>, CodecError> {
-    let mut matches = container
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.name == "/Root/part/arrangements");
-    let Some((entry_index, entry)) = matches.next() else {
+    let SelectedXmlEntry::Payload {
+        payload,
+        entry_index,
+        source_entry,
+        entry_offset,
+    } = select_xml_entry(container, "/Root/part/arrangements")
+    else {
         return Ok(Vec::new());
     };
-    if matches.next().is_some() {
-        return Ok(Vec::new());
+    match parse_arrangements_payload(ctx, payload, entry_index, &source_entry, entry_offset) {
+        Ok(configurations) => Ok(configurations.unwrap_or_default()),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(Vec::new()),
     }
-    let Some((offset, size)) = entry.file_span() else {
-        return Ok(Vec::new());
-    };
-    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-        return Ok(Vec::new());
-    };
-    let Some(end) = start.checked_add(size) else {
-        return Ok(Vec::new());
-    };
-    let Some(payload) = container.data.get(start..end) else {
-        return Ok(Vec::new());
-    };
+}
+
+/// Parse one available arrangement table: `None` is a valid-empty table
+/// with no arrangements, any other failure is damage the caller reports
+/// through the helper's part give-up (§4.5).
+fn parse_arrangements_payload(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    entry_index: usize,
+    source_entry: &str,
+    offset: u64,
+) -> Result<Option<Vec<Configuration>>, CodecError> {
+    let damaged = || CodecError::Malformed("NX arrangement entry is present but unreadable".into());
     let Some(xml) = xml_stream_text(payload) else {
-        return Ok(Vec::new());
+        return Err(damaged());
     };
     let document = match ctx.parse_xml(xml, "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
-            return Ok(Vec::new());
+            return Err(damaged());
         }
     };
     let root = document.root_element();
     if root.tag_name().name() != "Arrangements" {
-        return Ok(Vec::new());
+        return Err(damaged());
     }
     let node_count = root.children().filter(roxmltree::Node::is_element).count();
+    if node_count == 0 {
+        return Ok(None);
+    }
     let mut names = BTreeSet::new();
     let mut active_count = 0usize;
     for node in root.children().filter(roxmltree::Node::is_element) {
         if node.tag_name().name() != "Arrangement" {
-            return Ok(Vec::new());
+            return Err(damaged());
         }
         let Some(name) = node.attribute("Name") else {
-            return Ok(Vec::new());
+            return Err(damaged());
         };
         if name.is_empty() || !names.insert(name) {
-            return Ok(Vec::new());
+            return Err(damaged());
         }
         let is_default = match node.attribute("Default") {
             Some("YES") => true,
             Some("NO") => false,
-            _ => return Ok(Vec::new()),
+            _ => return Err(damaged()),
         };
         active_count += usize::from(is_default);
     }
-    if node_count == 0 || active_count > 1 {
-        return Ok(Vec::new());
+    if active_count > 1 {
+        return Err(damaged());
     }
     let mut output = Vec::new();
     for (ordinal, node) in root
@@ -3248,7 +3428,7 @@ pub(super) fn configurations(
         .enumerate()
     {
         let Some(name) = node.attribute("Name") else {
-            return Ok(Vec::new());
+            return Err(damaged());
         };
         let is_default = node.attribute("Default") == Some("YES");
         let source_offset = offset
@@ -3258,11 +3438,11 @@ pub(super) fn configurations(
             id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
             name: name.to_owned(),
             is_default,
-            source_entry: entry.name.clone(),
+            source_entry: source_entry.to_owned(),
             source_offset,
         });
     }
-    Ok(output)
+    Ok(Some(output))
 }
 
 /// Join the two independently framed active-arrangement declarations.
@@ -3305,30 +3485,19 @@ pub(super) fn part_attributes(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<PartAttribute>, CodecError> {
-    let mut matches = container
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.name == "/Root/part/attrs");
-    let Some((entry_index, entry)) = matches.next() else {
+    let SelectedXmlEntry::Payload {
+        payload,
+        entry_index,
+        source_entry,
+        entry_offset,
+    } = select_xml_entry(container, "/Root/part/attrs")
+    else {
         return Ok(Vec::new());
     };
-    if matches.next().is_some() {
-        return Ok(Vec::new());
-    }
-    let Some((offset, size)) = entry.file_span() else {
-        return Ok(Vec::new());
-    };
-    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-        return Ok(Vec::new());
-    };
-    let Some(end) = start.checked_add(size) else {
-        return Ok(Vec::new());
-    };
-    let Some(payload) = container.data.get(start..end) else {
-        return Ok(Vec::new());
-    };
-    Ok(parse_part_attributes(ctx, payload, entry_index, &entry.name, offset)?.unwrap_or_default())
+    Ok(
+        parse_part_attributes(ctx, payload, entry_index, &source_entry, entry_offset)?
+            .unwrap_or_default(),
+    )
 }
 
 fn parse_part_attributes(

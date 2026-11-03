@@ -1268,8 +1268,11 @@ where
 {
     let stream = crate::ids::native_scope(source_entry_name);
     let records = IndexedRecordOffsets::build(bytes);
-    let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    let Ok(collection_frames) =
+        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")
+    else {
+        return Ok(Vec::new());
+    };
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1283,106 +1286,144 @@ where
     if collections.is_empty() {
         return Ok(Vec::new());
     }
+    let Ok(entry_name_frames) =
+        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")
+    else {
+        return Ok(Vec::new());
+    };
     let mut entry_names = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+        entry_name_frames
             .into_iter()
             .map(|frame| parse_mesh_entry_name_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
+    let Ok(guid_frames) = typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")
+    else {
+        return Ok(Vec::new());
+    };
     let mut guids = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+        guid_frames
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.guid.record().record_index(),
         "mesh-GUID",
     )?;
+    let Ok(body_frames) = typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")
+    else {
+        return Ok(Vec::new());
+    };
     let mut bodies = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+        body_frames
             .into_iter()
             .map(|frame| parse_mesh_body_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.placement.record().record_index(),
         "mesh-body",
     )?;
+    let Ok(texture_table_frames) = typed_primary_frames(
+        bytes,
+        meta,
+        MESH_TEXTURE_TABLE_TYPE_GUID,
+        "mesh-texture-table",
+    ) else {
+        return Ok(Vec::new());
+    };
     let collection_record_indices = mesh_collection_indices(&collections);
     let mut texture_tables = unique_record_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_TEXTURE_TABLE_TYPE_GUID,
-            "mesh-texture-table",
-        )?
+        texture_table_frames
         .into_iter()
         .map(|frame| parse_mesh_texture_table_record(bytes, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
+    let Ok(wrapper_frames) =
+        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")
+    else {
+        return Ok(Vec::new());
+    };
     let mut wrappers = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+        wrapper_frames
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.identity.record_index(),
         "mesh-wrapper",
     )?;
+    let Ok(scope_frames) = typed_primary_frames(
+        bytes,
+        meta,
+        MESH_FEATURE_SCOPE_TYPE_GUID,
+        "mesh-feature-scope",
+    ) else {
+        return Ok(Vec::new());
+    };
     let mut scopes = unique_record_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_FEATURE_SCOPE_TYPE_GUID,
-            "mesh-feature-scope",
-        )?
+        scope_frames
         .into_iter()
         .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
+    let Ok(state_frames) =
+        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")
+    else {
+        return Ok(Vec::new());
+    };
     let mut states = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
+        state_frames
             .into_iter()
             .map(|frame| parse_mesh_scene_state_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
+    let Ok(scene_node_frames) =
+        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")
+    else {
+        return Ok(Vec::new());
+    };
     let mut scene_nodes = unique_record_map(
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
+        scene_node_frames
             .into_iter()
             .map(|frame| parse_scene_node_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
-    let mut scene_auxiliary_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            SCENE_AUXILIARY_TYPE_GUID,
-            "mesh-scene-auxiliary",
-        )?,
+    let Ok(auxiliary_frames) = typed_primary_frames(
+        bytes,
+        meta,
+        SCENE_AUXILIARY_TYPE_GUID,
         "mesh-scene-auxiliary",
-    )?;
-    let filename_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_TEXTURE_FILENAME_TYPE_GUID,
-            "mesh-texture-filename",
-        )?,
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut scene_auxiliary_frames =
+        typed_frame_map(auxiliary_frames, "mesh-scene-auxiliary")?;
+    let Ok(texture_filename_frames) = typed_primary_frames(
+        bytes,
+        meta,
+        MESH_TEXTURE_FILENAME_TYPE_GUID,
         "mesh-texture-filename",
-    )?;
-    let mut owner_records = Vec::new();
-    for frame in typed_primary_frames(
+    ) else {
+        return Ok(Vec::new());
+    };
+    let filename_frames = typed_frame_map(texture_filename_frames, "mesh-texture-filename")?;
+    let Ok(owner_frames) = typed_primary_frames(
         bytes,
         meta,
         MESH_COLLECTION_OWNER_TYPE_GUID,
         "mesh-collection-owner",
-    )? {
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut owner_records = Vec::new();
+    for frame in owner_frames {
         if let Some(owner) = parse_mesh_collection_owner_record(bytes, frame)? {
             if collection_record_indices.contains(&owner.collection_record_index) {
                 owner_records.push(owner);
@@ -1394,10 +1435,12 @@ where
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
-    let body_owner_frames = typed_frame_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
-        "mesh-body-owner",
-    )?;
+    let Ok(body_owner_frames) =
+        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")
+    else {
+        return Ok(Vec::new());
+    };
+    let body_owner_frames = typed_frame_map(body_owner_frames, "mesh-body-owner")?;
 
     let mut features = Vec::new();
     for collection in collections {

@@ -1381,7 +1381,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
 }
 
 #[test]
-fn opaque_history_span_retains_the_precise_framing_error() {
+fn malformed_history_run_fails_instead_of_an_opaque_record() {
     let bytes = [0x33];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -1390,7 +1390,7 @@ fn opaque_history_span_retains_the_precise_framing_error() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test input is within the service limit");
-    let records = super::super::decode_history_records(
+    let error = super::super::decode_history_records(
         &ctx,
         &bytes,
         0,
@@ -1399,14 +1399,9 @@ fn opaque_history_span_retains_the_precise_framing_error() {
         "state",
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
-    .expect("malformed history remains an opaque record");
-    let [record] = records.as_slice() else {
-        panic!("one opaque record");
-    };
-    assert_eq!(record.name(), "opaque_history_payload");
-    assert!(record
-        .framing_error()
-        .is_some_and(|error| error.contains("byte 0") && error.contains("0x33")));
+    .expect_err("malformed history run framing fails");
+    let message = error.to_string();
+    assert!(message.contains("byte 0") && message.contains("0x33"), "{message}");
 }
 
 mod hem_carriers;
@@ -1458,14 +1453,8 @@ fn wrapped_face_history_record_keeps_dispatch_references_and_bytes() {
     assert_eq!(record.name(), "face");
     assert_eq!(record.byte_offset, Some(0));
     assert_eq!(record.raw_bytes.data(), Some(bytes.as_slice()));
-    let crate::history_records::AsmHistoryRecordFraming::Framed {
-        index,
-        entity_references,
-        ..
-    } = &record.framing
-    else {
-        panic!("framed face");
-    };
+    let crate::history_records::AsmHistoryRecordFraming::Framed { index, entity_references, .. } =
+        &record.framing;
     assert_eq!(*index, 0);
     assert_eq!(entity_references, &references);
 }

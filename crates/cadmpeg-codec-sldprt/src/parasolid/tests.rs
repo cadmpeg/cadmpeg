@@ -419,6 +419,64 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
     assert!(streams[0].payload.ends_with(b"PS\0\0not-a-stream-header"));
 }
 
+fn weldment_entry(description: &str, body: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut stream = parasolid_with_body(description, "SCH_SW_33103_11000", body);
+    stream.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]);
+    let mut entry = vec![0x01, 0x00, 0x00, 0x00];
+    entry.extend_from_slice(
+        &u32::try_from(stream.len())
+            .expect("framed stream fits u32")
+            .to_le_bytes(),
+    );
+    entry.extend_from_slice(&stream);
+    (entry, stream)
+}
+
+#[test]
+fn weldment_entries_end_at_the_framed_terminal() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (mut payload, first_stream) = weldment_entry("partition body", &triangle_body());
+    payload.extend_from_slice(b"pad-bytes-after-the-terminal");
+    let second_offset = payload.len();
+    let (second_entry, second_stream) = weldment_entry("deltas body", &triangle_body());
+    payload.extend_from_slice(&second_entry);
+    payload.extend_from_slice(b"trailing-weldment-bytes");
+
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].offset, 8);
+    assert_eq!(streams[0].payload, first_stream);
+    assert!(streams[0].payload.ends_with(&[0x00, 0x01, 0x00, 0x01]));
+    assert_eq!(streams[1].offset, second_offset + 8);
+    assert_eq!(streams[1].payload, second_stream);
+}
+
+#[test]
+fn weldment_entry_without_a_framed_terminal_uses_header_slicing() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (mut payload, first_stream) = weldment_entry("partition body", &triangle_body());
+    let last = payload.len() - 1;
+    payload[last] ^= 0xff;
+    payload.extend_from_slice(b"pad-bytes-after-the-terminal");
+    let second_offset = payload.len();
+    let (second_entry, _) = weldment_entry("deltas body", &triangle_body());
+    payload.extend_from_slice(&second_entry);
+
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].offset, 8);
+    assert_eq!(streams[1].offset, second_offset + 8);
+    assert_ne!(streams[0].payload, first_stream);
+    assert!(streams[0].payload.len() > first_stream.len());
+    assert!(streams[0].payload.ends_with(&second_entry[..8]));
+}
+
 #[test]
 fn unframed_finite_xyz_pattern_does_not_supply_construction_controls() {
     let description = b"boundary_polyline mesh";

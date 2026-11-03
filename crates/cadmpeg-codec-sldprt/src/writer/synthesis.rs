@@ -31,6 +31,173 @@ pub(super) enum SynthesisCause {
     },
 }
 
+/// A validation Error the synthesis cascade resolves by dropping its holder
+/// instead of refusing: write what the document holds after the W1 cascade
+/// (#217, #237). Anything else keeps its refusal below.
+fn cascade_validation_errors(
+    projected: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::report::check::Check;
+    for _ in 0..1024 {
+        let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
+        let errors: Vec<_> = validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+            .collect();
+        if errors.is_empty() {
+            return Ok(());
+        }
+        // Cascade the first resolvable holder: a record that needs a record
+        // the document does not hold, a repeated identity, or a wire edge
+        // that lost its shell membership drops with its loss instead of
+        // refusing the write. Anything else keeps its refusal below.
+        let cascaded = errors.iter().find(|finding| {
+            let entity = finding.entity.clone().unwrap_or_default();
+            if entity.is_empty() {
+                return false;
+            }
+            matches!(
+                finding.check,
+                Check::ReferentialIntegrity
+                    | Check::Identity
+                    | Check::WireTopology
+                    | Check::CarrierReachability
+            )
+        });
+        let Some(finding) = cascaded else {
+            let first = errors[0];
+            return Err(CodecError::Malformed(first.message.clone()));
+        };
+        let entity = finding.entity.clone().unwrap_or_default();
+        match finding.check {
+            Check::ReferentialIntegrity => {
+                drop_model_record(projected, &entity)?;
+                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                    "record {entity} dropped; it needs a record the document does not hold"
+                )));
+            }
+            Check::Identity => {
+                drop_duplicate_model_record(projected, &entity)?;
+                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                    "record {entity} dropped; its identity repeats another record"
+                )));
+            }
+            Check::WireTopology => {
+                drop_model_record(projected, &entity)?;
+                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                    "record {entity} dropped; it lost its shell membership"
+                )));
+            }
+            Check::CarrierReachability => {
+                drop_model_record(projected, &entity)?;
+                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                    "record {entity} dropped; no topology or construction reaches it"
+                )));
+            }
+            _ => {
+                return Err(CodecError::Malformed(finding.message.clone()));
+            }
+        }
+    }
+    Err(CodecError::Malformed(
+        "SLDPRT synthesis cascade exceeded its work cap".into(),
+    ))
+}
+
+/// Drop one model record by id through JSON, keeping admission order.
+/// Dropping a feature also drops the features it parents: regeneration and
+/// tree links stay valid at every step because model admission validates
+/// them, while looser references resurface as findings for the next pass.
+fn drop_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+    let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
+    if let Some(model) = document.as_object() {
+        if let Some(features) = model.get("features").and_then(|rows| rows.as_array()) {
+            let is_feature = features
+                .iter()
+                .any(|row| row.get("id").and_then(|id| id.as_str()) == Some(id));
+            if is_feature {
+                loop {
+                    let mut added = false;
+                    for row in features {
+                        let child = row.get("id").and_then(|id| id.as_str()).unwrap_or_default();
+                        if dropped.contains(child) {
+                            continue;
+                        }
+                        if row
+                            .get("regeneration_parent")
+                            .and_then(|parent| parent.as_str())
+                            .is_some_and(|parent| dropped.contains(parent))
+                        {
+                            dropped.insert(child.to_owned());
+                            added = true;
+                        }
+                    }
+                    if !added {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let mut removed = false;
+    if let Some(model) = document.as_object_mut() {
+        for rows in model.values_mut() {
+            if let Some(rows) = rows.as_array_mut() {
+                let before = rows.len();
+                rows.retain(|row| {
+                    row.get("id")
+                        .and_then(|id| id.as_str())
+                        .is_none_or(|row| !dropped.contains(row))
+                });
+                removed = removed || rows.len() != before;
+            }
+        }
+    }
+    if !removed {
+        return Err(CodecError::malformed(format_args!(
+            "SLDPRT cascade cannot drop unheld record {id}"
+        )));
+    }
+    let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
+    projected.model = model;
+    Ok(())
+}
+
+/// Drop every later repeat of one model identity, keeping the first row.
+fn drop_duplicate_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+    let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let mut dropped = false;
+    if let Some(model) = document.as_object_mut() {
+        for rows in model.values_mut() {
+            if let Some(rows) = rows.as_array_mut() {
+                let mut kept = false;
+                rows.retain(|row| {
+                    if row.get("id").and_then(|id| id.as_str()) != Some(id) {
+                        return true;
+                    }
+                    if kept {
+                        dropped = true;
+                        return false;
+                    }
+                    kept = true;
+                    true
+                });
+            }
+        }
+    }
+    if !dropped {
+        return Err(CodecError::malformed(format_args!(
+            "SLDPRT cascade cannot drop unrepeated record {id}"
+        )));
+    }
+    let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
+    projected.model = model;
+    Ok(())
+}
+
 pub(super) fn plan(
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
@@ -53,14 +220,7 @@ pub(super) fn plan(
     // cannot be re-emitted or regenerated from. Clear such references and
     // write the neutral content without its native link (#237).
     null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
-    let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new())?;
-    if let Some(finding) = validation
-        .findings
-        .iter()
-        .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-    {
-        return Err(CodecError::Malformed(finding.message.clone()));
-    }
+    cascade_validation_errors(&mut projected, &mut losses)?;
     let retained_native = projected
         .native
         .namespace("sldprt")
@@ -94,6 +254,12 @@ pub(super) fn plan(
         ..DecodePolicy::default()
     };
     let slot_context = DecodeContext::for_encode(&slot_arena, &slot_policy);
+    // The encode session ceiling bounds the work on the input document: charge
+    // its records so a caller ceiling refuses instead of truncating (#217).
+    slot_context.charge_entities(
+        u64::try_from(input.ir.model.entity_count()).unwrap_or(u64::MAX),
+        "sldprt synthesis",
+    )?;
     prepare_native(&slot_context, &mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
@@ -120,6 +286,7 @@ pub(super) fn plan(
     }
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
+    geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
         match geometry::preflight(&projected, &body) {
@@ -605,7 +772,17 @@ fn null_unresolvable_native_refs(
     let mut document =
         serde_json::to_value(&*model).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let mut cleared = Vec::new();
-    walk(&mut document, &owned, &present, foreign_only, &mut cleared);
+    // `semantic_annotations.native_ref` is mandatory: clearing it breaks
+    // deserialization, so its dangling links keep their refusal below.
+    if let serde_json::Value::Object(spaces) = &mut document {
+        for (arena, rows) in spaces.iter_mut() {
+            if arena != "semantic_annotations" {
+                walk(rows, &owned, &present, foreign_only, &mut cleared);
+            }
+        }
+    } else {
+        walk(&mut document, &owned, &present, foreign_only, &mut cleared);
+    }
     if cleared.is_empty() {
         return Ok(());
     }

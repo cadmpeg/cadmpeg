@@ -546,8 +546,7 @@ mod tests {
             serde_json::json!({"direction_control": null})
         )
         .is_err());
-        let worded =
-            serde_json::json!({"leading_word": {"value": 2}, "extent_control": 0});
+        let worded = serde_json::json!({"leading_word": {"value": 2}, "extent_control": 0});
         let extent: super::DesignHoleExtent = serde_json::from_value(worded.clone()).unwrap();
         assert_eq!(serde_json::to_value(extent).unwrap(), worded);
         assert!(serde_json::from_value::<super::DesignHoleExtent>(
