@@ -357,7 +357,7 @@ fn retains_missing_and_ambiguous_cameras_in_schema_one_gui_document() {
             .expect("independent persistence survives malformed GUI metadata");
 
         if camera_records.is_empty() {
-            assert!(recovered.report().losses.is_empty());
+            crate::test_support::assert_model_fragment_scope(&recovered);
             assert!(recovered.source_fidelity().unrepresented().is_empty());
             assert!(recovered.ir().model.presentation_documents[0]
                 .states()

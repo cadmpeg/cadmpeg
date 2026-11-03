@@ -1411,14 +1411,11 @@ pub(crate) fn sketch_entities_match(
     expected: &[crate::records::SketchInputEntity],
 ) -> bool {
     entities.len() == expected.len()
-        && entities
-            .iter()
-            .zip(expected)
-            .all(|(actual, expected)| {
-                actual.ordinal() == expected.ordinal()
-                    && actual.kind() == expected.kind()
-                    && actual.state_value == expected.state_value
-            })
+        && entities.iter().zip(expected).all(|(actual, expected)| {
+            actual.ordinal() == expected.ordinal()
+                && actual.kind() == expected.kind()
+                && actual.state_value == expected.state_value
+        })
 }
 
 /// Refuse a native feature-input lane whose typed records disagree with the

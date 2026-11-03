@@ -199,6 +199,10 @@ pub(crate) enum CreoLossCode {
     FeatureConstructionUnresolved,
     /// Declared section segment rows did not decode.
     SectionSegmentMissing,
+    /// A section declares more table rows than its payload holds. The parsed
+    /// rows are salvaged, so the section is not given up and charges no
+    /// `record.unreadable`.
+    SectionRowCountMismatch,
     /// Declared section relation rows did not decode.
     SectionRelationMissing,
     /// Section relation table uses the invalid zero allocation count.
@@ -345,6 +349,7 @@ impl CreoLossCode {
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
             Self::SectionSegmentMissing => "section.segment-missing",
+            Self::SectionRowCountMismatch => "section.row-count-mismatch",
             Self::SectionRelationMissing => "section.relation-missing",
             Self::SectionRelationTableMalformed => "section.relation-table-malformed",
             Self::SectionIncidenceMissing => "section.incidence-missing",
@@ -459,6 +464,7 @@ impl CreoLossCode {
             | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
+            | Self::SectionRowCountMismatch
             | Self::SectionRelationMissing
             | Self::SectionRelationTableMalformed
             | Self::SectionIncidenceMissing
@@ -572,6 +578,7 @@ impl CreoLossCode {
             | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
+            | Self::SectionRowCountMismatch
             | Self::SectionRelationMissing
             | Self::SectionRelationTableMalformed
             | Self::SectionIncidenceMissing
@@ -715,6 +722,7 @@ mod tests {
                 "feature.state-selection-unresolved",
                 "feature.construction-unresolved",
                 "section.segment-missing",
+                "section.row-count-mismatch",
                 "section.relation-missing",
                 "section.relation-table-malformed",
                 "section.incidence-missing",

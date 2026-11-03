@@ -6159,9 +6159,11 @@ fn draft_definition(
     let Some(angle) = scalar_named(ctx, properties, "Angle")? else {
         return Ok(None);
     };
-    let Some(angle) = cadmpeg_ir::scalar::SlopeAngle::new(
-        if reversed { -angle.get() } else { angle.get() }.to_radians(),
-    ) else {
+    // D1/D31: the authored angle stays unsigned in the dimension so it binds
+    // its owned parameter; reversal lives in `outward` alone. Baking the
+    // sign here would flip the value on every decode/write cycle and block
+    // the parameter bind on value mismatch.
+    let Some(angle) = cadmpeg_ir::scalar::SlopeAngle::new(angle.get().to_radians()) else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
