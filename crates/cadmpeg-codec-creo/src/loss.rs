@@ -43,8 +43,6 @@ loss_codes! {
 pub(crate) enum CreoLossCode {
     /// A source record cannot construct its required neutral counterpart.
     NeutralRecordUnprojected,
-    /// An evaluated operation carrier disagrees with its canonical parameter.
-    EvaluationStale,
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
     /// A byte-bounded compressed section has invalid or incomplete LZW data.
@@ -251,7 +249,6 @@ impl CreoLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::NeutralRecordUnprojected => "projection.record-unprojected",
-            Self::EvaluationStale => "evaluation.stale",
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -410,7 +407,6 @@ impl CreoLossCode {
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::NeutralRecordUnprojected
-            | Self::EvaluationStale
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
@@ -489,7 +485,6 @@ impl CreoLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::NeutralRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
-            Self::EvaluationStale => LossTaxonomy::FeatureHistoryRetained,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerCensus
             | Self::CarrierVisibGeomPlanes
@@ -636,7 +631,6 @@ mod tests {
             codes,
             [
                 "projection.record-unprojected",
-                "evaluation.stale",
                 "container.census",
                 "container.compressed-section-unexpanded",
                 "source.dialect-unverified",

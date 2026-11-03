@@ -762,7 +762,7 @@ pub(in super::super) fn build_ir(
         feature_result_edge_count,
         &mut coverage,
     );
-    crate::decode::feature_history::bindings::bind_owned_dimensions(&mut ir, &mut transfer_losses)?;
+    crate::decode::feature_history::bindings::bind_owned_dimensions(&mut ir)?;
     transfer_losses.append(&mut source_carriers.projection_losses);
     Ok(BuiltIr {
         ir,
