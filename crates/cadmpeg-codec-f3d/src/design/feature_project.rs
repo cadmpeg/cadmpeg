@@ -7628,13 +7628,12 @@ fn hole_start_faces_only(
             first.scope_reference_ordinal < second.scope_reference_ordinal && start_run(&faces)
         }
         [first, .., last] if faces.len() == 4 => {
-            scope
-                .hole_construction()
-                .is_some_and(|construction| construction.placed_at_face_point())
-                && last
-                    .scope_reference_ordinal
-                    .checked_sub(first.scope_reference_ordinal)
-                    == Some(3)
+            scope.hole_construction().is_some_and(
+                crate::records::feature::hole::DesignHoleConstruction::placed_at_face_point,
+            ) && last
+                .scope_reference_ordinal
+                .checked_sub(first.scope_reference_ordinal)
+                == Some(3)
                 && start_run(&faces)
         }
         _ => false,
