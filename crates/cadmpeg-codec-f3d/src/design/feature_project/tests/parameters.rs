@@ -279,6 +279,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                         side_extent_discriminators: [1, 0],
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
+                        distance_tail: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
