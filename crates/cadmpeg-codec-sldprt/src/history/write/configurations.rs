@@ -188,7 +188,7 @@ pub(crate) fn synchronize_configuration_records(
 }
 
 /// Regenerate configuration identities and metadata from the neutral model.
-pub(in crate::history) fn sync_neutral_configurations(
+pub(crate) fn sync_neutral_configurations(
     configurations: &[DesignConfiguration],
     native: &mut Option<crate::native::SldprtNative>,
 ) {
