@@ -50,7 +50,12 @@ fn a_transformed_composite_curve_is_an_omitted_carrier() {
     ));
 
     let mut emitter = crate::writer::Emitter::new();
-    assert!(curve(&mut emitter, transformed.solved().expect("solved carrier")).is_none());
+    assert!(curve(
+        &mut emitter,
+        "",
+        transformed.solved().expect("solved carrier")
+    )
+    .is_none());
     assert!(!curve_is_supported(&transformed));
 }
 
@@ -88,7 +93,7 @@ fn conical_surface_emits_a_positive_half_angle_and_reversed_axis() {
     )
     .unwrap();
     let mut emitter = crate::writer::Emitter::new();
-    assert!(surface(&mut emitter, &SolvedSurfaceGeometry::Cone(cone)).is_some());
+    assert!(surface(&mut emitter, "", &SolvedSurfaceGeometry::Cone(cone)).is_some());
     let lines = emitter.into_lines().expect("finite reals");
     let emitted = lines
         .iter()
@@ -140,7 +145,7 @@ fn a_surface_placement_chain_past_the_bound_is_unwritable() {
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
     ));
     let mut emitter = crate::writer::Emitter::new();
-    assert!(surface(&mut emitter, &accepted).is_some());
+    assert!(surface(&mut emitter, "", &accepted).is_some());
 
     // One placement deeper is unwritable because it is unbuildable.
     assert_eq!(
@@ -171,7 +176,7 @@ fn a_curve_placement_chain_past_the_bound_is_unwritable() {
     let accepted = placed_line(ACCEPTED_PLACEMENTS).expect("admitted nesting");
     assert!(curve_is_supported(&accepted));
     let mut emitter = crate::writer::Emitter::new();
-    assert!(curve(&mut emitter, accepted.solved().expect("solved carrier")).is_some());
+    assert!(curve(&mut emitter, "", accepted.solved().expect("solved carrier")).is_some());
 
     // One placement deeper is unwritable because it is unbuildable.
     assert_eq!(
@@ -365,7 +370,7 @@ fn rigid_placements_are_written_into_their_carriers() {
         )
         .expect("placed circle"),
     );
-    let text = emit(&|e| curve(e, &circle));
+    let text = emit(&|e| curve(e, "", &circle));
     assert!(!text.contains("CURVE_REPLICA"));
     assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
     assert!(text.contains("DIRECTION('',(0.,1.,0.))"));
@@ -386,7 +391,7 @@ fn rigid_placements_are_written_into_their_carriers() {
         )
         .expect("placed cylinder"),
     );
-    let text = emit(&|e| super::surface(e, &cylinder));
+    let text = emit(&|e| super::surface(e, "", &cylinder));
     assert!(!text.contains("SURFACE_REPLICA"));
     assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
     assert!(text.contains("CYLINDRICAL_SURFACE("));
