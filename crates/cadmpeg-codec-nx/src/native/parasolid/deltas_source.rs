@@ -2,8 +2,10 @@
 
 use super::deltas_instance::{ParasolidDeltasInstance, ParasolidDeltasSchema};
 use super::deltas_metadata::ParasolidDeltasMetadata;
-use super::{deltas_events_for_stream, ParasolidDeltasEvents, ParasolidDeltasPartitionPrefix,
-    ParasolidDeltasRecord, ParasolidDeltasTransmitHeader};
+use super::{
+    deltas_events_for_stream, ParasolidDeltasEvents, ParasolidDeltasPartitionPrefix,
+    ParasolidDeltasRecord, ParasolidDeltasTransmitHeader,
+};
 use crate::parasolid::{classify, ParasolidSubtype, StreamBody};
 use crate::records::deltas::{DeltasEnd, DeltasRecords};
 use crate::RETAINED_PARASOLID_STREAM_ID_PREFIX;
@@ -195,7 +197,10 @@ pub(in crate::native) fn verify(
         };
         let mut pinned = std::collections::BTreeMap::new();
         for (record_id, record) in source.retained_records() {
-            if record_id.as_str().starts_with(&format!("nx:s{ordinal}:deltas-residual#")) {
+            if record_id
+                .as_str()
+                .starts_with(&format!("nx:s{ordinal}:deltas-residual#"))
+            {
                 pinned.insert(record_id.as_str(), record);
             }
         }
@@ -213,10 +218,7 @@ pub(in crate::native) fn verify(
                     span.id
                 )));
             };
-            if !pinned
-                .untyped()
-                .contains(&cadmpeg_ir::ArenaClass::Model)
-            {
+            if !pinned.untyped().contains(&cadmpeg_ir::ArenaClass::Model) {
                 return Err(NativeConvertError::InvalidCollection(format!(
                     "NX Deltas stream {id} residual gap {} is not marked untyped",
                     span.id

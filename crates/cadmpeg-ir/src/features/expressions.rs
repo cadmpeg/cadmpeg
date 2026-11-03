@@ -108,9 +108,11 @@ impl Expression {
                 let mut parsed = None;
                 for (suffix, factor) in suffixes {
                     if let Some(number) = text.strip_suffix(suffix) {
-                        parsed = number.trim().parse::<f64>().ok().and_then(|value| {
-                            crate::scalar::Length::new(value * factor)
-                        });
+                        parsed = number
+                            .trim()
+                            .parse::<f64>()
+                            .ok()
+                            .and_then(|value| crate::scalar::Length::new(value * factor));
                         break;
                     }
                 }

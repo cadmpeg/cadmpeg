@@ -122,8 +122,8 @@
         }
       },
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -203,17 +203,6 @@
           },
           "message": "The Parasolid stream at stream@148 declares schema \"SCH_test\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -223,8 +212,8 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
-          "model": false
+          "design": true,
+          "model": true
         }
       }
     },
@@ -292,19 +281,14 @@
           },
           "offset": 148,
           "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADzAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACnAAAAAAAAAAcAAAAJAAAACwAAAAEAAAABAAAAMAAAAEAAAAAAAAAAXgAAAJYAAAATAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAXwAAAHgBFcyxCoAgFAVQxz7jjvULbRFFQUVke2g+QigVfYt/X+2Hs0ohxFBj35pFzuOOfpw6lEFFtmy9q3BGUkwGOoMpMRJdDzmG9iZDW2esuxBUvr0y31XIdjh+KF4CbR0BRk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

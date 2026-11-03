@@ -90,9 +90,7 @@ impl Scan<'_> {
         self.untyped_marks.borrow_mut().truncate(len);
     }
 
-    pub(crate) fn take_untyped_marks(
-        &self,
-    ) -> Vec<(String, cadmpeg_ir::ArenaClasses)> {
+    pub(crate) fn take_untyped_marks(&self) -> Vec<(String, cadmpeg_ir::ArenaClasses)> {
         std::mem::take(&mut self.untyped_marks.borrow_mut())
     }
 
@@ -188,7 +186,13 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     body.losses.extend(native_losses);
     report_untransferred_streams(&scan, &mut body, TypedNative::Available);
     decoded(
-        ctx, &scan, ir, body, (annotations, unknowns), &mut admitted_entities, outcome,
+        ctx,
+        &scan,
+        ir,
+        body,
+        (annotations, unknowns),
+        &mut admitted_entities,
+        outcome,
     )
 }
 
@@ -228,10 +232,7 @@ fn entry_holds_model(content: crate::container::EntryContent) -> bool {
 /// Whether one container entry can hold design content.
 fn entry_holds_design(content: crate::container::EntryContent) -> bool {
     use crate::container::EntryContent::*;
-    matches!(
-        content,
-        PartPayload | Arrangements | NamedOpaqueStream
-    )
+    matches!(content, PartPayload | Arrangements | NamedOpaqueStream)
 }
 
 /// Located model parts (§1.1): kernel streams, display and fast-load
@@ -248,9 +249,10 @@ fn model_parts_located(scan: &Scan<'_>, ir: &CadIr) -> bool {
             .iter()
             .any(|entry| entry_holds_model(entry.content()))
         || ir.native.namespace("nx").is_some_and(|namespace| {
-            namespace.arenas().iter().any(|(arena, records)| {
-                !records.is_empty() && !is_design_native_arena(arena)
-            })
+            namespace
+                .arenas()
+                .iter()
+                .any(|(arena, records)| !records.is_empty() && !is_design_native_arena(arena))
         })
 }
 
@@ -268,9 +270,10 @@ fn design_parts_located(scan: &Scan<'_>, ir: &CadIr) -> bool {
             .iter()
             .any(|entry| entry_holds_design(entry.content()))
         || ir.native.namespace("nx").is_some_and(|namespace| {
-            namespace.arenas().iter().any(|(arena, records)| {
-                !records.is_empty() && is_design_native_arena(arena)
-            })
+            namespace
+                .arenas()
+                .iter()
+                .any(|(arena, records)| !records.is_empty() && is_design_native_arena(arena))
         })
 }
 
@@ -304,8 +307,7 @@ fn decoded(
         ir.scope = cadmpeg_ir::ContentScope::container();
     } else {
         document_projection::project(ctx, &mut ir, &mut body.losses)?;
-        ir.scope.model =
-            body.transfer.geometry_transferred || model_parts_located(scan, &ir);
+        ir.scope.model = body.transfer.geometry_transferred || model_parts_located(scan, &ir);
         ir.scope.design = design_held && design_parts_located(scan, &ir);
     }
     body.transfer.scope = ir.scope;
@@ -354,23 +356,20 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
         }
     }
     for entry in scan.container.bounded_indexed_om_entries() {
-        body.losses.push(NxLossCode::SourceScanBounded.note(
-            format!(
-                "The indexed object-model section search in {} reached its work bound of {}; \
+        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
+            "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
-                entry.name,
-                crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-            ),
-        ));
+            entry.name,
+            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
+        )));
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
-            body.losses.push(NxLossCode::NonParasolidStreamOmitted.note(
-                format!(
+            body.losses
+                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
                     stream.kind().label()
-                ),
-            ));
+                )));
         }
     }
 }
@@ -472,7 +471,10 @@ fn build_metadata_ir(
             &mut unknowns,
             TypedNative::ContainerOnly,
         )?;
-        RouteOutcome { design_held: true, parts }
+        RouteOutcome {
+            design_held: true,
+            parts,
+        }
     } else {
         let held = match (|| {
             let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
@@ -500,12 +502,10 @@ fn build_metadata_ir(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 ir.scope.design = false;
-                losses.push(NxLossCode::NativeAttachmentFailed.note(
-                    format!(
-                        "Native object-model extraction failed: {error}. Decoded streams are kept. \
+                losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
+                    "Native object-model extraction failed: {error}. Decoded streams are kept. \
                      No attachment record was located, so the design class is not delivered."
-                    ),
-                ));
+                )));
                 false
             }
         };

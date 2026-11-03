@@ -5826,13 +5826,11 @@ pub(super) fn display_jt_tessellations(
 
 /// Report that `mesh` did not resolve and none of its tessellations are kept.
 fn dropped_display_jt_mesh(losses: &mut Vec<LossNote>, mesh: &DisplayJtPolygonMesh) {
-    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(
-        format!(
-            "Display-JT polygon mesh {} did not resolve to a tessellation; \
+    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(format!(
+        "Display-JT polygon mesh {} did not resolve to a tessellation; \
          the mesh was skipped.",
-            mesh.id
-        ),
-    ));
+        mesh.id
+    )));
 }
 
 #[cfg(test)]

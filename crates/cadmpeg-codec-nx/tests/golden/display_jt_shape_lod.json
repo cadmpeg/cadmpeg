@@ -458,19 +458,14 @@
           },
           "offset": 119,
           "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABdAgAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUdwAAAAAAAADeAAAAAAAAABcAAAAvUm9vdC9VR19QQVJUL0Rpc3BsYXlKVFUBAAAAAAAACAEAAAAAAAB4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe8JAAAAAQAAAAAAAABkAAAAAAAAABwAAAAAAAAAVmVyc2lvbiA5LjQgSlQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAGkAAAABAQEBAQEBAQEBAQEBAQEBAQAAAAICAgICAgICAgICAgICAgKJAAAAYwAAAAAAAAcCAgICAgICAgICAgICAgICBwAAAGMAAAAtAAAAqxDdEMgq0RGbawCAx7tZlwQqAAAAAQABAAAAAAAAAAAAAQAAAAAAAQCqu8zdEAAAAP////////////////////8BAAAAAABGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
